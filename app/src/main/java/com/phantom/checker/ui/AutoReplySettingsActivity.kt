@@ -20,8 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,9 +29,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import com.phantom.checker.ui.components.FluidSwitch
+import com.phantom.checker.ui.components.GlassCard
+import com.phantom.checker.ui.components.glassSource
+import com.phantom.checker.ui.components.pressableScale
+import dev.chrisbanes.haze.HazeState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -113,44 +115,47 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
+        val glassState = remember { HazeState() }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .glassSource(glassState)
                 .padding(padding)
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Card(
+            GlassCard(
+                glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                )
+                cornerRadius = 20.dp,
+                contentPadding = 12.dp
             ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
+                Row(verticalAlignment = Alignment.Top) {
                     Icon(
                         imageVector = Icons.Default.Info,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = "LINE/IG 等通訊 App 受系統限制無法代回覆（會觸發已讀），此設定僅對 SMS 生效",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            GlassCard(
+                glassState = glassState,
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp,
+                contentPadding = 16.dp
+            ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -166,7 +171,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Switch(
+                    FluidSwitch(
                         checked = enabled,
                         onCheckedChange = { checked ->
                             enabled = checked
@@ -176,11 +181,14 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            GlassCard(
+                glassState = glassState,
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp,
+                contentPadding = 16.dp
+            ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
@@ -216,7 +224,9 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                                     true
                                 ).show()
                             },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .pressableScale()
                         ) {
                             Text("開始：${formatMinuteOfDay(startMinute)}")
                         }
@@ -234,7 +244,9 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                                     true
                                 ).show()
                             },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .pressableScale()
                         ) {
                             Text("結束：${formatMinuteOfDay(endMinute)}")
                         }
@@ -242,11 +254,14 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            GlassCard(
+                glassState = glassState,
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp,
+                contentPadding = 16.dp
+            ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
@@ -274,7 +289,9 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                                 snackbarHostState.showSnackbar("自動回覆設定已儲存")
                             }
                         },
-                        modifier = Modifier.align(Alignment.End)
+                        modifier = Modifier
+                            .align(Alignment.End)
+                            .pressableScale()
                     ) {
                         Text("儲存設定")
                     }

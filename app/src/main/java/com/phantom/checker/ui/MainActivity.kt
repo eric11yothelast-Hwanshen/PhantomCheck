@@ -24,6 +24,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -36,9 +38,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import com.phantom.checker.ui.components.LiquidGlassTabBar
+import com.phantom.checker.ui.components.LiquidGlassTabBarItem
+import com.phantom.checker.ui.components.glassSource
+import com.phantom.checker.ui.components.pressableScale
+import dev.chrisbanes.haze.HazeState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -179,10 +184,38 @@ fun PhantomCheckApp() {
         isLoading = false
     }
 
-    Scaffold { padding ->
+    val glassState = remember { HazeState() }
+
+    Scaffold(
+        bottomBar = {
+            LiquidGlassTabBar(
+                tabCount = MainTab.entries.size,
+                selectedTabIndex = selectedTab.ordinal,
+                glassState = glassState,
+                onSelect = { index -> selectedTab = MainTab.entries[index] },
+                tabs = {
+                    MainTab.entries.forEach { tab ->
+                        val icon = when (tab) {
+                            MainTab.ALL -> Icons.Default.Email
+                            MainTab.SCAMS -> Icons.Default.Warning
+                            MainTab.FILTERED -> Icons.Default.Done
+                        }
+                        LiquidGlassTabBarItem(
+                            selected = selectedTab == tab,
+                            onClick = { selectedTab = tab },
+                            icon = icon,
+                            label = tab.title,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            )
+        }
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .glassSource(glassState)
                 .padding(padding)
                 .padding(12.dp)
         ) {
@@ -258,7 +291,8 @@ fun PhantomCheckApp() {
                 NotificationListenerGuideCard(
                     onOpenSettings = {
                         ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                    }
+                    },
+                    glassState = glassState
                 )
             }
 
@@ -267,20 +301,9 @@ fun PhantomCheckApp() {
                 PostNotificationGuideCard(
                     onRequestPermission = {
                         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
+                    },
+                    glassState = glassState
                 )
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            TabRow(selectedTabIndex = selectedTab.ordinal) {
-                MainTab.entries.forEach { tab ->
-                    Tab(
-                        selected = selectedTab == tab,
-                        onClick = { selectedTab = tab },
-                        text = { Text(tab.title) }
-                    )
-                }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -288,7 +311,9 @@ fun PhantomCheckApp() {
             if (selectedTab == MainTab.SCAMS) {
                 OutlinedButton(
                     onClick = { ctx.startActivity(Intent(ctx, ScamCenterActivity::class.java)) },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pressableScale()
                 ) {
                     Text("開啟詐騙警示中心（查看完整風險分析）")
                 }
@@ -337,6 +362,7 @@ fun PhantomCheckApp() {
                             }
                             MessageCard(
                                 message = m,
+                                glassState = glassState,
                                 highlightAsScam = selectedTab == MainTab.SCAMS,
                                 matchedKeywords = matchedKeywords
                             )

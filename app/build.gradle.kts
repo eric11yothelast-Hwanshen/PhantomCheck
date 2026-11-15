@@ -52,4 +52,8 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0")
 
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    implementation("dev.chrisbanes.haze:haze:2.1.0")
+    implementation("dev.chrisbanes.haze:haze-blur:2.1.0")
+    implementation("dev.chrisbanes.haze:haze-blur-materials:2.1.0")
 }

@@ -3,7 +3,10 @@ package com.phantom.checker.ui
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,8 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -31,6 +32,10 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import com.phantom.checker.ui.components.glassSource
+import com.phantom.checker.ui.components.glassSurface
+import com.phantom.checker.ui.components.pressableScale
+import dev.chrisbanes.haze.HazeState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -94,23 +99,35 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
+        val glassState = remember { HazeState() }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .glassSource(glassState)
                 .padding(padding)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // 目前 API Key 狀態卡片（僅顯示尾 4 碼）
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (keySource == ApiKeySource.NONE) {
-                        MaterialTheme.colorScheme.errorContainer
-                    } else {
-                        MaterialTheme.colorScheme.primaryContainer
-                    }
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(spring())
+                    .glassSurface(
+                        state = glassState,
+                        fallbackColor = if (keySource == ApiKeySource.NONE) {
+                            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.90f)
+                        } else {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+                        },
+                        outlineColor = if (keySource == ApiKeySource.NONE) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            null
+                        },
+                        cornerRadius = 20.dp
+                    )
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     val statusTitle = when (keySource) {
@@ -184,7 +201,9 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                         }
                     },
                     enabled = inputKey.isNotBlank() && !isTesting,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .pressableScale()
                 ) {
                     Text("儲存")
                 }
@@ -205,7 +224,9 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                         }
                     },
                     enabled = (inputKey.isNotBlank() || activeKey != null) && !isTesting,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .pressableScale()
                 ) {
                     if (isTesting) {
                         CircularProgressIndicator(
@@ -222,15 +243,20 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
 
             if (testResult != null) {
                 val (success, message) = testResult!!
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (success) {
-                            MaterialTheme.colorScheme.secondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.errorContainer
-                        }
-                    )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateContentSize(spring())
+                        .glassSurface(
+                            state = glassState,
+                            fallbackColor = if (success) {
+                                MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.90f)
+                            } else {
+                                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.90f)
+                            },
+                            outlineColor = if (success) null else MaterialTheme.colorScheme.error,
+                            cornerRadius = 18.dp
+                        )
                 ) {
                     Text(
                         text = message,

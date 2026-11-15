@@ -7,7 +7,8 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,19 +32,22 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.CompositionLocalProvider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import com.phantom.checker.ui.components.glassSource
+import com.phantom.checker.ui.components.glassSurface
+import dev.chrisbanes.haze.HazeState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -136,9 +140,12 @@ fun ScamCenterScreen(onBack: () -> Unit) {
             )
         }
     ) { padding ->
+        val glassState = remember { HazeState() }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .glassSource(glassState)
                 .padding(padding)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
@@ -172,11 +179,16 @@ fun ScamCenterScreen(onBack: () -> Unit) {
                     }
                 }
                 else -> {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .animateContentSize(spring())
+                            .glassSurface(
+                                state = glassState,
+                                fallbackColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f),
+                                outlineColor = MaterialTheme.colorScheme.error,
+                                cornerRadius = 20.dp
+                            )
                     ) {
                         Row(
                             modifier = Modifier
@@ -206,6 +218,7 @@ fun ScamCenterScreen(onBack: () -> Unit) {
                         items(scamMessages, key = { it.id }) { msg ->
                             ScamMessageCard(
                                 message = msg,
+                                glassState = glassState,
                                 onClick = { selectedMessage = msg }
                             )
                         }
@@ -246,24 +259,28 @@ private fun RiskScoreBadge(
 @Composable
 private fun ScamMessageCard(
     message: MessageEntity,
+    glassState: HazeState,
     onClick: () -> Unit
 ) {
     val timeText = remember(message.timestamp) {
         SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(message.timestamp))
     }
 
-    Card(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f),
-            contentColor = MaterialTheme.colorScheme.onErrorContainer
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
+            .animateContentSize(spring())
+            .glassSurface(
+                state = glassState,
+                fallbackColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f),
+                outlineColor = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
+                cornerRadius = 20.dp
+            )
+            .clickable(onClick = onClick)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onErrorContainer) {
+            Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -324,6 +341,7 @@ private fun ScamMessageCard(
                 color = MaterialTheme.colorScheme.error,
                 fontWeight = FontWeight.Medium
             )
+            }
         }
     }
 }

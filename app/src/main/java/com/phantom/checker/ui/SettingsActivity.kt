@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -39,10 +38,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import com.phantom.checker.ui.components.FluidSwitch
+import com.phantom.checker.ui.components.GlassCard
+import com.phantom.checker.ui.components.glassSource
+import com.phantom.checker.ui.components.pressableScale
+import dev.chrisbanes.haze.HazeState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -208,9 +211,12 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
+        val glassState = remember { HazeState() }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .glassSource(glassState)
                 .padding(padding)
                 .padding(12.dp)
         ) {
@@ -218,7 +224,9 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                 onClick = {
                     ctx.startActivity(Intent(ctx, AutoReplySettingsActivity::class.java))
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pressableScale()
             ) {
                 Text("SMS 自動回覆設定")
             }
@@ -242,70 +250,78 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     }
                 },
                 enabled = !isExporting,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pressableScale()
             ) {
                 Text(if (isExporting) "匯出中…" else "匯出訊息 CSV")
             }
 
             Spacer(Modifier.height(10.dp))
 
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = "外觀主題",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        ThemeMode.entries.forEach { mode ->
-                            FilterChip(
-                                selected = currentThemeMode == mode,
-                                onClick = { ThemePreferences.setThemeMode(appCtx, mode) },
-                                label = { Text(mode.label) }
-                            )
-                        }
+            GlassCard(
+                glassState = glassState,
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp,
+                contentPadding = 12.dp
+            ) {
+                Text(
+                    text = "外觀主題",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Spacer(Modifier.height(8.dp))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ThemeMode.entries.forEach { mode ->
+                        FilterChip(
+                            selected = currentThemeMode == mode,
+                            onClick = { ThemePreferences.setThemeMode(appCtx, mode) },
+                            label = { Text(mode.label) }
+                        )
                     }
                 }
             }
 
             Spacer(Modifier.height(10.dp))
 
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = "訊息保留天數",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "超過保留天數的舊訊息將每日自動清理（詐騙警示記錄將永久保留）。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        RetentionConfig.OPTIONS.forEach { days ->
-                            FilterChip(
-                                selected = retentionDays == days,
-                                onClick = {
-                                    retentionDays = days
-                                    RetentionConfig.setRetentionDays(appCtx, days)
-                                    RetentionPolicy.scheduleOrUpdate(appCtx)
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar(
-                                            "已設定訊息保留：${RetentionConfig.labelForDays(days)}"
-                                        )
-                                    }
-                                },
-                                label = { Text(RetentionConfig.labelForDays(days)) }
-                            )
-                        }
+            GlassCard(
+                glassState = glassState,
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp,
+                contentPadding = 12.dp
+            ) {
+                Text(
+                    text = "訊息保留天數",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "超過保留天數的舊訊息將每日自動清理（詐騙警示記錄將永久保留）。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+                Spacer(Modifier.height(8.dp))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    RetentionConfig.OPTIONS.forEach { days ->
+                        FilterChip(
+                            selected = retentionDays == days,
+                            onClick = {
+                                retentionDays = days
+                                RetentionConfig.setRetentionDays(appCtx, days)
+                                RetentionPolicy.scheduleOrUpdate(appCtx)
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        "已設定訊息保留：${RetentionConfig.labelForDays(days)}"
+                                    )
+                                }
+                            },
+                            label = { Text(RetentionConfig.labelForDays(days)) }
+                        )
                     }
                 }
             }
@@ -314,7 +330,9 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
 
             OutlinedButton(
                 onClick = { showPresetDialog = true },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pressableScale()
             ) {
                 Text("匯入預設關鍵字")
             }
@@ -447,6 +465,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                         ) { rule ->
                             FilterRuleCard(
                                 rule = rule,
+                                glassState = glassState,
                                 onToggleActive = { checked ->
                                     scope.launch {
                                         val updated = rule.copy(isActive = checked)
@@ -480,18 +499,20 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
 @Composable
 private fun FilterRuleCard(
     rule: FilterRule,
+    glassState: HazeState,
     onToggleActive: (Boolean) -> Unit,
     onDelete: () -> Unit
 ) {
-    Card(
+    GlassCard(
+        glassState = glassState,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
+            .padding(vertical = 4.dp),
+        cornerRadius = 18.dp,
+        contentPadding = 12.dp
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -511,7 +532,7 @@ private fun FilterRuleCard(
                     color = Color.Gray
                 )
             }
-            Switch(
+            FluidSwitch(
                 checked = rule.isActive,
                 onCheckedChange = onToggleActive
             )
