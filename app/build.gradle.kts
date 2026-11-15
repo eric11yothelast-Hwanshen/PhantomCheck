@@ -21,11 +21,49 @@ android {
         applicationId = "com.phantom.checker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         buildConfigField("String", "MISTRAL_API_KEY", "\"${localProps.getProperty("mistral.apiKey", "")}\"")
         buildConfigField("String", "MISTRAL_BASE_URL", "\"${localProps.getProperty("mistral.baseUrl", "")}\"")
+    }
+
+    val ksFile = System.getenv("PHANTOM_KEYSTORE_FILE")
+        ?.takeIf { it.isNotBlank() }
+        ?: localProps.getProperty("keystore.file")?.takeIf { it.isNotBlank() }
+    val ksStorePassword = System.getenv("PHANTOM_KEYSTORE_PASSWORD")
+        ?.takeIf { it.isNotBlank() }
+        ?: localProps.getProperty("keystore.storePassword")?.takeIf { it.isNotBlank() }
+    val ksAlias = System.getenv("PHANTOM_KEY_ALIAS")
+        ?.takeIf { it.isNotBlank() }
+        ?: localProps.getProperty("keystore.alias")?.takeIf { it.isNotBlank() }
+    val ksKeyPassword = System.getenv("PHANTOM_KEY_PASSWORD")
+        ?.takeIf { it.isNotBlank() }
+        ?: localProps.getProperty("keystore.keyPassword")?.takeIf { it.isNotBlank() }
+    val hasReleaseSigning = ksFile != null &&
+        ksStorePassword != null &&
+        ksAlias != null &&
+        ksKeyPassword != null &&
+        file(ksFile).exists()
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(ksFile!!)
+                storePassword = ksStorePassword
+                keyAlias = ksAlias
+                keyPassword = ksKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
     }
 
     buildFeatures {
