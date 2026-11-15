@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -157,11 +158,21 @@ fun PhantomCheckApp() {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("幻訊 PhantomCheck", style = MaterialTheme.typography.headlineSmall)
-                IconButton(onClick = { refreshTrigger++ }) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "重新整理"
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { refreshTrigger++ }) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "重新整理"
+                        )
+                    }
+                    IconButton(onClick = {
+                        ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "過濾關鍵字設定"
+                        )
+                    }
                 }
             }
 
