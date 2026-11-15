@@ -69,7 +69,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         MistralClient.init(applicationContext)
         setContent {
-            MaterialTheme {
+            PhantomCheckTheme {
                 PhantomCheckApp()
             }
         }

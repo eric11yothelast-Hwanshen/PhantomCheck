@@ -59,7 +59,7 @@ class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            PhantomCheckTheme {
                 FilterSettingsScreen(onBack = { finish() })
             }
         }
@@ -80,6 +80,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
     var targetPackageName by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
     var isExporting by remember { mutableStateOf(false) }
+    val currentThemeMode = ThemePreferences.getThemeMode(appCtx)
 
     LaunchedEffect(Unit) {
         isLoading = true
@@ -111,6 +112,27 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                 .padding(padding)
                 .padding(12.dp)
         ) {
+            Text(
+                text = "外觀主題",
+                style = MaterialTheme.typography.titleSmall
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ThemeMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = currentThemeMode == mode,
+                        onClick = { ThemePreferences.setThemeMode(appCtx, mode) },
+                        label = { Text(mode.label) }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
             OutlinedButton(
                 onClick = {
                     ctx.startActivity(Intent(ctx, AutoReplySettingsActivity::class.java))
