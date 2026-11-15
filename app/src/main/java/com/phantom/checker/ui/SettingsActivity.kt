@@ -7,6 +7,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,6 +46,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -55,6 +58,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.phantom.checker.data.FilterRule
 import com.phantom.checker.service.AppDatabaseHolder
+import com.phantom.checker.service.RetentionConfig
+import com.phantom.checker.service.RetentionPolicy
 import com.phantom.checker.util.MessageExporter
 import com.phantom.checker.util.PresetKeywords
 import kotlinx.coroutines.Dispatchers
@@ -72,7 +77,7 @@ class SettingsActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FilterSettingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
@@ -88,6 +93,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
     var isExporting by remember { mutableStateOf(false) }
     var showPresetDialog by remember { mutableStateOf(false) }
     var isImportingPresets by remember { mutableStateOf(false) }
+    var retentionDays by remember { mutableIntStateOf(RetentionConfig.getRetentionDays(appCtx)) }
 
     LaunchedEffect(Unit) {
         isLoading = true
@@ -240,7 +246,46 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                 Text(if (isExporting) "匯出中…" else "匯出訊息 CSV")
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "訊息保留天數",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "超過保留天數的舊訊息將每日自動清理（詐騙警示記錄將永久保留）。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        RetentionConfig.OPTIONS.forEach { days ->
+                            FilterChip(
+                                selected = retentionDays == days,
+                                onClick = {
+                                    retentionDays = days
+                                    RetentionConfig.setRetentionDays(appCtx, days)
+                                    RetentionPolicy.scheduleOrUpdate(appCtx)
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            "已設定訊息保留：${RetentionConfig.labelForDays(days)}"
+                                        )
+                                    }
+                                },
+                                label = { Text(RetentionConfig.labelForDays(days)) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
 
             OutlinedButton(
                 onClick = { showPresetDialog = true },
