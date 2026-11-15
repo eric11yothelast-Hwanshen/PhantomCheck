@@ -54,7 +54,7 @@ object MistralClient {
         return try {
             val key = com.phantom.checker.BuildConfig.MISTRAL_API_KEY
             if (key.isEmpty()) return null
-            val res = api.chat("Bearer $key", ChatRequest(listOf(
+            val res = api.chat("Bearer $key", ChatRequest(messages = listOf(
                 ChatMessage("system", SYSTEM_PROMPT),
                 ChatMessage("user", "寄件者: $sender\n內容: $content")
             )))
