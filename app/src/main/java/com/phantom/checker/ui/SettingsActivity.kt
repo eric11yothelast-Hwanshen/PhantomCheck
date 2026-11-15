@@ -12,14 +12,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,6 +39,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import com.phantom.checker.data.FilterRule
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.util.MessageExporter
+import com.phantom.checker.util.PresetKeywords
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -80,6 +86,8 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
     var targetPackageName by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
     var isExporting by remember { mutableStateOf(false) }
+    var showPresetDialog by remember { mutableStateOf(false) }
+    var isImportingPresets by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         isLoading = true
@@ -87,6 +95,94 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
             AppDatabaseHolder.db(appCtx).filterDao().all()
         }
         isLoading = false
+    }
+
+    if (showPresetDialog) {
+        val existingGlobal = rules
+            .filter { it.packageName == null }
+            .map { it.keyword.lowercase() }
+            .toSet()
+        val newCount = PresetKeywords.keywords.count { it.lowercase() !in existingGlobal }
+        val skipCount = PresetKeywords.keywords.size - newCount
+
+        AlertDialog(
+            onDismissRequest = { if (!isImportingPresets) showPresetDialog = false },
+            title = { Text("匯入預設詐騙關鍵字") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = "共 ${PresetKeywords.keywords.size} 個常見詐騙關鍵字（將新增 $newCount 個，略過 $skipCount 個已存在項目）：",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = PresetKeywords.keywords.joinToString("、"),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (isImportingPresets) return@Button
+                        scope.launch {
+                            isImportingPresets = true
+                            val (added, skipped, updatedRules) = withContext(Dispatchers.IO) {
+                                val dao = AppDatabaseHolder.db(appCtx).filterDao()
+                                val currentRules = dao.all()
+                                val existingSet = currentRules
+                                    .filter { it.packageName == null }
+                                    .map { it.keyword.lowercase() }
+                                    .toSet()
+                                var addedCount = 0
+                                var skippedCount = 0
+                                for (kw in PresetKeywords.keywords) {
+                                    if (kw.lowercase() in existingSet) {
+                                        skippedCount++
+                                    } else {
+                                        dao.insert(
+                                            FilterRule(
+                                                keyword = kw,
+                                                isActive = true,
+                                                packageName = null
+                                            )
+                                        )
+                                        addedCount++
+                                    }
+                                }
+                                Triple(addedCount, skippedCount, dao.all())
+                            }
+                            rules = updatedRules
+                            isImportingPresets = false
+                            showPresetDialog = false
+                            val msg = if (added > 0) {
+                                "已匯入 $added 個預設關鍵字（略過 $skipped 個重複）"
+                            } else {
+                                "所有預設關鍵字皆已存在，未新增項目"
+                            }
+                            snackbarHostState.showSnackbar(msg)
+                        }
+                    },
+                    enabled = !isImportingPresets
+                ) {
+                    Text(if (isImportingPresets) "匯入中…" else "確認匯入")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showPresetDialog = false },
+                    enabled = !isImportingPresets
+                ) {
+                    Text("取消")
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -142,6 +238,15 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (isExporting) "匯出中…" else "匯出訊息 CSV")
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = { showPresetDialog = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("匯入預設關鍵字")
             }
 
             Spacer(Modifier.height(10.dp))
