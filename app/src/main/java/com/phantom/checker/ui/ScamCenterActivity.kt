@@ -74,7 +74,7 @@ class ScamCenterActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            PhantomCheckTheme {
                 ScamCenterScreen(onBack = { finish() })
             }
         }
