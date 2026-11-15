@@ -56,3 +56,11 @@ dependencies {
     implementation("dev.chrisbanes.haze:haze:1.5.4")
     implementation("dev.chrisbanes.haze:haze-materials:1.5.4")
 }
+
+configurations.all {
+    resolutionStrategy {
+        force("org.jetbrains.kotlin:kotlin-stdlib:2.0.21")
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.0.21")
+        force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.0.21")
+    }
+}
