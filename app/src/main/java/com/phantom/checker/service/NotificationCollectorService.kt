@@ -2,12 +2,15 @@ package com.phantom.checker.service
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.phantom.checker.data.AppDatabase
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.network.MistralClient
+import com.phantom.checker.ui.ScamCenterActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -66,10 +69,21 @@ class NotificationCollectorService : NotificationListenerService() {
         nm.createNotificationChannel(
             NotificationChannel("scam_alert", "詐騙警示", NotificationManager.IMPORTANCE_HIGH)
         )
+        val intent = Intent(ctx, ScamCenterActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            ctx,
+            sender.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val notif = android.app.Notification.Builder(ctx, "scam_alert")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("⚠️ 偵測到高風險訊息：" + sender)
             .setContentText(reason)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
             .build()
         nm.notify(sender.hashCode(), notif)
     }

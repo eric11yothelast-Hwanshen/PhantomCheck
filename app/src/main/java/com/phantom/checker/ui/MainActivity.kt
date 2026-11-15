@@ -27,10 +27,12 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
@@ -186,6 +188,15 @@ fun PhantomCheckApp() {
             ) {
                 Text("幻訊 PhantomCheck", style = MaterialTheme.typography.headlineSmall)
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = {
+                        ctx.startActivity(Intent(ctx, ScamCenterActivity::class.java))
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Warning,
+                            contentDescription = "詐騙警示中心",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                     IconButton(onClick = { refreshTrigger++ }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
@@ -260,6 +271,16 @@ fun PhantomCheckApp() {
             }
 
             Spacer(Modifier.height(8.dp))
+
+            if (selectedTab == MainTab.SCAMS) {
+                OutlinedButton(
+                    onClick = { ctx.startActivity(Intent(ctx, ScamCenterActivity::class.java)) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("開啟詐騙警示中心（查看完整風險分析）")
+                }
+                Spacer(Modifier.height(8.dp))
+            }
 
             when {
                 isLoading && messages.isEmpty() -> {

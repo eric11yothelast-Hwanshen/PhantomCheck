@@ -21,6 +21,7 @@
 
         <activity android:name=".ui.SettingsActivity" android:exported="false" />
         <activity android:name=".ui.AutoReplySettingsActivity" android:exported="false" />
+        <activity android:name=".ui.ScamCenterActivity" android:exported="false" />
 
         <service
             android:name=".service.NotificationCollectorService"
