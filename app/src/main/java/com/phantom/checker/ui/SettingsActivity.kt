@@ -73,7 +73,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
     LaunchedEffect(Unit) {
         isLoading = true
         rules = withContext(Dispatchers.IO) {
-            AppDatabaseHolder.db(appCtx).filterDao().active()
+            AppDatabaseHolder.db(appCtx).filterDao().all()
         }
         isLoading = false
     }
@@ -124,14 +124,10 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                 Button(
                     onClick = {
                         scope.launch {
-                            val inactiveInSession = rules.filter { !it.isActive }
-                            val activeFromDb = withContext(Dispatchers.IO) {
+                            rules = withContext(Dispatchers.IO) {
                                 val dao = AppDatabaseHolder.db(appCtx).filterDao()
                                 dao.insert(FilterRule(keyword = trimmed, isActive = true))
-                                dao.active()
-                            }
-                            rules = activeFromDb + inactiveInSession.filter { inactive ->
-                                activeFromDb.none { it.id == inactive.id }
+                                dao.all()
                             }
                             newKeyword = ""
                         }
@@ -179,9 +175,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                                     scope.launch {
                                         val updated = rule.copy(isActive = checked)
                                         withContext(Dispatchers.IO) {
-                                            val dao = AppDatabaseHolder.db(appCtx).filterDao()
-                                            dao.delete(rule)
-                                            dao.insert(updated)
+                                            AppDatabaseHolder.db(appCtx).filterDao().update(updated)
                                         }
                                         rules = rules.map {
                                             if (it.id == rule.id && it.keyword == rule.keyword) updated else it

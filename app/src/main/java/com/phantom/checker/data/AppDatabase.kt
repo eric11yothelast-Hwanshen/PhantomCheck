@@ -50,8 +50,14 @@ interface FilterDao {
     @Query("SELECT * FROM filter_rules WHERE isActive = 1")
     suspend fun active(): List<FilterRule>
 
+    @Query("SELECT * FROM filter_rules")
+    suspend fun all(): List<FilterRule>
+
     @Insert
     suspend fun insert(rule: FilterRule)
+
+    @Update
+    suspend fun update(rule: FilterRule)
 
     @Delete
     suspend fun delete(rule: FilterRule)
