@@ -24,6 +24,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -75,6 +76,8 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
 
     var rules by remember { mutableStateOf(listOf<FilterRule>()) }
     var newKeyword by remember { mutableStateOf("") }
+    var isAllApps by remember { mutableStateOf(true) }
+    var targetPackageName by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
     var isExporting by remember { mutableStateOf(false) }
 
@@ -163,17 +166,32 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     placeholder = { Text("輸入過濾關鍵字…") }
                 )
                 Spacer(Modifier.width(8.dp))
-                val trimmed = newKeyword.trim()
-                val canAdd = trimmed.isNotEmpty() && rules.none { it.keyword.equals(trimmed, ignoreCase = true) }
+                val trimmedKeyword = newKeyword.trim()
+                val trimmedPkg = targetPackageName.trim()
+                val resolvedPkg = if (isAllApps) null else trimmedPkg
+                val hasValidScope = isAllApps || trimmedPkg.isNotEmpty()
+                val canAdd = trimmedKeyword.isNotEmpty() &&
+                    hasValidScope &&
+                    rules.none {
+                        it.keyword.equals(trimmedKeyword, ignoreCase = true) &&
+                            it.packageName == resolvedPkg
+                    }
                 Button(
                     onClick = {
                         scope.launch {
                             rules = withContext(Dispatchers.IO) {
                                 val dao = AppDatabaseHolder.db(appCtx).filterDao()
-                                dao.insert(FilterRule(keyword = trimmed, isActive = true))
+                                dao.insert(
+                                    FilterRule(
+                                        keyword = trimmedKeyword,
+                                        isActive = true,
+                                        packageName = resolvedPkg
+                                    )
+                                )
                                 dao.all()
                             }
                             newKeyword = ""
+                            targetPackageName = ""
                         }
                     },
                     enabled = canAdd
@@ -185,6 +203,43 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     Spacer(Modifier.width(4.dp))
                     Text("新增")
                 }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilterChip(
+                    selected = isAllApps,
+                    onClick = { isAllApps = true },
+                    label = { Text("全部 App") }
+                )
+                FilterChip(
+                    selected = !isAllApps,
+                    onClick = { isAllApps = false },
+                    label = { Text("指定 App") }
+                )
+            }
+
+            if (!isAllApps) {
+                Spacer(Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = targetPackageName,
+                    onValueChange = { targetPackageName = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("來源 App Package 名稱") },
+                    placeholder = { Text("例如：com.android.mms") }
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "查找方式：手機「設定 → 應用程式 → 選擇 App → 應用程式資訊」即可查看套件名稱（如 com.android.mms）。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
             }
 
             Spacer(Modifier.height(12.dp))
@@ -212,7 +267,10 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                 }
                 else -> {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(rules, key = { "${it.id}_${it.keyword}" }) { rule ->
+                        items(
+                            rules,
+                            key = { "${it.id}_${it.keyword}_${it.packageName.orEmpty()}" }
+                        ) { rule ->
                             FilterRuleCard(
                                 rule = rule,
                                 onToggleActive = { checked ->
@@ -222,7 +280,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                                             AppDatabaseHolder.db(appCtx).filterDao().update(updated)
                                         }
                                         rules = rules.map {
-                                            if (it.id == rule.id && it.keyword == rule.keyword) updated else it
+                                            if (it.id == rule.id) updated else it
                                         }
                                     }
                                 },
@@ -232,7 +290,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                                             AppDatabaseHolder.db(appCtx).filterDao().delete(rule)
                                         }
                                         rules = rules.filterNot {
-                                            it.id == rule.id && it.keyword == rule.keyword
+                                            it.id == rule.id
                                         }
                                     }
                                 }
@@ -263,12 +321,22 @@ private fun FilterRuleCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = rule.keyword,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (rule.isActive) MaterialTheme.colorScheme.onSurface else Color.Gray,
-                modifier = Modifier.weight(1f)
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = rule.keyword,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (rule.isActive) MaterialTheme.colorScheme.onSurface else Color.Gray
+                )
+                Text(
+                    text = if (rule.packageName.isNullOrBlank()) {
+                        "適用範圍：全部 App"
+                    } else {
+                        "適用範圍：${rule.packageName}"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
             Switch(
                 checked = rule.isActive,
                 onCheckedChange = onToggleActive

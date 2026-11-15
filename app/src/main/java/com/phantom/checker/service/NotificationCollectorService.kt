@@ -33,7 +33,10 @@ class NotificationCollectorService : NotificationListenerService() {
         scope.launch {
             val db = AppDatabaseHolder.db(applicationContext)
             val rules = db.filterDao().active()
-            val filtered = rules.any { text.contains(it.keyword, ignoreCase = true) }
+            val filtered = rules.any { rule ->
+                if (rule.packageName != null && rule.packageName != pkg) return@any false
+                text.contains(rule.keyword, ignoreCase = true)
+            }
 
             val id = db.messageDao().insert(
                 MessageEntity(
@@ -96,6 +99,6 @@ object AppDatabaseHolder {
         instance ?: synchronized(this) {
             instance ?: androidx.room.Room.databaseBuilder(
                 ctx, AppDatabase::class.java, "phantomcheck.db"
-            ).build().also { instance = it }
+            ).addMigrations(AppDatabase.MIGRATION_1_2).build().also { instance = it }
         }
 }

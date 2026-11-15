@@ -1,6 +1,8 @@
 package com.phantom.checker.data
 
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Entity(tableName = "messages")
 data class MessageEntity(
@@ -21,7 +23,8 @@ data class MessageEntity(
 data class FilterRule(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val keyword: String,
-    val isActive: Boolean = true
+    val isActive: Boolean = true,
+    val packageName: String? = null // null = 全部 App 生效
 )
 
 @Dao
@@ -69,8 +72,16 @@ interface FilterDao {
     suspend fun delete(rule: FilterRule)
 }
 
-@Database(entities = [MessageEntity::class, FilterRule::class], version = 1)
+@Database(entities = [MessageEntity::class, FilterRule::class], version = 2)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
     abstract fun filterDao(): FilterDao
+
+    companion object {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE filter_rules ADD COLUMN packageName TEXT DEFAULT NULL")
+            }
+        }
+    }
 }
