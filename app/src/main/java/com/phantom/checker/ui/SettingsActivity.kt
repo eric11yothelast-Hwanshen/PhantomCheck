@@ -30,6 +30,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -47,6 +49,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.phantom.checker.data.FilterRule
 import com.phantom.checker.service.AppDatabaseHolder
+import com.phantom.checker.util.MessageExporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -68,10 +71,12 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     var rules by remember { mutableStateOf(listOf<FilterRule>()) }
     var newKeyword by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
+    var isExporting by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         isLoading = true
@@ -94,7 +99,8 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -109,6 +115,30 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("SMS 自動回覆設定")
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = {
+                    if (isExporting) return@OutlinedButton
+                    scope.launch {
+                        isExporting = true
+                        val result = MessageExporter.exportToDownloads(appCtx)
+                        isExporting = false
+                        result.onSuccess { fileName ->
+                            snackbarHostState.showSnackbar("匯出成功：$fileName")
+                        }.onFailure { err ->
+                            val reason = err.localizedMessage?.takeIf { it.isNotBlank() }
+                                ?: err.javaClass.simpleName
+                            snackbarHostState.showSnackbar("匯出失敗：$reason")
+                        }
+                    }
+                },
+                enabled = !isExporting,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (isExporting) "匯出中…" else "匯出訊息 CSV")
             }
 
             Spacer(Modifier.height(10.dp))

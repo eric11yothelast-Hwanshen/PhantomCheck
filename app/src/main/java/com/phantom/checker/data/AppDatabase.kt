@@ -29,6 +29,9 @@ interface MessageDao {
     @Query("SELECT * FROM messages ORDER BY timestamp DESC LIMIT 200")
     suspend fun recent(): List<MessageEntity>
 
+    @Query("SELECT * FROM messages ORDER BY timestamp DESC")
+    suspend fun all(): List<MessageEntity>
+
     @Query("SELECT * FROM messages WHERE content LIKE '%' || :q || '%' OR sender LIKE '%' || :q || '%' ORDER BY timestamp DESC")
     suspend fun search(q: String): List<MessageEntity>
 
