@@ -55,7 +55,7 @@ class AutoReplySettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AutoReplyConfig.ensureLoaded(applicationContext)
         setContent {
-            MaterialTheme {
+            PhantomCheckTheme {
                 AutoReplySettingsScreen(onBack = { finish() })
             }
         }

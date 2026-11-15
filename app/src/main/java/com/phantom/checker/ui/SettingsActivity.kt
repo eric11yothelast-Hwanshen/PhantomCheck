@@ -64,7 +64,7 @@ class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            PhantomCheckTheme {
                 FilterSettingsScreen(onBack = { finish() })
             }
         }
@@ -86,6 +86,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
     var isLoading by remember { mutableStateOf(true) }
     var isExporting by remember { mutableStateOf(false) }
     var retentionDays by remember { mutableIntStateOf(RetentionConfig.getRetentionDays(appCtx)) }
+    val currentThemeMode = ThemePreferences.getThemeMode(appCtx)
 
     LaunchedEffect(Unit) {
         isLoading = true
@@ -148,6 +149,30 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (isExporting) "匯出中…" else "匯出訊息 CSV")
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "外觀主題",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ThemeMode.entries.forEach { mode ->
+                            FilterChip(
+                                selected = currentThemeMode == mode,
+                                onClick = { ThemePreferences.setThemeMode(appCtx, mode) },
+                                label = { Text(mode.label) }
+                            )
+                        }
+                    }
+                }
             }
 
             Spacer(Modifier.height(10.dp))

@@ -1,11 +1,49 @@
 package com.phantom.checker.ui
 
+import android.content.Context
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+
+enum class ThemeMode(val prefValue: String, val label: String) {
+    SYSTEM("system", "跟隨系統"),
+    DARK("dark", "強制深色"),
+    LIGHT("light", "強制淺色");
+
+    companion object {
+        fun fromPref(value: String?): ThemeMode =
+            entries.firstOrNull { it.prefValue == value } ?: SYSTEM
+    }
+}
+
+object ThemePreferences {
+    private const val PREFS_NAME = "phantom_theme_prefs"
+    private const val KEY_THEME_MODE = "theme_mode"
+
+    private val _themeMode = mutableStateOf<ThemeMode?>(null)
+
+    fun getThemeMode(context: Context): ThemeMode {
+        val cached = _themeMode.value
+        if (cached != null) return cached
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val loaded = ThemeMode.fromPref(prefs.getString(KEY_THEME_MODE, ThemeMode.SYSTEM.prefValue))
+        _themeMode.value = loaded
+        return loaded
+    }
+
+    fun setThemeMode(context: Context, mode: ThemeMode) {
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_THEME_MODE, mode.prefValue)
+            .apply()
+        _themeMode.value = mode
+    }
+}
 
 // Phantom 品牌色板（深紫為主調，詐騙警示維持紅色語義）
 object PhantomColors {
@@ -89,10 +127,17 @@ private val PhantomDarkColorScheme = darkColorScheme(
 
 @Composable
 fun PhantomCheckTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    darkTheme: Boolean? = null,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) PhantomDarkColorScheme else PhantomLightColorScheme
+    val context = LocalContext.current
+    val mode = ThemePreferences.getThemeMode(context)
+    val useDarkTheme = darkTheme ?: when (mode) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+    }
+    val colorScheme = if (useDarkTheme) PhantomDarkColorScheme else PhantomLightColorScheme
     MaterialTheme(
         colorScheme = colorScheme,
         content = content

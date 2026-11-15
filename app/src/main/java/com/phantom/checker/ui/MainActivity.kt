@@ -71,7 +71,7 @@ class MainActivity : ComponentActivity() {
         MistralClient.init(applicationContext)
         RetentionPolicy.scheduleOrUpdate(applicationContext)
         setContent {
-            MaterialTheme {
+            PhantomCheckTheme {
                 PhantomCheckApp()
             }
         }
