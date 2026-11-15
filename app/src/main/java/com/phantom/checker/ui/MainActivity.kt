@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -57,6 +58,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import com.phantom.checker.data.MessageEntity
+import com.phantom.checker.network.MistralClient
 import com.phantom.checker.service.AppDatabaseHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -65,6 +67,7 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        MistralClient.init(applicationContext)
         setContent {
             MaterialTheme {
                 PhantomCheckApp()
@@ -201,6 +204,14 @@ fun PhantomCheckApp() {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "重新整理"
+                        )
+                    }
+                    IconButton(onClick = {
+                        ctx.startActivity(Intent(ctx, ApiKeySettingsActivity::class.java))
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "API Key 設定"
                         )
                     }
                     IconButton(onClick = {
