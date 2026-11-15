@@ -1,5 +1,6 @@
 package com.phantom.checker.ui
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -26,6 +27,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -63,7 +65,8 @@ class SettingsActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilterSettingsScreen(onBack: () -> Unit) {
-    val appCtx = LocalContext.current.applicationContext
+    val ctx = LocalContext.current
+    val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
 
     var rules by remember { mutableStateOf(listOf<FilterRule>()) }
@@ -99,6 +102,17 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                 .padding(padding)
                 .padding(12.dp)
         ) {
+            OutlinedButton(
+                onClick = {
+                    ctx.startActivity(Intent(ctx, AutoReplySettingsActivity::class.java))
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("SMS 自動回覆設定")
+            }
+
+            Spacer(Modifier.height(10.dp))
+
             Text(
                 text = "符合以下啟用關鍵字的通知將直接標記為已過濾，不送交 AI 分析。",
                 style = MaterialTheme.typography.bodySmall,
