@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Outer signal waves (top-right radar arcs) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#A78BFA"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.65"
+        android:pathData="M67,29 A15,15 0 0,1 80,42" />
+
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#C4B5FD"
+        android:strokeWidth="2.8"
+        android:strokeLineCap="round"
+        android:strokeAlpha="0.9"
+        android:pathData="M64,34 A10,10 0 0,1 74,44" />
+
+    <!-- Phantom body silhouette (centered inside 66dp safe zone) -->
+    <path
+        android:fillColor="#EDE9FE"
+        android:pathData="M54,28 C41.8,28 33,36.8 33,49 L33,73 C33,75.4 35.8,76.6 37.6,75.0 L42.5,70.5 C43.6,69.5 45.3,69.6 46.3,70.7 L51.4,76.1 C52.8,77.6 55.2,77.6 56.6,76.1 L61.7,70.7 C62.7,69.6 64.4,69.5 65.5,70.5 L70.4,75.0 C72.2,76.6 75,75.4 75,73 L75,49 C75,36.8 66.2,28 54,28 Z" />
+
+    <!-- Soft violet inner shading on lower phantom cloak -->
+    <path
+        android:fillColor="#C4B5FD"
+        android:fillAlpha="0.35"
+        android:pathData="M54,56 C44,56 36,60 33,64 L33,73 C33,75.4 35.8,76.6 37.6,75.0 L42.5,70.5 C43.6,69.5 45.3,69.6 46.3,70.7 L51.4,76.1 C52.8,77.6 55.2,77.6 56.6,76.1 L61.7,70.7 C62.7,69.6 64.4,69.5 65.5,70.5 L70.4,75.0 C72.2,76.6 75,75.4 75,73 L75,64 C72,60 64,56 54,56 Z" />
+
+    <!-- Phantom eyes (deep void purple) -->
+    <path
+        android:fillColor="#1E103C"
+        android:pathData="M45.5,46 A3.2,3.8 0 1,1 45.49,46 Z" />
+
+    <path
+        android:fillColor="#1E103C"
+        android:pathData="M62.5,46 A3.2,3.8 0 1,1 62.49,46 Z" />
+
+    <!-- Signal eye glint -->
+    <path
+        android:fillColor="#A78BFA"
+        android:pathData="M46.5,47 A1.1,1.1 0 1,1 46.49,47 Z" />
+
+    <path
+        android:fillColor="#A78BFA"
+        android:pathData="M63.5,47 A1.1,1.1 0 1,1 63.49,47 Z" />
+</vector>
