@@ -16,4 +16,7 @@ Kotlin + Jetpack Compose + Room + Retrofit（Mistral API）。
 API key 透過 local.properties 注入 BuildConfig，**永不寫入程式碼或倉庫**。詳見 SECURITY.md。
 
 ## 開發協作
-本專案由兩個 AI agent 協作開發，工作規則見 AGENTS.md。
+本專案由多個 AI agent 協作開發，工作規則見 AGENTS.md。
+
+- 貢獻指南（工作流程、PR 規則）：[CONTRIBUTING.md](CONTRIBUTING.md)
+- 本地環境設定（local.properties / API key 設定）：[docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)
