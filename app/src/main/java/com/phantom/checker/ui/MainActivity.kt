@@ -90,6 +90,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -791,7 +792,7 @@ private fun PhantomCheckApp(
                                     sender = msg.sender,
                                     content = msg.content,
                                     tags = aiTags,
-                                    aiRules = aiRules,
+                                    rules = aiRules,
                                     enableAutoTag = autoTagEnabled,
                                     context = appCtx,
                                     bypassCache = true
@@ -969,7 +970,7 @@ private fun PhantomCheckApp(
                         selectedTabIndex = selectedTab.ordinal,
                         glassState = glassState,
                         onSelect = { index ->
-                            haptic()
+                            haptic(HapticFeedbackType.TextHandleMove)
                             selectedTab = MainTab.entries[index]
                         },
                         tabs = {
@@ -992,7 +993,7 @@ private fun PhantomCheckApp(
                                 LiquidGlassTabBarItem(
                                     selected = selectedTab == tab,
                                     onClick = {
-                                        haptic()
+                                        haptic(HapticFeedbackType.TextHandleMove)
                                         selectedTab = tab
                                     },
                                     icon = icon,
@@ -1152,7 +1153,7 @@ private fun PhantomCheckApp(
                         ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
                     },
                     onLongPressMessage = { msg ->
-                        haptic()
+                        haptic(HapticFeedbackType.LongPress)
                         messageSheetTarget = msg
                     }
                 )
@@ -1207,11 +1208,11 @@ private fun PhantomCheckApp(
                             ctx.startActivity(AppThreadsActivity.createIntent(ctx, pkg, label))
                         },
                         onLongPressApp = { app ->
-                            haptic()
+                            haptic(HapticFeedbackType.LongPress)
                             actionTargetApp = app
                         },
                         onLongPressFavorite = { pkg ->
-                            haptic()
+                            haptic(HapticFeedbackType.LongPress)
                             PhantomPrefs.toggleFavoriteApp(appCtx, pkg)
                             favoritePackages = PhantomPrefs.getFavoriteApps(appCtx)
                             scope.launch {
@@ -1222,7 +1223,7 @@ private fun PhantomCheckApp(
                             ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
                         },
                         onLongPressMessage = { msg ->
-                            haptic()
+                            haptic(HapticFeedbackType.LongPress)
                             messageSheetTarget = msg
                         },
                         onOpenNotificationAccess = {

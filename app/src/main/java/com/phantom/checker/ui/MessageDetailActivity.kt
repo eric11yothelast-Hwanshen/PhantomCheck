@@ -371,7 +371,7 @@ fun MessageDetailScreen(
                                             sender = msg.sender,
                                             content = msg.content,
                                             tags = aiTags,
-                                            aiRules = aiRules,
+                                            rules = aiRules,
                                             enableAutoTag = autoTagEnabled,
                                             context = appCtx,
                                             bypassCache = true
