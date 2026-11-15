@@ -29,11 +29,10 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.blur.hazeBlur
-import dev.chrisbanes.haze.blur.materials.HazeMaterials
+import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.materials.HazeMaterials
 
 /**
  * 玻璃態元件：API 33+ 使用 Haze 背景模糊＋高光描邊；
@@ -64,8 +63,8 @@ fun Modifier.glassSurface(
         }
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         clip(shape)
-            .hazeBlur(
-                input = HazeInput.Sources(state),
+            .hazeEffect(
+                state = state,
                 style = HazeMaterials.thin(),
             )
             .border(width = 1.dp, color = resolvedOutline, shape = shape)
