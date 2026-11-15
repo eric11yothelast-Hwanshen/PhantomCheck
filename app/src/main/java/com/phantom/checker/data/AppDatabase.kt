@@ -35,6 +35,9 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE riskLabel = 'scam' ORDER BY timestamp DESC")
     suspend fun scams(): List<MessageEntity>
 
+    @Query("SELECT * FROM messages WHERE isFiltered = 1 ORDER BY timestamp DESC")
+    suspend fun filtered(): List<MessageEntity>
+
     @Insert
     suspend fun insert(msg: MessageEntity): Long
 

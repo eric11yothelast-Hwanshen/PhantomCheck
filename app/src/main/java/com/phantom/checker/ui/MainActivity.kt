@@ -33,6 +33,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -85,12 +87,20 @@ private fun isPostNotificationsGranted(context: Context): Boolean {
     }
 }
 
+private enum class MainTab(val title: String) {
+    ALL("全部"),
+    SCAMS("詐騙警示"),
+    FILTERED("已過濾")
+}
+
 @Composable
 fun PhantomCheckApp() {
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
 
+    var selectedTab by remember { mutableStateOf(MainTab.ALL) }
     var messages by remember { mutableStateOf(listOf<MessageEntity>()) }
+    var activeFilterKeywords by remember { mutableStateOf(listOf<String>()) }
     var searchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
@@ -131,17 +141,34 @@ fun PhantomCheckApp() {
         }
     }
 
-    // 載入 recent() 或依搜尋關鍵字呼叫 search()（300ms debounce）
-    LaunchedEffect(searchQuery, refreshTrigger) {
+    // 依分頁載入訊息，或進行跨分頁搜尋（300ms debounce）
+    LaunchedEffect(selectedTab, searchQuery, refreshTrigger) {
         val q = searchQuery.trim()
         if (q.isNotEmpty()) {
             delay(300L)
         }
         isLoading = true
-        messages = withContext(Dispatchers.IO) {
-            val dao = AppDatabaseHolder.db(appCtx).messageDao()
-            if (q.isEmpty()) dao.recent() else dao.search(q)
+        val (loadedMessages, loadedKeywords) = withContext(Dispatchers.IO) {
+            val db = AppDatabaseHolder.db(appCtx)
+            val messageDao = db.messageDao()
+            val msgs = if (q.isNotEmpty()) {
+                messageDao.search(q)
+            } else {
+                when (selectedTab) {
+                    MainTab.ALL -> messageDao.recent()
+                    MainTab.SCAMS -> messageDao.scams()
+                    MainTab.FILTERED -> messageDao.filtered()
+                }
+            }
+            val keywords = if (selectedTab == MainTab.FILTERED || msgs.any { it.isFiltered }) {
+                db.filterDao().active().map { it.keyword }
+            } else {
+                emptyList()
+            }
+            msgs to keywords
         }
+        messages = loadedMessages
+        activeFilterKeywords = loadedKeywords
         isLoading = false
     }
 
@@ -222,6 +249,18 @@ fun PhantomCheckApp() {
 
             Spacer(Modifier.height(8.dp))
 
+            TabRow(selectedTabIndex = selectedTab.ordinal) {
+                MainTab.entries.forEach { tab ->
+                    Tab(
+                        selected = selectedTab == tab,
+                        onClick = { selectedTab = tab },
+                        text = { Text(tab.title) }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
             when {
                 isLoading && messages.isEmpty() -> {
                     Box(
@@ -232,12 +271,21 @@ fun PhantomCheckApp() {
                     }
                 }
                 messages.isEmpty() -> {
+                    val emptyText = if (searchQuery.isNotBlank()) {
+                        "找不到符合「$searchQuery」的訊息"
+                    } else {
+                        when (selectedTab) {
+                            MainTab.ALL -> "目前尚無攔截到的訊息"
+                            MainTab.SCAMS -> "目前尚無詐騙警示訊息"
+                            MainTab.FILTERED -> "目前尚無已過濾的訊息"
+                        }
+                    }
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (searchQuery.isBlank()) "目前尚無攔截到的訊息" else "找不到符合「$searchQuery」的訊息",
+                            text = emptyText,
                             style = MaterialTheme.typography.bodyMedium,
                             color = Color.Gray
                         )
@@ -246,7 +294,18 @@ fun PhantomCheckApp() {
                 else -> {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(messages, key = { it.id }) { m ->
-                            MessageCard(message = m)
+                            val matchedKeywords = if (selectedTab == MainTab.FILTERED || m.isFiltered) {
+                                activeFilterKeywords.filter { kw ->
+                                    m.content.contains(kw, ignoreCase = true)
+                                }
+                            } else {
+                                emptyList()
+                            }
+                            MessageCard(
+                                message = m,
+                                highlightAsScam = selectedTab == MainTab.SCAMS,
+                                matchedKeywords = matchedKeywords
+                            )
                         }
                     }
                 }

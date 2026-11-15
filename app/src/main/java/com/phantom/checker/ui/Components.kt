@@ -1,5 +1,6 @@
 package com.phantom.checker.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -123,16 +124,34 @@ fun PostNotificationGuideCard(
 @Composable
 fun MessageCard(
     message: MessageEntity,
+    highlightAsScam: Boolean = false,
+    matchedKeywords: List<String> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val timeText = remember(message.timestamp) {
         SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(message.timestamp))
     }
 
+    val cardColors = if (highlightAsScam) {
+        CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer
+        )
+    } else {
+        CardDefaults.cardColors()
+    }
+    val cardBorder = if (highlightAsScam) {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+    } else {
+        null
+    }
+
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
+            .padding(vertical = 4.dp),
+        colors = cardColors,
+        border = cardBorder
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
             Row(
@@ -155,7 +174,8 @@ fun MessageCard(
                     if (message.riskLabel == "scam") {
                         Text(
                             text = "  ⚠️ 詐騙 ${message.riskScore}",
-                            color = Color.Red,
+                            color = if (highlightAsScam) MaterialTheme.colorScheme.error else Color.Red,
+                            fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.labelSmall
                         )
                     } else if (message.riskLabel == "suspicious") {
@@ -176,7 +196,11 @@ fun MessageCard(
                 Text(
                     text = timeText,
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.Gray
+                    color = if (highlightAsScam) {
+                        MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.75f)
+                    } else {
+                        Color.Gray
+                    }
                 )
             }
             Spacer(Modifier.height(4.dp))
@@ -184,11 +208,24 @@ fun MessageCard(
                 text = message.content,
                 style = MaterialTheme.typography.bodySmall
             )
+            if (matchedKeywords.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "命中關鍵字：${matchedKeywords.joinToString("、")}",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
             if (message.riskReason.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = message.riskReason,
-                    color = Color.Gray,
+                    color = if (highlightAsScam) {
+                        MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
+                    } else {
+                        Color.Gray
+                    },
                     style = MaterialTheme.typography.labelSmall
                 )
             }
