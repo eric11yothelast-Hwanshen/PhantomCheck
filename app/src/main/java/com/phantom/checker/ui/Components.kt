@@ -236,7 +236,7 @@ fun MessageCard(
                     cornerRadius = 20.dp
                 )
         ) {
-            androidx.compose.material3.CompositionLocalProvider(
+            androidx.compose.runtime.CompositionLocalProvider(
                 androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onErrorContainer
             ) {
                 Column(modifier = Modifier.padding(12.dp), content = cardInner)
