@@ -35,6 +35,7 @@ object ThemePreferences {
     private val _themeMode = mutableStateOf<ThemeMode?>(null)
     private val _dynamicColor = mutableStateOf<Boolean?>(null)
     private val _fontScaleMode = mutableStateOf<FontScaleMode?>(null)
+    private val _glassEffectEnabled = mutableStateOf<Boolean?>(null)
 
     fun getThemeMode(context: Context): ThemeMode {
         val cached = _themeMode.value
@@ -77,6 +78,19 @@ object ThemePreferences {
     fun setFontScaleMode(context: Context, mode: FontScaleMode) {
         PhantomPrefs.setFontScaleMode(context, mode)
         _fontScaleMode.value = mode
+    }
+
+    fun isGlassEffectEnabled(context: Context): Boolean {
+        val cached = _glassEffectEnabled.value
+        if (cached != null) return cached
+        val loaded = PhantomPrefs.isGlassEffectEnabled(context)
+        _glassEffectEnabled.value = loaded
+        return loaded
+    }
+
+    fun setGlassEffectEnabled(context: Context, enabled: Boolean) {
+        PhantomPrefs.setGlassEffectEnabled(context, enabled)
+        _glassEffectEnabled.value = enabled
     }
 }
 

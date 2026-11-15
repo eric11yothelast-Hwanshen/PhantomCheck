@@ -24,7 +24,7 @@ class DailySummaryWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
-        if (PhantomPrefs.isDailySummaryEnabled(applicationContext)) {
+        if (PhantomPrefs.isEffectiveDailySummaryEnabled(applicationContext)) {
             DailySummaryPolicy.generateTodaySummary(applicationContext)
         }
         return Result.success()
@@ -37,7 +37,7 @@ object DailySummaryPolicy {
     fun schedule(ctx: Context) {
         val appCtx = ctx.applicationContext
         val workManager = WorkManager.getInstance(appCtx)
-        if (!PhantomPrefs.isDailySummaryEnabled(appCtx)) {
+        if (!PhantomPrefs.isEffectiveDailySummaryEnabled(appCtx)) {
             workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
             return
         }
@@ -132,8 +132,8 @@ object DailySummaryPolicy {
         )
         db.aiSummaryDao().insertOrReplace(entity)
 
-        if (PhantomPrefs.isDailySummaryEnabled(appCtx) &&
-            PhantomPrefs.isDailySummaryNotifEnabled(appCtx) &&
+        if (PhantomPrefs.isEffectiveDailySummaryEnabled(appCtx) &&
+            PhantomPrefs.isEffectiveDailySummaryNotifEnabled(appCtx) &&
             StatsForegroundService.hasPostNotificationsPermission(appCtx)
         ) {
             postSummaryNotification(appCtx)

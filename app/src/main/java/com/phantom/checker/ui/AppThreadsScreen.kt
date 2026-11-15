@@ -62,8 +62,6 @@ import androidx.room.withTransaction
 import com.phantom.checker.data.SenderGroupRow
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.StatsForegroundService
-import com.phantom.checker.ui.components.GlassCard
-import com.phantom.checker.ui.components.glassSource
 import com.phantom.checker.ui.components.pressableScale
 import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
@@ -327,7 +325,7 @@ fun AppThreadsScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .glassSource(glassState)
+                .phantomGlassSource(glassState)
                 .padding(padding)
                 .padding(12.dp)
         ) {
@@ -385,7 +383,7 @@ private fun SenderThreadCard(
         SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(thread.lastTs))
     }
 
-    GlassCard(
+    PhantomGlassCard(
         glassState = glassState,
         modifier = Modifier
             .fillMaxWidth()

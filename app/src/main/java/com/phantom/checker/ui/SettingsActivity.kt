@@ -1,5 +1,6 @@
 package com.phantom.checker.ui
 
+import android.app.NotificationManager
 import android.app.TimePickerDialog
 import android.content.ComponentName
 import android.content.Context
@@ -40,6 +41,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -87,13 +89,12 @@ import com.phantom.checker.service.RetentionConfig
 import com.phantom.checker.service.RetentionPolicy
 import com.phantom.checker.service.StatsForegroundService
 import com.phantom.checker.ui.components.FluidSwitch
-import com.phantom.checker.ui.components.GlassCard
-import com.phantom.checker.ui.components.glassSource
 import com.phantom.checker.ui.components.pressableScale
 import com.phantom.checker.util.FontScaleMode
 import com.phantom.checker.util.MessageExporter
 import com.phantom.checker.util.MuteMode
 import com.phantom.checker.util.NotifClickBehavior
+import com.phantom.checker.util.PersistentNotifStyle
 import com.phantom.checker.util.PhantomPrefs
 import com.phantom.checker.util.PresetKeywords
 import dev.chrisbanes.haze.HazeState
@@ -211,6 +212,11 @@ private fun isIgnoringBatteryOptimizations(ctx: Context): Boolean {
     return pm.isIgnoringBatteryOptimizations(ctx.packageName)
 }
 
+private fun isStatsForegroundServiceRunning(ctx: Context): Boolean {
+    val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return false
+    return nm.activeNotifications.any { it.id == StatsForegroundService.STATS_NOTIF_ID }
+}
+
 class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -243,6 +249,9 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
 
     // 通知設定
     var persistentStats by remember { mutableStateOf(PhantomPrefs.isPersistentStatsEnabled(appCtx)) }
+    var persistentShowIcons by remember { mutableStateOf(PhantomPrefs.isPersistentNotifShowIcons(appCtx)) }
+    var persistentNotifStyle by remember { mutableStateOf(PhantomPrefs.getPersistentNotifStyle(appCtx)) }
+    var swipeToDeleteEnabled by remember { mutableStateOf(PhantomPrefs.isSwipeToDeleteEnabled(appCtx)) }
     var scamAlertNotif by remember { mutableStateOf(PhantomPrefs.isScamAlertNotifEnabled(appCtx)) }
     var recordOngoing by remember { mutableStateOf(PhantomPrefs.isRecordOngoingEnabled(appCtx)) }
     var clickBehavior by remember { mutableStateOf(PhantomPrefs.getNotifClickBehavior(appCtx)) }
@@ -254,8 +263,10 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
     var quietEndMinute by remember { mutableIntStateOf(PhantomPrefs.getQuietHoursEndMinute(appCtx)) }
 
     // AI 與分析設定
+    var tokenSaverEnabled by remember { mutableStateOf(PhantomPrefs.isTokenSaverEnabled(appCtx)) }
     var aiRiskEnabled by remember { mutableStateOf(PhantomPrefs.isAiRiskEnabled(appCtx)) }
     var aiAutoTagEnabled by remember { mutableStateOf(PhantomPrefs.isAiAutoTagEnabled(appCtx)) }
+    var chatSuggestionsEnabled by remember { mutableStateOf(PhantomPrefs.isChatSuggestionsEnabled(appCtx)) }
     var dailyAiLimit by remember { mutableIntStateOf(PhantomPrefs.getDailyAiLimit(appCtx)) }
     val todayAiUsage = remember { PhantomPrefs.getTodayAiUsage(appCtx) }
     var dailySummaryEnabled by remember { mutableStateOf(PhantomPrefs.isDailySummaryEnabled(appCtx)) }
@@ -281,16 +292,20 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
     var expandData by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "data")) }
     var expandAppearance by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "appearance")) }
 
-    // 外觀
+    // 外觀與互動
     val currentThemeMode = ThemePreferences.getThemeMode(appCtx)
     val dynamicColorEnabled = ThemePreferences.isDynamicColor(appCtx)
     val fontScaleMode = ThemePreferences.getFontScaleMode(appCtx)
+    var hapticEnabled by remember { mutableStateOf(PhantomPrefs.isHapticFeedbackEnabled(appCtx)) }
+    val glassEffectEnabled = ThemePreferences.isGlassEffectEnabled(appCtx)
 
     // 保持運作狀態
     var listenerEnabled by remember {
         mutableStateOf(NotificationManagerCompat.getEnabledListenerPackages(appCtx).contains(appCtx.packageName))
     }
     var batteryWhitelisted by remember { mutableStateOf(isIgnoringBatteryOptimizations(appCtx)) }
+    var oemAutostartConfirmed by remember { mutableStateOf(PhantomPrefs.isOemAutostartConfirmed(appCtx)) }
+    var fgServiceRunning by remember { mutableStateOf(isStatsForegroundServiceRunning(appCtx)) }
     val oemGuide = remember { buildOemGuide(appCtx) }
 
     val lifecycleOwner = ctx as? LifecycleOwner
@@ -300,6 +315,8 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                 listenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(appCtx)
                     .contains(appCtx.packageName)
                 batteryWhitelisted = isIgnoringBatteryOptimizations(appCtx)
+                oemAutostartConfirmed = PhantomPrefs.isOemAutostartConfirmed(appCtx)
+                fgServiceRunning = isStatsForegroundServiceRunning(appCtx)
                 mutedApps = PhantomPrefs.getMutedApps(appCtx).sorted()
                 muteModes = PhantomPrefs.getAppMuteModeMap(appCtx)
             }
@@ -529,7 +546,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .glassSource(glassState)
+                .phantomGlassSource(glassState)
                 .padding(padding)
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -546,6 +563,18 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     glassState = glassState
                 ) {
                     SettingSwitchRow(
+                        title = "省 token 模式",
+                        subtitle = "暫停每則 AI 掃描與每日摘要排程，僅命中可疑特徵才分析；關閉即恢復原設定",
+                        checked = tokenSaverEnabled,
+                        onCheckedChange = { checked ->
+                            tokenSaverEnabled = checked
+                            PhantomPrefs.setTokenSaverEnabled(appCtx, checked)
+                            DailySummaryPolicy.schedule(appCtx)
+                        }
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                    SettingSwitchRow(
                         title = "常駐統計通知",
                         subtitle = "以獨立前景服務維持通知欄即時統計與 App 圖示列",
                         checked = persistentStats,
@@ -558,6 +587,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                             } else {
                                 StatsForegroundService.stop(appCtx)
                             }
+                            fgServiceRunning = isStatsForegroundServiceRunning(appCtx)
                         }
                     )
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -574,8 +604,8 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(
-                        title = "AI 智慧標記",
-                        subtitle = "AI 分析時同步自動指派「必看／行銷／垃圾通知」等標籤",
+                        title = "每則訊息 AI 智慧掃描",
+                        subtitle = "AI 分析時自動指派「必看／行銷／垃圾通知」等標籤",
                         checked = aiAutoTagEnabled,
                         onCheckedChange = { checked ->
                             aiAutoTagEnabled = checked
@@ -626,6 +656,17 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                         Text("多 Provider AI 與 API Key 設定")
                     }
                     Spacer(Modifier.height(10.dp))
+
+                    SettingSwitchRow(
+                        title = "AI 助手建議問題",
+                        subtitle = "在 AI 助手分頁顯示快速提問與昨日簡報建議",
+                        checked = chatSuggestionsEnabled,
+                        onCheckedChange = { checked ->
+                            chatSuggestionsEnabled = checked
+                            PhantomPrefs.setChatSuggestionsEnabled(appCtx, checked)
+                        }
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     Text(
                         text = "每日 AI 分析上限（今日已用 $todayAiUsage 次）",
@@ -942,6 +983,50 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(
+                        title = "常駐通知顯示 App 圖示條",
+                        subtitle = "在通知欄常駐通知下方顯示近期通知 App 圖示",
+                        checked = persistentShowIcons,
+                        onCheckedChange = { checked ->
+                            persistentShowIcons = checked
+                            PhantomPrefs.setPersistentNotifShowIcons(appCtx, checked)
+                            if (persistentStats) {
+                                StatsForegroundService.startOrRefresh(appCtx)
+                            }
+                        }
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                    Text("常駐通知樣式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(6.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PersistentNotifStyle.entries.forEach { style ->
+                            FilterChip(
+                                selected = persistentNotifStyle == style,
+                                onClick = {
+                                    persistentNotifStyle = style
+                                    PhantomPrefs.setPersistentNotifStyle(appCtx, style)
+                                    if (persistentStats) {
+                                        StatsForegroundService.startOrRefresh(appCtx)
+                                    }
+                                },
+                                label = { Text(style.label) }
+                            )
+                        }
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                    SettingSwitchRow(
+                        title = "對話頁滑動刪除",
+                        subtitle = "向左滑動訊息氣泡快速刪除（關閉時仍可長按刪除）",
+                        checked = swipeToDeleteEnabled,
+                        onCheckedChange = { checked ->
+                            swipeToDeleteEnabled = checked
+                            PhantomPrefs.setSwipeToDeleteEnabled(appCtx, checked)
+                        }
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                    SettingSwitchRow(
                         title = "勿擾時段",
                         subtitle = "時段內暫停推送詐騙警示與重要提醒通知（照常記錄）",
                         checked = quietHoursEnabled,
@@ -1226,10 +1311,29 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                             )
                         }
                     }
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    SettingSwitchRow(
+                        title = "觸覺回饋",
+                        subtitle = "切換分頁與長按操作時提供震動回饋",
+                        checked = hapticEnabled,
+                        onCheckedChange = { checked ->
+                            hapticEnabled = checked
+                            PhantomPrefs.setHapticFeedbackEnabled(appCtx, checked)
+                        }
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    SettingSwitchRow(
+                        title = "液態玻璃模糊效果",
+                        subtitle = "關閉後改用半透明純色背景以節省 GPU 與電量",
+                        checked = glassEffectEnabled,
+                        onCheckedChange = { checked ->
+                            ThemePreferences.setGlassEffectEnabled(appCtx, checked)
+                        }
+                    )
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
 
                     Text(
-                        text = if (listenerEnabled) "通知存取權限：已開啟 ✓" else "通知存取權限：尚未開啟 ⚠",
+                        text = if (listenerEnabled) "1. 通知存取權限：已開啟 ✓" else "1. 通知存取權限：尚未開啟 ✗",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         color = if (listenerEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
@@ -1248,7 +1352,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     Text(
-                        text = if (batteryWhitelisted) "電池優化白名單：已豁免 ✓" else "電池優化白名單：尚未豁免（建議開啟）",
+                        text = if (batteryWhitelisted) "2. 電池優化白名單：已豁免 ✓" else "2. 電池優化白名單：尚未豁免 ✗（建議開啟）",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         color = if (batteryWhitelisted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
@@ -1274,22 +1378,57 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     Text(
-                        text = oemGuide.brandTitle,
+                        text = "3. OEM 自啟動權限：請手動確認（系統無法自動偵測）",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = oemGuide.steps,
+                        text = "${oemGuide.brandTitle}：${oemGuide.steps}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Checkbox(
+                            checked = oemAutostartConfirmed,
+                            onCheckedChange = { checked ->
+                                oemAutostartConfirmed = checked
+                                PhantomPrefs.setOemAutostartConfirmed(appCtx, checked)
+                            }
+                        )
+                        Text(
+                            text = "我已確認完成裝置自啟動設定",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                     OutlinedButton(
                         onClick = { tryLaunchIntents(ctx, oemGuide.intents) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("開啟系統設定 / 應用程式詳情")
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                    Text(
+                        text = if (fgServiceRunning) "4. 前景保活服務：運行中 ✓" else "4. 前景保活服務：未偵測到常駐通知 ✗",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = if (fgServiceRunning) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    )
+                    if (!fgServiceRunning && persistentStats) {
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedButton(
+                            onClick = {
+                                StatsForegroundService.startOrRefresh(appCtx)
+                                fgServiceRunning = isStatsForegroundServiceRunning(appCtx)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("重新啟動前景保活服務")
+                        }
                     }
                 }
             }
@@ -1305,7 +1444,7 @@ private fun CollapsibleSettingsCard(
     glassState: HazeState,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    GlassCard(
+    PhantomGlassCard(
         glassState = glassState,
         modifier = Modifier.fillMaxWidth(),
         cornerRadius = 20.dp,

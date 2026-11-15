@@ -59,7 +59,7 @@ class StatsForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        ensureChannel()
+        ensureChannel(applicationContext)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -76,7 +76,13 @@ class StatsForegroundService : Service() {
 
         // 首次啟動必須立即呼叫 startForeground 以符合 Android 8+ 規範
         if (!isForegroundStarted) {
-            val initialNotif = buildNotification(today = 0, unread = 0, scam = 0, largeIcon = cachedStripBitmap)
+            val initialNotif = buildNotification(
+                ctx = applicationContext,
+                today = lastToday,
+                unread = lastUnread,
+                scam = lastScam,
+                largeIcon = cachedStripBitmap
+            )
             startForegroundCompat(initialNotif)
             isForegroundStarted = true
         }
@@ -127,12 +133,22 @@ class StatsForegroundService : Service() {
                 val startOfDay = NotificationCollectorService.startOfTodayMillis()
                 val dao = AppDatabaseHolder.db(applicationContext).messageDao()
                 val stats = dao.statsOverview(startOfDay)
-                val recentPkgs = dao.todayRecentApps(startOfDay).map { it.packageName }
-                if (recentPkgs != cachedStripPackages) {
-                    cachedStripPackages = recentPkgs
-                    cachedStripBitmap = buildRecentAppsStripBitmap(applicationContext, recentPkgs)
+                val showIcons = PhantomPrefs.isPersistentNotifShowIcons(applicationContext)
+                if (showIcons) {
+                    val recentPkgs = dao.todayRecentApps(startOfDay).map { it.packageName }
+                    if (recentPkgs != cachedStripPackages || cachedStripBitmap == null) {
+                        cachedStripPackages = recentPkgs
+                        cachedStripBitmap = buildRecentAppsStripBitmap(applicationContext, recentPkgs)
+                    }
+                } else {
+                    cachedStripBitmap = null
                 }
+                lastToday = stats.today
+                lastUnread = stats.unread
+                lastScam = stats.scam
+                lastStripBitmap = cachedStripBitmap
                 val notif = buildNotification(
+                    ctx = applicationContext,
                     today = stats.today,
                     unread = stats.unread,
                     scam = stats.scam,
@@ -145,47 +161,6 @@ class StatsForegroundService : Service() {
             } catch (_: Exception) {
             }
         }
-    }
-
-    private fun ensureChannel() {
-        val nm = getSystemService(NotificationManager::class.java) ?: return
-        nm.createNotificationChannel(
-            NotificationChannel(
-                STATS_CHANNEL_ID,
-                "統計",
-                NotificationManager.IMPORTANCE_LOW
-            )
-        )
-    }
-
-    private fun buildNotification(
-        today: Int,
-        unread: Int,
-        scam: Int,
-        largeIcon: Bitmap? = null
-    ): Notification {
-        val intent = Intent(applicationContext, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            applicationContext,
-            STATS_NOTIF_ID,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        return Notification.Builder(applicationContext, STATS_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_phantom)
-            .setContentTitle("幻訊・今日 $today 則訊息")
-            .setContentText("未讀 $unread 則・詐騙警示 $scam 則")
-            .apply {
-                if (largeIcon != null) {
-                    setLargeIcon(largeIcon)
-                }
-            }
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setContentIntent(pendingIntent)
-            .build()
     }
 
     private fun startForegroundCompat(notification: Notification) {
@@ -209,6 +184,89 @@ class StatsForegroundService : Service() {
         const val STATS_CHANNEL_ID = "stats_summary"
         const val STATS_NOTIF_ID = 1001
         private const val THROTTLE_MS = 5000L
+
+        @Volatile private var lastToday = 0
+        @Volatile private var lastUnread = 0
+        @Volatile private var lastScam = 0
+        @Volatile private var lastStripBitmap: Bitmap? = null
+
+        fun ensureChannel(ctx: Context) {
+            val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    STATS_CHANNEL_ID,
+                    "統計",
+                    NotificationManager.IMPORTANCE_LOW
+                )
+            )
+        }
+
+        fun buildNotification(
+            ctx: Context,
+            today: Int,
+            unread: Int,
+            scam: Int,
+            largeIcon: Bitmap? = null
+        ): Notification {
+            val appCtx = ctx.applicationContext
+            ensureChannel(appCtx)
+            val intent = Intent(appCtx, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                appCtx,
+                STATS_NOTIF_ID,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val style = PhantomPrefs.getPersistentNotifStyle(appCtx)
+            val showIcons = PhantomPrefs.isPersistentNotifShowIcons(appCtx)
+            val title = "幻訊・今日 $today 則訊息"
+            val text = when (style) {
+                com.phantom.checker.util.PersistentNotifStyle.DETAILED ->
+                    "未讀 $unread 則・詐騙警示 $scam 則"
+                com.phantom.checker.util.PersistentNotifStyle.COMPACT ->
+                    "常駐監控中"
+            }
+            val notif = Notification.Builder(appCtx, STATS_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_phantom)
+                .setContentTitle(title)
+                .setContentText(text)
+                .apply {
+                    if (showIcons && largeIcon != null) {
+                        setLargeIcon(largeIcon)
+                    }
+                }
+                .setOngoing(true)
+                .setCategory(Notification.CATEGORY_STATUS)
+                .setOnlyAlertOnce(true)
+                .setContentIntent(pendingIntent)
+                .build()
+            notif.flags = notif.flags or Notification.FLAG_NO_CLEAR or Notification.FLAG_ONGOING_EVENT
+            return notif
+        }
+
+        /** 由 NotificationCollectorService.onNotificationRemoved 直接重發，不經 startForegroundService */
+        fun repostDirectly(ctx: Context) {
+            val appCtx = ctx.applicationContext
+            if (!PhantomPrefs.isPersistentStatsEnabled(appCtx) ||
+                !hasPostNotificationsPermission(appCtx)
+            ) {
+                return
+            }
+            val nm = appCtx.getSystemService(NotificationManager::class.java) ?: return
+            val notif = buildNotification(
+                ctx = appCtx,
+                today = lastToday,
+                unread = lastUnread,
+                scam = lastScam,
+                largeIcon = lastStripBitmap
+            )
+            try {
+                nm.notify(STATS_NOTIF_ID, notif)
+            } catch (_: SecurityException) {
+            }
+        }
 
         fun hasPostNotificationsPermission(ctx: Context): Boolean {
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

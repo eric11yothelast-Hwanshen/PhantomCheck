@@ -38,6 +38,16 @@ enum class FontScaleMode(val prefValue: String, val label: String, val scale: Fl
     }
 }
 
+enum class PersistentNotifStyle(val prefValue: String, val label: String) {
+    DETAILED("detailed", "詳細（今日/未讀/詐騙）"),
+    COMPACT("compact", "精簡（僅今日）");
+
+    companion object {
+        fun fromPref(value: String?): PersistentNotifStyle =
+            entries.firstOrNull { it.prefValue == value } ?: DETAILED
+    }
+}
+
 /**
  * 幻訊 App 通用偏好設定（SharedPreferences）。
  */
@@ -63,14 +73,25 @@ object PhantomPrefs {
     private const val KEY_FONT_SCALE = "font_scale_mode"
     private const val KEY_ALERT_KEYWORDS = "instant_alert_keywords"
     private const val KEY_ONBOARDING_COMPLETED_V1 = "onboarding_completed_v1"
+    private const val KEY_ONBOARDING_STEP_V2 = "onboarding_step_v2"
+    private const val KEY_OEM_AUTOSTART_CONFIRMED = "oem_autostart_confirmed"
     private const val KEY_AI_AUTO_TAG_ENABLED = "ai_auto_tag_enabled"
     private const val KEY_DEFAULT_AI_TAGS_SEEDED = "default_ai_tags_seeded_v1"
+    private const val KEY_DEFAULT_APP_CAT_SEEDED = "default_app_cat_seeded_v1"
+    private const val KEY_DEFAULT_AI_RULES_SEEDED = "default_ai_rules_seeded_v1"
     private const val KEY_QUIET_HOURS_ENABLED = "quiet_hours_enabled"
     private const val KEY_QUIET_START_MIN = "quiet_hours_start_minute"
     private const val KEY_QUIET_END_MIN = "quiet_hours_end_minute"
     private const val KEY_DAILY_SUMMARY_NOTIF = "daily_summary_notif_enabled"
     private const val KEY_VIP_SENDERS_MAP = "vip_senders_per_app"
     private const val KEY_COLLAPSED_CARDS = "settings_collapsed_cards"
+    private const val KEY_TOKEN_SAVER_ENABLED = "token_saver_enabled"
+    private const val KEY_PERSISTENT_NOTIF_ICONS = "persistent_notif_show_icons"
+    private const val KEY_PERSISTENT_NOTIF_STYLE = "persistent_notif_style"
+    private const val KEY_SWIPE_DELETE_ENABLED = "swipe_delete_enabled"
+    private const val KEY_HAPTIC_ENABLED = "haptic_feedback_enabled"
+    private const val KEY_GLASS_EFFECT_ENABLED = "glass_effect_enabled"
+    private const val KEY_CHAT_SUGGESTIONS_ENABLED = "chat_suggestions_enabled"
 
     const val MAX_ALERT_KEYWORDS = 20
 
@@ -407,5 +428,102 @@ object PhantomPrefs {
         val collapsed = (prefs(ctx).getStringSet(KEY_COLLAPSED_CARDS, emptySet()) ?: emptySet()).toMutableSet()
         if (expanded) collapsed.remove(cardKey) else collapsed.add(cardKey)
         prefs(ctx).edit().putStringSet(KEY_COLLAPSED_CARDS, collapsed).apply()
+    }
+
+    /** 新手引導步驟索引（1~10），中斷可續 */
+    fun getOnboardingStep(ctx: Context): Int =
+        prefs(ctx).getInt(KEY_ONBOARDING_STEP_V2, 1).coerceIn(1, 10)
+
+    fun setOnboardingStep(ctx: Context, stepIndex: Int) {
+        prefs(ctx).edit().putInt(KEY_ONBOARDING_STEP_V2, stepIndex.coerceIn(1, 10)).apply()
+    }
+
+    /** OEM 自啟動手動確認（誠實標記：無法程式檢查，由使用者手動確認） */
+    fun isOemAutostartConfirmed(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_OEM_AUTOSTART_CONFIRMED, false)
+
+    fun setOemAutostartConfirmed(ctx: Context, confirmed: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_OEM_AUTOSTART_CONFIRMED, confirmed).apply()
+    }
+
+    /** 預設 App 分類標籤與規則是否已建立 */
+    fun isDefaultAppCatSeeded(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_DEFAULT_APP_CAT_SEEDED, false)
+
+    fun setDefaultAppCatSeeded(ctx: Context, seeded: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_DEFAULT_APP_CAT_SEEDED, seeded).apply()
+    }
+
+    /** 預設自然語言 AI 規則是否已建立 */
+    fun isDefaultAiRulesSeeded(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_DEFAULT_AI_RULES_SEEDED, false)
+
+    fun setDefaultAiRulesSeeded(ctx: Context, seeded: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_DEFAULT_AI_RULES_SEEDED, seeded).apply()
+    }
+
+    /** 省 token 模式（override 層，不覆寫原開關值，預設關閉） */
+    fun isTokenSaverEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_TOKEN_SAVER_ENABLED, false)
+
+    fun setTokenSaverEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_TOKEN_SAVER_ENABLED, enabled).apply()
+    }
+
+    fun isEffectiveAiAutoTagEnabled(ctx: Context): Boolean =
+        !isTokenSaverEnabled(ctx) && isAiAutoTagEnabled(ctx)
+
+    fun isEffectiveDailySummaryEnabled(ctx: Context): Boolean =
+        !isTokenSaverEnabled(ctx) && isDailySummaryEnabled(ctx)
+
+    fun isEffectiveDailySummaryNotifEnabled(ctx: Context): Boolean =
+        !isTokenSaverEnabled(ctx) && isDailySummaryNotifEnabled(ctx)
+
+    /** 常駐通知顯示 App 圖示條（預設開） */
+    fun isPersistentNotifShowIcons(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_PERSISTENT_NOTIF_ICONS, true)
+
+    fun setPersistentNotifShowIcons(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_PERSISTENT_NOTIF_ICONS, enabled).apply()
+    }
+
+    /** 常駐通知樣式（詳細 / 精簡） */
+    fun getPersistentNotifStyle(ctx: Context): PersistentNotifStyle =
+        PersistentNotifStyle.fromPref(prefs(ctx).getString(KEY_PERSISTENT_NOTIF_STYLE, null))
+
+    fun setPersistentNotifStyle(ctx: Context, style: PersistentNotifStyle) {
+        prefs(ctx).edit().putString(KEY_PERSISTENT_NOTIF_STYLE, style.prefValue).apply()
+    }
+
+    /** 滑動刪除開關（預設開） */
+    fun isSwipeToDeleteEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_SWIPE_DELETE_ENABLED, true)
+
+    fun setSwipeToDeleteEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_SWIPE_DELETE_ENABLED, enabled).apply()
+    }
+
+    /** 觸覺回饋開關（預設開） */
+    fun isHapticFeedbackEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_HAPTIC_ENABLED, true)
+
+    fun setHapticFeedbackEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_HAPTIC_ENABLED, enabled).apply()
+    }
+
+    /** 玻璃效果開關（預設開；關閉時全 App 卡片改純色半透明背景省 GPU） */
+    fun isGlassEffectEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_GLASS_EFFECT_ENABLED, true)
+
+    fun setGlassEffectEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_GLASS_EFFECT_ENABLED, enabled).apply()
+    }
+
+    /** AI 助手建議問題開關（預設開） */
+    fun isChatSuggestionsEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_CHAT_SUGGESTIONS_ENABLED, true)
+
+    fun setChatSuggestionsEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_CHAT_SUGGESTIONS_ENABLED, enabled).apply()
     }
 }

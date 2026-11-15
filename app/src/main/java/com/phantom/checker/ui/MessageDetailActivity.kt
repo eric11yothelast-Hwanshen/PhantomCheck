@@ -69,8 +69,6 @@ import com.phantom.checker.data.TagEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.StatsForegroundService
-import com.phantom.checker.ui.components.GlassCard
-import com.phantom.checker.ui.components.glassSource
 import com.phantom.checker.ui.components.pressableScale
 import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
@@ -223,7 +221,7 @@ fun MessageDetailScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .glassSource(glassState)
+                .phantomGlassSource(glassState)
                 .padding(padding)
                 .padding(14.dp)
         ) {
@@ -258,7 +256,7 @@ fun MessageDetailScreen(
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        GlassCard(
+                        PhantomGlassCard(
                             glassState = glassState,
                             modifier = Modifier.fillMaxWidth(),
                             cornerRadius = 20.dp,
@@ -292,7 +290,7 @@ fun MessageDetailScreen(
                         }
 
                         // 風險分數條與 AI 分析
-                        GlassCard(
+                        PhantomGlassCard(
                             glassState = glassState,
                             modifier = Modifier.fillMaxWidth(),
                             cornerRadius = 20.dp,
@@ -363,17 +361,17 @@ fun MessageDetailScreen(
                                     scope.launch {
                                         isAnalyzing = true
                                         val autoTagEnabled = PhantomPrefs.isAiAutoTagEnabled(appCtx)
-                                        val aiTags = if (autoTagEnabled) {
-                                            withContext(Dispatchers.IO) {
-                                                AppDatabaseHolder.db(appCtx).tagDao().aiManagedTags()
-                                            }
-                                        } else {
-                                            emptyList()
+                                        val (aiTags, aiRules) = withContext(Dispatchers.IO) {
+                                            val db = AppDatabaseHolder.db(appCtx)
+                                            val tags = if (autoTagEnabled) db.tagDao().aiManagedTags() else emptyList()
+                                            val rules = db.aiRuleDao().active()
+                                            tags to rules
                                         }
                                         val res = AiClient.analyzeMessage(
                                             sender = msg.sender,
                                             content = msg.content,
                                             tags = aiTags,
+                                            aiRules = aiRules,
                                             enableAutoTag = autoTagEnabled,
                                             context = appCtx,
                                             bypassCache = true
@@ -395,16 +393,17 @@ fun MessageDetailScreen(
                                                             .filter { it.source == MessageTagCrossRef.SOURCE_MANUAL }
                                                             .map { it.tagId }
                                                             .toSet()
-                                                        res.tagIds.forEach { tid ->
-                                                            if (tid !in manualIds) {
-                                                                db.tagDao().addTagToMessage(
-                                                                    MessageTagCrossRef(
-                                                                        messageId = msg.id,
-                                                                        tagId = tid,
-                                                                        source = MessageTagCrossRef.SOURCE_AUTO
-                                                                    )
+                                                        val refs = res.tagIds
+                                                            .filter { it !in manualIds }
+                                                            .map { tid ->
+                                                                MessageTagCrossRef(
+                                                                    messageId = msg.id,
+                                                                    tagId = tid,
+                                                                    source = MessageTagCrossRef.SOURCE_AUTO
                                                                 )
                                                             }
+                                                        if (refs.isNotEmpty()) {
+                                                            db.tagDao().addTagsToMessageBatch(refs)
                                                         }
                                                     }
                                                 }
@@ -439,7 +438,7 @@ fun MessageDetailScreen(
                         }
 
                         // 標籤選擇
-                        GlassCard(
+                        PhantomGlassCard(
                             glassState = glassState,
                             modifier = Modifier.fillMaxWidth(),
                             cornerRadius = 20.dp,

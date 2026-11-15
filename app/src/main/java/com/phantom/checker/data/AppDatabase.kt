@@ -60,7 +60,8 @@ data class TagEntity(
     val colorHex: String,
     val sortOrder: Int = 0,
     val aiHint: String = "",
-    val isAiManaged: Boolean = true
+    val isAiManaged: Boolean = true,
+    val isAppCategory: Boolean = false
 )
 
 @Entity(
@@ -76,6 +77,56 @@ data class MessageTagCrossRef(
     companion object {
         const val SOURCE_AUTO = "auto"
         const val SOURCE_MANUAL = "manual"
+    }
+}
+
+@Entity(
+    tableName = "app_category_rules",
+    indices = [Index(value = ["packageName"])]
+)
+data class AppCategoryRuleEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val packageName: String,
+    val tagId: Long,
+    val isEnabled: Boolean = true
+)
+
+@Entity(tableName = "ai_rules")
+data class AiRuleEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val ruleText: String,
+    val targetTagId: Long? = null,
+    val kind: String = KIND_TAG,
+    val isEnabled: Boolean = true,
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    companion object {
+        const val KIND_TAG = "tag"
+        const val KIND_WHITELIST = "whitelist"
+    }
+}
+
+@Entity(tableName = "chat_sessions")
+data class ChatSessionEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "chat_messages",
+    indices = [Index(value = ["sessionId"])]
+)
+data class ChatMessageEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val sessionId: Long,
+    val role: String,
+    val content: String,
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    companion object {
+        const val ROLE_USER = "user"
+        const val ROLE_ASSISTANT = "assistant"
     }
 }
 
@@ -222,6 +273,12 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE timestamp >= :sinceTs ORDER BY timestamp DESC")
     suspend fun since(sinceTs: Long): List<MessageEntity>
 
+    @Query("SELECT * FROM messages WHERE timestamp >= :startTs AND timestamp < :endTs ORDER BY timestamp DESC")
+    suspend fun between(startTs: Long, endTs: Long): List<MessageEntity>
+
+    @Query("SELECT * FROM messages WHERE timestamp >= :startTs AND timestamp <= :endTs AND (:packageName IS NULL OR packageName = :packageName) ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun queryRange(startTs: Long, endTs: Long, packageName: String?, limit: Int = 40): List<MessageEntity>
+
     @Query("SELECT COUNT(*) FROM messages WHERE riskLabel = :label")
     suspend fun countByRiskLabel(label: String): Int
 
@@ -333,6 +390,14 @@ interface TagDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun addTagToMessage(ref: MessageTagCrossRef)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun addTagsToMessageInternal(refs: List<MessageTagCrossRef>)
+
+    @Transaction
+    suspend fun addTagsToMessageBatch(refs: List<MessageTagCrossRef>) {
+        if (refs.isNotEmpty()) addTagsToMessageInternal(refs)
+    }
+
     @Query("DELETE FROM message_tags WHERE messageId = :messageId AND tagId = :tagId")
     suspend fun removeTagFromMessage(messageId: Long, tagId: Long)
 
@@ -357,15 +422,94 @@ interface TagDao {
     suspend fun todayAiTagCounts(startOfDay: Long): List<AiTagCountRow>
 }
 
+@Dao
+interface AppCategoryRuleDao {
+    @Query("SELECT * FROM app_category_rules ORDER BY id ASC")
+    suspend fun all(): List<AppCategoryRuleEntity>
+
+    @Query("SELECT * FROM app_category_rules WHERE packageName = :packageName AND isEnabled = 1")
+    suspend fun activeByPackage(packageName: String): List<AppCategoryRuleEntity>
+
+    @Insert
+    suspend fun insert(rule: AppCategoryRuleEntity): Long
+
+    @Update
+    suspend fun update(rule: AppCategoryRuleEntity)
+
+    @Query("DELETE FROM app_category_rules WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM app_category_rules WHERE packageName = :packageName")
+    suspend fun deleteByPackage(packageName: String)
+
+    @Query("DELETE FROM app_category_rules WHERE tagId = :tagId")
+    suspend fun deleteByTagId(tagId: Long)
+}
+
+@Dao
+interface AiRuleDao {
+    @Query("SELECT * FROM ai_rules ORDER BY createdAt DESC, id DESC")
+    suspend fun all(): List<AiRuleEntity>
+
+    @Query("SELECT * FROM ai_rules WHERE isEnabled = 1 ORDER BY createdAt ASC, id ASC LIMIT 20")
+    suspend fun active(): List<AiRuleEntity>
+
+    @Insert
+    suspend fun insert(rule: AiRuleEntity): Long
+
+    @Update
+    suspend fun update(rule: AiRuleEntity)
+
+    @Query("DELETE FROM ai_rules WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
+@Dao
+interface ChatDao {
+    @Query("SELECT * FROM chat_sessions ORDER BY createdAt DESC, id DESC")
+    suspend fun allSessions(): List<ChatSessionEntity>
+
+    @Query("SELECT * FROM chat_sessions WHERE id = :id LIMIT 1")
+    suspend fun sessionById(id: Long): ChatSessionEntity?
+
+    @Insert
+    suspend fun insertSession(session: ChatSessionEntity): Long
+
+    @Query("UPDATE chat_sessions SET title = :title WHERE id = :id")
+    suspend fun updateSessionTitle(id: Long, title: String)
+
+    @Query("DELETE FROM chat_sessions WHERE id = :id")
+    suspend fun deleteSessionById(id: Long)
+
+    @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY createdAt ASC, id ASC")
+    suspend fun messagesForSession(sessionId: Long): List<ChatMessageEntity>
+
+    @Insert
+    suspend fun insertMessage(message: ChatMessageEntity): Long
+
+    @Query("DELETE FROM chat_messages WHERE sessionId = :sessionId")
+    suspend fun deleteMessagesBySession(sessionId: Long)
+
+    @Transaction
+    suspend fun deleteSessionWithMessages(sessionId: Long) {
+        deleteMessagesBySession(sessionId)
+        deleteSessionById(sessionId)
+    }
+}
+
 @Database(
     entities = [
         MessageEntity::class,
         FilterRule::class,
         AiSummaryEntity::class,
         TagEntity::class,
-        MessageTagCrossRef::class
+        MessageTagCrossRef::class,
+        AppCategoryRuleEntity::class,
+        AiRuleEntity::class,
+        ChatSessionEntity::class,
+        ChatMessageEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -373,6 +517,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun filterDao(): FilterDao
     abstract fun aiSummaryDao(): AiSummaryDao
     abstract fun tagDao(): TagDao
+    abstract fun appCategoryRuleDao(): AppCategoryRuleDao
+    abstract fun aiRuleDao(): AiRuleDao
+    abstract fun chatDao(): ChatDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -434,6 +581,60 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE tags ADD COLUMN aiHint TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE tags ADD COLUMN isAiManaged INTEGER NOT NULL DEFAULT 1")
                 db.execSQL("ALTER TABLE message_tags ADD COLUMN source TEXT NOT NULL DEFAULT 'auto'")
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE tags ADD COLUMN isAppCategory INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `app_category_rules` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `packageName` TEXT NOT NULL,
+                        `tagId` INTEGER NOT NULL,
+                        `isEnabled` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_app_category_rules_packageName` ON `app_category_rules` (`packageName`)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `ai_rules` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `ruleText` TEXT NOT NULL,
+                        `targetTagId` INTEGER,
+                        `kind` TEXT NOT NULL,
+                        `isEnabled` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `chat_sessions` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `chat_messages` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `sessionId` INTEGER NOT NULL,
+                        `role` TEXT NOT NULL,
+                        `content` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_chat_messages_sessionId` ON `chat_messages` (`sessionId`)"
+                )
             }
         }
     }

@@ -65,9 +65,6 @@ import com.phantom.checker.network.AiClient
 import com.phantom.checker.network.AiProviderPreset
 import com.phantom.checker.network.AiProviderProfile
 import com.phantom.checker.network.ApiKeySource
-import com.phantom.checker.ui.components.GlassCard
-import com.phantom.checker.ui.components.glassSource
-import com.phantom.checker.ui.components.glassSurface
 import com.phantom.checker.ui.components.pressableScale
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.launch
@@ -155,7 +152,7 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .glassSource(glassState)
+                .phantomGlassSource(glassState)
                 .padding(padding)
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -164,7 +161,7 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .animateContentSize(spring())
-                    .glassSurface(
+                    .phantomGlassSurface(
                         state = glassState,
                         fallbackColor = if (keySource == ApiKeySource.NONE) {
                             MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.90f)
@@ -323,7 +320,7 @@ private fun ProviderProfileCard(
     val tail = AiClient.getMaskedKeyTail(profile.apiKey) ?: "未填"
     val fullEndpoint = AiClient.buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
 
-    GlassCard(
+    PhantomGlassCard(
         glassState = glassState,
         modifier = Modifier.fillMaxWidth(),
         cornerRadius = 20.dp,

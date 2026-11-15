@@ -1,10 +1,14 @@
 package com.phantom.checker.ui
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -15,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Star
@@ -37,23 +42,123 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.phantom.checker.data.AppGroupRow
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.ui.components.GlassCard
+import com.phantom.checker.ui.components.glassSource
 import com.phantom.checker.ui.components.glassSurface
 import com.phantom.checker.ui.components.pressableScale
+import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+@Composable
+fun Modifier.phantomGlassSource(state: HazeState): Modifier {
+    val ctx = LocalContext.current
+    return if (ThemePreferences.isGlassEffectEnabled(ctx)) {
+        this.glassSource(state)
+    } else {
+        this
+    }
+}
+
+@Composable
+fun Modifier.phantomGlassSurface(
+    state: HazeState,
+    fallbackColor: Color,
+    outlineColor: Color? = null,
+    cornerRadius: Dp = 24.dp
+): Modifier {
+    val ctx = LocalContext.current
+    return if (ThemePreferences.isGlassEffectEnabled(ctx)) {
+        this.glassSurface(
+            state = state,
+            fallbackColor = fallbackColor,
+            outlineColor = outlineColor,
+            cornerRadius = cornerRadius
+        )
+    } else {
+        val shape = RoundedCornerShape(cornerRadius)
+        val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        val resolvedOutline = outlineColor ?: if (isDark) {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+        } else {
+            MaterialTheme.colorScheme.outlineVariant
+        }
+        this
+            .clip(shape)
+            .background(fallbackColor)
+            .border(width = 1.dp, color = resolvedOutline, shape = shape)
+    }
+}
+
+@Composable
+fun PhantomGlassCard(
+    glassState: HazeState,
+    modifier: Modifier = Modifier,
+    cornerRadius: Dp = 24.dp,
+    contentPadding: Dp = 16.dp,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val ctx = LocalContext.current
+    if (ThemePreferences.isGlassEffectEnabled(ctx)) {
+        GlassCard(
+            glassState = glassState,
+            modifier = modifier,
+            cornerRadius = cornerRadius,
+            contentPadding = contentPadding,
+            content = content
+        )
+    } else {
+        val shape = RoundedCornerShape(cornerRadius)
+        val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        val outline = if (isDark) {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+        } else {
+            MaterialTheme.colorScheme.outlineVariant
+        }
+        Box(
+            modifier = modifier
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
+                .border(width = 1.dp, color = outline, shape = shape)
+        ) {
+            Column(
+                modifier = Modifier.padding(contentPadding),
+                content = content
+            )
+        }
+    }
+}
+
+@Composable
+fun rememberPhantomHaptic(): (HapticFeedbackType) -> Unit {
+    val ctx = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    return remember(ctx, haptic) {
+        { type ->
+            if (PhantomPrefs.isHapticFeedbackEnabled(ctx)) {
+                haptic.performHapticFeedback(type)
+            }
+        }
+    }
+}
 
 fun parseTagColor(hex: String): Color {
     return try {
@@ -240,7 +345,7 @@ fun NotificationListenerGuideCard(
         modifier = modifier
             .fillMaxWidth()
             .animateContentSize(spring())
-            .glassSurface(
+            .phantomGlassSurface(
                 state = glassState,
                 fallbackColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f),
                 outlineColor = MaterialTheme.colorScheme.error,
@@ -290,7 +395,7 @@ fun PostNotificationGuideCard(
     glassState: HazeState,
     modifier: Modifier = Modifier
 ) {
-    GlassCard(
+    PhantomGlassCard(
         glassState = glassState,
         modifier = modifier.fillMaxWidth(),
         cornerRadius = 20.dp,
@@ -432,7 +537,7 @@ fun MessageCard(
                 .fillMaxWidth()
                 .padding(vertical = 4.dp)
                 .animateContentSize(spring())
-                .glassSurface(
+                .phantomGlassSurface(
                     state = glassState,
                     fallbackColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.90f),
                     outlineColor = MaterialTheme.colorScheme.error,
@@ -446,7 +551,7 @@ fun MessageCard(
             }
         }
     } else {
-        GlassCard(
+        PhantomGlassCard(
             glassState = glassState,
             modifier = modifier
                 .fillMaxWidth()

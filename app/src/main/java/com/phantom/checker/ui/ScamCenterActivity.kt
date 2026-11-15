@@ -44,8 +44,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import com.phantom.checker.ui.components.glassSource
-import com.phantom.checker.ui.components.glassSurface
 import dev.chrisbanes.haze.HazeState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -158,7 +156,7 @@ fun ScamCenterScreen(onBack: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .glassSource(glassState)
+                .phantomGlassSource(glassState)
                 .padding(padding)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
@@ -192,7 +190,7 @@ fun ScamCenterScreen(onBack: () -> Unit) {
                     }
                 }
                 else -> {
-                    com.phantom.checker.ui.components.GlassCard(
+                    PhantomGlassCard(
                         glassState = glassState,
                         modifier = Modifier.fillMaxWidth(),
                         cornerRadius = 20.dp,
@@ -241,7 +239,7 @@ fun ScamCenterScreen(onBack: () -> Unit) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .animateContentSize(spring())
-                            .glassSurface(
+                            .phantomGlassSurface(
                                 state = glassState,
                                 fallbackColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f),
                                 outlineColor = MaterialTheme.colorScheme.error,
@@ -329,7 +327,7 @@ private fun ScamMessageCard(
             .fillMaxWidth()
             .padding(vertical = 4.dp)
             .animateContentSize(spring())
-            .glassSurface(
+            .phantomGlassSurface(
                 state = glassState,
                 fallbackColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f),
                 outlineColor = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),

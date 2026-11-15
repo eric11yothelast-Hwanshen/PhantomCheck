@@ -80,9 +80,8 @@ import com.phantom.checker.data.TagEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.StatsForegroundService
-import com.phantom.checker.ui.components.GlassCard
 import com.phantom.checker.ui.components.SwipeToRevealRow
-import com.phantom.checker.ui.components.glassSource
+import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -161,7 +160,9 @@ fun ConversationScreen(
     var messages by remember { mutableStateOf(listOf<MessageEntity>()) }
     var allTags by remember { mutableStateOf(listOf<TagEntity>()) }
     var msgTagIdsMap by remember { mutableStateOf<Map<Long, Set<Long>>>(emptyMap()) }
-    var msgAiTagColorMap by remember { mutableStateOf<Map<Long, Color>>(emptyMap()) }
+    var msgTagColorsMap by remember { mutableStateOf<Map<Long, List<Color>>>(emptyMap()) }
+    var swipeToDeleteEnabled by remember { mutableStateOf(PhantomPrefs.isSwipeToDeleteEnabled(appCtx)) }
+    val haptic = rememberPhantomHaptic()
     var isLoading by remember { mutableStateOf(true) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
@@ -185,6 +186,7 @@ fun ConversationScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                swipeToDeleteEnabled = PhantomPrefs.isSwipeToDeleteEnabled(appCtx)
                 refreshTrigger++
             }
         }
@@ -206,11 +208,12 @@ fun ConversationScreen(
             msgTagIdsMap = refs.groupBy { it.messageId }
                 .mapValues { (_, list) -> list.map { it.tagId }.toSet() }
             val tagById = allTags.associateBy { it.id }
-            msgAiTagColorMap = refs.groupBy { it.messageId }.mapNotNull { (mid, list) ->
-                val resolvedTags = list.mapNotNull { tagById[it.tagId] }
-                val firstAi = resolvedTags.firstOrNull { it.isAiManaged } ?: resolvedTags.firstOrNull()
-                firstAi?.let { mid to parseTagColor(it.colorHex) }
-            }.toMap()
+            msgTagColorsMap = refs.groupBy { it.messageId }.mapValues { (_, list) ->
+                list.mapNotNull { tagById[it.tagId] }
+                    .distinctBy { it.id }
+                    .take(3)
+                    .map { parseTagColor(it.colorHex) }
+            }
             dao.byConversation(packageName, sender)
         }
         messages = loaded
@@ -480,7 +483,7 @@ fun ConversationScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .glassSource(glassState)
+                .phantomGlassSource(glassState)
                 .padding(padding)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
@@ -488,14 +491,18 @@ fun ConversationScreen(
                 val scamCnt = messages.count { it.riskLabel == "scam" }
                 val suspCnt = messages.count { it.riskLabel == "suspicious" }
                 val safeCnt = messages.size - scamCnt - suspCnt
-                GlassCard(
+                val activeDays = remember(messages) {
+                    val dayFmt = SimpleDateFormat("yyyyMMdd", Locale.US)
+                    messages.map { dayFmt.format(Date(it.timestamp)) }.toSet().size
+                }
+                PhantomGlassCard(
                     glassState = glassState,
                     modifier = Modifier.fillMaxWidth(),
                     cornerRadius = 16.dp,
                     contentPadding = 10.dp
                 ) {
                     Text(
-                        text = "此對話共 ${messages.size} 則・安全 $safeCnt・疑似 $suspCnt・詐騙 $scamCnt",
+                        text = "此對話共 ${messages.size} 則・活躍 $activeDays 天・安全 $safeCnt・疑似 $suspCnt・詐騙 $scamCnt",
                         style = MaterialTheme.typography.labelMedium,
                         color = if (scamCnt > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -542,39 +549,47 @@ fun ConversationScreen(
                                     HorizontalDivider(modifier = Modifier.weight(1f))
                                 }
                             }
-                            SwipeToRevealRow(
-                                revealed = revealedMessageId == msg.id,
-                                onReveal = { revealedMessageId = msg.id },
-                                onCollapse = { if (revealedMessageId == msg.id) revealedMessageId = null },
-                                actions = {
-                                    Button(
-                                        onClick = {
-                                            revealedMessageId = null
-                                            deleteCandidate = msg
-                                        },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.error,
-                                            contentColor = MaterialTheme.colorScheme.onError
-                                        ),
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        Text("刪除")
-                                    }
-                                }
-                            ) {
+                            val bubbleContent: @Composable () -> Unit = {
                                 ChatBubbleItem(
                                     message = msg,
                                     glassState = glassState,
-                                    tagDotColor = msgAiTagColorMap[msg.id],
+                                    tagDotColors = msgTagColorsMap[msg.id].orEmpty(),
                                     onClick = {
                                         revealedMessageId = null
                                         ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
                                     },
                                     onLongClick = {
+                                        haptic()
                                         revealedMessageId = null
                                         sheetMessage = msg
                                     }
                                 )
+                            }
+                            if (swipeToDeleteEnabled) {
+                                SwipeToRevealRow(
+                                    revealed = revealedMessageId == msg.id,
+                                    onReveal = { revealedMessageId = msg.id },
+                                    onCollapse = { if (revealedMessageId == msg.id) revealedMessageId = null },
+                                    actions = {
+                                        Button(
+                                            onClick = {
+                                                revealedMessageId = null
+                                                deleteCandidate = msg
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.error,
+                                                contentColor = MaterialTheme.colorScheme.onError
+                                            ),
+                                            shape = RoundedCornerShape(12.dp)
+                                        ) {
+                                            Text("刪除")
+                                        }
+                                    }
+                                ) {
+                                    bubbleContent()
+                                }
+                            } else {
+                                bubbleContent()
                             }
                         }
                     }
@@ -589,7 +604,7 @@ fun ConversationScreen(
 private fun ChatBubbleItem(
     message: MessageEntity,
     glassState: HazeState,
-    tagDotColor: Color? = null,
+    tagDotColors: List<Color> = emptyList(),
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -606,7 +621,7 @@ private fun ChatBubbleItem(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Start
     ) {
-        GlassCard(
+        PhantomGlassCard(
             glassState = glassState,
             modifier = Modifier
                 .fillMaxWidth(0.84f)
@@ -618,14 +633,20 @@ private fun ChatBubbleItem(
             contentPadding = 12.dp
         ) {
             Row(verticalAlignment = Alignment.Top) {
-                if (tagDotColor != null) {
-                    Box(
-                        modifier = Modifier
-                            .padding(top = 6.dp)
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(tagDotColor)
-                    )
+                if (tagDotColors.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.padding(top = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        tagDotColors.take(3).forEach { dotColor ->
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(dotColor)
+                            )
+                        }
+                    }
                     Spacer(Modifier.width(6.dp))
                 }
                 Text(

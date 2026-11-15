@@ -32,8 +32,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import com.phantom.checker.ui.components.FluidSwitch
-import com.phantom.checker.ui.components.GlassCard
-import com.phantom.checker.ui.components.glassSource
 import com.phantom.checker.ui.components.pressableScale
 import dev.chrisbanes.haze.HazeState
 import androidx.compose.runtime.Composable
@@ -120,13 +118,13 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .glassSource(glassState)
+                .phantomGlassSource(glassState)
                 .padding(padding)
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            GlassCard(
+            PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 20.dp,
@@ -148,7 +146,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                 }
             }
 
-            GlassCard(
+            PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 20.dp,
@@ -181,7 +179,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                 }
             }
 
-            GlassCard(
+            PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 20.dp,
@@ -254,7 +252,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                 }
             }
 
-            GlassCard(
+            PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 20.dp,

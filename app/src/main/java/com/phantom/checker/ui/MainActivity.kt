@@ -88,6 +88,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -114,10 +116,8 @@ import com.phantom.checker.service.HeartbeatPolicy
 import com.phantom.checker.service.NotificationCollectorService
 import com.phantom.checker.service.RetentionPolicy
 import com.phantom.checker.service.StatsForegroundService
-import com.phantom.checker.ui.components.GlassCard
 import com.phantom.checker.ui.components.LiquidGlassTabBar
 import com.phantom.checker.ui.components.LiquidGlassTabBarItem
-import com.phantom.checker.ui.components.glassSource
 import com.phantom.checker.ui.components.pressableScale
 import com.phantom.checker.util.MessageExporter
 import com.phantom.checker.util.MuteMode
@@ -189,6 +189,7 @@ private fun isPostNotificationsGranted(context: Context): Boolean {
 
 private enum class MainTab(val title: String) {
     MESSAGES("訊息"),
+    ASSISTANT("AI 助手"),
     SCAMS("詐騙警示"),
     STATS("統計")
 }
@@ -232,7 +233,10 @@ private data class StatsUiState(
     val scamCount: Int = 0,
     val topRiskyApps: List<AppRiskRow> = emptyList(),
     val rawAppGroups: List<AppGroupRow> = emptyList(),
-    val todayAiTagCounts: List<AiTagCountRow> = emptyList()
+    val todayAiTagCounts: List<AiTagCountRow> = emptyList(),
+    val todayHourlyCounts: List<Int> = List(24) { 0 },
+    val harassmentCount: Int = 0,
+    val totalMessageCount: Int = 0
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -295,11 +299,21 @@ private fun PhantomCheckApp(
     var selectedMessageIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
 
+    val haptic = rememberPhantomHaptic()
+
     // 新手引導狀態
     var onboardingCompleted by remember { mutableStateOf(PhantomPrefs.isOnboardingCompleted(appCtx)) }
-    var onboardingStep by remember { mutableStateOf(OnboardingStep.PERMISSION) }
+    var onboardingStep by remember {
+        mutableStateOf(OnboardingStep.fromIndex(PhantomPrefs.getOnboardingStep(appCtx)))
+    }
     var targetBounds by remember { mutableStateOf<Map<String, Rect>>(emptyMap()) }
     var wasActionDialogOpenInStep3 by remember { mutableStateOf(false) }
+    var isBatteryWhitelistOk by remember { mutableStateOf(isBatteryOptimizationIgnored(appCtx)) }
+    var oemAutostartConfirmed by remember { mutableStateOf(PhantomPrefs.isOemAutostartConfirmed(appCtx)) }
+
+    LaunchedEffect(onboardingStep) {
+        PhantomPrefs.setOnboardingStep(appCtx, onboardingStep.index)
+    }
 
     LaunchedEffect(activeFilter, selectedTab) {
         isMultiSelectMode = false
@@ -312,7 +326,7 @@ private fun PhantomCheckApp(
                 wasActionDialogOpenInStep3 = true
             } else if (wasActionDialogOpenInStep3) {
                 wasActionDialogOpenInStep3 = false
-                onboardingStep = OnboardingStep.FILTER_CHIPS
+                onboardingStep = OnboardingStep.SWIPE_DELETE
             }
         }
     }
@@ -347,12 +361,15 @@ private fun PhantomCheckApp(
             if (event == Lifecycle.Event.ON_RESUME) {
                 isListenerEnabled = isNotificationListenerEnabled(appCtx)
                 hasPostNotifications = isPostNotificationsGranted(appCtx)
+                isBatteryWhitelistOk = isBatteryOptimizationIgnored(appCtx)
+                oemAutostartConfirmed = PhantomPrefs.isOemAutostartConfirmed(appCtx)
                 favoritePackages = PhantomPrefs.getFavoriteApps(appCtx)
                 mutedPackages = PhantomPrefs.getMutedApps(appCtx)
                 val completedNow = PhantomPrefs.isOnboardingCompleted(appCtx)
                 if (onboardingCompleted && !completedNow) {
                     onboardingCompleted = false
                     onboardingStep = OnboardingStep.PERMISSION
+                    PhantomPrefs.setOnboardingStep(appCtx, OnboardingStep.PERMISSION.index)
                 }
                 refreshTrigger++
             }
@@ -434,6 +451,7 @@ private fun PhantomCheckApp(
                             hasMoreFiltered = page.size >= PAGE_SIZE
                         }
                     }
+                    MainTab.ASSISTANT -> Unit
                     MainTab.SCAMS -> {
                         scamMessages = dao.scamsPaged(PAGE_SIZE, 0)
                     }
@@ -462,9 +480,29 @@ private fun PhantomCheckApp(
                                 count = countsByDayKey[key]?.size ?: 0
                             )
                         }
+                        val hourly = IntArray(24)
+                        val hCal = Calendar.getInstance()
+                        weekMsgs.filter { it.timestamp >= startOfDay }.forEach { m ->
+                            hCal.timeInMillis = m.timestamp
+                            val h = hCal.get(Calendar.HOUR_OF_DAY).coerceIn(0, 23)
+                            hourly[h]++
+                        }
                         val safe = dao.countByRiskLabel("safe") + dao.countByRiskLabel("")
                         val suspicious = dao.countByRiskLabel("suspicious")
                         val scam = dao.countByRiskLabel("scam")
+                        val harassmentTagIds = db.tagDao().all()
+                            .filter { it.name == "行銷" || it.name == "垃圾通知" }
+                            .map { it.id }
+                            .toSet()
+                        val harassmentCnt = if (harassmentTagIds.isEmpty()) {
+                            0
+                        } else {
+                            db.tagDao().allCrossRefs()
+                                .filter { it.tagId in harassmentTagIds }
+                                .map { it.messageId }
+                                .toSet()
+                                .size
+                        }
                         val topRisky = dao.topRiskyApps()
                         val rawGroups = dao.groupByApp()
                         val aiTagCounts = db.tagDao().todayAiTagCounts(startOfDay)
@@ -476,7 +514,10 @@ private fun PhantomCheckApp(
                             scamCount = scam,
                             topRiskyApps = topRisky,
                             rawAppGroups = rawGroups,
-                            todayAiTagCounts = aiTagCounts
+                            todayAiTagCounts = aiTagCounts,
+                            todayHourlyCounts = hourly.toList(),
+                            harassmentCount = harassmentCnt,
+                            totalMessageCount = safe + suspicious + scam
                         )
                     }
                 }
@@ -740,17 +781,17 @@ private fun PhantomCheckApp(
                             scope.launch {
                                 isAnalyzingSheetMsg = true
                                 val autoTagEnabled = PhantomPrefs.isAiAutoTagEnabled(appCtx)
-                                val aiTags = if (autoTagEnabled) {
-                                    withContext(Dispatchers.IO) {
-                                        AppDatabaseHolder.db(appCtx).tagDao().aiManagedTags()
-                                    }
-                                } else {
-                                    emptyList()
+                                val (aiTags, aiRules) = withContext(Dispatchers.IO) {
+                                    val db = AppDatabaseHolder.db(appCtx)
+                                    val tags = if (autoTagEnabled) db.tagDao().aiManagedTags() else emptyList()
+                                    val rules = db.aiRuleDao().active()
+                                    tags to rules
                                 }
                                 val res = AiClient.analyzeMessage(
                                     sender = msg.sender,
                                     content = msg.content,
                                     tags = aiTags,
+                                    aiRules = aiRules,
                                     enableAutoTag = autoTagEnabled,
                                     context = appCtx,
                                     bypassCache = true
@@ -772,12 +813,11 @@ private fun PhantomCheckApp(
                                                     .filter { it.source == MessageTagCrossRef.SOURCE_MANUAL }
                                                     .map { it.tagId }
                                                     .toSet()
-                                                res.tagIds.forEach { tid ->
-                                                    if (tid !in manualIds) {
-                                                        db.tagDao().addTagToMessage(
-                                                            MessageTagCrossRef(msg.id, tid, MessageTagCrossRef.SOURCE_AUTO)
-                                                        )
-                                                    }
+                                                val refs = res.tagIds
+                                                    .filter { it !in manualIds }
+                                                    .map { tid -> MessageTagCrossRef(msg.id, tid, MessageTagCrossRef.SOURCE_AUTO) }
+                                                if (refs.isNotEmpty()) {
+                                                    db.tagDao().addTagsToMessageBatch(refs)
                                                 }
                                             }
                                         }
@@ -928,20 +968,36 @@ private fun PhantomCheckApp(
                         tabCount = MainTab.entries.size,
                         selectedTabIndex = selectedTab.ordinal,
                         glassState = glassState,
-                        onSelect = { index -> selectedTab = MainTab.entries[index] },
+                        onSelect = { index ->
+                            haptic()
+                            selectedTab = MainTab.entries[index]
+                        },
                         tabs = {
                             MainTab.entries.forEach { tab ->
                                 val icon = when (tab) {
                                     MainTab.MESSAGES -> Icons.Default.Email
+                                    MainTab.ASSISTANT -> AutoAwesomeIcon
                                     MainTab.SCAMS -> Icons.Default.Warning
                                     MainTab.STATS -> Icons.Default.Info
                                 }
+                                val itemModifier = if (tab == MainTab.ASSISTANT) {
+                                    Modifier
+                                        .weight(1f)
+                                        .onGloballyPositioned { coords ->
+                                            targetBounds = targetBounds + (OnboardingTargets.AI_ASSISTANT_TAB to coords.boundsInRoot())
+                                        }
+                                } else {
+                                    Modifier.weight(1f)
+                                }
                                 LiquidGlassTabBarItem(
                                     selected = selectedTab == tab,
-                                    onClick = { selectedTab = tab },
+                                    onClick = {
+                                        haptic()
+                                        selectedTab = tab
+                                    },
                                     icon = icon,
                                     label = tab.title,
-                                    modifier = Modifier.weight(1f)
+                                    modifier = itemModifier
                                 )
                             }
                         }
@@ -953,7 +1009,7 @@ private fun PhantomCheckApp(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .glassSource(glassState)
+                .phantomGlassSource(glassState)
                 .padding(padding)
                 .padding(12.dp)
         ) {
@@ -1095,7 +1151,10 @@ private fun PhantomCheckApp(
                     onOpenDetail = { msg ->
                         ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
                     },
-                    onLongPressMessage = { msg -> messageSheetTarget = msg }
+                    onLongPressMessage = { msg ->
+                        haptic()
+                        messageSheetTarget = msg
+                    }
                 )
             } else {
                 when (selectedTab) {
@@ -1148,9 +1207,11 @@ private fun PhantomCheckApp(
                             ctx.startActivity(AppThreadsActivity.createIntent(ctx, pkg, label))
                         },
                         onLongPressApp = { app ->
+                            haptic()
                             actionTargetApp = app
                         },
                         onLongPressFavorite = { pkg ->
+                            haptic()
                             PhantomPrefs.toggleFavoriteApp(appCtx, pkg)
                             favoritePackages = PhantomPrefs.getFavoriteApps(appCtx)
                             scope.launch {
@@ -1160,12 +1221,21 @@ private fun PhantomCheckApp(
                         onOpenMessageDetail = { msg ->
                             ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
                         },
-                        onLongPressMessage = { msg -> messageSheetTarget = msg },
+                        onLongPressMessage = { msg ->
+                            haptic()
+                            messageSheetTarget = msg
+                        },
                         onOpenNotificationAccess = {
                             ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                         },
                         onReportBounds = { key, rect ->
                             targetBounds = targetBounds + (key to rect)
+                        }
+                    )
+                    MainTab.ASSISTANT -> ChatAssistantTab(
+                        glassState = glassState,
+                        onShowMessage = { msg ->
+                            scope.launch { snackbarHostState.showSnackbar(msg) }
                         }
                     )
                     MainTab.SCAMS -> ScamsTab(
@@ -1196,17 +1266,36 @@ private fun PhantomCheckApp(
             OnboardingOverlay(
                 step = onboardingStep,
                 isListenerEnabled = isListenerEnabled,
+                isBatteryWhitelistOk = isBatteryWhitelistOk,
+                oemAutostartConfirmed = oemAutostartConfirmed,
                 targetBounds = targetBounds,
                 glassState = glassState,
                 onOpenNotificationSettings = {
                     ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 },
+                onOpenBatterySettings = {
+                    openBatteryOptimizationSettings(ctx)
+                },
+                onConfirmOemAutostart = { confirmed ->
+                    PhantomPrefs.setOemAutostartConfirmed(appCtx, confirmed)
+                    oemAutostartConfirmed = confirmed
+                },
+                onOpenSettings = {
+                    PhantomPrefs.setOnboardingCompleted(appCtx, true)
+                    onboardingCompleted = true
+                    ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
+                },
                 onNextStep = {
                     onboardingStep = when (onboardingStep) {
                         OnboardingStep.PERMISSION -> OnboardingStep.HOME_APP
                         OnboardingStep.HOME_APP -> OnboardingStep.LONG_PRESS
-                        OnboardingStep.LONG_PRESS -> OnboardingStep.FILTER_CHIPS
-                        OnboardingStep.FILTER_CHIPS -> OnboardingStep.DONE
+                        OnboardingStep.LONG_PRESS -> OnboardingStep.SWIPE_DELETE
+                        OnboardingStep.SWIPE_DELETE -> OnboardingStep.MULTI_SELECT
+                        OnboardingStep.MULTI_SELECT -> OnboardingStep.FILTER_CHIPS
+                        OnboardingStep.FILTER_CHIPS -> OnboardingStep.AI_ASSISTANT
+                        OnboardingStep.AI_ASSISTANT -> OnboardingStep.TAGS_AND_RULES
+                        OnboardingStep.TAGS_AND_RULES -> OnboardingStep.KEEP_ALIVE
+                        OnboardingStep.KEEP_ALIVE -> OnboardingStep.DONE
                         OnboardingStep.DONE -> {
                             PhantomPrefs.setOnboardingCompleted(appCtx, true)
                             onboardingCompleted = true
@@ -1380,7 +1469,7 @@ private fun MessagesHomeTab(
     ) {
         // 頂部統計玻璃卡
         item {
-            GlassCard(
+            PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1403,7 +1492,7 @@ private fun MessagesHomeTab(
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            text = "點擊 App 進入對話總覽，長按可釘選最愛、靜音或刪除",
+                            text = "點選 App 查看訊息；長按可釘選、靜音或刪除",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1522,7 +1611,7 @@ private fun MessagesHomeTab(
                                     pkg
                                 }
                                 val todayBadge = group?.todayCount ?: 0
-                                GlassCard(
+                                PhantomGlassCard(
                                     glassState = glassState,
                                     modifier = Modifier
                                         .width(92.dp)
@@ -1632,7 +1721,7 @@ private fun MessagesHomeTab(
                                 onClick = { onOpenApp(app.packageName, app.appLabel) },
                                 onLongClick = { onLongPressApp(app) }
                             )
-                        GlassCard(
+                        PhantomGlassCard(
                             glassState = glassState,
                             modifier = rowModifier,
                             cornerRadius = 20.dp,
@@ -1787,7 +1876,12 @@ private fun MessagesHomeTab(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            TextButton(onClick = onToggleMultiSelect) {
+                            TextButton(
+                                onClick = onToggleMultiSelect,
+                                modifier = Modifier.onGloballyPositioned { coords ->
+                                    onReportBounds(OnboardingTargets.SELECT_BUTTON, coords.boundsInRoot())
+                                }
+                            ) {
                                 Text(if (isMultiSelectMode) "完成" else "選取")
                             }
                         }
@@ -1970,13 +2064,38 @@ private fun StatsTab(
         )
     }
 
+    val tokenSaverOn = PhantomPrefs.isTokenSaverEnabled(appCtx)
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        if (tokenSaverOn) {
+            item {
+                PhantomGlassCard(
+                    glassState = glassState,
+                    modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 16.dp,
+                    contentPadding = 12.dp
+                ) {
+                    Text(
+                        text = "省 token 模式啟用中",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "已暫停每則 AI 掃描與每日摘要排程，僅命中可疑特徵時才進行風險分析。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
         // 每日 AI 摘要玻璃卡
         item {
-            GlassCard(
+            PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 20.dp,
@@ -2070,7 +2189,7 @@ private fun StatsTab(
         item {
             val barColor = MaterialTheme.colorScheme.primary
             val trackColor = MaterialTheme.colorScheme.surfaceVariant
-            GlassCard(
+            PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 20.dp,
@@ -2194,9 +2313,141 @@ private fun StatsTab(
             }
         }
 
+        // 今日每小時分布（Task J1：純 Canvas 24 小時 mini bar）
+        item {
+            val hourBarColor = MaterialTheme.colorScheme.secondary
+            val hourTrackColor = MaterialTheme.colorScheme.surfaceVariant
+            PhantomGlassCard(
+                glassState = glassState,
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp,
+                contentPadding = 14.dp
+            ) {
+                Text(
+                    text = "今日每小時分布",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(10.dp))
+                val maxHour = (state.todayHourlyCounts.maxOrNull() ?: 1).coerceAtLeast(1)
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(72.dp)
+                ) {
+                    val counts = state.todayHourlyCounts
+                    if (counts.isEmpty()) return@Canvas
+                    val slotW = size.width / counts.size
+                    val barW = (slotW * 0.6f).coerceAtLeast(3.dp.toPx())
+                    val radius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                    counts.forEachIndexed { idx, cnt ->
+                        val left = idx * slotW + (slotW - barW) / 2f
+                        drawRoundRect(
+                            color = hourTrackColor,
+                            topLeft = Offset(left, 0f),
+                            size = Size(barW, size.height),
+                            cornerRadius = radius
+                        )
+                        val barH = if (cnt > 0) {
+                            (size.height * (cnt.toFloat() / maxHour.toFloat())).coerceAtLeast(4.dp.toPx())
+                        } else {
+                            0f
+                        }
+                        if (barH > 0f) {
+                            drawRoundRect(
+                                color = hourBarColor,
+                                topLeft = Offset(left, size.height - barH),
+                                size = Size(barW, barH),
+                                cornerRadius = radius
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    listOf("0時", "6時", "12時", "18時", "23時").forEach { label ->
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        // 騷擾佔比（Task J2：行銷 + 垃圾通知 / 總訊息，Canvas arc）
+        item {
+            val total = state.totalMessageCount.coerceAtLeast(0)
+            val harass = state.harassmentCount.coerceIn(0, total.coerceAtLeast(0))
+            val ratio = if (total > 0) harass.toFloat() / total.toFloat() else 0f
+            val pct = (ratio * 100f).toInt()
+            val arcTrack = MaterialTheme.colorScheme.surfaceVariant
+            val arcColor = Color(0xFFFF9800)
+
+            PhantomGlassCard(
+                glassState = glassState,
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp,
+                contentPadding = 14.dp
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier.size(72.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val strokeW = 8.dp.toPx()
+                            drawArc(
+                                color = arcTrack,
+                                startAngle = -90f,
+                                sweepAngle = 360f,
+                                useCenter = false,
+                                style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                            )
+                            if (ratio > 0f) {
+                                drawArc(
+                                    color = arcColor,
+                                    startAngle = -90f,
+                                    sweepAngle = 360f * ratio,
+                                    useCenter = false,
+                                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "$pct%",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "騷擾佔比（行銷＋垃圾通知）",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "$harass / $total 則訊息屬於行銷或垃圾通知",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
         // Top 5 高風險 App 清單
         item {
-            GlassCard(
+            PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 20.dp,
@@ -2280,7 +2531,7 @@ private fun RiskCountCard(
     glassState: HazeState,
     modifier: Modifier = Modifier
 ) {
-    GlassCard(
+    PhantomGlassCard(
         glassState = glassState,
         modifier = modifier,
         cornerRadius = 20.dp,

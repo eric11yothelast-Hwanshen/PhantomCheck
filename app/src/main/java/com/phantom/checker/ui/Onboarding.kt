@@ -1,5 +1,11 @@
 package com.phantom.checker.ui
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -16,7 +22,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -24,6 +33,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,33 +48,88 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.phantom.checker.ui.components.GlassCard
 import dev.chrisbanes.haze.HazeState
 
 object OnboardingTargets {
     const val STATS_CARD = "stats_card"
     const val FIRST_APP_ROW = "first_app_row"
     const val FILTER_CHIPS = "filter_chips"
+    const val SELECT_BUTTON = "select_button"
+    const val AI_ASSISTANT_TAB = "ai_assistant_tab"
 }
 
 enum class OnboardingStep(val index: Int) {
     PERMISSION(1),
     HOME_APP(2),
     LONG_PRESS(3),
-    FILTER_CHIPS(4),
-    DONE(5)
+    SWIPE_DELETE(4),
+    MULTI_SELECT(5),
+    FILTER_CHIPS(6),
+    AI_ASSISTANT(7),
+    TAGS_AND_RULES(8),
+    KEEP_ALIVE(9),
+    DONE(10);
+
+    companion object {
+        fun fromIndex(index: Int): OnboardingStep =
+            entries.firstOrNull { it.index == index } ?: PERMISSION
+    }
+}
+
+fun isBatteryOptimizationIgnored(context: Context): Boolean {
+    val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
+    return pm.isIgnoringBatteryOptimizations(context.packageName)
+}
+
+fun openBatteryOptimizationSettings(context: Context) {
+    val reqIntent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+        data = Uri.parse("package:${context.packageName}")
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(reqIntent)
+    } catch (_: Exception) {
+        val fallback = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { context.startActivity(fallback) }
+    }
+}
+
+fun oemAutostartGuideText(): String {
+    val m = Build.MANUFACTURER.lowercase()
+    return when {
+        m.contains("xiaomi") || m.contains("redmi") || m.contains("poco") ->
+            "小米 / Redmi：安全中心 → 授權管理 → 自啟動 → 開啟「幻訊」"
+        m.contains("oppo") || m.contains("realme") || m.contains("oneplus") ->
+            "OPPO / realme / OnePlus：手機管家 → 權限隱私 → 自啟動 → 開啟「幻訊」"
+        m.contains("vivo") || m.contains("iqoo") ->
+            "vivo / iQOO：i 管家 → 應用管理 → 權限管理 → 自啟動 → 開啟「幻訊」"
+        m.contains("samsung") ->
+            "Samsung：設定 → 應用程式 → 幻訊 → 電池 → 選取「不受限制」"
+        m.contains("huawei") || m.contains("honor") ->
+            "華為 / 榮耀：手機管家 → 應用啟動管理 → 關閉自動管理並允許自啟動與背景活動"
+        else ->
+            "請到系統「設定 → 應用程式 → 幻訊 → 電池」允許背景運行與自啟動"
+    }
 }
 
 @Composable
 fun OnboardingOverlay(
     step: OnboardingStep,
     isListenerEnabled: Boolean,
+    isBatteryWhitelistOk: Boolean,
+    oemAutostartConfirmed: Boolean,
     targetBounds: Map<String, Rect>,
     glassState: HazeState,
     onOpenNotificationSettings: () -> Unit,
+    onOpenBatterySettings: () -> Unit,
+    onConfirmOemAutostart: (Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
     onNextStep: () -> Unit,
     onSkip: () -> Unit,
     onFinish: () -> Unit
@@ -75,13 +140,22 @@ fun OnboardingOverlay(
 
     var overlayOrigin by remember { mutableStateOf(Offset.Zero) }
     var cardVisible by remember { mutableStateOf(false) }
+    var lastNextClickMs by remember { mutableLongStateOf(0L) }
+
+    val throttledNext: () -> Unit = {
+        val now = System.currentTimeMillis()
+        if (now - lastNextClickMs >= 500L) {
+            lastNextClickMs = now
+            onNextStep()
+        }
+    }
 
     LaunchedEffect(step) {
         cardVisible = false
         cardVisible = true
     }
 
-    // 步驟 1 若已開啟權限則自動跳過；步驟 2~4 若目標不存在則自動跳下一步
+    // 衝突防護：目標不存在或權限已開啟時自動跳下一步
     LaunchedEffect(step, isListenerEnabled, targetBounds) {
         when (step) {
             OnboardingStep.PERMISSION -> {
@@ -95,15 +169,32 @@ fun OnboardingOverlay(
                 }
             }
             OnboardingStep.LONG_PRESS -> {
-                if (!targetBounds.containsKey(OnboardingTargets.FIRST_APP_ROW)) {
+                if (targetBounds.isNotEmpty() && !targetBounds.containsKey(OnboardingTargets.FIRST_APP_ROW)) {
                     onNextStep()
                 }
             }
-            OnboardingStep.FILTER_CHIPS -> {
-                if (!targetBounds.containsKey(OnboardingTargets.FILTER_CHIPS)) {
+            OnboardingStep.SWIPE_DELETE -> {
+                if (targetBounds.isNotEmpty() && !targetBounds.containsKey(OnboardingTargets.FIRST_APP_ROW)) {
                     onNextStep()
                 }
             }
+            OnboardingStep.MULTI_SELECT -> {
+                if (targetBounds.isNotEmpty() && !targetBounds.containsKey(OnboardingTargets.SELECT_BUTTON)) {
+                    onNextStep()
+                }
+            }
+            OnboardingStep.FILTER_CHIPS,
+            OnboardingStep.TAGS_AND_RULES -> {
+                if (targetBounds.isNotEmpty() && !targetBounds.containsKey(OnboardingTargets.FILTER_CHIPS)) {
+                    onNextStep()
+                }
+            }
+            OnboardingStep.AI_ASSISTANT -> {
+                if (targetBounds.isNotEmpty() && !targetBounds.containsKey(OnboardingTargets.AI_ASSISTANT_TAB)) {
+                    onNextStep()
+                }
+            }
+            OnboardingStep.KEEP_ALIVE,
             OnboardingStep.DONE -> Unit
         }
     }
@@ -125,8 +216,13 @@ fun OnboardingOverlay(
                     else -> stats
                 }
             }
-            OnboardingStep.LONG_PRESS -> targetBounds[OnboardingTargets.FIRST_APP_ROW]
-            OnboardingStep.FILTER_CHIPS -> targetBounds[OnboardingTargets.FILTER_CHIPS]
+            OnboardingStep.LONG_PRESS,
+            OnboardingStep.SWIPE_DELETE -> targetBounds[OnboardingTargets.FIRST_APP_ROW]
+            OnboardingStep.MULTI_SELECT -> targetBounds[OnboardingTargets.SELECT_BUTTON]
+            OnboardingStep.FILTER_CHIPS,
+            OnboardingStep.TAGS_AND_RULES -> targetBounds[OnboardingTargets.FILTER_CHIPS]
+            OnboardingStep.AI_ASSISTANT -> targetBounds[OnboardingTargets.AI_ASSISTANT_TAB]
+            OnboardingStep.KEEP_ALIVE,
             OnboardingStep.DONE -> null
         }
         target?.let {
@@ -161,6 +257,7 @@ fun OnboardingOverlay(
         label = "holeBottom"
     )
 
+    // 不攔截系統返回鍵（沒有 BackHandler）；Canvas 不攔截觸控
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -168,7 +265,6 @@ fun OnboardingOverlay(
                 overlayOrigin = coords.positionInRoot()
             }
     ) {
-        // Canvas 不加 clickable / pointerInput，讓洞內外觸控全部穿透到底層 UI（鐵律 4）
         Canvas(modifier = Modifier.fillMaxSize()) {
             val path = Path().apply {
                 fillType = PathFillType.EvenOdd
@@ -202,23 +298,44 @@ fun OnboardingOverlay(
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 20.dp)
         ) {
-            GlassCard(
+            PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 22.dp,
                 contentPadding = 16.dp
             ) {
+                val totalSteps = OnboardingStep.entries.size
                 val (title, body) = when (step) {
                     OnboardingStep.PERMISSION ->
-                        "步驟 1 / 5・開啟權限" to "幻訊需要通知存取權才能開始記錄"
+                        "步驟 ${step.index} / $totalSteps・開啟權限" to
+                            "幻訊需要通知存取權才能即時備份訊息並偵測詐騙風險。"
                     OnboardingStep.HOME_APP ->
-                        "步驟 2 / 5・查看訊息" to "點擊 App 查看該 App 的所有訊息"
+                        "步驟 ${step.index} / $totalSteps・主畫面導覽" to
+                            "點選 App 查看對話與訊息；頂部卡片顯示今日、未讀與詐騙數。"
                     OnboardingStep.LONG_PRESS ->
-                        "步驟 3 / 5・長按操作" to "長按看看：靜音、釘選、刪除都在這裡"
+                        "步驟 ${step.index} / $totalSteps・長按操作" to
+                            "長按 App 或訊息可開啟選單，進行星標、釘選、靜音、AI 分析或刪除。"
+                    OnboardingStep.SWIPE_DELETE ->
+                        "步驟 ${step.index} / $totalSteps・滑動刪除" to
+                            "進入對話頁後，將任一訊息向左滑動即可快速刪除（需在設定開啟滑動刪除）。"
+                    OnboardingStep.MULTI_SELECT ->
+                        "步驟 ${step.index} / $totalSteps・多選批次" to
+                            "在篩選或搜尋清單點右上角「選取」，可批次已讀、星標或刪除。"
                     OnboardingStep.FILTER_CHIPS ->
-                        "步驟 4 / 5・標籤篩選" to "用標籤快速過濾你想看的訊息"
+                        "步驟 ${step.index} / $totalSteps・標籤篩選" to
+                            "使用橫向篩選列，依未讀、星標、詐騙、App 分類或 AI 標籤過濾訊息。"
+                    OnboardingStep.AI_ASSISTANT ->
+                        "步驟 ${step.index} / $totalSteps・AI 助手" to
+                            "切換到「AI 助手」分頁，可用自然語言查詢訊息紀錄與生成昨日簡報。"
+                    OnboardingStep.TAGS_AND_RULES ->
+                        "步驟 ${step.index} / $totalSteps・標籤與 AI 規則" to
+                            "在「設定 → 標籤與 AI 規則」可設定零 token App 分類與自然語言白名單規則。"
+                    OnboardingStep.KEEP_ALIVE ->
+                        "步驟 ${step.index} / $totalSteps・保活設定" to
+                            "完成以下三項檢查，讓幻訊在背景穩定接收與分析通知："
                     OnboardingStep.DONE ->
-                        "步驟 5 / 5・完成導覽" to "設定都在右上角齒輪，AI 標籤設定也在那裡"
+                        "步驟 ${step.index} / $totalSteps・你學會了！" to
+                            "已掌握通知存取、長按/滑動/多選操作、標籤篩選、AI 助手、AI 規則與保活設定。"
                 }
 
                 Text(
@@ -232,6 +349,90 @@ fun OnboardingOverlay(
                     text = body,
                     style = MaterialTheme.typography.bodyMedium
                 )
+
+                if (step == OnboardingStep.KEEP_ALIVE) {
+                    Spacer(Modifier.height(10.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // 1. 電池白名單
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (isBatteryWhitelistOk) "1. 電池最佳化白名單 ✓ 已加入" else "1. 電池最佳化白名單 ✗ 未加入",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = if (isBatteryWhitelistOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "避免系統休眠後中斷背景監聽",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (!isBatteryWhitelistOk) {
+                                OutlinedButton(onClick = onOpenBatterySettings) {
+                                    Text("前往設定")
+                                }
+                            }
+                        }
+
+                        // 2. OEM 自啟動（誠實手動確認）
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "2. 裝置自啟動權限（系統無法自動偵測，請自行確認後勾選）",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = oemAutostartGuideText(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Checkbox(
+                                    checked = oemAutostartConfirmed,
+                                    onCheckedChange = onConfirmOemAutostart
+                                )
+                                Text(
+                                    text = "我已確認完成自啟動設定",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        }
+
+                        // 3. 通知存取狀態
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (isListenerEnabled) "3. 通知存取權限 ✓ 已開啟" else "3. 通知存取權限 ✗ 未開啟",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (isListenerEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (!isListenerEnabled) {
+                                OutlinedButton(onClick = onOpenNotificationSettings) {
+                                    Text("前往開啟")
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Spacer(Modifier.height(14.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -243,7 +444,9 @@ fun OnboardingOverlay(
                             Text("跳過")
                         }
                     } else {
-                        Spacer(Modifier.weight(1f))
+                        OutlinedButton(onClick = onOpenSettings) {
+                            Text("前往設定")
+                        }
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -257,7 +460,7 @@ fun OnboardingOverlay(
                                 Text("完成")
                             }
                         } else {
-                            Button(onClick = onNextStep) {
+                            Button(onClick = throttledNext) {
                                 Text("下一步")
                             }
                         }
