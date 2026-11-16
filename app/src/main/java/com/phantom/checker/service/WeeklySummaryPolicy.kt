@@ -42,7 +42,7 @@ class WeeklySummaryWorker(
 
 object WeeklySummaryPolicy {
     private const val UNIQUE_WORK_NAME = "phantom_weekly_ai_summary"
-    private const val WEEKLY_SUMMARY_NOTIF_ID = 1004
+    private const val WEEKLY_SUMMARY_NOTIF_ID = NotifIds.WEEKLY_SUMMARY
     const val WEEKLY_KEY_OFFSET = 1_000_000_000L
 
     fun schedule(ctx: Context) {

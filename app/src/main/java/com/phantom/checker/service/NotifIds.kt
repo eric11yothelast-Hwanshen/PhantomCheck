@@ -1,0 +1,35 @@
+package com.phantom.checker.service
+
+/**
+ * 全專案通知 ID 集中管理，各區段嚴格互斥，避免互相覆蓋。
+ *
+ * 區段配置：
+ * - 1001..1099：系統/常駐/排程固定通知（1001 常駐統計、1002 開機提醒、1003 每日摘要、1004 週報）
+ * - 2000..21999：詐騙警示（2000 + msgId % 20000）
+ * - 22000..41999：重要訊息提醒（22000 + msgId % 20000）
+ * - 100000..109999：待辦提醒（100000 + messageId % 10000）
+ */
+object NotifIds {
+    const val STATS_PERSISTENT = 1001
+    const val BOOT_ALERT = 1002
+    const val DAILY_SUMMARY = 1003
+    const val WEEKLY_SUMMARY = 1004
+
+    private const val SCAM_ALERT_BASE = 2000
+    private const val SCAM_ALERT_SPAN = 20000L
+
+    private const val IMPORTANT_ALERT_BASE = 22000
+    private const val IMPORTANT_ALERT_SPAN = 20000L
+
+    private const val REMINDER_BASE = 100000
+    private const val REMINDER_SPAN = 10000L
+
+    fun scamAlert(msgId: Long): Int =
+        SCAM_ALERT_BASE + Math.floorMod(msgId, SCAM_ALERT_SPAN).toInt()
+
+    fun importantAlert(msgId: Long): Int =
+        IMPORTANT_ALERT_BASE + Math.floorMod(msgId, IMPORTANT_ALERT_SPAN).toInt()
+
+    fun reminder(messageId: Long): Int =
+        REMINDER_BASE + Math.floorMod(messageId, REMINDER_SPAN).toInt()
+}

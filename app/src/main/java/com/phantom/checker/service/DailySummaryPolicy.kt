@@ -181,5 +181,5 @@ object DailySummaryPolicy {
 
     const val EXTRA_OPEN_TAB = "extra_open_tab"
     const val TAB_STATS = "stats"
-    private const val DAILY_SUMMARY_NOTIF_ID = 1003
+    private const val DAILY_SUMMARY_NOTIF_ID = NotifIds.DAILY_SUMMARY
 }

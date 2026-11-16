@@ -79,6 +79,6 @@ class BootReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        private const val BOOT_ALERT_NOTIF_ID = 1002
+        private const val BOOT_ALERT_NOTIF_ID = NotifIds.BOOT_ALERT
     }
 }

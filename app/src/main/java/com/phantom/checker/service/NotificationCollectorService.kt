@@ -525,7 +525,7 @@ class NotificationCollectorService : NotificationListenerService() {
         nm.createNotificationChannel(
             NotificationChannel("scam_alert", "詐騙警示", NotificationManager.IMPORTANCE_HIGH)
         )
-        val notifId = 2000 + ((msgId % 40000L).toInt())
+        val notifId = NotifIds.scamAlert(msgId)
         val pendingIntent = buildClickPendingIntent(ctx, notifId, msgId, pkg)
         val plainReason = com.phantom.checker.ui.stripMarkdown(reason)
             .replace(Regex("\\s+"), " ")
@@ -556,7 +556,7 @@ class NotificationCollectorService : NotificationListenerService() {
         nm.createNotificationChannel(
             NotificationChannel("important_alert", "重要訊息提醒", NotificationManager.IMPORTANCE_HIGH)
         )
-        val notifId = 50000 + ((msgId % 40000L).toInt())
+        val notifId = NotifIds.importantAlert(msgId)
         val pendingIntent = buildClickPendingIntent(ctx, notifId, msgId, pkg)
         val notif = Notification.Builder(ctx, "important_alert")
             .setSmallIcon(R.drawable.ic_stat_phantom)

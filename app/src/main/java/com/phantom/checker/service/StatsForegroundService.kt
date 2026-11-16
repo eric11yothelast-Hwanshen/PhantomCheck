@@ -321,7 +321,7 @@ class StatsForegroundService : Service() {
 
     companion object {
         const val STATS_CHANNEL_ID = "stats_summary"
-        const val STATS_NOTIF_ID = 1001
+        const val STATS_NOTIF_ID = NotifIds.STATS_PERSISTENT
         const val EXTRA_FORCE_REFRESH = "extra_force_refresh"
         private const val THROTTLE_MS = 5000L
         private const val DEFAULT_STALE_MS = 30 * 60 * 1000L

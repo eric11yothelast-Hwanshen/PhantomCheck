@@ -103,7 +103,7 @@ class ReminderReceiver : BroadcastReceiver() {
                         .build()
                     val nm = appCtx.getSystemService(NotificationManager::class.java)
                     try {
-                        nm?.notify(20000 + (messageId % 10000).toInt(), notif)
+                        nm?.notify(NotifIds.reminder(messageId), notif)
                     } catch (_: SecurityException) {
                     }
                 }
