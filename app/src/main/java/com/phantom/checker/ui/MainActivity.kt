@@ -2307,6 +2307,8 @@ private fun StatsTab(
     var showExportDialog by remember { mutableStateOf(false) }
     var showHistoryDialog by remember { mutableStateOf(false) }
     var summaryHistory by remember { mutableStateOf(listOf<AiSummaryEntity>()) }
+    val profiles = remember { AiClient.getProfiles(appCtx) }
+    var activeProfile by remember { mutableStateOf(AiClient.getActiveProfile(appCtx)) }
 
     if (showExportDialog) {
         ExportCsvDialog(
@@ -2437,6 +2439,15 @@ private fun StatsTab(
                         Text("查看歷史")
                     }
                 }
+                AiProviderSwitcherChip(
+                    profiles = profiles,
+                    activeProfile = activeProfile,
+                    onSelectProfile = { selected ->
+                        AiClient.setActiveProvider(appCtx, selected.id)
+                        activeProfile = selected
+                        onShowMessage("已切換模型：${selected.name}・${selected.model}")
+                    }
+                )
                 Spacer(Modifier.height(4.dp))
                 val summary = state.latestSummary
                 if (summary != null) {
