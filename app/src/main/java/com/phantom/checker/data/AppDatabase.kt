@@ -188,6 +188,18 @@ data class MessageStatsRow(
     val scam: Int
 )
 
+data class StatsSnapshotRow(
+    val total: Int,
+    val today: Int,
+    val unread: Int,
+    val scam: Int,
+    val latestPackageName: String?,
+    val recentPackagesCsv: String?
+) {
+    fun recentPackages(): List<String> =
+        recentPackagesCsv?.split('|')?.filter { it.isNotBlank() } ?: emptyList()
+}
+
 data class MessageTagRow(
     val messageId: Long,
     val tagId: Long,
@@ -256,6 +268,20 @@ interface MessageDao {
             "FROM messages"
     )
     suspend fun statsOverview(startOfDay: Long): MessageStatsRow
+
+    @Query(
+        "SELECT COUNT(*) as total, " +
+            "COALESCE(SUM(CASE WHEN timestamp >= :startOfDay THEN 1 ELSE 0 END), 0) as today, " +
+            "COALESCE(SUM(CASE WHEN isRead = 0 THEN 1 ELSE 0 END), 0) as unread, " +
+            "COALESCE(SUM(CASE WHEN riskLabel = 'scam' AND timestamp >= :startOfDay THEN 1 ELSE 0 END), 0) as scam, " +
+            "(SELECT packageName FROM messages ORDER BY timestamp DESC LIMIT 1) as latestPackageName, " +
+            "(SELECT GROUP_CONCAT(packageName, '|') FROM (" +
+            "SELECT packageName FROM messages WHERE timestamp >= :startOfDay " +
+            "GROUP BY packageName ORDER BY MAX(timestamp) DESC LIMIT 5" +
+            ")) as recentPackagesCsv " +
+            "FROM messages"
+    )
+    suspend fun statsSnapshot(startOfDay: Long): StatsSnapshotRow
 
     @Query("SELECT COUNT(*) FROM messages WHERE timestamp >= :startOfDay")
     suspend fun todayCount(startOfDay: Long): Int

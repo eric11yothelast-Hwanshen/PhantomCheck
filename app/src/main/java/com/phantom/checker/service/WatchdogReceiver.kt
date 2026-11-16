@@ -51,7 +51,7 @@ class WatchdogReceiver : BroadcastReceiver() {
             StatsForegroundService.isRefreshStale()
 
         if (shouldRefresh) {
-            StatsForegroundService.startOrRefresh(appCtx)
+            StatsForegroundService.startOrRefresh(appCtx, force = true)
         }
 
         tryRequestListenerRebind(appCtx)

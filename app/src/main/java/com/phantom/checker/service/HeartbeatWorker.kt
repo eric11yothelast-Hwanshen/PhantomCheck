@@ -32,7 +32,7 @@ class HeartbeatWorker(
         ) {
             return Result.success()
         }
-        StatsForegroundService.startOrRefresh(ctx)
+        StatsForegroundService.startOrRefresh(ctx, force = true)
         KeepAlivePolicy.ensureScheduled(ctx)
 
         val listenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(ctx)

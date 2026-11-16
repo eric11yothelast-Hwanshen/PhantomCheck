@@ -77,7 +77,7 @@ class NotificationCollectorService : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         connectTime = System.currentTimeMillis()
-        StatsForegroundService.startOrRefresh(applicationContext)
+        StatsForegroundService.startOrRefresh(applicationContext, force = true)
         KeepAlivePolicy.scheduleAll(applicationContext)
     }
 
@@ -212,7 +212,7 @@ class NotificationCollectorService : NotificationListenerService() {
             }
 
             if (!silentMuted) {
-                StatsForegroundService.startOrRefresh(applicationContext)
+                StatsForegroundService.startOrRefresh(applicationContext, force = true)
             }
 
             // 即時提醒關鍵字檢查（與過濾規則獨立）
@@ -279,7 +279,7 @@ class NotificationCollectorService : NotificationListenerService() {
                                 }
                                 if (!silentMuted) {
                                     alertScam(applicationContext, id, pkg, title, hitReason)
-                                    StatsForegroundService.startOrRefresh(applicationContext)
+                                    StatsForegroundService.startOrRefresh(applicationContext, force = true)
                                 }
                                 return@launch
                             }
@@ -391,7 +391,7 @@ class NotificationCollectorService : NotificationListenerService() {
             }
         }
         if (hasNewScam) {
-            StatsForegroundService.startOrRefresh(applicationContext)
+            StatsForegroundService.startOrRefresh(applicationContext, force = true)
         }
     }
 

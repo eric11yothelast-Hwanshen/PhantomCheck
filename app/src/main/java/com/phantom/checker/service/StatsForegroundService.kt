@@ -16,6 +16,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.view.View
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
@@ -23,6 +24,7 @@ import com.phantom.checker.R
 import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.ui.buildRecentAppsHorizontalStripBitmap
 import com.phantom.checker.util.NotifClickBehavior
+import com.phantom.checker.util.PersistentNotifStyle
 import com.phantom.checker.util.PhantomPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +38,17 @@ import kotlinx.coroutines.launch
  */
 class StatsForegroundService : Service() {
 
+    private data class RefreshSignature(
+        val today: Int,
+        val unread: Int,
+        val scam: Int,
+        val recentPkgs: List<String>,
+        val latestPkg: String?,
+        val showIcons: Boolean,
+        val style: PersistentNotifStyle,
+        val clickBehavior: NotifClickBehavior
+    )
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var screenStateReceiver: ScreenStateReceiver? = null
@@ -47,6 +60,9 @@ class StatsForegroundService : Service() {
     private var pendingScheduled = false
 
     @Volatile
+    private var pendingForceRefresh = false
+
+    @Volatile
     private var isForegroundStarted = false
 
     @Volatile
@@ -55,9 +71,14 @@ class StatsForegroundService : Service() {
     @Volatile
     private var cachedStripBitmap: Bitmap? = null
 
+    @Volatile
+    private var lastSignature: RefreshSignature? = null
+
     private val delayedRefreshRunnable = Runnable {
+        val force = pendingForceRefresh
         pendingScheduled = false
-        performRefresh()
+        pendingForceRefresh = false
+        performRefresh(force = force)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -81,6 +102,8 @@ class StatsForegroundService : Service() {
             return START_NOT_STICKY
         }
 
+        val force = intent?.getBooleanExtra(EXTRA_FORCE_REFRESH, false) == true
+
         // 首次啟動必須立即呼叫 startForeground 以符合 Android 8+ 規範
         if (!isForegroundStarted) {
             val initialNotif = buildNotification(
@@ -92,9 +115,12 @@ class StatsForegroundService : Service() {
             )
             startForegroundCompat(initialNotif)
             isForegroundStarted = true
+        } else if (!force && !isScreenInteractive()) {
+            // 熄屏時跳過主動刷新（被動事件如新通知到達、KeepAlive 心跳、亮屏仍會傳 force=true）
+            return START_STICKY
         }
 
-        scheduleThrottledRefresh()
+        scheduleThrottledRefresh(force = force)
         return START_STICKY
     }
 
@@ -117,6 +143,20 @@ class StatsForegroundService : Service() {
             KeepAlivePolicy.scheduleRescue(applicationContext, delayMs = 1000L)
         }
         super.onDestroy()
+    }
+
+    private fun isScreenInteractive(): Boolean {
+        val pm = getSystemService(PowerManager::class.java)
+        return pm == null || pm.isInteractive
+    }
+
+    private fun hasActiveStatsNotif(): Boolean {
+        val nm = getSystemService(NotificationManager::class.java) ?: return false
+        return try {
+            nm.activeNotifications.any { it.id == STATS_NOTIF_ID }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun registerScreenStateReceiver() {
@@ -147,20 +187,24 @@ class StatsForegroundService : Service() {
         }
     }
 
-    private fun scheduleThrottledRefresh() {
+    private fun scheduleThrottledRefresh(force: Boolean = false) {
         val now = System.currentTimeMillis()
         val elapsed = now - lastUpdateMs
         if (elapsed >= THROTTLE_MS) {
             mainHandler.removeCallbacks(delayedRefreshRunnable)
             pendingScheduled = false
-            performRefresh()
-        } else if (!pendingScheduled) {
-            pendingScheduled = true
-            mainHandler.postDelayed(delayedRefreshRunnable, THROTTLE_MS - elapsed)
+            pendingForceRefresh = false
+            performRefresh(force = force)
+        } else {
+            if (force) pendingForceRefresh = true
+            if (!pendingScheduled) {
+                pendingScheduled = true
+                mainHandler.postDelayed(delayedRefreshRunnable, THROTTLE_MS - elapsed)
+            }
         }
     }
 
-    private fun performRefresh() {
+    private fun performRefresh(force: Boolean = false) {
         lastUpdateMs = System.currentTimeMillis()
         scope.launch {
             if (!PhantomPrefs.isPersistentStatsEnabled(applicationContext) ||
@@ -170,36 +214,68 @@ class StatsForegroundService : Service() {
                 stopSelf()
                 return@launch
             }
+            if (!force && isForegroundStarted && !isScreenInteractive()) {
+                return@launch
+            }
             try {
                 val startOfDay = NotificationCollectorService.startOfTodayMillis()
                 val dao = AppDatabaseHolder.db(applicationContext).messageDao()
-                val stats = dao.statsOverview(startOfDay)
-                val latestPkg = dao.latestPackageName()
+                val snap = dao.statsSnapshot(startOfDay)
                 val showIcons = PhantomPrefs.isPersistentNotifShowIcons(applicationContext)
+                val style = PhantomPrefs.getPersistentNotifStyle(applicationContext)
+                val clickBehavior = PhantomPrefs.getNotifClickBehavior(applicationContext)
+                val recentPkgs = if (showIcons) snap.recentPackages() else emptyList()
+
+                val newSig = RefreshSignature(
+                    today = snap.today,
+                    unread = snap.unread,
+                    scam = snap.scam,
+                    recentPkgs = recentPkgs,
+                    latestPkg = snap.latestPackageName,
+                    showIcons = showIcons,
+                    style = style,
+                    clickBehavior = clickBehavior
+                )
+
+                val now = System.currentTimeMillis()
+                val unchanged = isForegroundStarted &&
+                    hasActiveStatsNotif() &&
+                    lastSignature == newSig &&
+                    !isRefreshStale()
+
+                if (unchanged) {
+                    // 數據簽名未變且未逾 staleness，僅更新時間戳並跳過重建通知
+                    lastRefreshMs = now
+                    return@launch
+                }
+
                 if (showIcons) {
-                    val recentPkgs = dao.todayRecentApps(startOfDay).map { it.packageName }
                     if (recentPkgs != cachedStripPackages || cachedStripBitmap == null) {
                         cachedStripPackages = recentPkgs
                         cachedStripBitmap = buildRecentAppsHorizontalStripBitmap(applicationContext, recentPkgs)
                     }
                 } else {
+                    cachedStripPackages = emptyList()
                     cachedStripBitmap = null
                 }
-                lastToday = stats.today
-                lastUnread = stats.unread
-                lastScam = stats.scam
+
+                lastToday = snap.today
+                lastUnread = snap.unread
+                lastScam = snap.scam
                 lastStripBitmap = cachedStripBitmap
-                lastLatestPkg = latestPkg
-                lastRefreshMs = System.currentTimeMillis()
+                lastLatestPkg = snap.latestPackageName
+                lastSignature = newSig
+                lastRefreshMs = now
+
                 val notif = buildNotification(
                     ctx = applicationContext,
-                    today = stats.today,
-                    unread = stats.unread,
-                    scam = stats.scam,
+                    today = snap.today,
+                    unread = snap.unread,
+                    scam = snap.scam,
                     largeIcon = cachedStripBitmap,
-                    latestPackageName = latestPkg
+                    latestPackageName = snap.latestPackageName
                 )
-                // 每次 refresh 一律重新呼叫 startForeground，確保被滑掉後下一則訊息到達即重生
+                // 有變化、逾時或通知遭滑掉時呼叫 startForeground 重建
                 startForegroundCompat(notif)
                 isForegroundStarted = true
             } catch (_: SecurityException) {
@@ -228,6 +304,7 @@ class StatsForegroundService : Service() {
     companion object {
         const val STATS_CHANNEL_ID = "stats_summary"
         const val STATS_NOTIF_ID = 1001
+        const val EXTRA_FORCE_REFRESH = "extra_force_refresh"
         private const val THROTTLE_MS = 5000L
         private const val DEFAULT_STALE_MS = 30 * 60 * 1000L
 
@@ -364,7 +441,7 @@ class StatsForegroundService : Service() {
             }
         }
 
-        fun startOrRefresh(ctx: Context) {
+        fun startOrRefresh(ctx: Context, force: Boolean = false) {
             val appCtx = ctx.applicationContext
             if (!PhantomPrefs.isPersistentStatsEnabled(appCtx)) {
                 stop(appCtx)
@@ -373,7 +450,9 @@ class StatsForegroundService : Service() {
             if (!hasPostNotificationsPermission(appCtx)) {
                 return
             }
-            val intent = Intent(appCtx, StatsForegroundService::class.java)
+            val intent = Intent(appCtx, StatsForegroundService::class.java).apply {
+                putExtra(EXTRA_FORCE_REFRESH, force)
+            }
             try {
                 ContextCompat.startForegroundService(appCtx, intent)
             } catch (_: Exception) {

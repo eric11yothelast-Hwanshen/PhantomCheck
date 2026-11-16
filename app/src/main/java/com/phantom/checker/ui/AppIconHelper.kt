@@ -129,6 +129,25 @@ fun buildRecentAppsStripBitmap(
     return bitmap
 }
 
+private val stripIconBitmapCache = object : android.util.LruCache<String, Bitmap>(32) {}
+
+private fun loadStripIconBitmap(context: Context, packageName: String, iconPx: Int): Bitmap? {
+    val key = "$packageName:$iconPx"
+    synchronized(stripIconBitmapCache) {
+        stripIconBitmapCache.get(key)?.let { if (!it.isRecycled) return it }
+    }
+    return try {
+        val drawable = context.packageManager.getApplicationIcon(packageName)
+        val bmp = drawableToBitmap(drawable, iconPx)
+        synchronized(stripIconBitmapCache) {
+            stripIconBitmapCache.put(key, bmp)
+        }
+        bmp
+    } catch (_: Exception) {
+        null
+    }
+}
+
 /**
  * 水平條狀圖示列（左新右舊，最多 4 個 App 圖示），最左側最新 App 加上高亮邊框與角標，
  * 供常駐統計通知 RemoteViews 右側顯示。
@@ -143,25 +162,18 @@ fun buildRecentAppsHorizontalStripBitmap(
     val iconPx = (24f * density).roundToInt().coerceAtLeast(48)
     val gapPx = (4f * density).roundToInt().coerceAtLeast(6)
     val padPx = (3f * density).roundToInt().coerceAtLeast(4)
-    val drawables = pkgs.mapNotNull { pkg ->
-        try {
-            context.packageManager.getApplicationIcon(pkg)
-        } catch (_: Exception) {
-            null
-        }
-    }
-    if (drawables.isEmpty()) return null
+    val iconBitmaps = pkgs.mapNotNull { pkg -> loadStripIconBitmap(context, pkg, iconPx) }
+    if (iconBitmaps.isEmpty()) return null
 
-    val width = padPx * 2 + drawables.size * iconPx + (drawables.size - 1) * gapPx
+    val width = padPx * 2 + iconBitmaps.size * iconPx + (iconBitmaps.size - 1) * gapPx
     val height = padPx * 2 + iconPx
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
 
-    drawables.forEachIndexed { idx, drawable ->
+    iconBitmaps.forEachIndexed { idx, iconBmp ->
         val left = padPx + idx * (iconPx + gapPx)
         val top = padPx
-        val iconBmp = drawableToBitmap(drawable, iconPx)
         canvas.drawBitmap(iconBmp, null, Rect(left, top, left + iconPx, top + iconPx), paint)
 
         if (idx == 0) {
