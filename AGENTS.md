@@ -37,3 +37,11 @@
 - 兩個 agent 同時開工時，任務範圍不得重疊（Vibe 分派時保證）。
 - 開工前先 git pull origin main rebase。
 - 共用檔案（build.gradle.kts、AndroidManifest.xml、AppDatabase.kt）的修改屬「小型修改」以上，需在 issue 註明。
+
+## 發佈檢查清單（未完成前不得打 tag）
+1. **版號 bump**：確認 `app/build.gradle.kts` 之 `versionCode` 與 `versionName` 已遞增並與發佈版號一致。
+2. **CHANGELOG.md 新條目**：依 Keep a Changelog 格式補齊本次版本的所有新增、變更與修復條目（繁體中文）。
+3. **README.md 同步**：確認功能總覽、系統需求、版本重點與安裝說明已對齊最新版本。
+4. **Tag release notes 含變更說明**：建立 GitHub Release / tag 時，release notes 須附上完整變更說明（說明書）。
+5. **Release 資產驗證**：確認 CI（`gitleaks` + `build`）全綠燈，並驗證產出之 APK 資產完整可下載。
+
