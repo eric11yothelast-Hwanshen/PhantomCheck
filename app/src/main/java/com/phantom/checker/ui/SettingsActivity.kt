@@ -1439,9 +1439,15 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
 
             // 6. Shizuku 進階
             item {
+                var expandShizuku by remember {
+                    mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "shizuku_advanced"))
+                }
                 ShizukuAdvancedCard(
-                    expanded = isCardExpanded("shizuku_advanced"),
-                    onToggle = { toggleCard("shizuku_advanced") },
+                    expanded = expandShizuku,
+                    onToggle = {
+                        expandShizuku = !expandShizuku
+                        PhantomPrefs.setSettingsCardExpanded(appCtx, "shizuku_advanced", expandShizuku)
+                    },
                     glassState = glassState,
                     onShowMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
                 )
