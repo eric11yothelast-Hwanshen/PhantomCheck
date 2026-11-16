@@ -64,19 +64,17 @@ class RetentionWorker(
 
         val db = AppDatabaseHolder.db(applicationContext)
         val dao = db.messageDao()
+        val tagDao = db.tagDao()
 
         db.withTransaction {
             if (days > 0) {
                 val cutoff = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(days.toLong())
-                val scamsToPreserve = dao.scams().filter { it.timestamp < cutoff }
                 dao.prune(cutoff)
-                scamsToPreserve.forEach { scam ->
-                    dao.insert(scam)
-                }
             }
             if (maxCount > 0) {
                 dao.deleteOlderThanCount(maxCount)
             }
+            tagDao.deleteOrphanCrossRefs()
         }
 
         return Result.success()

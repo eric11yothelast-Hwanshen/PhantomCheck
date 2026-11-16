@@ -394,10 +394,10 @@ interface MessageDao {
     @Query("DELETE FROM messages")
     suspend fun deleteAll()
 
-    @Query("DELETE FROM messages WHERE timestamp < :before")
+    @Query("DELETE FROM messages WHERE timestamp < :before AND riskLabel != 'scam'")
     suspend fun prune(before: Long)
 
-    @Query("DELETE FROM messages WHERE id NOT IN (SELECT id FROM messages ORDER BY timestamp DESC LIMIT :keepCount)")
+    @Query("DELETE FROM messages WHERE riskLabel != 'scam' AND id NOT IN (SELECT id FROM messages ORDER BY timestamp DESC LIMIT :keepCount)")
     suspend fun deleteOlderThanCount(keepCount: Int)
 }
 
@@ -522,11 +522,16 @@ interface TagDao {
 
     @Query(
         "SELECT t.id AS tagId, t.name AS name, t.colorHex AS colorHex, " +
-            "COUNT(mt.messageId) AS cnt " +
-            "FROM tags t LEFT JOIN message_tags mt ON t.id = mt.tagId " +
+            "COUNT(DISTINCT CASE WHEN m.id IS NOT NULL THEN mt.messageId END) AS cnt " +
+            "FROM tags t " +
+            "LEFT JOIN message_tags mt ON t.id = mt.tagId " +
+            "LEFT JOIN messages m ON mt.messageId = m.id " +
             "GROUP BY t.id ORDER BY t.sortOrder ASC, t.id ASC"
     )
     suspend fun allTagCounts(): List<TagTotalCountRow>
+
+    @Query("DELETE FROM message_tags WHERE messageId NOT IN (SELECT id FROM messages)")
+    suspend fun deleteOrphanCrossRefs()
 }
 
 @Dao
