@@ -89,6 +89,8 @@ object PhantomPrefs {
     private const val KEY_DAILY_SUMMARY_MINUTE = "daily_summary_minute"
     private const val KEY_NOTIF_CLICK_BEHAVIOR = "notif_click_behavior"
     private const val KEY_SAME_KEY_THROTTLE_SEC = "same_key_throttle_sec"
+    private const val KEY_SAME_KEY_DIGIT_VARIANCE_THROTTLE = "same_key_digit_variance_throttle"
+    private const val KEY_APP_SAME_KEY_THROTTLE_MAP = "app_same_key_throttle_map"
     private const val KEY_RETENTION_MAX_COUNT = "retention_max_count"
     private const val KEY_DYNAMIC_COLOR = "dynamic_color_enabled"
     private const val KEY_FONT_SCALE = "font_scale_mode"
@@ -292,6 +294,40 @@ object PhantomPrefs {
 
     fun setSameKeyThrottleSeconds(ctx: Context, seconds: Int) {
         prefs(ctx).edit().putInt(KEY_SAME_KEY_THROTTLE_SEC, seconds.coerceIn(0, 300)).apply()
+    }
+
+    /** 數字微變視為同一則更新（預設開，抑制監控類通知每分鐘數字跳動洗版） */
+    fun isSameKeyDigitVarianceThrottleEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_SAME_KEY_DIGIT_VARIANCE_THROTTLE, true)
+
+    fun setSameKeyDigitVarianceThrottleEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_SAME_KEY_DIGIT_VARIANCE_THROTTLE, enabled).apply()
+    }
+
+    /** Per-app 同 key 節流覆寫表（0 = 永不節流，1..300 = 自訂秒數） */
+    fun getAppSameKeyThrottleMap(ctx: Context): Map<String, Int> {
+        val raw = prefs(ctx).getString(KEY_APP_SAME_KEY_THROTTLE_MAP, null) ?: return emptyMap()
+        return try {
+            val type = object : TypeToken<Map<String, Int>>() {}.type
+            gson.fromJson<Map<String, Int>>(raw, type) ?: emptyMap()
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    fun setAppSameKeyThrottle(ctx: Context, packageName: String, seconds: Int?) {
+        val map = getAppSameKeyThrottleMap(ctx).toMutableMap()
+        if (seconds == null) {
+            map.remove(packageName)
+        } else {
+            map[packageName] = seconds.coerceIn(0, 300)
+        }
+        prefs(ctx).edit().putString(KEY_APP_SAME_KEY_THROTTLE_MAP, gson.toJson(map)).apply()
+    }
+
+    fun getEffectiveSameKeyThrottleSeconds(ctx: Context, packageName: String): Int {
+        val override = getAppSameKeyThrottleMap(ctx)[packageName]
+        return override?.coerceIn(0, 300) ?: getSameKeyThrottleSeconds(ctx)
     }
 
     /** 訊息保留則數上限（-1 = 不限，1000 / 5000） */

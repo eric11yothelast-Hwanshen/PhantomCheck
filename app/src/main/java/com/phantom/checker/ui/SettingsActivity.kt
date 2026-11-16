@@ -334,6 +334,9 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
     var recordOngoing by remember { mutableStateOf(PhantomPrefs.isRecordOngoingEnabled(appCtx)) }
     var clickBehavior by remember { mutableStateOf(PhantomPrefs.getNotifClickBehavior(appCtx)) }
     var throttleSec by remember { mutableFloatStateOf(PhantomPrefs.getSameKeyThrottleSeconds(appCtx).toFloat()) }
+    var digitVarianceThrottle by remember { mutableStateOf(PhantomPrefs.isSameKeyDigitVarianceThrottleEnabled(appCtx)) }
+    var appThrottleMap by remember { mutableStateOf(PhantomPrefs.getAppSameKeyThrottleMap(appCtx)) }
+    var showAppThrottlePicker by remember { mutableStateOf(false) }
     var alertKeywords by remember { mutableStateOf(PhantomPrefs.getAlertKeywords(appCtx)) }
     var newAlertKeyword by remember { mutableStateOf("") }
     var quietHoursEnabled by remember { mutableStateOf(PhantomPrefs.isQuietHoursEnabled(appCtx)) }
@@ -479,6 +482,20 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                 muteModes = PhantomPrefs.getAppMuteModeMap(appCtx)
                 showAppPickerDialog = false
                 scope.launch { snackbarHostState.showSnackbar("已將 $pkg 設為靜音（${mode.label}）") }
+            }
+        )
+    }
+
+    if (showAppThrottlePicker) {
+        AppThrottlePickerDialog(
+            currentOverrides = appThrottleMap,
+            onDismiss = { showAppThrottlePicker = false },
+            onSelectApp = { pkg, seconds ->
+                PhantomPrefs.setAppSameKeyThrottle(appCtx, pkg, seconds)
+                appThrottleMap = PhantomPrefs.getAppSameKeyThrottleMap(appCtx)
+                showAppThrottlePicker = false
+                val msg = if (seconds == 0) "已設定 $pkg 永不節流（0 秒）" else "已設定 $pkg 同 key 節流 $seconds 秒"
+                scope.launch { snackbarHostState.showSnackbar(msg) }
             }
         )
     }
@@ -1398,12 +1415,12 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
 
                     val secInt = throttleSec.roundToInt()
                     Text(
-                        text = if (secInt == 0) "同 key 更新節流：已關閉" else "同 key 更新節流：$secInt 秒",
+                        text = if (secInt == 0) "同 key 重複節流：已關閉" else "同 key 重複節流：$secInt 秒",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "避免監控類通知（如流量統計）在短時間內重複洗版",
+                        text = "僅作用於內容相同的重複更新（實質新訊息一律收錄，不漏訊）",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray
                     )
@@ -1416,6 +1433,61 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                         valueRange = 0f..300f,
                         steps = 29
                     )
+                    Spacer(Modifier.height(6.dp))
+                    SettingSwitchRow(
+                        title = "數字微變視為同一則更新",
+                        subtitle = "抑制監控類通知（如流量／電量統計）僅數字跳動時的洗版",
+                        checked = digitVarianceThrottle,
+                        onCheckedChange = { enabled ->
+                            digitVarianceThrottle = enabled
+                            PhantomPrefs.setSameKeyDigitVarianceThrottleEnabled(appCtx, enabled)
+                        }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "個別 App 節流覆寫（0 秒 = 永不節流）",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                    if (appThrottleMap.isEmpty()) {
+                        Text(
+                            text = "尚未設定個別 App 覆寫，全部套用上方全域秒數",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                    } else {
+                        Spacer(Modifier.height(4.dp))
+                        appThrottleMap.entries.sortedBy { it.key }.forEach { (pkg, sec) ->
+                            val label = if (sec == 0) "0 秒（永不節流）" else "$sec 秒"
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "$pkg：$label",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                TextButton(onClick = {
+                                    PhantomPrefs.setAppSameKeyThrottle(appCtx, pkg, null)
+                                    appThrottleMap = PhantomPrefs.getAppSameKeyThrottleMap(appCtx)
+                                }) {
+                                    Text("移除", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = { showAppThrottlePicker = true },
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        Text("新增 App 節流覆寫")
+                    }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     Text("通知點擊行為", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
@@ -2664,6 +2736,114 @@ private fun AppMutePickerDialog(
                             }
                             if (alreadyMuted) {
                                 Text("已靜音", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("關閉")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AppThrottlePickerDialog(
+    currentOverrides: Map<String, Int>,
+    onDismiss: () -> Unit,
+    onSelectApp: (String, Int) -> Unit
+) {
+    val ctx = LocalContext.current
+    var query by remember { mutableStateOf("") }
+    var selectedSeconds by remember { mutableIntStateOf(0) }
+    var apps by remember { mutableStateOf(listOf<InstalledAppInfo>()) }
+    val presetOptions = listOf(0 to "0 秒 (永不節流)", 30 to "30 秒", 60 to "60 秒", 120 to "120 秒", 300 to "300 秒")
+
+    LaunchedEffect(Unit) {
+        apps = withContext(Dispatchers.IO) {
+            val pm = ctx.packageManager
+            val mainIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+            }
+            pm.queryIntentActivities(mainIntent, 0)
+                .mapNotNull { ri ->
+                    val pkg = ri.activityInfo?.packageName ?: return@mapNotNull null
+                    if (pkg == ctx.packageName) return@mapNotNull null
+                    InstalledAppInfo(
+                        packageName = pkg,
+                        label = ri.loadLabel(pm)?.toString()?.ifBlank { pkg } ?: pkg
+                    )
+                }
+                .distinctBy { it.packageName }
+                .sortedBy { it.label.lowercase(Locale.getDefault()) }
+        }
+    }
+
+    val filtered = remember(apps, query) {
+        val q = query.trim()
+        if (q.isEmpty()) apps else apps.filter {
+            it.label.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("設定個別 App 同 key 節流") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("選擇節流秒數（0 = 永不節流）：", style = MaterialTheme.typography.labelMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    presetOptions.forEach { (sec, label) ->
+                        FilterChip(
+                            selected = selectedSeconds == sec,
+                            onClick = { selectedSeconds = sec },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text("搜尋 App 名稱或套件…") }
+                )
+                LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
+                    items(filtered, key = { it.packageName }) { app ->
+                        val existing = currentOverrides[app.packageName]
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelectApp(app.packageName, selectedSeconds) }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AppIconImage(
+                                packageName = app.packageName,
+                                contentDescription = app.label,
+                                size = 32.dp
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(app.label, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                                Text(app.packageName, style = MaterialTheme.typography.labelSmall, color = Color.Gray, maxLines = 1)
+                            }
+                            if (existing != null) {
+                                Text(
+                                    text = if (existing == 0) "0s" else "${existing}s",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
                             }
                         }
                     }

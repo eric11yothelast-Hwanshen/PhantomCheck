@@ -325,6 +325,9 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE remindAt IS NOT NULL AND remindAt > :now ORDER BY remindAt ASC")
     suspend fun pendingReminders(now: Long): List<MessageEntity>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM messages WHERE timestamp >= :minTs AND timestamp <= :maxTs AND dedupKey = :dedupKey)")
+    suspend fun existsByDedupKeyInWindow(dedupKey: String, minTs: Long, maxTs: Long): Boolean
+
     @Query("SELECT packageName, appLabel, COUNT(*) as cnt, MAX(timestamp) as lastTs, SUM(CASE WHEN riskLabel = 'scam' THEN 2 WHEN riskLabel = 'suspicious' THEN 1 ELSE 0 END) as riskScore FROM messages GROUP BY packageName ORDER BY lastTs DESC")
     suspend fun groupByApp(): List<AppGroupRow>
 
