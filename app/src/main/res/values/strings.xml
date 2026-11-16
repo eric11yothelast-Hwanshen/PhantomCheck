@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="stats_widget_description">即時顯示今日訊息數、未讀數與詐騙警示數，點擊開啟幻訊。</string>
+</resources>

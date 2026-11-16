@@ -4,4 +4,11 @@
     <color name="phantom_primary">#5B21B6</color>
     <color name="phantom_primary_light">#C4B5FD</color>
     <color name="phantom_scam_red">#DC2626</color>
+
+    <color name="widget_bg">#F8F7FC</color>
+    <color name="widget_border">#E2DCF2</color>
+    <color name="widget_text_primary">#181326</color>
+    <color name="widget_text_secondary">#6B6380</color>
+    <color name="widget_accent">#5B21B6</color>
+    <color name="widget_scam">#DC2626</color>
 </resources>

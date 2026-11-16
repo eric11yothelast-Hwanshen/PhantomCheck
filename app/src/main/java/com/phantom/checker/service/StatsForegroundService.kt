@@ -221,6 +221,12 @@ class StatsForegroundService : Service() {
                 val startOfDay = NotificationCollectorService.startOfTodayMillis()
                 val dao = AppDatabaseHolder.db(applicationContext).messageDao()
                 val snap = dao.statsSnapshot(startOfDay)
+                com.phantom.checker.widget.StatsWidgetProvider.updateAllIfChanged(
+                    applicationContext,
+                    snap.today,
+                    snap.unread,
+                    snap.scam
+                )
                 val showIcons = PhantomPrefs.isPersistentNotifShowIcons(applicationContext)
                 val style = PhantomPrefs.getPersistentNotifStyle(applicationContext)
                 val clickBehavior = PhantomPrefs.getNotifClickBehavior(applicationContext)
