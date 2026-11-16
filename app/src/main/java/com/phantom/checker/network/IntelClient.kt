@@ -1,8 +1,12 @@
 package com.phantom.checker.network
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.net.Uri
+import android.util.Base64
 import android.util.LruCache
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -26,10 +30,10 @@ import java.security.MessageDigest
  *
  * 查詢順序：
  * 1. 本地快取（LruCache + Room intel_cache，TTL 72 小時）
- * 2. fraud.tw（台灣 165 通報）
- * 3. Google Safe Browsing Lookup API v4（需 local.properties 注入 safebrowsing.apiKey）
- * 4. PhishTank（可選，預設關閉）
- * 5. Chainabuse（可選，預設關閉，僅查 crypto 地址）
+ * 2. fraud.tw（台灣 165 通報，GET /api/check?d=<host>）
+ * 3. Google Safe Browsing Lookup API v4（App 加密儲存 key 優先，BuildConfig fallback）
+ * 4. PhishTank（可選，預設關閉，支援可選 app_key）
+ * 5. Chainabuse（可選，預設關閉，Basic 認證，僅查 crypto 地址）
  *
  * 任一外部來源失敗時靜默降級，絕不阻斷通知管線或造假命中。
  */
@@ -69,6 +73,11 @@ object IntelClient {
         val checkedAt: Long
     )
 
+    private const val PREFS_NAME = "phantom_secure_prefs"
+    private const val KEY_SAFE_BROWSING_API = "intel_safe_browsing_key"
+    private const val KEY_PHISHTANK_APP = "intel_phishtank_app_key"
+    private const val KEY_CHAINABUSE_API = "intel_chainabuse_api_key"
+
     private const val CACHE_TTL_MS = 72L * 60L * 60L * 1000L
     private const val CONNECT_TIMEOUT_MS = 4000
     private const val READ_TIMEOUT_MS = 5000
@@ -76,7 +85,74 @@ object IntelClient {
     private val memoryCache = object : LruCache<String, CachedIntel>(512) {}
     private val domainTokenRegex = Regex("""\b([a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+)\b""")
 
-    fun isSafeBrowsingKeyConfigured(): Boolean = BuildConfig.SAFE_BROWSING_API_KEY.isNotBlank()
+    private val descriptiveUserAgent: String
+        get() = "PhantomCheck/${BuildConfig.VERSION_NAME} (Android anti-fraud)"
+
+    @Suppress("DEPRECATION")
+    private fun getEncryptedPrefs(context: Context): SharedPreferences? {
+        return try {
+            val appCtx = context.applicationContext
+            val masterKey = MasterKey.Builder(appCtx)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                appCtx,
+                PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun getSafeBrowsingApiKey(context: Context? = null): String? {
+        val stored = context?.let { getEncryptedPrefs(it)?.getString(KEY_SAFE_BROWSING_API, null)?.trim() }
+        if (!stored.isNullOrEmpty()) return stored
+        return BuildConfig.SAFE_BROWSING_API_KEY.trim().takeIf { it.isNotEmpty() }
+    }
+
+    fun getSafeBrowsingKeySource(context: Context): ApiKeySource {
+        val stored = getEncryptedPrefs(context)?.getString(KEY_SAFE_BROWSING_API, null)?.trim()
+        if (!stored.isNullOrEmpty()) return ApiKeySource.ENCRYPTED_PREFS
+        if (BuildConfig.SAFE_BROWSING_API_KEY.trim().isNotEmpty()) return ApiKeySource.BUILD_CONFIG
+        return ApiKeySource.NONE
+    }
+
+    fun setSafeBrowsingApiKey(context: Context, key: String) {
+        val prefs = getEncryptedPrefs(context) ?: return
+        val trimmed = key.trim()
+        prefs.edit().apply {
+            if (trimmed.isEmpty()) remove(KEY_SAFE_BROWSING_API) else putString(KEY_SAFE_BROWSING_API, trimmed)
+        }.apply()
+    }
+
+    fun isSafeBrowsingKeyConfigured(context: Context? = null): Boolean = getSafeBrowsingApiKey(context) != null
+
+    fun getPhishTankAppKey(context: Context): String? =
+        getEncryptedPrefs(context)?.getString(KEY_PHISHTANK_APP, null)?.trim()?.takeIf { it.isNotEmpty() }
+
+    fun setPhishTankAppKey(context: Context, key: String) {
+        val prefs = getEncryptedPrefs(context) ?: return
+        val trimmed = key.trim()
+        prefs.edit().apply {
+            if (trimmed.isEmpty()) remove(KEY_PHISHTANK_APP) else putString(KEY_PHISHTANK_APP, trimmed)
+        }.apply()
+    }
+
+    fun getChainabuseApiKey(context: Context): String? =
+        getEncryptedPrefs(context)?.getString(KEY_CHAINABUSE_API, null)?.trim()?.takeIf { it.isNotEmpty() }
+
+    fun setChainabuseApiKey(context: Context, key: String) {
+        val prefs = getEncryptedPrefs(context) ?: return
+        val trimmed = key.trim()
+        prefs.edit().apply {
+            if (trimmed.isEmpty()) remove(KEY_CHAINABUSE_API) else putString(KEY_CHAINABUSE_API, trimmed)
+        }.apply()
+    }
+
+    fun isChainabuseKeyConfigured(context: Context): Boolean = getChainabuseApiKey(context) != null
 
     fun isWhitelisted(
         indicators: IndicatorExtractor.ExtractedIndicators,
@@ -122,10 +198,12 @@ object IntelClient {
         val appCtx = context.applicationContext
         val useFraudTw = PhantomPrefs.isIntelFraudTwEnabled(appCtx) && indicators.urls.isNotEmpty()
         val useSafeBrowsing = PhantomPrefs.isIntelSafeBrowsingEnabled(appCtx) &&
-            isSafeBrowsingKeyConfigured() &&
+            isSafeBrowsingKeyConfigured(appCtx) &&
             indicators.urls.isNotEmpty()
         val usePhishTank = PhantomPrefs.isIntelPhishTankEnabled(appCtx) && indicators.urls.isNotEmpty()
-        val useChainabuse = PhantomPrefs.isIntelChainabuseEnabled(appCtx) && indicators.cryptoAddresses.isNotEmpty()
+        val useChainabuse = PhantomPrefs.isIntelChainabuseEnabled(appCtx) &&
+            isChainabuseKeyConfigured(appCtx) &&
+            indicators.cryptoAddresses.isNotEmpty()
 
         if (!useFraudTw && !useSafeBrowsing && !usePhishTank && !useChainabuse) {
             return@withContext null
@@ -194,7 +272,7 @@ object IntelClient {
 
         // 4. Google Safe Browsing Lookup API v4
         if (useSafeBrowsing) {
-            when (val outcome = querySafeBrowsing(indicators.urls.take(20))) {
+            when (val outcome = querySafeBrowsing(appCtx, indicators.urls.take(20))) {
                 is ProviderOutcome.Hit -> {
                     return@withContext cacheAndReturn(db, cacheKey, now, true, outcome.sourceLabel, outcome.detail)
                 }
@@ -206,7 +284,7 @@ object IntelClient {
         // 5. PhishTank（可選）
         if (usePhishTank) {
             for (url in indicators.urls.take(3)) {
-                when (val outcome = queryPhishTank(url)) {
+                when (val outcome = queryPhishTank(appCtx, url)) {
                     is ProviderOutcome.Hit -> {
                         return@withContext cacheAndReturn(db, cacheKey, now, true, outcome.sourceLabel, outcome.detail)
                     }
@@ -219,7 +297,7 @@ object IntelClient {
         // 6. Chainabuse（可選，僅查加密貨幣地址）
         if (useChainabuse) {
             for (addr in indicators.cryptoAddresses.take(3)) {
-                when (val outcome = queryChainabuse(addr)) {
+                when (val outcome = queryChainabuse(appCtx, addr)) {
                     is ProviderOutcome.Hit -> {
                         return@withContext cacheAndReturn(db, cacheKey, now, true, outcome.sourceLabel, outcome.detail)
                     }
@@ -287,24 +365,25 @@ object IntelClient {
 
     suspend fun testProvider(context: Context, provider: IntelProvider): ProviderTestResult =
         withContext(Dispatchers.IO) {
+            val appCtx = context.applicationContext
             when (provider) {
                 IntelProvider.FRAUD_TW -> {
                     when (val outcome = queryFraudTw("https://example.com/")) {
                         is ProviderOutcome.Hit, is ProviderOutcome.Clean ->
-                            ProviderTestResult(provider, true, "連線正常（fraud.tw API 可用）")
+                            ProviderTestResult(provider, true, "連線正常（fraud.tw 官方端點可用，免金鑰）")
                         is ProviderOutcome.Unavailable ->
                             ProviderTestResult(provider, false, "不可用：${outcome.reason}（管線將靜默降級）")
                     }
                 }
                 IntelProvider.SAFE_BROWSING -> {
-                    if (!isSafeBrowsingKeyConfigured()) {
+                    if (!isSafeBrowsingKeyConfigured(appCtx)) {
                         return@withContext ProviderTestResult(
                             provider,
                             false,
-                            "未注入 safebrowsing.apiKey（請於 local.properties 設定）"
+                            "未設定 API key（請於上方輸入，或於 local.properties 設定 safebrowsing.apiKey）"
                         )
                     }
-                    when (val outcome = querySafeBrowsing(listOf("https://example.com/"))) {
+                    when (val outcome = querySafeBrowsing(appCtx, listOf("https://example.com/"))) {
                         is ProviderOutcome.Hit, is ProviderOutcome.Clean ->
                             ProviderTestResult(provider, true, "連線正常（Google Safe Browsing v4）")
                         is ProviderOutcome.Unavailable ->
@@ -312,21 +391,35 @@ object IntelClient {
                     }
                 }
                 IntelProvider.PHISHTANK -> {
-                    when (val outcome = queryPhishTank("https://example.com/")) {
-                        is ProviderOutcome.Hit, is ProviderOutcome.Clean ->
-                            ProviderTestResult(provider, true, "連線正常（PhishTank API）")
+                    val hasKey = getPhishTankAppKey(appCtx) != null
+                    when (val outcome = queryPhishTank(appCtx, "https://example.com/")) {
+                        is ProviderOutcome.Hit, is ProviderOutcome.Clean -> {
+                            val note = if (hasKey) {
+                                "連線正常（PhishTank API，已帶 app_key）"
+                            } else {
+                                "連線正常（PhishTank API；未填 app_key，可能受較嚴格限流）"
+                            }
+                            ProviderTestResult(provider, true, note)
+                        }
                         is ProviderOutcome.Unavailable ->
                             ProviderTestResult(provider, false, "不可用：${outcome.reason}")
                     }
                 }
                 IntelProvider.CHAINABUSE -> {
+                    if (!isChainabuseKeyConfigured(appCtx)) {
+                        return@withContext ProviderTestResult(
+                            provider,
+                            false,
+                            "未設定 API key（需於 chainabuse.com 產生，標準 key 每月限 10 次呼叫）"
+                        )
+                    }
                     val dummy = IndicatorExtractor.CryptoIndicator(
                         IndicatorExtractor.CryptoChain.ETH,
                         "0x0000000000000000000000000000000000000000"
                     )
-                    when (val outcome = queryChainabuse(dummy)) {
+                    when (val outcome = queryChainabuse(appCtx, dummy)) {
                         is ProviderOutcome.Hit, is ProviderOutcome.Clean ->
-                            ProviderTestResult(provider, true, "連線正常（Chainabuse Public API）")
+                            ProviderTestResult(provider, true, "連線正常（Chainabuse Public API；標準 key 每月限 10 次）")
                         is ProviderOutcome.Unavailable ->
                             ProviderTestResult(provider, false, "不可用：${outcome.reason}")
                     }
@@ -334,10 +427,24 @@ object IntelClient {
             }
         }
 
-    private fun queryFraudTw(targetUrl: String): ProviderOutcome {
+    private fun extractDomainHost(targetUrl: String): String? {
         return try {
-            val encoded = URLEncoder.encode(targetUrl, "UTF-8")
-            val resp = httpGet("https://fraud.tw/api/v1/check?url=$encoded")
+            val withScheme = if (targetUrl.startsWith("http://", true) || targetUrl.startsWith("https://", true)) {
+                targetUrl
+            } else {
+                "https://$targetUrl"
+            }
+            Uri.parse(withScheme).host?.lowercase()?.removePrefix("www.")?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun queryFraudTw(targetUrl: String): ProviderOutcome {
+        val host = extractDomainHost(targetUrl) ?: return ProviderOutcome.Unavailable("無法解析網域")
+        return try {
+            val encoded = URLEncoder.encode(host, "UTF-8")
+            val resp = httpGet("https://fraud.tw/api/check?d=$encoded")
             if (!resp.ok) {
                 return ProviderOutcome.Unavailable("HTTP ${resp.code}")
             }
@@ -346,21 +453,23 @@ object IntelClient {
                 return ProviderOutcome.Unavailable("回應格式非 JSON 物件")
             }
             val obj = root.asJsonObject
-            val hitFlag = obj.readBool("isFraud")
-                ?: obj.readBool("is_fraud")
-                ?: obj.readBool("scam")
-                ?: obj.readBool("hit")
-                ?: obj.readBool("found")
-                ?: obj.readBool("matched")
-            if (hitFlag == true) {
-                val reason = obj.readString("reason") ?: obj.readString("category") ?: "165 通報涉詐網站"
-                return ProviderOutcome.Hit("165 通報", "$reason（$targetUrl）")
+            val listed = obj.readBool("listed") ?: false
+            val risk = obj.readString("risk")?.lowercase()
+            if (listed || risk == "listed") {
+                val category = obj.readString("category")
+                val totalReports = obj.get("total_reports")
+                    ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }
+                    ?.asInt
+                val detail = buildString {
+                    append(category ?: "165 通報涉詐網域")
+                    if (totalReports != null && totalReports > 0) {
+                        append("・累計通報 $totalReports 筆")
+                    }
+                    append("（$host）")
+                }
+                return ProviderOutcome.Hit("165 通報", detail)
             }
-            val status = obj.readString("status")?.lowercase()
-            if (status in listOf("fraud", "scam", "danger", "malicious", "blocked")) {
-                return ProviderOutcome.Hit("165 通報", "165 通報涉詐網站（$targetUrl）")
-            }
-            if (hitFlag == false || status in listOf("safe", "clean", "ok", "normal")) {
+            if (obj.has("listed") || risk != null) {
                 return ProviderOutcome.Clean
             }
             ProviderOutcome.Unavailable("欄位格式不相容")
@@ -369,9 +478,8 @@ object IntelClient {
         }
     }
 
-    private fun querySafeBrowsing(urls: List<String>): ProviderOutcome {
-        val apiKey = BuildConfig.SAFE_BROWSING_API_KEY
-        if (apiKey.isBlank()) return ProviderOutcome.Unavailable("未設定 API key")
+    private fun querySafeBrowsing(context: Context, urls: List<String>): ProviderOutcome {
+        val apiKey = getSafeBrowsingApiKey(context) ?: return ProviderOutcome.Unavailable("未設定 API key")
         return try {
             val payload = JsonObject().apply {
                 add("client", JsonObject().apply {
@@ -417,9 +525,16 @@ object IntelClient {
         }
     }
 
-    private fun queryPhishTank(targetUrl: String): ProviderOutcome {
+    private fun queryPhishTank(context: Context, targetUrl: String): ProviderOutcome {
         return try {
-            val form = "url=${URLEncoder.encode(targetUrl, "UTF-8")}&format=json"
+            val appKey = getPhishTankAppKey(context)
+            val form = buildString {
+                append("url=").append(URLEncoder.encode(targetUrl, "UTF-8"))
+                append("&format=json")
+                if (!appKey.isNullOrBlank()) {
+                    append("&app_key=").append(URLEncoder.encode(appKey, "UTF-8"))
+                }
+            }
             val resp = httpPostForm("https://checkurl.phishtank.com/checkurl/", form)
             if (!resp.ok) {
                 return ProviderOutcome.Unavailable("HTTP ${resp.code}")
@@ -439,10 +554,17 @@ object IntelClient {
         }
     }
 
-    private fun queryChainabuse(indicator: IndicatorExtractor.CryptoIndicator): ProviderOutcome {
+    private fun queryChainabuse(context: Context, indicator: IndicatorExtractor.CryptoIndicator): ProviderOutcome {
+        val apiKey = getChainabuseApiKey(context) ?: return ProviderOutcome.Unavailable("未設定 API key")
         return try {
-            val encoded = URLEncoder.encode(indicator.address, "UTF-8")
-            val resp = httpGet("https://api.chainabuse.com/v0/reports?address=$encoded")
+            val encodedAddr = URLEncoder.encode(indicator.address, "UTF-8")
+            val encodedChain = URLEncoder.encode(indicator.chain.name, "UTF-8")
+            val creds = "$apiKey:$apiKey"
+            val authHeader = "Basic " + Base64.encodeToString(creds.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+            val resp = httpGet(
+                urlStr = "https://api.chainabuse.com/v0/reports?address=$encodedAddr&chain=$encodedChain",
+                headers = mapOf("Authorization" to authHeader)
+            )
             if (!resp.ok) {
                 return ProviderOutcome.Unavailable("HTTP ${resp.code}")
             }
@@ -474,13 +596,14 @@ object IntelClient {
 
     private data class HttpResponse(val ok: Boolean, val code: Int, val body: String)
 
-    private fun httpGet(urlStr: String): HttpResponse {
+    private fun httpGet(urlStr: String, headers: Map<String, String> = emptyMap()): HttpResponse {
         val conn = (URL(urlStr).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "PhantomCheck/${BuildConfig.VERSION_NAME}")
+            setRequestProperty("User-Agent", descriptiveUserAgent)
+            headers.forEach { (k, v) -> setRequestProperty(k, v) }
         }
         return readHttpResponse(conn)
     }
@@ -493,7 +616,7 @@ object IntelClient {
             readTimeout = READ_TIMEOUT_MS
             setRequestProperty("Content-Type", "application/json; charset=UTF-8")
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "PhantomCheck/${BuildConfig.VERSION_NAME}")
+            setRequestProperty("User-Agent", descriptiveUserAgent)
         }
         OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(jsonBody) }
         return readHttpResponse(conn)
@@ -507,7 +630,7 @@ object IntelClient {
             readTimeout = READ_TIMEOUT_MS
             setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "PhantomCheck/${BuildConfig.VERSION_NAME}")
+            setRequestProperty("User-Agent", descriptiveUserAgent)
         }
         OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(formBody) }
         return readHttpResponse(conn)

@@ -101,6 +101,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -112,6 +113,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.room.withTransaction
 import com.phantom.checker.data.AppGroupRow
 import com.phantom.checker.data.FilterRule
+import com.phantom.checker.network.ApiKeySource
 import com.phantom.checker.network.IntelClient
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.DailySummaryPolicy
@@ -1606,7 +1608,13 @@ private fun FraudIntelCard(
     var safeBrowsingEnabled by remember { mutableStateOf(PhantomPrefs.isIntelSafeBrowsingEnabled(appCtx)) }
     var phishTankEnabled by remember { mutableStateOf(PhantomPrefs.isIntelPhishTankEnabled(appCtx)) }
     var chainabuseEnabled by remember { mutableStateOf(PhantomPrefs.isIntelChainabuseEnabled(appCtx)) }
-    val sbKeyConfigured = remember { IntelClient.isSafeBrowsingKeyConfigured() }
+
+    var sbKeySource by remember { mutableStateOf(IntelClient.getSafeBrowsingKeySource(appCtx)) }
+    var sbKeyInput by remember { mutableStateOf("") }
+    var ptKeyConfigured by remember { mutableStateOf(IntelClient.getPhishTankAppKey(appCtx) != null) }
+    var ptKeyInput by remember { mutableStateOf("") }
+    var caKeyConfigured by remember { mutableStateOf(IntelClient.isChainabuseKeyConfigured(appCtx)) }
+    var caKeyInput by remember { mutableStateOf("") }
 
     val testResults = remember { mutableStateMapOf<IntelClient.IntelProvider, IntelClient.ProviderTestResult>() }
     var testingProvider by remember { mutableStateOf<IntelClient.IntelProvider?>(null) }
@@ -1632,7 +1640,7 @@ private fun FraudIntelCard(
 
             SettingSwitchRow(
                 title = "165 通報（fraud.tw）",
-                subtitle = "查詢台灣 165 涉詐網站通報資料庫（失敗時自動靜默降級）",
+                subtitle = "查詢台灣 165 涉詐網域通報資料庫（免金鑰，失敗時自動靜默降級）",
                 checked = fraudTwEnabled,
                 onCheckedChange = { checked ->
                     fraudTwEnabled = checked
@@ -1640,14 +1648,14 @@ private fun FraudIntelCard(
                 }
             )
 
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
 
             SettingSwitchRow(
                 title = "Google Safe Browsing v4",
-                subtitle = if (sbKeyConfigured) {
-                    "Key 狀態：已從 local.properties 注入"
-                } else {
-                    "Key 狀態：未注入（請於 local.properties 設定 safebrowsing.apiKey）"
+                subtitle = when (sbKeySource) {
+                    ApiKeySource.ENCRYPTED_PREFS -> "Key 狀態：已於 App 加密儲存（優先於 BuildConfig）"
+                    ApiKeySource.BUILD_CONFIG -> "Key 狀態：已從 local.properties 注入"
+                    ApiKeySource.NONE -> "Key 狀態：未設定（需 API key 方可使用）"
                 },
                 checked = safeBrowsingEnabled,
                 onCheckedChange = { checked ->
@@ -1655,28 +1663,96 @@ private fun FraudIntelCard(
                     PhantomPrefs.setIntelSafeBrowsingEnabled(appCtx, checked)
                 }
             )
+            IntelApiKeyEditor(
+                label = "Safe Browsing API Key",
+                placeholder = if (sbKeySource == ApiKeySource.ENCRYPTED_PREFS) "已加密儲存（輸入新 key 可覆蓋）" else "貼上 Google Cloud Safe Browsing Key",
+                helperText = "至 Google Cloud 啟用 Safe Browsing API 後建立 API key（加密儲存於本機）。",
+                value = sbKeyInput,
+                onValueChange = { sbKeyInput = it },
+                hasSavedKey = sbKeySource == ApiKeySource.ENCRYPTED_PREFS,
+                onSave = {
+                    IntelClient.setSafeBrowsingApiKey(appCtx, sbKeyInput)
+                    sbKeyInput = ""
+                    sbKeySource = IntelClient.getSafeBrowsingKeySource(appCtx)
+                    onShowMessage("已加密儲存 Safe Browsing API Key")
+                },
+                onClear = {
+                    IntelClient.setSafeBrowsingApiKey(appCtx, "")
+                    sbKeyInput = ""
+                    sbKeySource = IntelClient.getSafeBrowsingKeySource(appCtx)
+                    onShowMessage("已清除 App 內儲存的 Safe Browsing Key")
+                }
+            )
 
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
 
             SettingSwitchRow(
                 title = "PhishTank（可選）",
-                subtitle = "Cisco Talos 社群釣魚網址庫（無 key 限流較嚴格，預設關閉）",
+                subtitle = if (ptKeyConfigured) {
+                    "Key 狀態：已設定 app_key（加密儲存）"
+                } else {
+                    "未填 app_key，可能受較嚴格限流（預設關閉）"
+                },
                 checked = phishTankEnabled,
                 onCheckedChange = { checked ->
                     phishTankEnabled = checked
                     PhantomPrefs.setIntelPhishTankEnabled(appCtx, checked)
                 }
             )
+            IntelApiKeyEditor(
+                label = "PhishTank app_key（選填）",
+                placeholder = if (ptKeyConfigured) "已加密儲存（輸入新 key 可覆蓋）" else "選填：至 phishtank.net 註冊應用取得",
+                helperText = "未填亦可查詢，但限流較嚴格；填入後加密儲存。",
+                value = ptKeyInput,
+                onValueChange = { ptKeyInput = it },
+                hasSavedKey = ptKeyConfigured,
+                onSave = {
+                    IntelClient.setPhishTankAppKey(appCtx, ptKeyInput)
+                    ptKeyInput = ""
+                    ptKeyConfigured = IntelClient.getPhishTankAppKey(appCtx) != null
+                    onShowMessage("已加密儲存 PhishTank app_key")
+                },
+                onClear = {
+                    IntelClient.setPhishTankAppKey(appCtx, "")
+                    ptKeyInput = ""
+                    ptKeyConfigured = false
+                    onShowMessage("已清除 PhishTank app_key")
+                }
+            )
 
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
 
             SettingSwitchRow(
                 title = "Chainabuse 鏈上地址（可選）",
-                subtitle = "TRM Labs 公開涉詐加密貨幣地址（BTC / ETH / TRON，預設關閉）",
+                subtitle = if (caKeyConfigured) {
+                    "Key 狀態：已設定 API key（加密儲存）｜標準 key 每月限 10 次呼叫（72h 快取緩解）"
+                } else {
+                    "Key 狀態：未設定（需至 chainabuse.com Profile → Settings 產生 API key；標準 key 每月僅 10 次呼叫）"
+                },
                 checked = chainabuseEnabled,
                 onCheckedChange = { checked ->
                     chainabuseEnabled = checked
                     PhantomPrefs.setIntelChainabuseEnabled(appCtx, checked)
+                }
+            )
+            IntelApiKeyEditor(
+                label = "Chainabuse API Key",
+                placeholder = if (caKeyConfigured) "已加密儲存（輸入新 key 可覆蓋）" else "貼上 Chainabuse API Key",
+                helperText = "官方限制：標準 key 每月僅 10 次呼叫（每次最多 50 筆報告），已搭配 72h 快取緩解。",
+                value = caKeyInput,
+                onValueChange = { caKeyInput = it },
+                hasSavedKey = caKeyConfigured,
+                onSave = {
+                    IntelClient.setChainabuseApiKey(appCtx, caKeyInput)
+                    caKeyInput = ""
+                    caKeyConfigured = IntelClient.isChainabuseKeyConfigured(appCtx)
+                    onShowMessage("已加密儲存 Chainabuse API Key")
+                },
+                onClear = {
+                    IntelClient.setChainabuseApiKey(appCtx, "")
+                    caKeyInput = ""
+                    caKeyConfigured = false
+                    onShowMessage("已清除 Chainabuse API Key")
                 }
             )
 
@@ -1740,6 +1816,58 @@ private fun FraudIntelCard(
                 Text("清除情報快取（72h）")
             }
         }
+    }
+}
+
+@Composable
+private fun IntelApiKeyEditor(
+    label: String,
+    placeholder: String,
+    helperText: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    hasSavedKey: Boolean,
+    onSave: () -> Unit,
+    onClear: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp, bottom = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                placeholder = { Text(placeholder, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(6.dp))
+            Button(
+                enabled = value.isNotBlank(),
+                onClick = onSave
+            ) {
+                Text("儲存")
+            }
+            if (hasSavedKey) {
+                Spacer(Modifier.width(4.dp))
+                TextButton(onClick = onClear) {
+                    Text("清除")
+                }
+            }
+        }
+        Text(
+            text = helperText,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp)
+        )
     }
 }
 
