@@ -16,10 +16,13 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.view.View
+import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
 import com.phantom.checker.R
 import com.phantom.checker.ui.MainActivity
-import com.phantom.checker.ui.buildRecentAppsStripBitmap
+import com.phantom.checker.ui.buildRecentAppsHorizontalStripBitmap
+import com.phantom.checker.util.NotifClickBehavior
 import com.phantom.checker.util.PhantomPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -172,12 +175,13 @@ class StatsForegroundService : Service() {
                 val startOfDay = NotificationCollectorService.startOfTodayMillis()
                 val dao = AppDatabaseHolder.db(applicationContext).messageDao()
                 val stats = dao.statsOverview(startOfDay)
+                val latestPkg = dao.latestPackageName()
                 val showIcons = PhantomPrefs.isPersistentNotifShowIcons(applicationContext)
                 if (showIcons) {
                     val recentPkgs = dao.todayRecentApps(startOfDay).map { it.packageName }
                     if (recentPkgs != cachedStripPackages || cachedStripBitmap == null) {
                         cachedStripPackages = recentPkgs
-                        cachedStripBitmap = buildRecentAppsStripBitmap(applicationContext, recentPkgs)
+                        cachedStripBitmap = buildRecentAppsHorizontalStripBitmap(applicationContext, recentPkgs)
                     }
                 } else {
                     cachedStripBitmap = null
@@ -186,13 +190,15 @@ class StatsForegroundService : Service() {
                 lastUnread = stats.unread
                 lastScam = stats.scam
                 lastStripBitmap = cachedStripBitmap
+                lastLatestPkg = latestPkg
                 lastRefreshMs = System.currentTimeMillis()
                 val notif = buildNotification(
                     ctx = applicationContext,
                     today = stats.today,
                     unread = stats.unread,
                     scam = stats.scam,
-                    largeIcon = cachedStripBitmap
+                    largeIcon = cachedStripBitmap,
+                    latestPackageName = latestPkg
                 )
                 // 每次 refresh 一律重新呼叫 startForeground，確保被滑掉後下一則訊息到達即重生
                 startForegroundCompat(notif)
@@ -230,6 +236,7 @@ class StatsForegroundService : Service() {
         @Volatile private var lastUnread = 0
         @Volatile private var lastScam = 0
         @Volatile private var lastStripBitmap: Bitmap? = null
+        @Volatile private var lastLatestPkg: String? = null
         @Volatile var lastRefreshMs: Long = 0L
 
         fun isRefreshStale(maxAgeMs: Long = DEFAULT_STALE_MS): Boolean {
@@ -248,24 +255,36 @@ class StatsForegroundService : Service() {
             )
         }
 
+        private fun buildContentIntent(ctx: Context, latestPackageName: String?): PendingIntent {
+            val behavior = PhantomPrefs.getNotifClickBehavior(ctx)
+            val targetIntent = if (behavior == NotifClickBehavior.OPEN_ORIGINAL_APP && !latestPackageName.isNullOrBlank()) {
+                ctx.packageManager.getLaunchIntentForPackage(latestPackageName)?.apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+            } else {
+                null
+            } ?: Intent(ctx, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            return PendingIntent.getActivity(
+                ctx,
+                STATS_NOTIF_ID,
+                targetIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
         fun buildNotification(
             ctx: Context,
             today: Int,
             unread: Int,
             scam: Int,
-            largeIcon: Bitmap? = null
+            largeIcon: Bitmap? = null,
+            latestPackageName: String? = lastLatestPkg
         ): Notification {
             val appCtx = ctx.applicationContext
             ensureChannel(appCtx)
-            val intent = Intent(appCtx, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
-            val pendingIntent = PendingIntent.getActivity(
-                appCtx,
-                STATS_NOTIF_ID,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
+            val pendingIntent = buildContentIntent(appCtx, latestPackageName)
             val style = PhantomPrefs.getPersistentNotifStyle(appCtx)
             val showIcons = PhantomPrefs.isPersistentNotifShowIcons(appCtx)
             val title = "幻訊・今日 $today 則訊息"
@@ -275,20 +294,39 @@ class StatsForegroundService : Service() {
                 com.phantom.checker.util.PersistentNotifStyle.COMPACT ->
                     "常駐監控中"
             }
-            val notif = Notification.Builder(appCtx, STATS_CHANNEL_ID)
+
+            val builder = Notification.Builder(appCtx, STATS_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_phantom)
                 .setContentTitle(title)
                 .setContentText(text)
-                .apply {
-                    if (showIcons && largeIcon != null) {
-                        setLargeIcon(largeIcon)
-                    }
-                }
                 .setOngoing(true)
                 .setCategory(Notification.CATEGORY_STATUS)
                 .setOnlyAlertOnce(true)
                 .setContentIntent(pendingIntent)
-                .build()
+
+            val appliedCustomView = try {
+                val rv = RemoteViews(appCtx.packageName, R.layout.notif_stats_collapsed).apply {
+                    setTextViewText(R.id.notif_title, title)
+                    setTextViewText(R.id.notif_subtitle, text)
+                    if (showIcons && largeIcon != null) {
+                        setImageViewBitmap(R.id.notif_recent_strip, largeIcon)
+                        setViewVisibility(R.id.notif_recent_strip, View.VISIBLE)
+                    } else {
+                        setViewVisibility(R.id.notif_recent_strip, View.GONE)
+                    }
+                }
+                builder.setCustomContentView(rv)
+                builder.setStyle(Notification.DecoratedCustomViewStyle())
+                true
+            } catch (_: Exception) {
+                false
+            }
+
+            if (!appliedCustomView && showIcons && largeIcon != null) {
+                builder.setLargeIcon(largeIcon)
+            }
+
+            val notif = builder.build()
             notif.flags = notif.flags or Notification.FLAG_NO_CLEAR or Notification.FLAG_ONGOING_EVENT
             return notif
         }
@@ -307,7 +345,8 @@ class StatsForegroundService : Service() {
                 today = lastToday,
                 unread = lastUnread,
                 scam = lastScam,
-                largeIcon = lastStripBitmap
+                largeIcon = lastStripBitmap,
+                latestPackageName = lastLatestPkg
             )
             try {
                 nm.notify(STATS_NOTIF_ID, notif)

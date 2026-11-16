@@ -120,6 +120,146 @@ fun buildRecentAppsStripBitmap(
     return bitmap
 }
 
+/**
+ * 繪製「左新右舊」水平 App 圖示條（最多 4 個），最左側（最新）加上藍色外框與「新」標記角點，
+ * 供常駐統計通知 RemoteViews 右側顯示。
+ */
+fun buildRecentAppsHorizontalStripBitmap(
+    context: Context,
+    packageNames: List<String>,
+    iconSizeDp: Int = 24,
+    spacingDp: Int = 5
+): Bitmap? {
+    val pkgs = packageNames.distinct().take(4)
+    if (pkgs.isEmpty()) return null
+    val density = context.resources.displayMetrics.density
+    val iconPx = (iconSizeDp * density).roundToInt().coerceAtLeast(48)
+    val gapPx = (spacingDp * density).roundToInt().coerceAtLeast(6)
+    val padPx = (3f * density).roundToInt().coerceAtLeast(4)
+
+    val drawables = pkgs.mapNotNull { pkg ->
+        try {
+            context.packageManager.getApplicationIcon(pkg)
+        } catch (_: Exception) {
+            null
+        }
+    }
+    if (drawables.isEmpty()) return null
+
+    val width = padPx * 2 + drawables.size * iconPx + (drawables.size - 1) * gapPx
+    val height = padPx * 2 + iconPx
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+
+    drawables.forEachIndexed { idx, drawable ->
+        val left = padPx + idx * (iconPx + gapPx)
+        val top = padPx
+        val iconBmp = drawableToBitmap(drawable, iconPx)
+        canvas.drawBitmap(iconBmp, null, Rect(left, top, left + iconPx, top + iconPx), paint)
+
+        if (idx == 0) {
+            val strokeW = (2f * density).coerceAtLeast(2f)
+            val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = strokeW
+                color = 0xFF2563EB.toInt()
+            }
+            val r = 6f * density
+            canvas.drawRoundRect(
+                left.toFloat() - strokeW / 2f,
+                top.toFloat() - strokeW / 2f,
+                (left + iconPx).toFloat() + strokeW / 2f,
+                (top + iconPx).toFloat() + strokeW / 2f,
+                r,
+                r,
+                ringPaint
+            )
+            val dotR = (3.5f * density).coerceAtLeast(4f)
+            val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+                color = 0xFF2563EB.toInt()
+            }
+            canvas.drawCircle(
+                (left + iconPx).toFloat() - dotR * 0.3f,
+                top.toFloat() + dotR * 0.3f,
+                dotR,
+                dotPaint
+            )
+        }
+    }
+    return bitmap
+}
+
+/**
+ * 水平條狀圖示列（左新右舊，最多 4 個 App 圖示），最左側最新 App 加上高亮邊框與角標，
+ * 供常駐統計通知 RemoteViews 右側顯示。
+ */
+fun buildRecentAppsHorizontalStripBitmap(
+    context: Context,
+    packageNames: List<String>
+): Bitmap? {
+    val pkgs = packageNames.distinct().take(4)
+    if (pkgs.isEmpty()) return null
+    val density = context.resources.displayMetrics.density
+    val iconPx = (24f * density).roundToInt().coerceAtLeast(48)
+    val gapPx = (4f * density).roundToInt().coerceAtLeast(6)
+    val padPx = (3f * density).roundToInt().coerceAtLeast(4)
+    val drawables = pkgs.mapNotNull { pkg ->
+        try {
+            context.packageManager.getApplicationIcon(pkg)
+        } catch (_: Exception) {
+            null
+        }
+    }
+    if (drawables.isEmpty()) return null
+
+    val width = padPx * 2 + drawables.size * iconPx + (drawables.size - 1) * gapPx
+    val height = padPx * 2 + iconPx
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+
+    drawables.forEachIndexed { idx, drawable ->
+        val left = padPx + idx * (iconPx + gapPx)
+        val top = padPx
+        val iconBmp = drawableToBitmap(drawable, iconPx)
+        canvas.drawBitmap(iconBmp, null, Rect(left, top, left + iconPx, top + iconPx), paint)
+
+        if (idx == 0) {
+            val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = (1.5f * density).coerceAtLeast(2f)
+                color = android.graphics.Color.parseColor("#3B82F6")
+            }
+            val radius = (6f * density).coerceAtLeast(8f)
+            canvas.drawRoundRect(
+                left.toFloat(),
+                top.toFloat(),
+                (left + iconPx).toFloat(),
+                (top + iconPx).toFloat(),
+                radius,
+                radius,
+                ringPaint
+            )
+            val dotRadius = (3.5f * density).coerceAtLeast(5f)
+            val cx = (left + iconPx - dotRadius * 0.6f)
+            val cy = (top + dotRadius * 0.6f)
+            val borderDotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+                color = android.graphics.Color.WHITE
+            }
+            val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+                color = android.graphics.Color.parseColor("#2563EB")
+            }
+            canvas.drawCircle(cx, cy, dotRadius + 1.5f, borderDotPaint)
+            canvas.drawCircle(cx, cy, dotRadius, dotPaint)
+        }
+    }
+    return bitmap
+}
+
 @Composable
 fun AppIconImage(
     packageName: String,

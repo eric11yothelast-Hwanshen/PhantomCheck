@@ -275,6 +275,9 @@ interface MessageDao {
     @Query("SELECT packageName, appLabel, COUNT(*) as cnt, MAX(timestamp) as lastTs FROM messages WHERE timestamp >= :startOfDay GROUP BY packageName ORDER BY lastTs DESC LIMIT 5")
     suspend fun todayRecentApps(startOfDay: Long): List<AppGroupRow>
 
+    @Query("SELECT packageName FROM messages ORDER BY timestamp DESC LIMIT 1")
+    suspend fun latestPackageName(): String?
+
     @Query("UPDATE messages SET isRead = 1 WHERE isRead = 0")
     suspend fun markAllRead()
 
