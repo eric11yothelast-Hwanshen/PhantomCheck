@@ -169,11 +169,7 @@ object ShizukuManager {
         if (!cur.isBinderAlive) return false
         if (cur.isPermissionGranted) return true
         return try {
-            if (Shizuku.shouldShowRequestPermissionRationale()) {
-                Shizuku.requestPermission(REQ_CODE_SHIZUKU)
-            } else {
-                Shizuku.requestPermission(REQ_CODE_SHIZUKU)
-            }
+            Shizuku.requestPermission(REQ_CODE_SHIZUKU)
             true
         } catch (_: Exception) {
             false
@@ -227,9 +223,9 @@ object ShizukuManager {
 
     suspend fun stopWatchdog(ctx: Context): Boolean = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
-        val svc = shellService
+        val svc = ensureConnected(appCtx) ?: return@withContext false
         return@withContext try {
-            svc?.stopWatchdog()
+            svc.stopWatchdog()
             refreshState(appCtx)
             true
         } catch (_: Exception) {

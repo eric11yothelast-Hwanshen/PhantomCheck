@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.service.notification.NotificationListenerService
 import androidx.core.app.NotificationManagerCompat
 import com.phantom.checker.util.PhantomPrefs
@@ -63,6 +64,7 @@ class WatchdogReceiver : BroadcastReceiver() {
     }
 
     private fun tryRequestListenerRebind(ctx: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
         val enabled = NotificationManagerCompat.getEnabledListenerPackages(ctx).contains(ctx.packageName)
         if (!enabled) return
         try {

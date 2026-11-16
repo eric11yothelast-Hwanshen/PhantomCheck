@@ -2,6 +2,7 @@ package com.phantom.checker.service
 
 import android.content.ComponentName
 import android.content.Context
+import android.os.Build
 import android.service.notification.NotificationListenerService
 import androidx.core.app.NotificationManagerCompat
 import androidx.work.CoroutineWorker
@@ -36,7 +37,7 @@ class HeartbeatWorker(
 
         val listenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(ctx)
             .contains(ctx.packageName)
-        if (listenerEnabled) {
+        if (listenerEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 NotificationListenerService.requestRebind(
                     ComponentName(ctx, NotificationCollectorService::class.java)

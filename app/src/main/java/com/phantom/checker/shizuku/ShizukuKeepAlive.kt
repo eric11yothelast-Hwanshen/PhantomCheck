@@ -110,11 +110,13 @@ object ShizukuKeepAlive {
             )
             if (!putRes.isSuccess) return@withContext putRes
         }
-        try {
-            NotificationListenerService.requestRebind(
-                ComponentName(appCtx, NotificationCollectorService::class.java)
-            )
-        } catch (_: Exception) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                NotificationListenerService.requestRebind(
+                    ComponentName(appCtx, NotificationCollectorService::class.java)
+                )
+            } catch (_: Exception) {
+            }
         }
         ShellResult(0, "已啟用並觸發 rebind")
     }
