@@ -130,6 +130,25 @@ data class ChatMessageEntity(
     }
 }
 
+@Entity(tableName = "intel_cache")
+data class IntelCacheEntity(
+    @PrimaryKey val cacheKey: String,
+    val isHit: Boolean,
+    val sourceLabel: String,
+    val detail: String,
+    val checkedAt: Long
+)
+
+@Entity(tableName = "intel_results")
+data class IntelResultEntity(
+    @PrimaryKey val messageId: Long,
+    val indicatorsSummary: String,
+    val isHit: Boolean,
+    val sourceLabel: String,
+    val detail: String,
+    val checkedAt: Long
+)
+
 data class AiTagCountRow(
     val tagId: Long,
     val name: String,
@@ -535,6 +554,36 @@ interface ChatDao {
     }
 }
 
+@Dao
+interface IntelDao {
+    @Query("SELECT * FROM intel_cache WHERE cacheKey = :key LIMIT 1")
+    suspend fun getCache(key: String): IntelCacheEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putCache(entry: IntelCacheEntity)
+
+    @Query("DELETE FROM intel_cache")
+    suspend fun clearCache()
+
+    @Query("DELETE FROM intel_cache WHERE checkedAt < :beforeTs")
+    suspend fun pruneCache(beforeTs: Long)
+
+    @Query("SELECT * FROM intel_results WHERE messageId = :messageId LIMIT 1")
+    suspend fun getResult(messageId: Long): IntelResultEntity?
+
+    @Query("SELECT * FROM intel_results WHERE messageId IN (:messageIds)")
+    suspend fun getResults(messageIds: List<Long>): List<IntelResultEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun putResult(result: IntelResultEntity)
+
+    @Query("DELETE FROM intel_results WHERE messageId = :messageId")
+    suspend fun deleteResult(messageId: Long)
+
+    @Query("DELETE FROM intel_results")
+    suspend fun deleteAllResults()
+}
+
 @Database(
     entities = [
         MessageEntity::class,
@@ -545,9 +594,11 @@ interface ChatDao {
         AppCategoryRuleEntity::class,
         AiRuleEntity::class,
         ChatSessionEntity::class,
-        ChatMessageEntity::class
+        ChatMessageEntity::class,
+        IntelCacheEntity::class,
+        IntelResultEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -558,6 +609,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appCategoryRuleDao(): AppCategoryRuleDao
     abstract fun aiRuleDao(): AiRuleDao
     abstract fun chatDao(): ChatDao
+    abstract fun intelDao(): IntelDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -672,6 +724,36 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_chat_messages_sessionId` ON `chat_messages` (`sessionId`)"
+                )
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `intel_cache` (
+                        `cacheKey` TEXT NOT NULL,
+                        `isHit` INTEGER NOT NULL,
+                        `sourceLabel` TEXT NOT NULL,
+                        `detail` TEXT NOT NULL,
+                        `checkedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`cacheKey`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `intel_results` (
+                        `messageId` INTEGER NOT NULL,
+                        `indicatorsSummary` TEXT NOT NULL,
+                        `isHit` INTEGER NOT NULL,
+                        `sourceLabel` TEXT NOT NULL,
+                        `detail` TEXT NOT NULL,
+                        `checkedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`messageId`)
+                    )
+                    """.trimIndent()
                 )
             }
         }

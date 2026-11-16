@@ -63,6 +63,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.room.withTransaction
+import com.phantom.checker.data.IntelResultEntity
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.data.MessageTagCrossRef
 import com.phantom.checker.data.TagEntity
@@ -119,6 +120,7 @@ fun MessageDetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     var message by remember { mutableStateOf<MessageEntity?>(null) }
+    var intelResult by remember { mutableStateOf<IntelResultEntity?>(null) }
     var allTags by remember { mutableStateOf(listOf<TagEntity>()) }
     var selectedTagIds by remember { mutableStateOf(setOf<Long>()) }
     var tagSourceByTagId by remember { mutableStateOf(mapOf<Long, String>()) }
@@ -136,6 +138,7 @@ fun MessageDetailScreen(
                 StatsForegroundService.startOrRefresh(appCtx)
             }
             message = loaded?.copy(isRead = true)
+            intelResult = db.intelDao().getResult(messageId)
             allTags = db.tagDao().all()
             val refs = db.tagDao().crossRefsForMessage(messageId)
             selectedTagIds = refs.map { it.tagId }.toSet()
@@ -327,6 +330,26 @@ fun MessageDetailScreen(
                                     markdown = msg.riskReason,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            intelResult?.let { intel ->
+                                val intelTimeStr = remember(intel.checkedAt) {
+                                    SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
+                                        .format(Date(intel.checkedAt))
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    text = if (intel.isHit) {
+                                        "防詐情報命中：${intel.sourceLabel}（查詢時間：$intelTimeStr）"
+                                    } else {
+                                        "防詐情報：已查證，無命中紀錄（查詢時間：$intelTimeStr）"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (intel.isHit) {
+                                        MaterialTheme.colorScheme.error
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
                                 )
                             }
                             if (hasSuspiciousUrlHint(msg.riskReason)) {

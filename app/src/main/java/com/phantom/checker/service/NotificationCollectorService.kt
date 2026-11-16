@@ -14,10 +14,13 @@ import android.util.LruCache
 import com.phantom.checker.R
 import com.phantom.checker.data.AppDatabase
 import com.phantom.checker.data.FilterRule
+import com.phantom.checker.data.IntelResultEntity
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.data.MessageTagCrossRef
 import com.phantom.checker.data.TagEntity
 import com.phantom.checker.network.AiClient
+import com.phantom.checker.network.IndicatorExtractor
+import com.phantom.checker.network.IntelClient
 import com.phantom.checker.ui.MessageDetailActivity
 import com.phantom.checker.ui.ScamCenterActivity
 import com.phantom.checker.util.MuteMode
@@ -234,6 +237,57 @@ class NotificationCollectorService : NotificationListenerService() {
                 return@launch
             }
 
+            // 雲端防詐情報預查（零 LLM token，僅送 URL / crypto 地址；ai_rules 白名單優先跳過）
+            if (PhantomPrefs.isIntelEnabled(applicationContext)) {
+                val indicators = IndicatorExtractor.extract(text)
+                if (indicators.isNotEmpty()) {
+                    val activeAiRules = try {
+                        db.aiRuleDao().active()
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                    if (!IntelClient.isWhitelisted(indicators, text, activeAiRules)) {
+                        val intelResult = try {
+                            IntelClient.checkIndicators(applicationContext, db, indicators)
+                        } catch (_: Exception) {
+                            null
+                        }
+                        if (intelResult != null) {
+                            try {
+                                db.intelDao().putResult(
+                                    IntelResultEntity(
+                                        messageId = id,
+                                        indicatorsSummary = indicators.summaryText(),
+                                        isHit = intelResult.isHit,
+                                        sourceLabel = intelResult.sourceLabel,
+                                        detail = intelResult.detail,
+                                        checkedAt = intelResult.checkedAt
+                                    )
+                                )
+                            } catch (_: Exception) {
+                            }
+                            if (intelResult.isHit) {
+                                val hitReason = "【防詐情報命中：${intelResult.sourceLabel}】${intelResult.detail}"
+                                db.messageDao().byId(id)?.let { currentMsg ->
+                                    db.messageDao().update(
+                                        currentMsg.copy(
+                                            riskScore = 95,
+                                            riskLabel = "scam",
+                                            riskReason = hitReason
+                                        )
+                                    )
+                                }
+                                if (!silentMuted) {
+                                    alertScam(applicationContext, id, pkg, title, hitReason)
+                                    StatsForegroundService.startOrRefresh(applicationContext)
+                                }
+                                return@launch
+                            }
+                        }
+                    }
+                }
+            }
+
             // AI 風險分析與智慧標記：省 token 模式下僅命中可疑特徵才分析
             val tokenSaver = PhantomPrefs.isTokenSaverEnabled(applicationContext)
             val shouldRunAi = if (tokenSaver) {
@@ -448,20 +502,8 @@ class NotificationCollectorService : NotificationListenerService() {
         private const val BATCH_WINDOW_MS = 60_000L
         private const val MAX_BATCH_SIZE = 5
 
-        private val SUSPICIOUS_URL_REGEX = Regex(
-            "(https?://|www\\.|\\b(bit\\.ly|reurl\\.cc|tinyurl\\.com|pse\\.is|is\\.gd|t\\.co|goo\\.gl|shorturl\\.at|ppt\\.cc|risu\\.io|lihi1\\.com|lihi\\.cc|twm5g\\.co)/)",
-            RegexOption.IGNORE_CASE
-        )
-        private val SUSPICIOUS_KEYWORDS = listOf(
-            "轉帳", "匯款", "帳號", "密碼", "驗證碼", "OTP", "中獎", "領取",
-            "凍結", "急件", "超商代碼", "ATM", "客服", "投資", "獲利", "刷卡", "扣款", "$", "元"
-        )
-
-        fun hasSuspiciousFeature(content: String, isRuleFiltered: Boolean): Boolean {
-            if (isRuleFiltered) return true
-            if (SUSPICIOUS_URL_REGEX.containsMatchIn(content)) return true
-            return SUSPICIOUS_KEYWORDS.any { content.contains(it, ignoreCase = true) }
-        }
+        fun hasSuspiciousFeature(content: String, isRuleFiltered: Boolean): Boolean =
+            IndicatorExtractor.hasSuspiciousFeature(content, isRuleFiltered)
 
         fun startOfTodayMillis(): Long {
             val cal = Calendar.getInstance()
@@ -596,7 +638,8 @@ object AppDatabaseHolder {
                 AppDatabase.MIGRATION_2_3,
                 AppDatabase.MIGRATION_3_4,
                 AppDatabase.MIGRATION_4_5,
-                AppDatabase.MIGRATION_5_6
+                AppDatabase.MIGRATION_5_6,
+                AppDatabase.MIGRATION_6_7
             ).addCallback(object : androidx.room.RoomDatabase.Callback() {
                 override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                     super.onOpen(db)

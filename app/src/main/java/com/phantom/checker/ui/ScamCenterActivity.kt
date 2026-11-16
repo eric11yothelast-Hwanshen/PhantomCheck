@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import com.phantom.checker.data.IntelResultEntity
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.shizuku.ShizukuKeepAlive
@@ -101,6 +102,7 @@ fun ScamCenterScreen(onBack: () -> Unit) {
     var isLoading by remember { mutableStateOf(true) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     var selectedMessage by remember { mutableStateOf<MessageEntity?>(null) }
+    var intelResults by remember { mutableStateOf(mapOf<Long, IntelResultEntity>()) }
 
     val lifecycleOwner = ctx as? LifecycleOwner
     DisposableEffect(lifecycleOwner) {
@@ -122,8 +124,15 @@ fun ScamCenterScreen(onBack: () -> Unit) {
         val twoWeeksAgo = now - java.util.concurrent.TimeUnit.DAYS.toMillis(14)
         val monthAgo = now - java.util.concurrent.TimeUnit.DAYS.toMillis(30)
         withContext(Dispatchers.IO) {
-            val dao = AppDatabaseHolder.db(appCtx).messageDao()
-            scamMessages = dao.scams()
+            val db = AppDatabaseHolder.db(appCtx)
+            val dao = db.messageDao()
+            val scams = dao.scams()
+            scamMessages = scams
+            intelResults = if (scams.isNotEmpty()) {
+                db.intelDao().getResults(scams.map { it.id }).associateBy { it.messageId }
+            } else {
+                emptyMap()
+            }
             weekScamCount = dao.scamCountSince(weekAgo)
             lastWeekScamCount = dao.scamCountBetween(twoWeeksAgo, weekAgo)
             monthScamCount = dao.scamCountSince(monthAgo)
@@ -278,6 +287,7 @@ fun ScamCenterScreen(onBack: () -> Unit) {
                         items(scamMessages, key = { it.id }) { msg ->
                             ScamMessageCard(
                                 message = msg,
+                                intelResult = intelResults[msg.id],
                                 glassState = glassState,
                                 onClick = { selectedMessage = msg }
                             )
@@ -291,6 +301,7 @@ fun ScamCenterScreen(onBack: () -> Unit) {
     selectedMessage?.let { msg ->
         ScamDetailDialog(
             message = msg,
+            intelResult = intelResults[msg.id],
             onDismiss = { selectedMessage = null }
         )
     }
@@ -319,6 +330,7 @@ private fun RiskScoreBadge(
 @Composable
 private fun ScamMessageCard(
     message: MessageEntity,
+    intelResult: IntelResultEntity?,
     glassState: HazeState,
     onClick: () -> Unit
 ) {
@@ -394,6 +406,22 @@ private fun ScamMessageCard(
                 )
             }
 
+            intelResult?.let { intel ->
+                val intelTimeStr = remember(intel.checkedAt) {
+                    SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(intel.checkedAt))
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (intel.isHit) {
+                        "情報來源：${intel.sourceLabel}（$intelTimeStr）"
+                    } else {
+                        "防詐情報：已查證，無命中紀錄（$intelTimeStr）"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                )
+            }
+
             Spacer(Modifier.height(6.dp))
             Text(
                 text = "點擊查看詳情與複製內容 ›",
@@ -409,6 +437,7 @@ private fun ScamMessageCard(
 @Composable
 private fun ScamDetailDialog(
     message: MessageEntity,
+    intelResult: IntelResultEntity?,
     onDismiss: () -> Unit
 ) {
     val ctx = LocalContext.current
@@ -527,6 +556,25 @@ private fun ScamDetailDialog(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(10.dp)
+                    )
+                }
+
+                intelResult?.let { intel ->
+                    val intelTimeStr = remember(intel.checkedAt) {
+                        SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()).format(Date(intel.checkedAt))
+                    }
+                    Text(
+                        text = if (intel.isHit) {
+                            "防詐情報命中：${intel.sourceLabel}（查詢時間：$intelTimeStr）"
+                        } else {
+                            "防詐情報：已查證，無命中紀錄（查詢時間：$intelTimeStr）"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (intel.isHit) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                 }
 

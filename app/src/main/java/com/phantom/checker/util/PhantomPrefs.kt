@@ -567,4 +567,44 @@ object PhantomPrefs {
         val current = getShizukuSuspendedApps(ctx).filter { it != packageName }
         prefs(ctx).edit().putString("shizuku_suspended_apps", gson.toJson(current)).apply()
     }
+
+    /** 雲端防詐情報總開關（預設開） */
+    fun isIntelEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("intel_enabled", true)
+
+    fun setIntelEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("intel_enabled", enabled).apply()
+    }
+
+    /** 防詐雷達 fraud.tw / 165 開關（預設開） */
+    fun isIntelFraudTwEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("intel_fraud_tw_enabled", true)
+
+    fun setIntelFraudTwEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("intel_fraud_tw_enabled", enabled).apply()
+    }
+
+    /** Google Safe Browsing v4 開關（預設開） */
+    fun isIntelSafeBrowsingEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("intel_safe_browsing_enabled", true)
+
+    fun setIntelSafeBrowsingEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("intel_safe_browsing_enabled", enabled).apply()
+    }
+
+    /** PhishTank 開關（可選，預設關） */
+    fun isIntelPhishTankEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("intel_phishtank_enabled", false)
+
+    fun setIntelPhishTankEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("intel_phishtank_enabled", enabled).apply()
+    }
+
+    /** Chainabuse 鏈上地址查詢開關（可選，預設關） */
+    fun isIntelChainabuseEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("intel_chainabuse_enabled", false)
+
+    fun setIntelChainabuseEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("intel_chainabuse_enabled", enabled).apply()
+    }
 }

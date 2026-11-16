@@ -21,11 +21,12 @@ android {
         applicationId = "com.phantom.checker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.7.0"
+        versionCode = 9
+        versionName = "1.8.0"
 
         buildConfigField("String", "MISTRAL_API_KEY", "\"${localProps.getProperty("mistral.apiKey", "")}\"")
         buildConfigField("String", "MISTRAL_BASE_URL", "\"${localProps.getProperty("mistral.baseUrl", "")}\"")
+        buildConfigField("String", "SAFE_BROWSING_API_KEY", "\"${localProps.getProperty("safebrowsing.apiKey", "")}\"")
     }
 
     val ksFile = System.getenv("PHANTOM_KEYSTORE_FILE")

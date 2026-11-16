@@ -109,6 +109,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.room.withTransaction
 import com.phantom.checker.data.AppGroupRow
 import com.phantom.checker.data.FilterRule
+import com.phantom.checker.network.IntelClient
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.DailySummaryPolicy
 import com.phantom.checker.service.HeartbeatPolicy
@@ -322,6 +323,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
     var expandData by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "data")) }
     var expandAppearance by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "appearance")) }
     var expandShizuku by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "shizuku_advanced")) }
+    var expandIntel by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "intel")) }
 
     // 設定頁高亮導覽狀態（0 = 未顯示，1..6 = 對應步驟）
     var tourStepIndex by remember {
@@ -1547,6 +1549,19 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     onShowMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
                 )
             }
+
+            // 7. 防詐情報
+            item(key = "card_intel") {
+                FraudIntelCard(
+                    expanded = expandIntel,
+                    onToggle = {
+                        expandIntel = !expandIntel
+                        PhantomPrefs.setSettingsCardExpanded(appCtx, "intel", expandIntel)
+                    },
+                    glassState = glassState,
+                    onShowMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
+                )
+            }
         }
     }
 
@@ -1568,6 +1583,159 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     PhantomPrefs.setSettingsTourCompleted(appCtx, true)
                 }
             )
+        }
+    }
+}
+
+@Composable
+private fun FraudIntelCard(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    glassState: HazeState,
+    onShowMessage: (String) -> Unit
+) {
+    val ctx = LocalContext.current
+    val appCtx = ctx.applicationContext
+    val scope = rememberCoroutineScope()
+
+    var intelEnabled by remember { mutableStateOf(PhantomPrefs.isIntelEnabled(appCtx)) }
+    var fraudTwEnabled by remember { mutableStateOf(PhantomPrefs.isIntelFraudTwEnabled(appCtx)) }
+    var safeBrowsingEnabled by remember { mutableStateOf(PhantomPrefs.isIntelSafeBrowsingEnabled(appCtx)) }
+    var phishTankEnabled by remember { mutableStateOf(PhantomPrefs.isIntelPhishTankEnabled(appCtx)) }
+    var chainabuseEnabled by remember { mutableStateOf(PhantomPrefs.isIntelChainabuseEnabled(appCtx)) }
+    val sbKeyConfigured = remember { IntelClient.isSafeBrowsingKeyConfigured() }
+
+    val testResults = remember { mutableStateMapOf<IntelClient.IntelProvider, IntelClient.ProviderTestResult>() }
+    var testingProvider by remember { mutableStateOf<IntelClient.IntelProvider?>(null) }
+
+    CollapsibleSettingsCard(
+        title = "防詐情報",
+        expanded = expanded,
+        onToggle = onToggle,
+        glassState = glassState
+    ) {
+        SettingSwitchRow(
+            title = "啟用公開防詐情報預查",
+            subtitle = "AI 分析前先以 URL / 加密貨幣地址比對公開情報（不傳送訊息全文）；命中直接警示且不消耗每日 AI 額度",
+            checked = intelEnabled,
+            onCheckedChange = { checked ->
+                intelEnabled = checked
+                PhantomPrefs.setIntelEnabled(appCtx, checked)
+            }
+        )
+
+        if (intelEnabled) {
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+            SettingSwitchRow(
+                title = "165 通報（fraud.tw）",
+                subtitle = "查詢台灣 165 涉詐網站通報資料庫（失敗時自動靜默降級）",
+                checked = fraudTwEnabled,
+                onCheckedChange = { checked ->
+                    fraudTwEnabled = checked
+                    PhantomPrefs.setIntelFraudTwEnabled(appCtx, checked)
+                }
+            )
+
+            Spacer(Modifier.height(6.dp))
+
+            SettingSwitchRow(
+                title = "Google Safe Browsing v4",
+                subtitle = if (sbKeyConfigured) {
+                    "Key 狀態：已從 local.properties 注入"
+                } else {
+                    "Key 狀態：未注入（請於 local.properties 設定 safebrowsing.apiKey）"
+                },
+                checked = safeBrowsingEnabled,
+                onCheckedChange = { checked ->
+                    safeBrowsingEnabled = checked
+                    PhantomPrefs.setIntelSafeBrowsingEnabled(appCtx, checked)
+                }
+            )
+
+            Spacer(Modifier.height(6.dp))
+
+            SettingSwitchRow(
+                title = "PhishTank（可選）",
+                subtitle = "Cisco Talos 社群釣魚網址庫（無 key 限流較嚴格，預設關閉）",
+                checked = phishTankEnabled,
+                onCheckedChange = { checked ->
+                    phishTankEnabled = checked
+                    PhantomPrefs.setIntelPhishTankEnabled(appCtx, checked)
+                }
+            )
+
+            Spacer(Modifier.height(6.dp))
+
+            SettingSwitchRow(
+                title = "Chainabuse 鏈上地址（可選）",
+                subtitle = "TRM Labs 公開涉詐加密貨幣地址（BTC / ETH / TRON，預設關閉）",
+                checked = chainabuseEnabled,
+                onCheckedChange = { checked ->
+                    chainabuseEnabled = checked
+                    PhantomPrefs.setIntelChainabuseEnabled(appCtx, checked)
+                }
+            )
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+            Text(
+                text = "逐源連線測試",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(Modifier.height(6.dp))
+
+            IntelClient.IntelProvider.entries.forEach { provider ->
+                val isTesting = testingProvider == provider
+                val result = testResults[provider]
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(provider.displayName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                        if (result != null) {
+                            Text(
+                                text = result.message,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (result.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedButton(
+                        enabled = testingProvider == null,
+                        onClick = {
+                            scope.launch {
+                                testingProvider = provider
+                                val res = IntelClient.testProvider(appCtx, provider)
+                                testResults[provider] = res
+                                testingProvider = null
+                            }
+                        }
+                    ) {
+                        Text(if (isTesting) "測試中…" else "測試連線")
+                    }
+                }
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        IntelClient.clearCache(appCtx)
+                        onShowMessage("已清除 72 小時情報快取")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("清除情報快取（72h）")
+            }
         }
     }
 }
