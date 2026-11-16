@@ -119,6 +119,7 @@ import com.phantom.checker.data.TagTotalCountRow
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.DailySummaryPolicy
+import com.phantom.checker.service.WeeklySummaryPolicy
 import com.phantom.checker.service.HeartbeatPolicy
 import com.phantom.checker.service.NotificationCollectorService
 import com.phantom.checker.service.RetentionPolicy
@@ -152,6 +153,7 @@ class MainActivity : ComponentActivity() {
         AiClient.init(applicationContext)
         RetentionPolicy.scheduleOrUpdate(applicationContext)
         DailySummaryPolicy.schedule(applicationContext)
+        WeeklySummaryPolicy.schedule(applicationContext)
         HeartbeatPolicy.schedule(applicationContext)
         StatsForegroundService.startOrRefresh(applicationContext)
         parseIntentTab(intent)
@@ -235,6 +237,7 @@ private data class DayCountUi(
 
 private data class StatsUiState(
     val latestSummary: AiSummaryEntity? = null,
+    val latestWeeklySummary: AiSummaryEntity? = null,
     val weeklyCounts: List<DayCountUi> = emptyList(),
     val safeCount: Int = 0,
     val suspiciousCount: Int = 0,
@@ -554,8 +557,10 @@ private fun PhantomCheckApp(
                         val topRisky = dao.topRiskyApps()
                         val rawGroups = dao.groupByApp()
                         val aiTagCounts = db.tagDao().todayAiTagCounts(startOfDay)
+                        val weeklySummary = db.aiSummaryDao().latestWeekly()
                         statsState = StatsUiState(
                             latestSummary = summary,
+                            latestWeeklySummary = weeklySummary,
                             weeklyCounts = weekly,
                             safeCount = safe,
                             suspiciousCount = suspicious,
@@ -2531,6 +2536,194 @@ private fun StatsTab(
                         Text("生成中…")
                     } else {
                         Text("立即生成今日摘要")
+                    }
+                }
+            }
+        }
+
+        // 本週 AI 摘要報告（每週日 22:00 自動生成＋手動生成＋歷史展開）
+        item {
+            var isGeneratingWeekly by remember { mutableStateOf(false) }
+            var weeklyError by remember { mutableStateOf<String?>(null) }
+            var weeklyHistoryExpanded by remember { mutableStateOf(false) }
+            var weeklyHistory by remember { mutableStateOf<List<AiSummaryEntity>>(emptyList()) }
+
+            PhantomGlassCard(
+                glassState = glassState,
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp,
+                contentPadding = 14.dp
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "本週 AI 摘要",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "每週日 22:00 自動整理（不受省 token 模式限制）",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    TextButton(onClick = {
+                        if (!weeklyHistoryExpanded) {
+                            scope.launch {
+                                weeklyHistory = withContext(Dispatchers.IO) {
+                                    AppDatabaseHolder.db(appCtx).aiSummaryDao().weeklyHistory()
+                                }
+                                weeklyHistoryExpanded = true
+                            }
+                        } else {
+                            weeklyHistoryExpanded = false
+                        }
+                    }) {
+                        Text(if (weeklyHistoryExpanded) "收合歷史" else "歷史週報")
+                    }
+                }
+
+                Spacer(Modifier.height(6.dp))
+                val weekly = state.latestWeeklySummary
+                if (weekly != null) {
+                    val timeStr = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
+                        .format(Date(weekly.generatedAt))
+                    Text(
+                        text = WeeklySummaryPolicy.formatWeekLabel(weekly.date),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    PhantomMarkdownText(
+                        markdown = weekly.summary,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "更新於 $timeStr",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = {
+                                val plain = stripMarkdown(weekly.summary)
+                                val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                cm.setPrimaryClip(ClipData.newPlainText("weekly_ai_summary", plain))
+                                onShowMessage("已複製本週 AI 摘要")
+                            }) {
+                                Text("複製")
+                            }
+                            TextButton(onClick = {
+                                val plain = stripMarkdown(weekly.summary)
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_SUBJECT, "幻訊本週 AI 摘要")
+                                    putExtra(Intent.EXTRA_TEXT, plain)
+                                }
+                                ctx.startActivity(Intent.createChooser(shareIntent, "分享本週 AI 摘要"))
+                            }) {
+                                Text("分享")
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "尚無本週摘要",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (!weeklyError.isNullOrBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = weeklyError!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        if (isGeneratingWeekly) return@Button
+                        scope.launch {
+                            isGeneratingWeekly = true
+                            weeklyError = null
+                            val result = withContext(Dispatchers.IO) {
+                                WeeklySummaryPolicy.generateWeeklySummary(appCtx, fromSchedule = false)
+                            }
+                            isGeneratingWeekly = false
+                            result.onSuccess {
+                                if (weeklyHistoryExpanded) {
+                                    weeklyHistory = withContext(Dispatchers.IO) {
+                                        AppDatabaseHolder.db(appCtx).aiSummaryDao().weeklyHistory()
+                                    }
+                                }
+                                onSummaryGenerated()
+                                onShowMessage("本週 AI 摘要已生成")
+                            }.onFailure { err ->
+                                val msg = err.message ?: "週報生成失敗"
+                                weeklyError = msg
+                                onShowMessage(msg)
+                            }
+                        }
+                    },
+                    enabled = !isGeneratingWeekly,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pressableScale()
+                ) {
+                    if (isGeneratingWeekly) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("生成週報中…")
+                    } else {
+                        Text("生成本週摘要（本週至今）")
+                    }
+                }
+
+                if (weeklyHistoryExpanded) {
+                    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+                    if (weeklyHistory.isEmpty()) {
+                        Text(
+                            text = "尚無歷史週報紀錄",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        weeklyHistory.forEachIndexed { idx, item ->
+                            if (idx > 0) {
+                                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                            }
+                            val genTime = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
+                                .format(Date(item.generatedAt))
+                            Text(
+                                text = "${WeeklySummaryPolicy.formatWeekLabel(item.date)}（$genTime）",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            PhantomMarkdownText(
+                                markdown = item.summary,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 }
             }

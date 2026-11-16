@@ -849,4 +849,44 @@ object AiClient {
             null
         }
     }
+
+    /** 每週 AI 摘要生成（maxTokens=1400，回傳 Result 供誠實顯示失敗原因） */
+    suspend fun summarizeWeekly(
+        prompt: String,
+        context: Context? = null
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val profile = getActiveProfile(context)
+            ?: return@withContext Result.failure(IllegalStateException("尚未設定 AI Provider API Key"))
+        val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
+        val auth = "Bearer ${profile.apiKey.trim()}"
+        val body = ChatRequest(
+            model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
+            messages = listOf(
+                ChatMessage(
+                    "system",
+                    "你是個人通訊防詐助理，請用繁體中文整理本週訊息統計、風險分布趨勢、最活躍 App 與高風險訊息重點及詐騙提醒。請使用 Markdown 格式（如 ## 標題、**重點粗體**、- 清單）條列呈現。"
+                ),
+                ChatMessage("user", prompt)
+            ),
+            maxTokens = 1400,
+            temperature = 0.3
+        )
+        try {
+            enforceRateLimit()
+            val res = getApi(profile.baseUrl).chat(url = fullUrl, auth = auth, body = body)
+            val text = res.choices.firstOrNull()?.message?.content?.trim()
+            if (text.isNullOrEmpty()) {
+                Result.failure(IllegalStateException("AI 回應為空"))
+            } else {
+                Result.success(text)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: HttpException) {
+            Result.failure(Exception("HTTP ${e.code()}：請確認 API Key 或模型設定"))
+        } catch (e: Exception) {
+            val msg = if (isTimeoutException(e)) "回應逾時，請稍後再試" else (e.localizedMessage ?: "連線失敗")
+            Result.failure(Exception(msg))
+        }
+    }
 }

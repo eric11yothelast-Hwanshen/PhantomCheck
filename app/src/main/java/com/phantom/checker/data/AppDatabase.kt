@@ -409,8 +409,14 @@ interface FilterDao {
 
 @Dao
 interface AiSummaryDao {
-    @Query("SELECT * FROM ai_summaries ORDER BY date DESC LIMIT 1")
+    @Query("SELECT * FROM ai_summaries WHERE date < 1000000000 ORDER BY date DESC LIMIT 1")
     suspend fun latest(): AiSummaryEntity?
+
+    @Query("SELECT * FROM ai_summaries WHERE date >= 1000000000 ORDER BY date DESC LIMIT 1")
+    suspend fun latestWeekly(): AiSummaryEntity?
+
+    @Query("SELECT * FROM ai_summaries WHERE date >= 1000000000 ORDER BY date DESC LIMIT 12")
+    suspend fun weeklyHistory(): List<AiSummaryEntity>
 
     @Query("SELECT * FROM ai_summaries WHERE date = :date LIMIT 1")
     suspend fun byDate(date: Long): AiSummaryEntity?
