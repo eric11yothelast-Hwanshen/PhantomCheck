@@ -12,7 +12,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.LruCache
 import com.phantom.checker.R
-import com.phantom.checker.data.AppCategoryRule
+import com.phantom.checker.data.AppCategoryRuleEntity
 import com.phantom.checker.data.AppDatabase
 import com.phantom.checker.data.FilterRule
 import com.phantom.checker.data.IntelResultEntity
@@ -577,7 +577,7 @@ class NotificationCollectorService : NotificationListenerService() {
 
         private val ruleCacheLock = Any()
         private var cachedFilterRules: Pair<Long, List<FilterRule>>? = null
-        private val cachedAppCatRules = object : LruCache<String, Pair<Long, List<AppCategoryRule>>>(64) {}
+        private val cachedAppCatRules = object : LruCache<String, Pair<Long, List<AppCategoryRuleEntity>>>(64) {}
         private var cachedAlertKeywordsPair: Pair<Long, List<String>>? = null
 
         fun invalidateRuleCaches() {
@@ -603,7 +603,7 @@ class NotificationCollectorService : NotificationListenerService() {
             return fresh
         }
 
-        private suspend fun cachedAppCategoryRules(db: AppDatabase, pkg: String): List<AppCategoryRule> {
+        private suspend fun cachedAppCategoryRules(db: AppDatabase, pkg: String): List<AppCategoryRuleEntity> {
             val now = System.currentTimeMillis()
             synchronized(ruleCacheLock) {
                 val entry = cachedAppCatRules.get(pkg)
