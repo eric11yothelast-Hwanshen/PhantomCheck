@@ -14,9 +14,11 @@ import com.google.gson.reflect.TypeToken
 import com.phantom.checker.BuildConfig
 import com.phantom.checker.data.AiRuleEntity
 import com.phantom.checker.data.TagEntity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -24,8 +26,12 @@ import retrofit2.http.Body
 import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Url
+import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.SocketTimeoutException
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 data class ChatMessage(val role: String, val content: String)
@@ -347,12 +353,22 @@ object AiClient {
         return base + path
     }
 
+    private val okHttpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(90, TimeUnit.SECONDS)
+            .callTimeout(120, TimeUnit.SECONDS)
+            .build()
+    }
+
     private fun getApi(baseUrl: String): ChatApi {
         val normalized = normalizeBaseUrl(baseUrl)
         synchronized(apiCache) {
             apiCache.get(normalized)?.let { return it }
             val created = Retrofit.Builder()
                 .baseUrl(normalized)
+                .client(okHttpClient)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
                 .create(ChatApi::class.java)
@@ -737,44 +753,71 @@ object AiClient {
         return Triple(res.riskScore, res.riskLabel, res.riskReason)
     }
 
-    /** AI 助手對話呼叫（沿用 active provider 與節流） */
+    private fun isTimeoutException(e: Throwable): Boolean {
+        return e is SocketTimeoutException ||
+            e is InterruptedIOException ||
+            (e is IOException && e.message?.contains("timeout", ignoreCase = true) == true)
+    }
+
+    /** AI 助手對話呼叫（沿用 active provider 與節流；逾時自動重試一次） */
     suspend fun chatAssistant(
         systemPrompt: String,
         history: List<ChatMessage>,
         userMessage: String,
         context: Context? = null
     ): Result<String> = withContext(Dispatchers.IO) {
-        try {
-            val profile = getActiveProfile(context)
-                ?: return@withContext Result.failure(IllegalStateException("尚未設定 AI Provider API Key"))
-            enforceRateLimit()
-            val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
-            val msgs = buildList {
-                add(ChatMessage("system", systemPrompt))
-                addAll(history.takeLast(30))
-                add(ChatMessage("user", userMessage))
-            }
-            val res = getApi(profile.baseUrl).chat(
-                url = fullUrl,
-                auth = "Bearer ${profile.apiKey.trim()}",
-                body = ChatRequest(
-                    model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
-                    messages = msgs,
-                    maxTokens = 2048,
-                    temperature = 0.4
-                )
-            )
-            val reply = res.choices.firstOrNull()?.message?.content?.trim()
-            if (reply.isNullOrEmpty()) {
-                Result.failure(IllegalStateException("AI 回應為空"))
-            } else {
-                Result.success(reply)
-            }
-        } catch (e: HttpException) {
-            Result.failure(Exception("HTTP ${e.code()}：請確認 API Key 或模型設定"))
-        } catch (e: Exception) {
-            Result.failure(Exception(e.localizedMessage ?: "連線失敗，請稍後再試"))
+        val profile = getActiveProfile(context)
+            ?: return@withContext Result.failure(IllegalStateException("尚未設定 AI Provider API Key"))
+        val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
+        val msgs = buildList {
+            add(ChatMessage("system", systemPrompt))
+            addAll(history.takeLast(30))
+            add(ChatMessage("user", userMessage))
         }
+        val body = ChatRequest(
+            model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
+            messages = msgs,
+            maxTokens = 2048,
+            temperature = 0.4
+        )
+        val auth = "Bearer ${profile.apiKey.trim()}"
+
+        var retried = false
+        while (true) {
+            try {
+                enforceRateLimit()
+                val res = getApi(profile.baseUrl).chat(
+                    url = fullUrl,
+                    auth = auth,
+                    body = body
+                )
+                val reply = res.choices.firstOrNull()?.message?.content?.trim()
+                return@withContext if (reply.isNullOrEmpty()) {
+                    Result.failure(IllegalStateException("AI 回應為空"))
+                } else {
+                    Result.success(reply)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: HttpException) {
+                val suffix = if (retried) "（已自動重試一次）" else ""
+                return@withContext Result.failure(Exception("HTTP ${e.code()}：請確認 API Key 或模型設定$suffix"))
+            } catch (e: Exception) {
+                if (!retried && isTimeoutException(e)) {
+                    retried = true
+                    continue
+                }
+                val msg = if (isTimeoutException(e)) {
+                    if (retried) "回應逾時（已自動重試一次）" else "回應逾時"
+                } else {
+                    val base = e.localizedMessage ?: "連線失敗，請稍後再試"
+                    if (retried) "$base（已自動重試一次）" else base
+                }
+                return@withContext Result.failure(Exception(msg))
+            }
+        }
+        @Suppress("UNREACHABLE_CODE")
+        Result.failure(IllegalStateException("未知錯誤"))
     }
 
     /** 每日 AI 摘要生成；未設定 key 或失敗回 null */
