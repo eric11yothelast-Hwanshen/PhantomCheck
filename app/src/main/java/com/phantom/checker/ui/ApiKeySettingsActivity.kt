@@ -162,7 +162,7 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                 .fillMaxSize()
                 .phantomGlassSource(glassState)
                 .padding(padding)
-                .padding(12.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Box(

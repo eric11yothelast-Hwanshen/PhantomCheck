@@ -1212,7 +1212,7 @@ private fun PhantomCheckApp(
                 .fillMaxSize()
                 .phantomGlassSource(glassState)
                 .padding(padding)
-                .padding(12.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             // 頂部標題列：搜尋＋重新整理＋設定齒輪
             Row(

@@ -341,7 +341,7 @@ fun AppThreadsScreen(
                 .fillMaxSize()
                 .phantomGlassSource(glassState)
                 .padding(padding)
-                .padding(12.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             when {
                 isLoading && threads.isEmpty() -> {
@@ -359,7 +359,7 @@ fun AppThreadsScreen(
                 else -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         items(threads, key = { it.sender }) { thread ->
                             SenderThreadCard(

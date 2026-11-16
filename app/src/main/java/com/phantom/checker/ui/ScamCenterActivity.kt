@@ -179,7 +179,7 @@ fun ScamCenterScreen(onBack: () -> Unit) {
                 .fillMaxSize()
                 .phantomGlassSource(glassState)
                 .padding(padding)
-                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             when {
                 isLoading && scamMessages.isEmpty() -> {
@@ -191,24 +191,11 @@ fun ScamCenterScreen(onBack: () -> Unit) {
                     }
                 }
                 scamMessages.isEmpty() -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "目前尚無高風險詐騙訊息",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = Color.Gray
-                            )
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                text = "當 AI 偵測到高風險訊息時，將自動收錄於此處。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray
-                            )
-                        }
-                    }
+                    EmptyStateView(
+                        icon = Icons.Default.Warning,
+                        title = "目前尚無高風險詐騙訊息",
+                        description = "當 AI 偵測到高風險訊息時，將自動收錄於此處。"
+                    )
                 }
                 else -> {
                     PhantomGlassCard(
