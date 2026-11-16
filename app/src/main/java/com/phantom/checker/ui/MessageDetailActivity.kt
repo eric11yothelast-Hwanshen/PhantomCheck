@@ -75,7 +75,9 @@ import com.phantom.checker.shizuku.ShizukuManager
 import com.phantom.checker.ui.components.pressableScale
 import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -126,6 +128,12 @@ fun MessageDetailScreen(
     var tagSourceByTagId by remember { mutableStateOf(mapOf<Long, String>()) }
     var isLoading by remember { mutableStateOf(true) }
     var isAnalyzing by remember { mutableStateOf(false) }
+    var isDeepAnalyzing by remember { mutableStateOf(false) }
+    var deepAnalyzeJob by remember { mutableStateOf<Job?>(null) }
+    var deepAnalysisMarkdown by remember { mutableStateOf<String?>(null) }
+    var deepAnalysisError by remember { mutableStateOf<String?>(null) }
+    var profiles by remember { mutableStateOf(AiClient.getProfiles(appCtx)) }
+    var activeProfile by remember { mutableStateOf(AiClient.getActiveProfile(appCtx)) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(messageId) {
@@ -458,6 +466,142 @@ fun MessageDetailScreen(
                                     Text("分析中…")
                                 } else {
                                     Text("AI 分析此則")
+                                }
+                            }
+                        }
+
+                        // AI 深度分析（段落式風險解說）
+                        PhantomGlassCard(
+                            glassState = glassState,
+                            modifier = Modifier.fillMaxWidth(),
+                            cornerRadius = 20.dp,
+                            contentPadding = 14.dp
+                        ) {
+                            Text(
+                                text = "AI 深度分析",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "產生段落式風險解說（詐騙類型、可疑點、建議處理動作），計入每日 AI 額度。",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            AiProviderSwitcherChip(
+                                profiles = profiles,
+                                activeProfile = activeProfile,
+                                onSelectProfile = { selected ->
+                                    AiClient.setActiveProvider(appCtx, selected.id)
+                                    activeProfile = selected
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("已切換模型：${selected.name}・${selected.model}")
+                                    }
+                                }
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        if (isDeepAnalyzing) return@OutlinedButton
+                                        if (AiClient.getActiveProfile(appCtx) == null) {
+                                            deepAnalysisError = "尚未設定 AI Provider API Key，請至設定頁配置"
+                                            return@OutlinedButton
+                                        }
+                                        if (!PhantomPrefs.canUseAiTodayAndIncrement(appCtx)) {
+                                            val limit = PhantomPrefs.getDailyAiLimit(appCtx)
+                                            val msgLimit = "今日 AI 額度已達上限（$limit 次），請明日再試或於設定調整"
+                                            deepAnalysisError = msgLimit
+                                            scope.launch { snackbarHostState.showSnackbar(msgLimit) }
+                                            return@OutlinedButton
+                                        }
+                                        deepAnalyzeJob = scope.launch {
+                                            isDeepAnalyzing = true
+                                            deepAnalysisError = null
+                                            try {
+                                                val intelSummary = intelResult?.let { intel ->
+                                                    if (intel.isHit) {
+                                                        "命中 ${intel.sourceLabel}（${intel.detail}）"
+                                                    } else {
+                                                        "已查證公開情報，無命中紀錄"
+                                                    }
+                                                }
+                                                val result = AiClient.deepAnalyzeMessage(
+                                                    sender = msg.sender,
+                                                    content = msg.content,
+                                                    appLabel = msg.appLabel,
+                                                    intelSummary = intelSummary,
+                                                    context = appCtx
+                                                )
+                                                result.onSuccess { md ->
+                                                    deepAnalysisMarkdown = md
+                                                }.onFailure { err ->
+                                                    deepAnalysisError = err.message ?: "深度分析失敗"
+                                                }
+                                            } catch (_: CancellationException) {
+                                                deepAnalysisError = "已取消深度分析"
+                                            } finally {
+                                                isDeepAnalyzing = false
+                                                deepAnalyzeJob = null
+                                            }
+                                        }
+                                    },
+                                    enabled = !isDeepAnalyzing,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .pressableScale()
+                                ) {
+                                    if (isDeepAnalyzing) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("深度分析中…")
+                                    } else {
+                                        Text("一鍵 AI 深度分析")
+                                    }
+                                }
+                                if (isDeepAnalyzing) {
+                                    TextButton(
+                                        onClick = {
+                                            deepAnalyzeJob?.cancel()
+                                        }
+                                    ) {
+                                        Text("取消")
+                                    }
+                                }
+                            }
+                            if (!deepAnalysisError.isNullOrBlank()) {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = deepAnalysisError!!,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            if (!deepAnalysisMarkdown.isNullOrBlank()) {
+                                Spacer(Modifier.height(10.dp))
+                                PhantomMarkdownText(
+                                    markdown = deepAnalysisMarkdown!!,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    TextButton(onClick = {
+                                        val plain = stripMarkdown(deepAnalysisMarkdown!!)
+                                        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        cm.setPrimaryClip(ClipData.newPlainText("deep_ai_analysis", plain))
+                                        scope.launch { snackbarHostState.showSnackbar("已複製深度分析結果") }
+                                    }) {
+                                        Text("複製解說")
+                                    }
                                 }
                             }
                         }
