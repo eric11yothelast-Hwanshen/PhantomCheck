@@ -150,11 +150,33 @@ fun PhantomGlassCard(
 @Composable
 fun rememberPhantomHaptic(): (HapticFeedbackType) -> Unit {
     val ctx = LocalContext.current
-    val haptic = LocalHapticFeedback.current
-    return remember(ctx, haptic) {
+    return remember(ctx) {
         { type ->
             if (PhantomPrefs.isHapticFeedbackEnabled(ctx)) {
-                haptic.performHapticFeedback(type)
+                try {
+                    val vibrator = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                        ctx.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+                    } else {
+                        @Suppress("DEPRECATION")
+                        ctx.getSystemService(android.content.Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                    }
+                    if (vibrator?.hasVibrator() == true) {
+                        val isLong = type == HapticFeedbackType.LongPress
+                        val effect = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            android.os.VibrationEffect.createPredefined(
+                                if (isLong) android.os.VibrationEffect.EFFECT_HEAVY_CLICK
+                                else android.os.VibrationEffect.EFFECT_CLICK
+                            )
+                        } else {
+                            android.os.VibrationEffect.createOneShot(
+                                if (isLong) 35L else 18L,
+                                android.os.VibrationEffect.DEFAULT_AMPLITUDE
+                            )
+                        }
+                        vibrator.vibrate(effect)
+                    }
+                } catch (_: Exception) {
+                }
             }
         }
     }

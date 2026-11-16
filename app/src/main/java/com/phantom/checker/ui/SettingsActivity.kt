@@ -323,6 +323,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                 fgServiceRunning = isStatsForegroundServiceRunning(appCtx)
                 mutedApps = PhantomPrefs.getMutedApps(appCtx).sorted()
                 muteModes = PhantomPrefs.getAppMuteModeMap(appCtx)
+                ShizukuManager.refreshState(appCtx)
             }
         }
         lifecycleOwner?.lifecycle?.addObserver(observer)
@@ -1328,7 +1329,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     SettingSwitchRow(
                         title = "液態玻璃模糊效果",
-                        subtitle = "關閉後改用半透明純色背景以節省 GPU 與電量",
+                        subtitle = "僅 Android 13+ 有效；關閉後改用半透明純色背景以節省 GPU 與電量",
                         checked = glassEffectEnabled,
                         onCheckedChange = { checked ->
                             ThemePreferences.setGlassEffectEnabled(appCtx, checked)
