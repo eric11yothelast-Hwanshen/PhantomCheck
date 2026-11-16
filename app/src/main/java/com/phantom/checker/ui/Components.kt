@@ -502,8 +502,13 @@ fun MessageCard(
     highlightQuery: String = "",
     modifier: Modifier = Modifier
 ) {
-    val timeText = remember(message.timestamp) {
-        SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(message.timestamp))
+    val ctx = LocalContext.current
+    val isCompact = PhantomPrefs.getCardDensity(ctx) == com.phantom.checker.util.CardDensity.COMPACT
+    val cardPad = if (isCompact) 8.dp else 12.dp
+    val vertPad = if (isCompact) 2.dp else 4.dp
+    val is24h = PhantomPrefs.is24HourFormat(ctx)
+    val timeText = remember(message.timestamp, is24h) {
+        PhantomPrefs.formatMessageTime(ctx, message.timestamp, includeDate = true)
     }
 
     val cardInner: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit = {
@@ -522,7 +527,9 @@ fun MessageCard(
                 )
                 Text(
                     text = highlightMatches(message.sender, highlightQuery),
-                    style = MaterialTheme.typography.titleSmall
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (message.isStarred) {
                     Spacer(Modifier.width(4.dp))
@@ -565,10 +572,12 @@ fun MessageCard(
                 }
             )
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(if (isCompact) 2.dp else 4.dp))
         Text(
             text = highlightMatches(message.content, highlightQuery),
-            style = MaterialTheme.typography.bodySmall
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = if (isCompact) 2 else 4,
+            overflow = TextOverflow.Ellipsis
         )
         if (matchedKeywords.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
@@ -580,7 +589,7 @@ fun MessageCard(
             )
         }
         if (message.riskReason.isNotEmpty()) {
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(if (isCompact) 2.dp else 4.dp))
             Text(
                 text = stripMarkdown(message.riskReason),
                 color = if (highlightAsScam) {
@@ -588,7 +597,9 @@ fun MessageCard(
                 } else {
                     Color.Gray
                 },
-                style = MaterialTheme.typography.labelSmall
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = if (isCompact) 1 else 3,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -597,7 +608,7 @@ fun MessageCard(
         Box(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(vertical = 4.dp)
+                .padding(vertical = vertPad)
                 .animateContentSize(spring())
                 .phantomGlassSurface(
                     state = glassState,
@@ -609,7 +620,7 @@ fun MessageCard(
             androidx.compose.runtime.CompositionLocalProvider(
                 androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onErrorContainer
             ) {
-                Column(modifier = Modifier.padding(12.dp), content = cardInner)
+                Column(modifier = Modifier.padding(cardPad), content = cardInner)
             }
         }
     } else {
@@ -617,9 +628,9 @@ fun MessageCard(
             glassState = glassState,
             modifier = modifier
                 .fillMaxWidth()
-                .padding(vertical = 4.dp),
+                .padding(vertical = vertPad),
             cornerRadius = 20.dp,
-            contentPadding = 12.dp,
+            contentPadding = cardPad,
             content = cardInner
         )
     }

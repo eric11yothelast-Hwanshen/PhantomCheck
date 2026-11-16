@@ -160,7 +160,8 @@ data class AppGroupRow(
     val packageName: String,
     val appLabel: String,
     val cnt: Int,
-    val lastTs: Long
+    val lastTs: Long,
+    val riskScore: Int = 0
 )
 
 data class SenderGroupRow(
@@ -317,7 +318,7 @@ interface MessageDao {
     @Query("UPDATE messages SET isStarred = :starred WHERE id IN (:ids)")
     suspend fun setStarredByIds(ids: List<Long>, starred: Boolean)
 
-    @Query("SELECT packageName, appLabel, COUNT(*) as cnt, MAX(timestamp) as lastTs FROM messages GROUP BY packageName ORDER BY lastTs DESC")
+    @Query("SELECT packageName, appLabel, COUNT(*) as cnt, MAX(timestamp) as lastTs, SUM(CASE WHEN riskLabel = 'scam' THEN 2 WHEN riskLabel = 'suspicious' THEN 1 ELSE 0 END) as riskScore FROM messages GROUP BY packageName ORDER BY lastTs DESC")
     suspend fun groupByApp(): List<AppGroupRow>
 
     @Query("SELECT packageName, COUNT(*) as cnt FROM messages WHERE timestamp >= :startOfDay GROUP BY packageName")

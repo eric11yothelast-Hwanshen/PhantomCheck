@@ -173,7 +173,12 @@ private val SETTINGS_SEARCH_CATALOG = listOf(
     SettingSearchItem("appearance_keepalive", "appearance", "通知權限、電池優化與保活指引", "檢查通知存取權、關閉電池優化與各品牌自啟動設定", listOf("權限", "電池", "保活", "自啟動", "小米", "三星", "背景被殺")),
     SettingSearchItem("appearance_widget_tour", "appearance", "桌面小工具與功能導覽", "加入桌面統計小工具或重播設定頁導覽", listOf("小工具", "widget", "桌面", "導覽", "教學")),
     SettingSearchItem("intel_sources", "intel", "防詐情報四來源與 API Key", "設定 fraud.tw / 165、Google Safe Browsing、PhishTank、Chainabuse 開關與金鑰", listOf("防詐情報", "165", "fraud", "safebrowsing", "phishtank", "chainabuse", "url", "網址檢查", "金鑰")),
-    SettingSearchItem("shizuku_mode", "shizuku", "Shizuku 進階模式", "透過 Shizuku 取得進階系統資訊或保活輔助", listOf("shizuku", "進階", "root", "adb"))
+    SettingSearchItem("shizuku_mode", "shizuku", "Shizuku 進階模式", "透過 Shizuku 取得進階系統資訊或保活輔助", listOf("shizuku", "進階", "root", "adb")),
+    SettingSearchItem("personal_density", "personalization", "卡片密度（舒適 / 緊湊）", "調整首頁訊息卡片與對話氣泡的間距與行數密度", listOf("個人化", "密度", "緊湊", "舒適", "間距", "compact")),
+    SettingSearchItem("personal_sort", "personalization", "首頁排序方式", "切換首頁 App 清單依時間新→舊、未讀多→少或風險高→低排序", listOf("個人化", "排序", "未讀", "風險", "時間", "sort")),
+    SettingSearchItem("personal_filters", "personalization", "篩選欄顯示自訂", "自訂首頁篩選欄是否顯示星標、詐騙、已過濾與標籤按鈕", listOf("個人化", "篩選", "filter", "星標", "標籤", "隱藏")),
+    SettingSearchItem("personal_summary_collapse", "personalization", "摘要卡預設收合", "控制每日與本週 AI 摘要卡是否預設收合為單行預覽", listOf("個人化", "摘要", "收合", "展開", "折疊")),
+    SettingSearchItem("personal_time_format", "personalization", "12 / 24 小時制", "切換訊息與對話的時間顯示格式", listOf("個人化", "時間", "12小時", "24小時", "am", "pm"))
 )
 
 private data class InstalledAppInfo(
@@ -365,6 +370,14 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
     var expandAppearance by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "appearance")) }
     var expandShizuku by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "shizuku_advanced")) }
     var expandIntel by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "intel")) }
+    var expandPersonalization by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "personalization")) }
+
+    // 個人化設定
+    var cardDensity by remember { mutableStateOf(PhantomPrefs.getCardDensity(appCtx)) }
+    var homeSortOrder by remember { mutableStateOf(PhantomPrefs.getHomeSortOrder(appCtx)) }
+    var visibleHomeFilters by remember { mutableStateOf(PhantomPrefs.getVisibleHomeFilters(appCtx)) }
+    var summaryDefaultCollapsed by remember { mutableStateOf(PhantomPrefs.isSummaryDefaultCollapsed(appCtx)) }
+    var use24HourFormat by remember { mutableStateOf(PhantomPrefs.is24HourFormat(appCtx)) }
 
     // 設定頁搜尋狀態（本地即時過濾 + AI 語意導覽）
     var searchQuery by remember { mutableStateOf("") }
@@ -673,7 +686,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
         ) { padding ->
             val allCardKeys = remember {
-                listOf("quick", "ai", "notif", "data", "appearance", "shizuku", "intel")
+                listOf("quick", "personalization", "ai", "notif", "data", "appearance", "shizuku", "intel")
             }
             val queryTokens = remember(searchQuery) {
                 searchQuery.trim().lowercase(Locale.getDefault())
@@ -728,6 +741,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                         }
                         val targetCards = matchedItems.map { it.cardKey }.toSet()
                         if ("quick" in targetCards) expandQuick = true
+                        if ("personalization" in targetCards) expandPersonalization = true
                         if ("ai" in targetCards) expandAi = true
                         if ("notif" in targetCards) expandNotif = true
                         if ("data" in targetCards) expandData = true
@@ -947,6 +961,122 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     )
                 }
             }
+            }
+
+            // 1.5 個人化
+            if ("personalization" in visibleCardKeys) {
+                item(key = "card_personalization") {
+                    CollapsibleSettingsCard(
+                        title = "個人化",
+                        expanded = expandPersonalization || ("personalization" in highlightedCardKeys),
+                        highlighted = "personalization" in highlightedCardKeys,
+                        onToggle = {
+                            expandPersonalization = !expandPersonalization
+                            PhantomPrefs.setSettingsCardExpanded(appCtx, "personalization", expandPersonalization)
+                        },
+                        glassState = glassState,
+                        modifier = Modifier.onGloballyPositioned { coords ->
+                            cardBounds["personalization"] = coords.boundsInRoot()
+                        }
+                    ) {
+                        Text("卡片密度", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            com.phantom.checker.util.CardDensity.entries.forEach { density ->
+                                FilterChip(
+                                    selected = cardDensity == density,
+                                    onClick = {
+                                        cardDensity = density
+                                        PhantomPrefs.setCardDensity(appCtx, density)
+                                    },
+                                    label = { Text(density.label) }
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                        Text("首頁 App 排序", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            com.phantom.checker.util.HomeSortOrder.entries.forEach { order ->
+                                FilterChip(
+                                    selected = homeSortOrder == order,
+                                    onClick = {
+                                        homeSortOrder = order
+                                        PhantomPrefs.setHomeSortOrder(appCtx, order)
+                                    },
+                                    label = { Text(order.label) }
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                        Text("首頁篩選欄顯示項目", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text(
+                            text = "「全部」與「未讀」固定顯示，可自訂其餘按鈕",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.Gray
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        val filterOptions = listOf(
+                            "starred" to "星標",
+                            "scams" to "詐騙",
+                            "filtered" to "已過濾",
+                            "tag" to "標籤"
+                        )
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            filterOptions.forEach { (key, label) ->
+                                val selected = key in visibleHomeFilters
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = {
+                                        val next = if (selected) visibleHomeFilters - key else visibleHomeFilters + key
+                                        visibleHomeFilters = next
+                                        PhantomPrefs.setVisibleHomeFilters(appCtx, next)
+                                    },
+                                    label = { Text(label) }
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                        SettingSwitchRow(
+                            title = "摘要卡預設收合",
+                            subtitle = "統計頁「每日／本週 AI 摘要」預設收合為單行預覽",
+                            checked = summaryDefaultCollapsed,
+                            onCheckedChange = { checked ->
+                                summaryDefaultCollapsed = checked
+                                PhantomPrefs.setSummaryDefaultCollapsed(appCtx, checked)
+                            }
+                        )
+
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                        Text("時間顯示格式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = use24HourFormat,
+                                onClick = {
+                                    use24HourFormat = true
+                                    PhantomPrefs.set24HourFormat(appCtx, true)
+                                },
+                                label = { Text("24 小時制（14:30）") }
+                            )
+                            FilterChip(
+                                selected = !use24HourFormat,
+                                onClick = {
+                                    use24HourFormat = false
+                                    PhantomPrefs.set24HourFormat(appCtx, false)
+                                },
+                                label = { Text("12 小時制（下午 02:30）") }
+                            )
+                        }
+                    }
+                }
             }
 
             // 2. AI 與分析

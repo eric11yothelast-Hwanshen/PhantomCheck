@@ -260,8 +260,7 @@ fun MessageDetailScreen(
                 else -> {
                     val msg = message!!
                     val timeStr = remember(msg.timestamp) {
-                        SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault())
-                            .format(Date(msg.timestamp))
+                        PhantomPrefs.formatMessageTime(ctx, msg.timestamp, includeDate = true)
                     }
                     val launchIntent = remember(msg.packageName) {
                         try {

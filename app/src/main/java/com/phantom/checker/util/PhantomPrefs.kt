@@ -48,6 +48,27 @@ enum class PersistentNotifStyle(val prefValue: String, val label: String) {
     }
 }
 
+enum class CardDensity(val prefValue: String, val label: String) {
+    COMFORTABLE("comfortable", "舒適"),
+    COMPACT("compact", "緊湊");
+
+    companion object {
+        fun fromPref(value: String?): CardDensity =
+            entries.firstOrNull { it.prefValue == value } ?: COMFORTABLE
+    }
+}
+
+enum class HomeSortOrder(val prefValue: String, val label: String) {
+    RECENT("recent", "時間新→舊"),
+    UNREAD("unread", "未讀多→少"),
+    RISK("risk", "風險高→低");
+
+    companion object {
+        fun fromPref(value: String?): HomeSortOrder =
+            entries.firstOrNull { it.prefValue == value } ?: RECENT
+    }
+}
+
 /**
  * 幻訊 App 通用偏好設定（SharedPreferences）。
  */
@@ -608,19 +629,78 @@ object PhantomPrefs {
         prefs(ctx).edit().putBoolean("intel_chainabuse_enabled", enabled).apply()
     }
 
-    /** 今日 AI 摘要卡是否展開（預設收合） */
+    /** 摘要卡預設是否收合（預設 true = 收合） */
+    fun isSummaryDefaultCollapsed(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("summary_default_collapsed", true)
+
+    fun setSummaryDefaultCollapsed(ctx: Context, collapsed: Boolean) {
+        prefs(ctx).edit()
+            .putBoolean("summary_default_collapsed", collapsed)
+            .putBoolean("daily_summary_card_expanded", !collapsed)
+            .putBoolean("weekly_summary_card_expanded", !collapsed)
+            .apply()
+    }
+
+    /** 今日 AI 摘要卡是否展開（預設依摘要預設收合設定） */
     fun isDailySummaryExpanded(ctx: Context): Boolean =
-        prefs(ctx).getBoolean("daily_summary_card_expanded", false)
+        prefs(ctx).getBoolean("daily_summary_card_expanded", !isSummaryDefaultCollapsed(ctx))
 
     fun setDailySummaryExpanded(ctx: Context, expanded: Boolean) {
         prefs(ctx).edit().putBoolean("daily_summary_card_expanded", expanded).apply()
     }
 
-    /** 本週 AI 摘要卡是否展開（預設收合） */
+    /** 本週 AI 摘要卡是否展開（預設依摘要預設收合設定） */
     fun isWeeklySummaryExpanded(ctx: Context): Boolean =
-        prefs(ctx).getBoolean("weekly_summary_card_expanded", false)
+        prefs(ctx).getBoolean("weekly_summary_card_expanded", !isSummaryDefaultCollapsed(ctx))
 
     fun setWeeklySummaryExpanded(ctx: Context, expanded: Boolean) {
         prefs(ctx).edit().putBoolean("weekly_summary_card_expanded", expanded).apply()
+    }
+
+    /** 卡片密度（舒適 / 緊湊） */
+    fun getCardDensity(ctx: Context): CardDensity =
+        CardDensity.fromPref(prefs(ctx).getString("card_density_mode", CardDensity.COMFORTABLE.prefValue))
+
+    fun setCardDensity(ctx: Context, density: CardDensity) {
+        prefs(ctx).edit().putString("card_density_mode", density.prefValue).apply()
+    }
+
+    /** 首頁 App 清單排序（時間新→舊 / 未讀多→少 / 風險高→低） */
+    fun getHomeSortOrder(ctx: Context): HomeSortOrder =
+        HomeSortOrder.fromPref(prefs(ctx).getString("home_sort_order", HomeSortOrder.RECENT.prefValue))
+
+    fun setHomeSortOrder(ctx: Context, order: HomeSortOrder) {
+        prefs(ctx).edit().putString("home_sort_order", order.prefValue).apply()
+    }
+
+    val ALL_OPTIONAL_HOME_FILTERS: Set<String> = setOf("starred", "scams", "filtered", "tag")
+
+    /** 首頁篩選欄自訂顯示項目（全部與未讀固定顯示，此清單控制 星標/詐騙/已過濾/標籤） */
+    fun getVisibleHomeFilters(ctx: Context): Set<String> =
+        prefs(ctx).getStringSet("visible_home_filters", ALL_OPTIONAL_HOME_FILTERS)
+            ?: ALL_OPTIONAL_HOME_FILTERS
+
+    fun setVisibleHomeFilters(ctx: Context, filters: Set<String>) {
+        prefs(ctx).edit().putStringSet("visible_home_filters", filters.toSet()).apply()
+    }
+
+    /** 是否使用 24 小時制（預設 true） */
+    fun is24HourFormat(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("time_format_24h", true)
+
+    fun set24HourFormat(ctx: Context, use24h: Boolean) {
+        prefs(ctx).edit().putBoolean("time_format_24h", use24h).apply()
+    }
+
+    /** 依 12/24 小時制格式化訊息時間 */
+    fun formatMessageTime(ctx: Context, timestamp: Long, includeDate: Boolean = false): String {
+        val use24h = is24HourFormat(ctx)
+        val pattern = when {
+            includeDate && use24h -> "MM/dd HH:mm"
+            includeDate && !use24h -> "MM/dd a hh:mm"
+            use24h -> "HH:mm"
+            else -> "a hh:mm"
+        }
+        return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(timestamp))
     }
 }

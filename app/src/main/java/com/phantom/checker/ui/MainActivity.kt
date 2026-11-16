@@ -230,7 +230,8 @@ private data class AppGroupUi(
     val unreadTodayCount: Int,
     val lastTs: Long,
     val lastPreview: String,
-    val latestTags: List<MessageTagRow> = emptyList()
+    val latestTags: List<MessageTagRow> = emptyList(),
+    val riskScore: Int = 0
 )
 
 private data class DayCountUi(
@@ -478,6 +479,7 @@ private fun PhantomCheckApp(
                             } else {
                                 db.tagDao().tagsForMessages(latestMsgIds).groupBy { it.messageId }
                             }
+                            val sortOrder = PhantomPrefs.getHomeSortOrder(appCtx)
                             appGroups = groups.map { g ->
                                 val preview = latestPreviewByPkg[g.packageName]
                                     ?: dao.byApp(g.packageName).firstOrNull()?.content.orEmpty()
@@ -490,8 +492,18 @@ private fun PhantomCheckApp(
                                     unreadTodayCount = unreadTodayMap[g.packageName] ?: 0,
                                     lastTs = g.lastTs,
                                     lastPreview = preview,
-                                    latestTags = latestMsgId?.let { tagsByLatestMsgId[it] }.orEmpty()
+                                    latestTags = latestMsgId?.let { tagsByLatestMsgId[it] }.orEmpty(),
+                                    riskScore = g.riskScore
                                 )
+                            }.let { list ->
+                                when (sortOrder) {
+                                    com.phantom.checker.util.HomeSortOrder.RECENT ->
+                                        list.sortedByDescending { it.lastTs }
+                                    com.phantom.checker.util.HomeSortOrder.UNREAD ->
+                                        list.sortedWith(compareByDescending<AppGroupUi> { it.unreadTodayCount }.thenByDescending { it.lastTs })
+                                    com.phantom.checker.util.HomeSortOrder.RISK ->
+                                        list.sortedWith(compareByDescending<AppGroupUi> { it.riskScore }.thenByDescending { it.lastTs })
+                                }
                             }
                         } else {
                             val page = queryFilteredPage(0)
@@ -1747,9 +1759,10 @@ private fun MessagesHomeTab(
             }
         }
 
-        // 快速篩選 Chip 列（FlowRow 自動換行，免橫向滑動全部可見）
+        // 快速篩選 Chip 列（FlowRow 自動換行，免橫向滑動全部可見；全部與未讀固定顯示）
         item {
             val activeTag = (activeFilter as? MessageFilter.Tag)?.tag
+            val visibleFilters = PhantomPrefs.getVisibleHomeFilters(ctx)
             val chipShape = RoundedCornerShape(8.dp)
             FlowRow(
                 modifier = Modifier
@@ -1774,34 +1787,40 @@ private fun MessagesHomeTab(
                     modifier = Modifier.height(32.dp),
                     label = { Text("未讀", style = MaterialTheme.typography.labelMedium) }
                 )
-                FilterChip(
-                    selected = activeFilter == MessageFilter.Starred,
-                    onClick = { onSelectFilter(MessageFilter.Starred) },
-                    shape = chipShape,
-                    modifier = Modifier.height(32.dp),
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    },
-                    label = { Text("星標", style = MaterialTheme.typography.labelMedium) }
-                )
-                FilterChip(
-                    selected = activeFilter == MessageFilter.Scams,
-                    onClick = { onSelectFilter(MessageFilter.Scams) },
-                    shape = chipShape,
-                    modifier = Modifier.height(32.dp),
-                    label = { Text("詐騙", style = MaterialTheme.typography.labelMedium) }
-                )
-                FilterChip(
-                    selected = activeFilter == MessageFilter.Filtered,
-                    onClick = { onSelectFilter(MessageFilter.Filtered) },
-                    shape = chipShape,
-                    modifier = Modifier.height(32.dp),
-                    label = { Text("已過濾", style = MaterialTheme.typography.labelMedium) }
-                )
+                if ("starred" in visibleFilters || activeFilter == MessageFilter.Starred) {
+                    FilterChip(
+                        selected = activeFilter == MessageFilter.Starred,
+                        onClick = { onSelectFilter(MessageFilter.Starred) },
+                        shape = chipShape,
+                        modifier = Modifier.height(32.dp),
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        },
+                        label = { Text("星標", style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
+                if ("scams" in visibleFilters || activeFilter == MessageFilter.Scams) {
+                    FilterChip(
+                        selected = activeFilter == MessageFilter.Scams,
+                        onClick = { onSelectFilter(MessageFilter.Scams) },
+                        shape = chipShape,
+                        modifier = Modifier.height(32.dp),
+                        label = { Text("詐騙", style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
+                if ("filtered" in visibleFilters || activeFilter == MessageFilter.Filtered) {
+                    FilterChip(
+                        selected = activeFilter == MessageFilter.Filtered,
+                        onClick = { onSelectFilter(MessageFilter.Filtered) },
+                        shape = chipShape,
+                        modifier = Modifier.height(32.dp),
+                        label = { Text("已過濾", style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
                 if (activeTag != null) {
                     val tagColor = parseTagColor(activeTag.colorHex)
                     FilterChip(
@@ -1832,13 +1851,15 @@ private fun MessagesHomeTab(
                         label = { Text(activeTag.name, style = MaterialTheme.typography.labelMedium) }
                     )
                 }
-                FilterChip(
-                    selected = activeTag != null,
-                    onClick = onOpenTagPicker,
-                    shape = chipShape,
-                    modifier = Modifier.height(32.dp),
-                    label = { Text("標籤 ▾", style = MaterialTheme.typography.labelMedium) }
-                )
+                if ("tag" in visibleFilters || activeTag != null) {
+                    FilterChip(
+                        selected = activeTag != null,
+                        onClick = onOpenTagPicker,
+                        shape = chipShape,
+                        modifier = Modifier.height(32.dp),
+                        label = { Text("標籤 ▾", style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
             }
         }
 
@@ -1964,8 +1985,10 @@ private fun MessagesHomeTab(
                 else -> {
                     itemsIndexed(appGroups, key = { _, app -> app.packageName }) { idx, app ->
                         val isMuted = app.packageName in mutedPackages
-                        val timeText = remember(app.lastTs) {
-                            SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(app.lastTs))
+                        val isCompact = PhantomPrefs.getCardDensity(ctx) == com.phantom.checker.util.CardDensity.COMPACT
+                        val is24h = PhantomPrefs.is24HourFormat(ctx)
+                        val timeText = remember(app.lastTs, is24h) {
+                            PhantomPrefs.formatMessageTime(ctx, app.lastTs, includeDate = true)
                         }
                         val rowModifier = Modifier
                             .fillMaxWidth()
@@ -1988,7 +2011,7 @@ private fun MessagesHomeTab(
                             glassState = glassState,
                             modifier = rowModifier,
                             cornerRadius = 20.dp,
-                            contentPadding = 12.dp
+                            contentPadding = if (isCompact) 8.dp else 12.dp
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),

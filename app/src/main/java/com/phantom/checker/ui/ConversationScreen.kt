@@ -652,8 +652,11 @@ private fun ChatBubbleItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
-    val timeText = remember(message.timestamp) {
-        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp))
+    val ctx = LocalContext.current
+    val isCompact = PhantomPrefs.getCardDensity(ctx) == com.phantom.checker.util.CardDensity.COMPACT
+    val is24h = PhantomPrefs.is24HourFormat(ctx)
+    val timeText = remember(message.timestamp, is24h) {
+        PhantomPrefs.formatMessageTime(ctx, message.timestamp, includeDate = false)
     }
     val riskDotColor: Color? = when (message.riskLabel) {
         "scam" -> MaterialTheme.colorScheme.error
@@ -674,7 +677,7 @@ private fun ChatBubbleItem(
                     onLongClick = onLongClick
                 ),
             cornerRadius = 16.dp,
-            contentPadding = 12.dp
+            contentPadding = if (isCompact) 8.dp else 12.dp
         ) {
             Text(
                 text = message.content,

@@ -393,8 +393,10 @@ private fun SenderThreadCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
-    val timeText = remember(thread.lastTs) {
-        SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(thread.lastTs))
+    val ctx = LocalContext.current
+    val is24h = PhantomPrefs.is24HourFormat(ctx)
+    val timeText = remember(thread.lastTs, is24h) {
+        PhantomPrefs.formatMessageTime(ctx, thread.lastTs, includeDate = true)
     }
 
     PhantomGlassCard(
