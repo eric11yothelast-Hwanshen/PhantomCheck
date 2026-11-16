@@ -162,10 +162,21 @@ fun rememberPhantomHaptic(): (HapticFeedbackType) -> Unit {
                     }
                     if (vibrator?.hasVibrator() == true) {
                         val isLong = type == HapticFeedbackType.LongPress
-                        val effect = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        val effect = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
+                            vibrator.areAllEffectsSupported(
+                                android.os.VibrationEffect.EFFECT_CLICK,
+                                android.os.VibrationEffect.EFFECT_HEAVY_CLICK
+                            ) == android.os.Vibrator.VIBRATION_EFFECT_SUPPORT_YES
+                        ) {
                             android.os.VibrationEffect.createPredefined(
                                 if (isLong) android.os.VibrationEffect.EFFECT_HEAVY_CLICK
                                 else android.os.VibrationEffect.EFFECT_CLICK
+                            )
+                        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            android.os.VibrationEffect.createWaveform(
+                                if (isLong) longArrayOf(0L, 40L) else longArrayOf(0L, 25L),
+                                if (isLong) intArrayOf(0, 255) else intArrayOf(0, 220),
+                                -1
                             )
                         } else {
                             android.os.VibrationEffect.createOneShot(

@@ -1415,7 +1415,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     SettingSwitchRow(
                         title = "觸覺回饋",
-                        subtitle = "切換分頁與長按操作時提供震動回饋",
+                        subtitle = "切換分頁與長按操作時提供震動回饋；若無震動請檢查系統設定（HyperOS/MIUI：設定→音效與震動→觸感回饋；Samsung：設定→聲音與震動→觸覺回饋）",
                         checked = hapticEnabled,
                         onCheckedChange = { checked ->
                             hapticEnabled = checked
@@ -1425,7 +1425,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     SettingSwitchRow(
                         title = "液態玻璃模糊效果",
-                        subtitle = "僅 Android 13+ 有效；關閉後改用半透明純色背景以節省 GPU 與電量",
+                        subtitle = "Android 12+ 模糊；更低版本半透明壓色（關閉可節省 GPU 與電量）",
                         checked = glassEffectEnabled,
                         onCheckedChange = { checked ->
                             ThemePreferences.setGlassEffectEnabled(appCtx, checked)

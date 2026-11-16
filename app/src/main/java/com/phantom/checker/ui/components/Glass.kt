@@ -61,7 +61,7 @@ fun Modifier.glassSurface(
         } else {
             MaterialTheme.colorScheme.outlineVariant
         }
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         clip(shape)
             .hazeEffect(
                 state = state,
