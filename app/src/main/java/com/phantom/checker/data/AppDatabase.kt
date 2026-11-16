@@ -24,7 +24,8 @@ data class MessageEntity(
     val isFiltered: Boolean = false, // 命中關鍵字過濾
     val isRead: Boolean = false,   // 幻訊內的已讀標記（不影響原 App）
     val dedupKey: String? = null,  // 通知去重雜湊鍵
-    val isStarred: Boolean = false // 星標
+    val isStarred: Boolean = false, // 星標
+    val remindAt: Long? = null     // 待辦提醒時間（epoch ms）
 )
 
 @Entity(tableName = "filter_rules")
@@ -317,6 +318,12 @@ interface MessageDao {
 
     @Query("UPDATE messages SET isStarred = :starred WHERE id IN (:ids)")
     suspend fun setStarredByIds(ids: List<Long>, starred: Boolean)
+
+    @Query("UPDATE messages SET remindAt = :remindAt WHERE id = :id")
+    suspend fun setRemindAt(id: Long, remindAt: Long?)
+
+    @Query("SELECT * FROM messages WHERE remindAt IS NOT NULL AND remindAt > :now ORDER BY remindAt ASC")
+    suspend fun pendingReminders(now: Long): List<MessageEntity>
 
     @Query("SELECT packageName, appLabel, COUNT(*) as cnt, MAX(timestamp) as lastTs, SUM(CASE WHEN riskLabel = 'scam' THEN 2 WHEN riskLabel = 'suspicious' THEN 1 ELSE 0 END) as riskScore FROM messages GROUP BY packageName ORDER BY lastTs DESC")
     suspend fun groupByApp(): List<AppGroupRow>
@@ -638,7 +645,7 @@ interface IntelDao {
         IntelCacheEntity::class,
         IntelResultEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -795,6 +802,12 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN remindAt INTEGER DEFAULT NULL")
             }
         }
     }

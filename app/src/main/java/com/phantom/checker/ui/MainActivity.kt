@@ -133,6 +133,8 @@ import com.phantom.checker.ui.components.pressableScale
 import com.phantom.checker.util.MessageExporter
 import com.phantom.checker.util.MuteMode
 import com.phantom.checker.util.PhantomPrefs
+import com.phantom.checker.util.ShareCardReportData
+import com.phantom.checker.util.StatsShareCardGenerator
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -315,6 +317,7 @@ private fun PhantomCheckApp(
     var sheetMsgTagIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var isAnalyzingSheetMsg by remember { mutableStateOf(false) }
     var deleteMessageConfirm by remember { mutableStateOf<MessageEntity?>(null) }
+    var reminderTarget by remember { mutableStateOf<MessageEntity?>(null) }
 
     // 多選批次操作狀態
     var isMultiSelectMode by remember { mutableStateOf(false) }
@@ -953,6 +956,15 @@ private fun PhantomCheckApp(
                     OutlinedButton(
                         onClick = {
                             messageSheetTarget = null
+                            reminderTarget = msg
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("稍後處理")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            messageSheetTarget = null
                             ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
                         },
                         modifier = Modifier.weight(1f)
@@ -973,6 +985,24 @@ private fun PhantomCheckApp(
                 Spacer(Modifier.height(12.dp))
             }
         }
+    }
+
+    reminderTarget?.let { target ->
+        ReminderPickerDialog(
+            onDismiss = { reminderTarget = null },
+            onSelectTimestamp = { ts ->
+                reminderTarget = null
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        AppDatabaseHolder.db(appCtx).messageDao().setRemindAt(target.id, ts)
+                    }
+                    com.phantom.checker.service.ReminderScheduler.schedule(appCtx, target.id, ts)
+                    refreshTrigger++
+                    val formatted = PhantomPrefs.formatMessageTime(appCtx, ts, includeDate = true)
+                    snackbarHostState.showSnackbar("已排程提醒：$formatted")
+                }
+            }
+        )
     }
 
     if (showTagPickerSheet) {
@@ -2392,6 +2422,32 @@ private fun StatsTab(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
+        }
+        item {
+            OutlinedButton(
+                onClick = {
+                    val data = ShareCardReportData(
+                        todayCount = state.weeklyCounts.lastOrNull()?.count ?: 0,
+                        weekTotalCount = state.weeklyCounts.sumOf { it.count },
+                        safeCount = state.safeCount,
+                        suspiciousCount = state.suspiciousCount,
+                        scamCount = state.scamCount,
+                        dailyLabels = state.weeklyCounts.map { it.label },
+                        dailyCounts = state.weeklyCounts.map { it.count },
+                        topApps = state.rawAppGroups
+                            .sortedByDescending { it.totalCount }
+                            .take(5)
+                            .map { it.appLabel to it.totalCount }
+                    )
+                    val res = StatsShareCardGenerator.generateAndShare(ctx, data)
+                    if (res.isFailure) {
+                        onShowMessage("產生分享圖卡失敗：${res.exceptionOrNull()?.message ?: "未知錯誤"}")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("分享本週統計報告圖卡（本機產生）")
             }
         }
         // 每日 AI 摘要玻璃卡

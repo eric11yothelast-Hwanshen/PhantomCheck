@@ -602,6 +602,38 @@ fun MessageCard(
                 overflow = TextOverflow.Ellipsis
             )
         }
+        if (message.remindAt != null && message.remindAt > System.currentTimeMillis()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "⏰ 待辦提醒 · ${PhantomPrefs.formatMessageTime(ctx, message.remindAt, includeDate = true)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium
+            )
+        }
+        val otpCode = remember(message.content) {
+            com.phantom.checker.util.OtpDetector.extractOtp(message.content)
+        }
+        if (otpCode != null) {
+            Spacer(Modifier.height(6.dp))
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                onClick = {
+                    val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("otp_code", otpCode))
+                    android.widget.Toast.makeText(ctx, "已複製驗證碼 $otpCode", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            ) {
+                Text(
+                    text = "複製驗證碼 $otpCode",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                )
+            }
+        }
     }
 
     if (highlightAsScam) {
@@ -693,4 +725,97 @@ fun MessageTagChipRow(
             }
         }
     }
+}
+
+@Composable
+fun ReminderPickerDialog(
+    onDismiss: () -> Unit,
+    onSelectTimestamp: (Long) -> Unit
+) {
+    val ctx = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("稍後處理提醒") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "選擇提醒時間，屆時將發送通知並可直接開啟訊息詳情：",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(
+                    onClick = {
+                        onSelectTimestamp(System.currentTimeMillis() + 60L * 60_000L)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("1 小時後")
+                }
+                OutlinedButton(
+                    onClick = {
+                        val cal = java.util.Calendar.getInstance().apply {
+                            set(java.util.Calendar.HOUR_OF_DAY, 20)
+                            set(java.util.Calendar.MINUTE, 0)
+                            set(java.util.Calendar.SECOND, 0)
+                            set(java.util.Calendar.MILLISECOND, 0)
+                            if (timeInMillis <= System.currentTimeMillis()) {
+                                add(java.util.Calendar.DAY_OF_YEAR, 1)
+                            }
+                        }
+                        onSelectTimestamp(cal.timeInMillis)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("今晚 20:00")
+                }
+                OutlinedButton(
+                    onClick = {
+                        val cal = java.util.Calendar.getInstance().apply {
+                            add(java.util.Calendar.DAY_OF_YEAR, 1)
+                            set(java.util.Calendar.HOUR_OF_DAY, 9)
+                            set(java.util.Calendar.MINUTE, 0)
+                            set(java.util.Calendar.SECOND, 0)
+                            set(java.util.Calendar.MILLISECOND, 0)
+                        }
+                        onSelectTimestamp(cal.timeInMillis)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("明天早上 09:00")
+                }
+                Button(
+                    onClick = {
+                        val nowCal = java.util.Calendar.getInstance()
+                        android.app.TimePickerDialog(
+                            ctx,
+                            { _, hourOfDay, minute ->
+                                val target = java.util.Calendar.getInstance().apply {
+                                    set(java.util.Calendar.HOUR_OF_DAY, hourOfDay)
+                                    set(java.util.Calendar.MINUTE, minute)
+                                    set(java.util.Calendar.SECOND, 0)
+                                    set(java.util.Calendar.MILLISECOND, 0)
+                                    if (timeInMillis <= System.currentTimeMillis()) {
+                                        add(java.util.Calendar.DAY_OF_YEAR, 1)
+                                    }
+                                }
+                                onSelectTimestamp(target.timeInMillis)
+                            },
+                            nowCal.get(java.util.Calendar.HOUR_OF_DAY),
+                            nowCal.get(java.util.Calendar.MINUTE),
+                            PhantomPrefs.is24HourFormat(ctx)
+                        ).show()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("自訂時間")
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
 }

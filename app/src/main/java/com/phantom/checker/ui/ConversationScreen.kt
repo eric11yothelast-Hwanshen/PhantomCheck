@@ -173,6 +173,7 @@ fun ConversationScreen(
     var showClearConfirm by remember { mutableStateOf(false) }
     var sheetMessage by remember { mutableStateOf<MessageEntity?>(null) }
     var deleteCandidate by remember { mutableStateOf<MessageEntity?>(null) }
+    var reminderTarget by remember { mutableStateOf<MessageEntity?>(null) }
     var revealedMessageId by remember { mutableStateOf<Long?>(null) }
     var isAnalyzing by remember { mutableStateOf(false) }
     var hasMoreOlder by remember { mutableStateOf(false) }
@@ -439,11 +440,20 @@ fun ConversationScreen(
                     OutlinedButton(
                         onClick = {
                             sheetMessage = null
+                            reminderTarget = msg
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("稍後處理")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            sheetMessage = null
                             ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
                         },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("查看完整詳情")
+                        Text("詳情")
                     }
                     Button(
                         onClick = {
@@ -459,6 +469,24 @@ fun ConversationScreen(
                 Spacer(Modifier.height(12.dp))
             }
         }
+    }
+
+    reminderTarget?.let { target ->
+        ReminderPickerDialog(
+            onDismiss = { reminderTarget = null },
+            onSelectTimestamp = { ts ->
+                reminderTarget = null
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        AppDatabaseHolder.db(appCtx).messageDao().setRemindAt(target.id, ts)
+                    }
+                    com.phantom.checker.service.ReminderScheduler.schedule(appCtx, target.id, ts)
+                    refreshTrigger++
+                    val formatted = PhantomPrefs.formatMessageTime(appCtx, ts, includeDate = true)
+                    snackbarHostState.showSnackbar("已排程提醒：$formatted")
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -695,6 +723,29 @@ private fun ChatBubbleItem(
                 Spacer(Modifier.height(6.dp))
                 MessageTagChipRow(tags = tags)
             }
+            val otpCode = remember(message.content) {
+                com.phantom.checker.util.OtpDetector.extractOtp(message.content)
+            }
+            if (otpCode != null) {
+                Spacer(Modifier.height(6.dp))
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    onClick = {
+                        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("otp_code", otpCode))
+                        android.widget.Toast.makeText(ctx, "已複製驗證碼 $otpCode", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text(
+                        text = "複製驗證碼 $otpCode",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
             Spacer(Modifier.height(6.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -705,6 +756,14 @@ private fun ChatBubbleItem(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (message.remindAt != null && message.remindAt > System.currentTimeMillis()) {
+                    Text(
+                        text = "⏰ 待辦",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
                 if (message.isStarred) {
                     Icon(
                         imageVector = Icons.Default.Star,

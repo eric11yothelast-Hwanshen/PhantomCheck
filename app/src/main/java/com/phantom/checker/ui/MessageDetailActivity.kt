@@ -69,10 +69,12 @@ import com.phantom.checker.data.MessageTagCrossRef
 import com.phantom.checker.data.TagEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.service.AppDatabaseHolder
+import com.phantom.checker.service.ReminderScheduler
 import com.phantom.checker.service.StatsForegroundService
 import com.phantom.checker.shizuku.ShizukuKeepAlive
 import com.phantom.checker.shizuku.ShizukuManager
 import com.phantom.checker.ui.components.pressableScale
+import com.phantom.checker.util.OtpDetector
 import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.CancellationException
@@ -135,6 +137,7 @@ fun MessageDetailScreen(
     var profiles by remember { mutableStateOf(AiClient.getProfiles(appCtx)) }
     var activeProfile by remember { mutableStateOf(AiClient.getActiveProfile(appCtx)) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showReminderPicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(messageId) {
         isLoading = true
@@ -184,6 +187,25 @@ fun MessageDetailScreen(
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) {
                     Text("取消")
+                }
+            }
+        )
+    }
+
+    if (showReminderPicker && message != null) {
+        val target = message!!
+        ReminderPickerDialog(
+            onDismiss = { showReminderPicker = false },
+            onSelectTimestamp = { ts ->
+                showReminderPicker = false
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        AppDatabaseHolder.db(appCtx).messageDao().setRemindAt(target.id, ts)
+                    }
+                    ReminderScheduler.schedule(appCtx, target.id, ts)
+                    message = target.copy(remindAt = ts)
+                    val formatted = PhantomPrefs.formatMessageTime(appCtx, ts, includeDate = true)
+                    snackbarHostState.showSnackbar("已排程提醒：$formatted")
                 }
             }
         )
@@ -307,6 +329,30 @@ fun MessageDetailScreen(
                                 text = msg.content,
                                 style = MaterialTheme.typography.bodyLarge
                             )
+                            val otpCode = remember(msg.content) { OtpDetector.extractOtp(msg.content) }
+                            if (otpCode != null) {
+                                Spacer(Modifier.height(10.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("phantom_otp", otpCode))
+                                        Toast.makeText(ctx, "已複製驗證碼 $otpCode", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Text("複製驗證碼 $otpCode")
+                                }
+                            }
+                            if (msg.remindAt != null && msg.remindAt > 0L) {
+                                val remindStr = remember(msg.remindAt) {
+                                    PhantomPrefs.formatMessageTime(ctx, msg.remindAt, includeDate = true)
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "⏰ 已排程待辦提醒：$remindStr",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
 
                         // 風險分數條與 AI 分析
@@ -716,6 +762,39 @@ fun MessageDetailScreen(
                                         .pressableScale()
                                 ) {
                                     Text("開啟原 App")
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { showReminderPicker = true },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .pressableScale()
+                            ) {
+                                Text(if (msg.remindAt != null) "修改提醒時間" else "稍後處理")
+                            }
+                            if (msg.remindAt != null) {
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            withContext(Dispatchers.IO) {
+                                                AppDatabaseHolder.db(appCtx).messageDao().setRemindAt(msg.id, null)
+                                            }
+                                            ReminderScheduler.cancel(appCtx, msg.id)
+                                            message = msg.copy(remindAt = null)
+                                            snackbarHostState.showSnackbar("已取消待辦提醒")
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .pressableScale()
+                                ) {
+                                    Text("取消提醒")
                                 }
                             }
                         }

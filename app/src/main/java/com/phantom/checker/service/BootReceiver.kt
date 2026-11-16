@@ -24,6 +24,22 @@ class BootReceiver : BroadcastReceiver() {
         RetentionPolicy.scheduleOrUpdate(appCtx)
         KeepAlivePolicy.scheduleAll(appCtx)
         StatsForegroundService.startOrRefresh(appCtx, force = true)
+        val pendingResult = goAsync()
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                val now = System.currentTimeMillis()
+                val pending = AppDatabaseHolder.db(appCtx).messageDao().pendingReminders(now)
+                pending.forEach { msg ->
+                    val ts = msg.remindAt
+                    if (ts != null && ts > now) {
+                        ReminderScheduler.schedule(appCtx, msg.id, ts)
+                    }
+                }
+            } catch (_: Exception) {
+            } finally {
+                pendingResult.finish()
+            }
+        }
 
         val listenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(appCtx)
             .contains(appCtx.packageName)
