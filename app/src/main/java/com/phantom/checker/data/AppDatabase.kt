@@ -301,7 +301,7 @@ interface MessageDao {
     @Query("SELECT COUNT(*) FROM messages WHERE riskLabel = 'scam' AND timestamp >= :startTs AND timestamp < :endTs")
     suspend fun scamCountBetween(startTs: Long, endTs: Long): Int
 
-    @Query("SELECT packageName, appLabel, COUNT(*) as cnt, MAX(timestamp) as lastTs FROM messages WHERE timestamp >= :startOfDay GROUP BY packageName ORDER BY lastTs DESC LIMIT 5")
+    @Query("SELECT packageName, appLabel, COUNT(*) as cnt, MAX(timestamp) as lastTs, SUM(CASE WHEN riskLabel = 'scam' THEN 2 WHEN riskLabel = 'suspicious' THEN 1 ELSE 0 END) as riskScore FROM messages WHERE timestamp >= :startOfDay GROUP BY packageName ORDER BY lastTs DESC LIMIT 5")
     suspend fun todayRecentApps(startOfDay: Long): List<AppGroupRow>
 
     @Query("SELECT packageName FROM messages ORDER BY timestamp DESC LIMIT 1")
