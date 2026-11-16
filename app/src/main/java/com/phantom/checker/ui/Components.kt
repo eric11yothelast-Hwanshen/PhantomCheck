@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
@@ -33,6 +34,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,10 +56,13 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.phantom.checker.data.AppGroupRow
 import com.phantom.checker.data.MessageEntity
+import com.phantom.checker.data.MessageTagCrossRef
+import com.phantom.checker.data.MessageTagRow
 import com.phantom.checker.ui.components.GlassCard
 import com.phantom.checker.ui.components.glassSource
 import com.phantom.checker.ui.components.glassSurface
@@ -617,5 +622,64 @@ fun MessageCard(
             contentPadding = 12.dp,
             content = cardInner
         )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun MessageTagChipRow(
+    tags: List<MessageTagRow>,
+    maxShow: Int = 3,
+    modifier: Modifier = Modifier
+) {
+    if (tags.isEmpty()) return
+    val visible = tags.take(maxShow)
+    val overflow = tags.size - visible.size
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        visible.forEach { tag ->
+            val tagColor = parseTagColor(tag.colorHex)
+            val isAuto = tag.source == MessageTagCrossRef.SOURCE_AUTO
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = tagColor.copy(alpha = 0.14f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(tagColor)
+                    )
+                    Text(
+                        text = if (isAuto) "${tag.name} · AI" else tag.name,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+        if (overflow > 0) {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Text(
+                    text = "+$overflow",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+        }
     }
 }

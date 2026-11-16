@@ -1530,64 +1530,6 @@ private fun PhantomCheckApp(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun MessageTagChipRow(
-    tags: List<MessageTagRow>,
-    maxShow: Int = 3,
-    modifier: Modifier = Modifier
-) {
-    if (tags.isEmpty()) return
-    val visible = tags.take(maxShow)
-    val overflow = tags.size - visible.size
-    FlowRow(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        visible.forEach { tag ->
-            val tagColor = parseTagColor(tag.colorHex)
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = tagColor.copy(alpha = 0.14f)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(tagColor)
-                    )
-                    Text(
-                        text = tag.name,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-        if (overflow > 0) {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant
-            ) {
-                Text(
-                    text = "+$overflow",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-            }
-        }
-    }
-}
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SearchResultsSection(

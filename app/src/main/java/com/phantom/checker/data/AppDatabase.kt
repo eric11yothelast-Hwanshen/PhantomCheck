@@ -204,7 +204,8 @@ data class MessageTagRow(
     val messageId: Long,
     val tagId: Long,
     val name: String,
-    val colorHex: String
+    val colorHex: String,
+    val source: String = MessageTagCrossRef.SOURCE_MANUAL
 )
 
 data class TagTotalCountRow(
@@ -501,7 +502,7 @@ interface TagDao {
     suspend fun todayAiTagCounts(startOfDay: Long): List<AiTagCountRow>
 
     @Query(
-        "SELECT mt.messageId AS messageId, t.id AS tagId, t.name AS name, t.colorHex AS colorHex " +
+        "SELECT mt.messageId AS messageId, t.id AS tagId, t.name AS name, t.colorHex AS colorHex, mt.source AS source " +
             "FROM message_tags mt INNER JOIN tags t ON mt.tagId = t.id " +
             "WHERE mt.messageId IN (:messageIds) " +
             "ORDER BY t.sortOrder ASC, t.id ASC"

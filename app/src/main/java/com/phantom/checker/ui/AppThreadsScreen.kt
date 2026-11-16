@@ -59,6 +59,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.room.withTransaction
+import com.phantom.checker.data.MessageTagRow
 import com.phantom.checker.data.SenderGroupRow
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.StatsForegroundService
@@ -78,7 +79,8 @@ data class SenderThreadUi(
     val unreadCount: Int,
     val lastTs: Long,
     val lastPreview: String,
-    val isPinned: Boolean = false
+    val isPinned: Boolean = false,
+    val latestTags: List<MessageTagRow> = emptyList()
 )
 
 class AppThreadsActivity : ComponentActivity() {
@@ -144,20 +146,29 @@ fun AppThreadsScreen(
     LaunchedEffect(packageName, refreshTrigger) {
         isLoading = true
         threads = withContext(Dispatchers.IO) {
-            val dao = AppDatabaseHolder.db(appCtx).messageDao()
+            val db = AppDatabaseHolder.db(appCtx)
+            val dao = db.messageDao()
             val vipSenders = PhantomPrefs.getVipSenders(appCtx, packageName)
             val groups: List<SenderGroupRow> = dao.groupBySender(packageName)
             val allAppMsgs = dao.byApp(packageName)
             val latestBySender = allAppMsgs.groupBy { it.sender }
-                .mapValues { (_, list) -> list.maxByOrNull { it.timestamp }?.content.orEmpty() }
+                .mapValues { (_, list) -> list.maxByOrNull { it.timestamp } }
+            val latestIds = latestBySender.values.mapNotNull { it?.id }.distinct()
+            val tagsMap = if (latestIds.isEmpty()) {
+                emptyMap()
+            } else {
+                db.tagDao().tagsForMessages(latestIds).groupBy { it.messageId }
+            }
             groups.map { g ->
+                val latestMsg = latestBySender[g.sender]
                 SenderThreadUi(
                     sender = g.sender,
                     count = g.cnt,
                     unreadCount = g.unreadCnt,
                     lastTs = g.lastTs,
-                    lastPreview = latestBySender[g.sender].orEmpty(),
-                    isPinned = g.sender in vipSenders
+                    lastPreview = latestMsg?.content.orEmpty(),
+                    isPinned = g.sender in vipSenders,
+                    latestTags = latestMsg?.let { tagsMap[it.id] }.orEmpty()
                 )
             }.sortedWith(compareByDescending<SenderThreadUi> { it.isPinned }.thenByDescending { it.lastTs })
         }
@@ -468,5 +479,9 @@ private fun SenderThreadCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+        if (thread.latestTags.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            MessageTagChipRow(tags = thread.latestTags)
+        }
     }
 }
