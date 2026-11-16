@@ -169,6 +169,25 @@ data class MessageStatsRow(
     val scam: Int
 )
 
+data class MessageTagRow(
+    val messageId: Long,
+    val tagId: Long,
+    val name: String,
+    val colorHex: String
+)
+
+data class TagTotalCountRow(
+    val tagId: Long,
+    val name: String,
+    val colorHex: String,
+    val cnt: Int
+)
+
+data class AppLatestMsgRow(
+    val packageName: String,
+    val messageId: Long
+)
+
 @Dao
 interface MessageDao {
     @Query("SELECT * FROM messages ORDER BY timestamp DESC LIMIT :limit OFFSET :offset")
@@ -257,6 +276,9 @@ interface MessageDao {
 
     @Query("SELECT packageName, COUNT(*) as cnt FROM messages WHERE isRead = 0 AND timestamp >= :startOfDay GROUP BY packageName")
     suspend fun todayUnreadCountsByApp(startOfDay: Long): List<AppCountRow>
+
+    @Query("SELECT packageName, id AS messageId FROM messages WHERE id IN (SELECT MAX(id) FROM messages m1 WHERE timestamp = (SELECT MAX(timestamp) FROM messages m2 WHERE m2.packageName = m1.packageName) GROUP BY packageName)")
+    suspend fun latestMessageIdsByApp(): List<AppLatestMsgRow>
 
     @Query("SELECT * FROM messages WHERE packageName = :packageName ORDER BY timestamp DESC")
     suspend fun byApp(packageName: String): List<MessageEntity>
@@ -420,6 +442,22 @@ interface TagDao {
             "GROUP BY t.id ORDER BY t.sortOrder ASC, t.id ASC"
     )
     suspend fun todayAiTagCounts(startOfDay: Long): List<AiTagCountRow>
+
+    @Query(
+        "SELECT mt.messageId AS messageId, t.id AS tagId, t.name AS name, t.colorHex AS colorHex " +
+            "FROM message_tags mt INNER JOIN tags t ON mt.tagId = t.id " +
+            "WHERE mt.messageId IN (:messageIds) " +
+            "ORDER BY t.sortOrder ASC, t.id ASC"
+    )
+    suspend fun tagsForMessages(messageIds: List<Long>): List<MessageTagRow>
+
+    @Query(
+        "SELECT t.id AS tagId, t.name AS name, t.colorHex AS colorHex, " +
+            "COUNT(mt.messageId) AS cnt " +
+            "FROM tags t LEFT JOIN message_tags mt ON t.id = mt.tagId " +
+            "GROUP BY t.id ORDER BY t.sortOrder ASC, t.id ASC"
+    )
+    suspend fun allTagCounts(): List<TagTotalCountRow>
 }
 
 @Dao

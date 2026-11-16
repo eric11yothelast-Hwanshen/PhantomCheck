@@ -39,6 +39,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
@@ -109,7 +110,9 @@ import com.phantom.checker.data.AppGroupRow
 import com.phantom.checker.data.AppRiskRow
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.data.MessageTagCrossRef
+import com.phantom.checker.data.MessageTagRow
 import com.phantom.checker.data.TagEntity
+import com.phantom.checker.data.TagTotalCountRow
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.DailySummaryPolicy
@@ -218,7 +221,8 @@ private data class AppGroupUi(
     val todayCount: Int,
     val unreadTodayCount: Int,
     val lastTs: Long,
-    val lastPreview: String
+    val lastPreview: String,
+    val latestTags: List<MessageTagRow> = emptyList()
 )
 
 private data class DayCountUi(
@@ -272,6 +276,10 @@ private fun PhantomCheckApp(
     var favoritePackages by remember { mutableStateOf(PhantomPrefs.getFavoriteApps(appCtx)) }
     var mutedPackages by remember { mutableStateOf(PhantomPrefs.getMutedApps(appCtx)) }
     var availableTags by remember { mutableStateOf(listOf<TagEntity>()) }
+    var tagCounts by remember { mutableStateOf(listOf<TagTotalCountRow>()) }
+    var messageTagsMap by remember { mutableStateOf<Map<Long, List<MessageTagRow>>>(emptyMap()) }
+    var showTagPickerSheet by remember { mutableStateOf(false) }
+    var tagPickerQuery by remember { mutableStateOf("") }
     var activeFilter by remember { mutableStateOf<MessageFilter>(MessageFilter.All) }
 
     // 分頁清單狀態（非「全部」篩選時顯示）
@@ -412,8 +420,14 @@ private fun PhantomCheckApp(
                 } else {
                     emptyList()
                 }
+                val foundTags = if (found.isEmpty()) {
+                    emptyMap()
+                } else {
+                    db.tagDao().tagsForMessages(found.map { it.id }).groupBy { it.messageId }
+                }
                 searchResults = found
                 activeFilterKeywords = keywords
+                messageTagsMap = foundTags
             } else {
                 when (selectedTab) {
                     MainTab.MESSAGES -> {
@@ -422,6 +436,7 @@ private fun PhantomCheckApp(
                         unreadCount = overview.unread
                         todayScamCount = overview.scam
                         availableTags = db.tagDao().all()
+                        tagCounts = db.tagDao().allTagCounts()
 
                         if (activeFilter == MessageFilter.All) {
                             val groups = dao.groupByApp()
@@ -433,9 +448,18 @@ private fun PhantomCheckApp(
                             val latestPreviewByPkg = recentMsgs
                                 .groupBy { it.packageName }
                                 .mapValues { (_, list) -> list.maxByOrNull { it.timestamp }?.content.orEmpty() }
+                            val latestIdsByApp = dao.latestMessageIdsByApp()
+                                .associate { it.packageName to it.messageId }
+                            val latestMsgIds = latestIdsByApp.values.distinct()
+                            val tagsByLatestMsgId = if (latestMsgIds.isEmpty()) {
+                                emptyMap()
+                            } else {
+                                db.tagDao().tagsForMessages(latestMsgIds).groupBy { it.messageId }
+                            }
                             appGroups = groups.map { g ->
                                 val preview = latestPreviewByPkg[g.packageName]
                                     ?: dao.byApp(g.packageName).firstOrNull()?.content.orEmpty()
+                                val latestMsgId = latestIdsByApp[g.packageName]
                                 AppGroupUi(
                                     packageName = g.packageName,
                                     appLabel = g.appLabel.ifBlank { g.packageName },
@@ -443,12 +467,19 @@ private fun PhantomCheckApp(
                                     todayCount = todayMap[g.packageName] ?: 0,
                                     unreadTodayCount = unreadTodayMap[g.packageName] ?: 0,
                                     lastTs = g.lastTs,
-                                    lastPreview = preview
+                                    lastPreview = preview,
+                                    latestTags = latestMsgId?.let { tagsByLatestMsgId[it] }.orEmpty()
                                 )
                             }
                         } else {
                             val page = queryFilteredPage(0)
+                            val pageTags = if (page.isEmpty()) {
+                                emptyMap()
+                            } else {
+                                db.tagDao().tagsForMessages(page.map { it.id }).groupBy { it.messageId }
+                            }
                             filteredMessages = page
+                            messageTagsMap = pageTags
                             hasMoreFiltered = page.size >= PAGE_SIZE
                         }
                     }
@@ -903,6 +934,146 @@ private fun PhantomCheckApp(
         }
     }
 
+    if (showTagPickerSheet) {
+        ModalBottomSheet(onDismissRequest = { showTagPickerSheet = false }) {
+            val filteredTagRows = remember(tagCounts, tagPickerQuery) {
+                val q = tagPickerQuery.trim()
+                if (q.isEmpty()) tagCounts
+                else tagCounts.filter { it.name.contains(q, ignoreCase = true) }
+            }
+            val selectedTagId = (activeFilter as? MessageFilter.Tag)?.tag?.id
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "依標籤篩選",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (selectedTagId != null) {
+                        TextButton(onClick = {
+                            activeFilter = MessageFilter.All
+                            showTagPickerSheet = false
+                        }) {
+                            Text("清除標籤篩選")
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = tagPickerQuery,
+                    onValueChange = { tagPickerQuery = it },
+                    placeholder = { Text("搜尋標籤名稱…") },
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (tagPickerQuery.isNotEmpty()) {
+                            IconButton(onClick = { tagPickerQuery = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "清除")
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (filteredTagRows.isEmpty()) {
+                    Text(
+                        text = if (tagCounts.isEmpty()) "尚未建立任何標籤" else "找不到符合「$tagPickerQuery」的標籤",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(320.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(filteredTagRows, key = { it.tagId }) { row ->
+                            val isSelected = selectedTagId == row.tagId
+                            val tagColor = parseTagColor(row.colorHex)
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (isSelected) {
+                                    tagColor.copy(alpha = 0.16f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .clickable {
+                                        activeFilter = MessageFilter.Tag(
+                                            TagEntity(
+                                                id = row.tagId,
+                                                name = row.name,
+                                                colorHex = row.colorHex
+                                            )
+                                        )
+                                        showTagPickerSheet = false
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .clip(CircleShape)
+                                                .background(tagColor)
+                                        )
+                                        Text(
+                                            text = row.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "${row.cnt} 則",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "已選取",
+                                                tint = tagColor,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+        }
+    }
+
     val glassState = remember { HazeState() }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -1141,6 +1312,7 @@ private fun PhantomCheckApp(
                     isLoading = isLoading,
                     results = displayResults,
                     activeFilterKeywords = activeFilterKeywords,
+                    messageTagsMap = messageTagsMap,
                     glassState = glassState,
                     isMultiSelectMode = isMultiSelectMode,
                     selectedIds = selectedMessageIds,
@@ -1166,9 +1338,9 @@ private fun PhantomCheckApp(
                         favoritePackages = favoritePackages,
                         mutedPackages = mutedPackages,
                         appGroups = appGroups,
-                        availableTags = availableTags,
                         activeFilter = activeFilter,
                         filteredMessages = filteredMessages,
+                        messageTagsMap = messageTagsMap,
                         hasMoreFiltered = hasMoreFiltered,
                         isLoading = isLoading,
                         isLoadingMore = isLoadingMore,
@@ -1182,6 +1354,10 @@ private fun PhantomCheckApp(
                         },
                         onToggleSelect = toggleSelection,
                         onSelectFilter = { f -> activeFilter = f },
+                        onOpenTagPicker = {
+                            tagPickerQuery = ""
+                            showTagPickerSheet = true
+                        },
                         onMarkAllRead = {
                             scope.launch {
                                 withContext(Dispatchers.IO) {
@@ -1198,7 +1374,17 @@ private fun PhantomCheckApp(
                                 scope.launch {
                                     isLoadingMore = true
                                     val next = queryFilteredPage(filteredMessages.size)
+                                    val nextTags = if (next.isEmpty()) {
+                                        emptyMap()
+                                    } else {
+                                        withContext(Dispatchers.IO) {
+                                            AppDatabaseHolder.db(appCtx).tagDao()
+                                                .tagsForMessages(next.map { it.id })
+                                                .groupBy { it.messageId }
+                                        }
+                                    }
                                     filteredMessages = filteredMessages + next
+                                    messageTagsMap = messageTagsMap + nextTags
                                     hasMoreFiltered = next.size >= PAGE_SIZE
                                     isLoadingMore = false
                                 }
@@ -1317,6 +1503,64 @@ private fun PhantomCheckApp(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun MessageTagChipRow(
+    tags: List<MessageTagRow>,
+    maxShow: Int = 3,
+    modifier: Modifier = Modifier
+) {
+    if (tags.isEmpty()) return
+    val visible = tags.take(maxShow)
+    val overflow = tags.size - visible.size
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        visible.forEach { tag ->
+            val tagColor = parseTagColor(tag.colorHex)
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = tagColor.copy(alpha = 0.14f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(tagColor)
+                    )
+                    Text(
+                        text = tag.name,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+        if (overflow > 0) {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant
+            ) {
+                Text(
+                    text = "+$overflow",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SearchResultsSection(
@@ -1324,6 +1568,7 @@ private fun SearchResultsSection(
     isLoading: Boolean,
     results: List<MessageEntity>,
     activeFilterKeywords: List<String>,
+    messageTagsMap: Map<Long, List<MessageTagRow>>,
     glassState: HazeState,
     isMultiSelectMode: Boolean,
     selectedIds: Set<Long>,
@@ -1374,6 +1619,7 @@ private fun SearchResultsSection(
                         } else {
                             emptyList()
                         }
+                        val msgTags = messageTagsMap[m.id].orEmpty()
                         val checked = m.id in selectedIds
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -1385,23 +1631,31 @@ private fun SearchResultsSection(
                                     onCheckedChange = { onToggleSelect(m.id) }
                                 )
                             }
-                            MessageCard(
-                                message = m,
-                                glassState = glassState,
-                                highlightAsScam = m.riskLabel == "scam",
-                                matchedKeywords = matchedKeywords,
-                                highlightQuery = query,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .combinedClickable(
-                                        onClick = {
-                                            if (isMultiSelectMode) onToggleSelect(m.id) else onOpenDetail(m)
-                                        },
-                                        onLongClick = {
-                                            if (!isMultiSelectMode) onLongPressMessage(m)
-                                        }
+                            Column(modifier = Modifier.weight(1f)) {
+                                MessageCard(
+                                    message = m,
+                                    glassState = glassState,
+                                    highlightAsScam = m.riskLabel == "scam",
+                                    matchedKeywords = matchedKeywords,
+                                    highlightQuery = query,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .combinedClickable(
+                                            onClick = {
+                                                if (isMultiSelectMode) onToggleSelect(m.id) else onOpenDetail(m)
+                                            },
+                                            onLongClick = {
+                                                if (!isMultiSelectMode) onLongPressMessage(m)
+                                            }
+                                        )
+                                )
+                                if (msgTags.isNotEmpty()) {
+                                    MessageTagChipRow(
+                                        tags = msgTags,
+                                        modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
                                     )
-                            )
+                                }
+                            }
                         }
                     }
                 }
@@ -1419,9 +1673,9 @@ private fun MessagesHomeTab(
     favoritePackages: List<String>,
     mutedPackages: Set<String>,
     appGroups: List<AppGroupUi>,
-    availableTags: List<TagEntity>,
     activeFilter: MessageFilter,
     filteredMessages: List<MessageEntity>,
+    messageTagsMap: Map<Long, List<MessageTagRow>>,
     hasMoreFiltered: Boolean,
     isLoading: Boolean,
     isLoadingMore: Boolean,
@@ -1432,6 +1686,7 @@ private fun MessagesHomeTab(
     onToggleMultiSelect: () -> Unit,
     onToggleSelect: (Long) -> Unit,
     onSelectFilter: (MessageFilter) -> Unit,
+    onOpenTagPicker: () -> Unit,
     onMarkAllRead: () -> Unit,
     onClearRead: () -> Unit,
     onLoadMore: () -> Unit,
@@ -1512,8 +1767,9 @@ private fun MessagesHomeTab(
             }
         }
 
-        // 快速篩選 Chip 列
+        // 快速篩選 Chip 列（固定 5 顆 + 「標籤 ▾」開啟 BottomSheet）
         item {
+            val activeTag = (activeFilter as? MessageFilter.Tag)?.tag
             LazyRow(
                 modifier = Modifier.onGloballyPositioned { coords ->
                     onReportBounds(OnboardingTargets.FILTER_CHIPS, coords.boundsInRoot())
@@ -1562,24 +1818,41 @@ private fun MessagesHomeTab(
                         label = { Text("已過濾") }
                     )
                 }
-                items(availableTags, key = { it.id }) { tag ->
-                    val isSelected = (activeFilter as? MessageFilter.Tag)?.tag?.id == tag.id
-                    val tagColor = parseTagColor(tag.colorHex)
+                if (activeTag != null) {
+                    item {
+                        val tagColor = parseTagColor(activeTag.colorHex)
+                        FilterChip(
+                            selected = true,
+                            onClick = onOpenTagPicker,
+                            leadingIcon = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(tagColor)
+                                )
+                            },
+                            trailingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = "關閉標籤篩選",
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clickable { onSelectFilter(MessageFilter.All) }
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = tagColor.copy(alpha = 0.2f)
+                            ),
+                            label = { Text(activeTag.name) }
+                        )
+                    }
+                }
+                item {
                     FilterChip(
-                        selected = isSelected,
-                        onClick = { onSelectFilter(MessageFilter.Tag(tag)) },
-                        leadingIcon = {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(tagColor)
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = tagColor.copy(alpha = 0.2f)
-                        ),
-                        label = { Text(tag.name) }
+                        selected = activeTag != null,
+                        onClick = onOpenTagPicker,
+                        label = { Text("標籤 ▾") }
                     )
                 }
             }
@@ -1612,10 +1885,11 @@ private fun MessagesHomeTab(
                                     pkg
                                 }
                                 val todayBadge = group?.todayCount ?: 0
+                                val favTags = group?.latestTags.orEmpty()
                                 PhantomGlassCard(
                                     glassState = glassState,
                                     modifier = Modifier
-                                        .width(92.dp)
+                                        .width(108.dp)
                                         .pressableScale()
                                         .combinedClickable(
                                             onClick = { onOpenApp(pkg, label) },
@@ -1656,6 +1930,10 @@ private fun MessagesHomeTab(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
+                                        if (favTags.isNotEmpty()) {
+                                            Spacer(Modifier.height(4.dp))
+                                            MessageTagChipRow(tags = favTags)
+                                        }
                                     }
                                 }
                             }
@@ -1823,6 +2101,10 @@ private fun MessagesHomeTab(
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
+                                    if (app.latestTags.isNotEmpty()) {
+                                        Spacer(Modifier.height(6.dp))
+                                        MessageTagChipRow(tags = app.latestTags)
+                                    }
                                 }
                             }
                         }
@@ -1889,6 +2171,7 @@ private fun MessagesHomeTab(
                     }
                     items(filteredMessages, key = { it.id }) { m ->
                         val checked = m.id in selectedIds
+                        val msgTags = messageTagsMap[m.id].orEmpty()
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
@@ -1899,21 +2182,29 @@ private fun MessagesHomeTab(
                                     onCheckedChange = { onToggleSelect(m.id) }
                                 )
                             }
-                            MessageCard(
-                                message = m,
-                                glassState = glassState,
-                                highlightAsScam = m.riskLabel == "scam",
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .combinedClickable(
-                                        onClick = {
-                                            if (isMultiSelectMode) onToggleSelect(m.id) else onOpenMessageDetail(m)
-                                        },
-                                        onLongClick = {
-                                            if (!isMultiSelectMode) onLongPressMessage(m)
-                                        }
+                            Column(modifier = Modifier.weight(1f)) {
+                                MessageCard(
+                                    message = m,
+                                    glassState = glassState,
+                                    highlightAsScam = m.riskLabel == "scam",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .combinedClickable(
+                                            onClick = {
+                                                if (isMultiSelectMode) onToggleSelect(m.id) else onOpenMessageDetail(m)
+                                            },
+                                            onLongClick = {
+                                                if (!isMultiSelectMode) onLongPressMessage(m)
+                                            }
+                                        )
+                                )
+                                if (msgTags.isNotEmpty()) {
+                                    MessageTagChipRow(
+                                        tags = msgTags,
+                                        modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
                                     )
-                            )
+                                }
+                            }
                         }
                     }
                     if (isLoadingMore) {
