@@ -46,6 +46,7 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
@@ -257,6 +258,10 @@ fun OnboardingOverlay(
         label = "holeBottom"
     )
 
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = if (isDark) 0.74f else 0.54f)
+    val holeOutlineColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+
     // 不攔截系統返回鍵（沒有 BackHandler）；Canvas 不攔截觸控
     Box(
         modifier = Modifier
@@ -283,8 +288,17 @@ fun OnboardingOverlay(
             }
             drawPath(
                 path = path,
-                color = Color.Black.copy(alpha = 0.6f)
+                color = scrimColor
             )
+            if (hasHole && animRight > animLeft && animBottom > animTop) {
+                drawRoundRect(
+                    color = holeOutlineColor,
+                    topLeft = Offset(animLeft, animTop),
+                    size = androidx.compose.ui.geometry.Size(animRight - animLeft, animBottom - animTop),
+                    cornerRadius = CornerRadius(cornerPx, cornerPx),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+                )
+            }
         }
 
         AnimatedVisibility(
@@ -302,8 +316,15 @@ fun OnboardingOverlay(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 22.dp,
-                contentPadding = 16.dp
+                contentPadding = 4.dp
             ) {
+                androidx.compose.material3.Surface(
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
                 val totalSteps = OnboardingStep.entries.size
                 val (title, body) = when (step) {
                     OnboardingStep.PERMISSION ->
@@ -347,7 +368,8 @@ fun OnboardingOverlay(
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = body,
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
                 if (step == OnboardingStep.KEEP_ALIVE) {
@@ -466,6 +488,9 @@ fun OnboardingOverlay(
                         }
                     }
                 }
+                    }
+                }
+            }
             }
         }
     }

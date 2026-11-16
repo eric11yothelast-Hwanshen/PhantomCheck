@@ -174,6 +174,14 @@ fun ConversationScreen(
     var deleteCandidate by remember { mutableStateOf<MessageEntity?>(null) }
     var revealedMessageId by remember { mutableStateOf<Long?>(null) }
     var isAnalyzing by remember { mutableStateOf(false) }
+    var hasMoreOlder by remember { mutableStateOf(false) }
+    var isLoadingMoreOlder by remember { mutableStateOf(false) }
+
+    val shouldLoadOlder by remember {
+        androidx.compose.runtime.derivedStateOf {
+            listState.firstVisibleItemIndex <= 3
+        }
+    }
 
     val launchIntent = remember(packageName) {
         try {
@@ -199,6 +207,7 @@ fun ConversationScreen(
 
     LaunchedEffect(packageName, sender, refreshTrigger) {
         isLoading = true
+        val pageSize = 200
         val loaded = withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
             val dao = db.messageDao()
@@ -215,13 +224,38 @@ fun ConversationScreen(
                     .take(3)
                     .map { parseTagColor(it.colorHex) }
             }
-            dao.byConversation(packageName, sender)
+            dao.byConversationKeyset(packageName, sender, null, pageSize).asReversed()
         }
         messages = loaded
+        hasMoreOlder = loaded.size >= pageSize
         isLoading = false
         if (loaded.isNotEmpty() && refreshTrigger <= 1) {
             listState.scrollToItem(loaded.lastIndex)
         }
+    }
+
+    LaunchedEffect(shouldLoadOlder, hasMoreOlder, isLoading, isLoadingMoreOlder) {
+        if (!shouldLoadOlder || !hasMoreOlder || isLoading || isLoadingMoreOlder) return@LaunchedEffect
+        val oldestTs = messages.firstOrNull()?.timestamp ?: return@LaunchedEffect
+        isLoadingMoreOlder = true
+        val pageSize = 200
+        val older = withContext(Dispatchers.IO) {
+            AppDatabaseHolder.db(appCtx).messageDao()
+                .byConversationKeyset(packageName, sender, oldestTs, pageSize)
+                .asReversed()
+        }
+        if (older.isNotEmpty()) {
+            val existingIds = messages.map { it.id }.toHashSet()
+            val uniqueOlder = older.filter { it.id !in existingIds }
+            if (uniqueOlder.isNotEmpty()) {
+                val prevFirstIdx = listState.firstVisibleItemIndex
+                val prevOffset = listState.firstVisibleItemScrollOffset
+                messages = uniqueOlder + messages
+                listState.scrollToItem(prevFirstIdx + uniqueOlder.size, prevOffset)
+            }
+        }
+        hasMoreOlder = older.size >= pageSize
+        isLoadingMoreOlder = false
     }
 
     if (showClearConfirm) {

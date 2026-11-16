@@ -71,7 +71,15 @@ import java.util.Locale
 @Composable
 fun Modifier.phantomGlassSource(state: HazeState): Modifier {
     val ctx = LocalContext.current
-    return if (ThemePreferences.isGlassEffectEnabled(ctx)) {
+    val isPowerSave = remember(ctx) {
+        try {
+            (ctx.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager)
+                ?.isPowerSaveMode == true
+        } catch (_: Exception) {
+            false
+        }
+    }
+    return if (ThemePreferences.isGlassEffectEnabled(ctx) && !isPowerSave) {
         this.glassSource(state)
     } else {
         this
@@ -86,7 +94,15 @@ fun Modifier.phantomGlassSurface(
     cornerRadius: Dp = 24.dp
 ): Modifier {
     val ctx = LocalContext.current
-    return if (ThemePreferences.isGlassEffectEnabled(ctx)) {
+    val isPowerSave = remember(ctx) {
+        try {
+            (ctx.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager)
+                ?.isPowerSaveMode == true
+        } catch (_: Exception) {
+            false
+        }
+    }
+    return if (ThemePreferences.isGlassEffectEnabled(ctx) && !isPowerSave) {
         this.glassSurface(
             state = state,
             fallbackColor = fallbackColor,
@@ -117,7 +133,15 @@ fun PhantomGlassCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val ctx = LocalContext.current
-    if (ThemePreferences.isGlassEffectEnabled(ctx)) {
+    val isPowerSave = remember(ctx) {
+        try {
+            (ctx.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager)
+                ?.isPowerSaveMode == true
+        } catch (_: Exception) {
+            false
+        }
+    }
+    if (ThemePreferences.isGlassEffectEnabled(ctx) && !isPowerSave) {
         GlassCard(
             glassState = glassState,
             modifier = modifier,

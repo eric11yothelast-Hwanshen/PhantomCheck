@@ -125,7 +125,6 @@ class StatsForegroundService : Service() {
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_USER_PRESENT)
-            addAction("android.net.conn.CONNECTIVITY_CHANGE")
         }
         try {
             ContextCompat.registerReceiver(

@@ -311,6 +311,9 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE packageName = :packageName AND sender = :sender ORDER BY timestamp ASC")
     suspend fun byConversation(packageName: String, sender: String): List<MessageEntity>
 
+    @Query("SELECT * FROM messages WHERE packageName = :packageName AND sender = :sender AND (:beforeTs IS NULL OR timestamp < :beforeTs) ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun byConversationKeyset(packageName: String, sender: String, beforeTs: Long?, limit: Int): List<MessageEntity>
+
     @Query("UPDATE messages SET isRead = 1 WHERE packageName = :packageName AND sender = :sender AND isRead = 0")
     suspend fun markConversationRead(packageName: String, sender: String)
 

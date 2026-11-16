@@ -92,6 +92,7 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -1425,7 +1426,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     SettingSwitchRow(
                         title = "液態玻璃模糊效果",
-                        subtitle = "Android 12+ 模糊；更低版本半透明壓色（關閉可節省 GPU 與電量）",
+                        subtitle = "Android 12+ 模糊；更低版本或省電模式自動停用並改為半透明壓色",
                         checked = glassEffectEnabled,
                         onCheckedChange = { checked ->
                             ThemePreferences.setGlassEffectEnabled(appCtx, checked)
@@ -2263,6 +2264,10 @@ private fun SettingsTourOverlay(
         val holeRight = animRight.coerceIn(holeLeft, totalWidthPx)
         val holeBottom = animBottom.coerceIn(holeTop, totalHeightPx)
 
+        val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        val scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = if (isDark) 0.74f else 0.54f)
+        val holeOutlineColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+
         // 1. 半透明遮罩（PathFillType.EvenOdd 挖洞，純繪製不攔截觸控）
         Canvas(modifier = Modifier.fillMaxSize()) {
             val path = Path().apply {
@@ -2282,8 +2287,17 @@ private fun SettingsTourOverlay(
             }
             drawPath(
                 path = path,
-                color = Color.Black.copy(alpha = 0.6f)
+                color = scrimColor
             )
+            if (hasHole && holeRight > holeLeft && holeBottom > holeTop) {
+                drawRoundRect(
+                    color = holeOutlineColor,
+                    topLeft = Offset(holeLeft, holeTop),
+                    size = androidx.compose.ui.geometry.Size(holeRight - holeLeft, holeBottom - holeTop),
+                    cornerRadius = CornerRadius(cornerPx, cornerPx),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx())
+                )
+            }
         }
 
         // 2. 洞外四個區域攔截點擊進下一步；洞內無任何觸控節點，觸控 100% 穿透至底層開關與按鈕
@@ -2390,31 +2404,41 @@ private fun SettingsTourOverlay(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
                 cornerRadius = 22.dp,
-                contentPadding = 16.dp
+                contentPadding = 4.dp
             ) {
-                val totalSteps = SettingsTourStep.entries.size
-                Text(
-                    text = "步驟 ${step.index} / $totalSteps・${step.title}",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = step.description,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Spacer(Modifier.height(14.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    TextButton(onClick = onSkip) {
-                        Text("跳過")
-                    }
-                    Button(onClick = throttledNext) {
-                        Text(if (step.index == totalSteps) "完成" else "下一步")
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        val totalSteps = SettingsTourStep.entries.size
+                        Text(
+                            text = "步驟 ${step.index} / $totalSteps・${step.title}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = step.description,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(14.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(onClick = onSkip) {
+                                Text("跳過")
+                            }
+                            Button(onClick = throttledNext) {
+                                Text(if (step.index == totalSteps) "完成" else "下一步")
+                            }
+                        }
                     }
                 }
             }

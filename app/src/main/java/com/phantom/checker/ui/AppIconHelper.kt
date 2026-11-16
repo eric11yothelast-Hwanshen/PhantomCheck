@@ -55,10 +55,19 @@ private fun drawableToBitmap(drawable: Drawable, sizePx: Int = 96): Bitmap {
     return bitmap
 }
 
+private val appIconBitmapCache = object : android.util.LruCache<String, ImageBitmap>(64) {}
+
 fun loadAppIconBitmap(context: Context, packageName: String): ImageBitmap? {
+    synchronized(appIconBitmapCache) {
+        appIconBitmapCache.get(packageName)?.let { return it }
+    }
     return try {
         val drawable = context.packageManager.getApplicationIcon(packageName)
-        drawableToBitmap(drawable).asImageBitmap()
+        val bmp = drawableToBitmap(drawable).asImageBitmap()
+        synchronized(appIconBitmapCache) {
+            appIconBitmapCache.put(packageName, bmp)
+        }
+        bmp
     } catch (_: Exception) {
         null
     }
