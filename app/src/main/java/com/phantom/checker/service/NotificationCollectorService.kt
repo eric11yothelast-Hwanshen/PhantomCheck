@@ -73,9 +73,11 @@ class NotificationCollectorService : NotificationListenerService() {
     override fun onCreate() {
         super.onCreate()
         AiClient.init(applicationContext)
+        PhantomPrefs.onRuleCachesInvalidated = { invalidateRuleCaches() }
     }
 
     override fun onDestroy() {
+        PhantomPrefs.onRuleCachesInvalidated = null
         isConnected = false
         scope.cancel()
         super.onDestroy()

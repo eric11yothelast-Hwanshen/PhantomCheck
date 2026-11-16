@@ -31,11 +31,15 @@ class BootReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val now = System.currentTimeMillis()
-                val pending = AppDatabaseHolder.db(appCtx).messageDao().pendingReminders(now)
-                pending.forEach { msg ->
+                val scheduled = AppDatabaseHolder.db(appCtx).messageDao().allScheduledReminders()
+                scheduled.forEach { msg ->
                     val ts = msg.remindAt
-                    if (ts != null && ts > now) {
-                        ReminderScheduler.schedule(appCtx, msg.id, ts)
+                    if (ts != null) {
+                        if (ts > now) {
+                            ReminderScheduler.schedule(appCtx, msg.id, ts)
+                        } else {
+                            ReminderScheduler.deliverReminder(appCtx, msg.id)
+                        }
                     }
                 }
             } catch (_: Exception) {

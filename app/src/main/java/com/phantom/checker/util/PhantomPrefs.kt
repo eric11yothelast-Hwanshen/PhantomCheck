@@ -304,15 +304,32 @@ object PhantomPrefs {
         prefs(ctx).edit().putBoolean(KEY_SAME_KEY_DIGIT_VARIANCE_THROTTLE, enabled).apply()
     }
 
+    private const val APP_THROTTLE_CACHE_TTL_MS = 30_000L
+
+    @Volatile private var cachedAppThrottleMap: Map<String, Int>? = null
+    @Volatile private var cachedAppThrottleMapAt: Long = 0L
+
     /** Per-app 同 key 節流覆寫表（0 = 永不節流，1..300 = 自訂秒數） */
     fun getAppSameKeyThrottleMap(ctx: Context): Map<String, Int> {
-        val raw = prefs(ctx).getString(KEY_APP_SAME_KEY_THROTTLE_MAP, null) ?: return emptyMap()
-        return try {
-            val type = object : TypeToken<Map<String, Int>>() {}.type
-            gson.fromJson<Map<String, Int>>(raw, type) ?: emptyMap()
-        } catch (_: Exception) {
-            emptyMap()
+        val now = System.currentTimeMillis()
+        val cached = cachedAppThrottleMap
+        if (cached != null && (now - cachedAppThrottleMapAt) < APP_THROTTLE_CACHE_TTL_MS) {
+            return cached
         }
+        val raw = prefs(ctx).getString(KEY_APP_SAME_KEY_THROTTLE_MAP, null)
+        val parsed = if (raw == null) {
+            emptyMap()
+        } else {
+            try {
+                val type = object : TypeToken<Map<String, Int>>() {}.type
+                gson.fromJson<Map<String, Int>>(raw, type) ?: emptyMap()
+            } catch (_: Exception) {
+                emptyMap()
+            }
+        }
+        cachedAppThrottleMap = parsed
+        cachedAppThrottleMapAt = now
+        return parsed
     }
 
     fun setAppSameKeyThrottle(ctx: Context, packageName: String, seconds: Int?) {
@@ -322,6 +339,8 @@ object PhantomPrefs {
         } else {
             map[packageName] = seconds.coerceIn(0, 300)
         }
+        cachedAppThrottleMap = map
+        cachedAppThrottleMapAt = System.currentTimeMillis()
         prefs(ctx).edit().putString(KEY_APP_SAME_KEY_THROTTLE_MAP, gson.toJson(map)).apply()
     }
 
@@ -365,6 +384,8 @@ object PhantomPrefs {
         }
     }
 
+    @Volatile var onRuleCachesInvalidated: (() -> Unit)? = null
+
     fun addAlertKeyword(ctx: Context, keyword: String): Boolean {
         val trimmed = keyword.trim()
         if (trimmed.isEmpty()) return false
@@ -373,14 +394,14 @@ object PhantomPrefs {
         if (current.any { it.equals(trimmed, ignoreCase = true) }) return false
         current.add(trimmed)
         prefs(ctx).edit().putString(KEY_ALERT_KEYWORDS, gson.toJson(current)).apply()
-        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+        onRuleCachesInvalidated?.invoke()
         return true
     }
 
     fun removeAlertKeyword(ctx: Context, keyword: String) {
         val updated = getAlertKeywords(ctx).filterNot { it.equals(keyword, ignoreCase = true) }
         prefs(ctx).edit().putString(KEY_ALERT_KEYWORDS, gson.toJson(updated)).apply()
-        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+        onRuleCachesInvalidated?.invoke()
     }
 
     /** 新手引導 v1 完成旗標 */

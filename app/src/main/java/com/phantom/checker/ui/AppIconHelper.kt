@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
@@ -70,6 +71,17 @@ fun loadAppIconBitmap(context: Context, packageName: String): ImageBitmap? {
         bmp
     } catch (_: Exception) {
         null
+    }
+}
+
+fun loadAppIconAndroidBitmap(context: Context, packageName: String, sizePx: Int): Bitmap? {
+    val cached = loadAppIconBitmap(context, packageName) ?: return null
+    val target = sizePx.coerceAtLeast(1)
+    val src = cached.asAndroidBitmap()
+    return if (src.width == target && src.height == target) {
+        src
+    } else {
+        Bitmap.createScaledBitmap(src, target, target, true)
     }
 }
 

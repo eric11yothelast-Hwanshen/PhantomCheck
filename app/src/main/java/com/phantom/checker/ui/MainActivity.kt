@@ -534,10 +534,9 @@ private fun PhantomCheckApp(
                             add(Calendar.DAY_OF_YEAR, -6)
                         }
                         val sevenDaysAgo = cal.timeInMillis
-                        val weekMsgs = dao.since(sevenDaysAgo)
+                        val countsByDayKey = dao.countByDaySince(sevenDaysAgo).associate { it.dayKey to it.cnt }
                         val dayFormat = SimpleDateFormat("M/d", Locale.getDefault())
                         val dayKeyFormat = SimpleDateFormat("yyyyMMdd", Locale.US)
-                        val countsByDayKey = weekMsgs.groupBy { dayKeyFormat.format(Date(it.timestamp)) }
                         val weekly = (0..6).map { offset ->
                             val dayCal = Calendar.getInstance().apply {
                                 timeInMillis = sevenDaysAgo
@@ -546,15 +545,14 @@ private fun PhantomCheckApp(
                             val key = dayKeyFormat.format(dayCal.time)
                             DayCountUi(
                                 label = dayFormat.format(dayCal.time),
-                                count = countsByDayKey[key]?.size ?: 0
+                                count = countsByDayKey[key] ?: 0
                             )
                         }
                         val hourly = IntArray(24)
-                        val hCal = Calendar.getInstance()
-                        weekMsgs.filter { it.timestamp >= startOfDay }.forEach { m ->
-                            hCal.timeInMillis = m.timestamp
-                            val h = hCal.get(Calendar.HOUR_OF_DAY).coerceIn(0, 23)
-                            hourly[h]++
+                        dao.countByHourSince(startOfDay).forEach { row ->
+                            if (row.hour in 0..23) {
+                                hourly[row.hour] = row.cnt
+                            }
                         }
                         val safe = dao.countByRiskLabel("safe") + dao.countByRiskLabel("")
                         val suspicious = dao.countByRiskLabel("suspicious")

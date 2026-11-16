@@ -181,29 +181,25 @@ class StatsDetailWidgetProvider : AppWidgetProvider() {
                 add(Calendar.DAY_OF_YEAR, -6)
             }
             val start7d = cal.timeInMillis
-            val messages = try {
-                AppDatabaseHolder.db(context).messageDao().since(start7d)
+            val rows = try {
+                AppDatabaseHolder.db(context).messageDao().countByDaySince(start7d)
             } catch (_: Exception) {
                 emptyList()
             }
+            val countMap = rows.associate { it.dayKey to it.cnt }
 
             val counts = IntArray(7)
             val labels = Array(7) { "" }
             val dayMs = 24L * 60L * 60L * 1000L
             val weekdayNames = arrayOf("日", "一", "二", "三", "四", "五", "六")
+            val dayKeyFmt = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
 
             for (i in 0 until 7) {
                 val c = Calendar.getInstance().apply {
                     timeInMillis = start7d + i * dayMs
                 }
                 labels[i] = if (i == 6) "今" else weekdayNames[c.get(Calendar.DAY_OF_WEEK) - 1]
-            }
-
-            for (msg in messages) {
-                val idx = ((msg.timestamp - start7d) / dayMs).toInt()
-                if (idx in 0..6) {
-                    counts[idx]++
-                }
+                counts[i] = countMap[dayKeyFmt.format(c.time)] ?: 0
             }
             return counts to labels
         }
@@ -252,7 +248,13 @@ class StatsDetailWidgetProvider : AppWidgetProvider() {
 
                 for (i in 0 until 3) {
                     val pkg = recentPkgs.getOrNull(i)
-                    val iconBmp = pkg?.let { loadAppIconBitmap(context, it, (16 * density).roundToInt().coerceAtLeast(24)) }
+                    val iconBmp = pkg?.let {
+                        com.phantom.checker.ui.loadAppIconAndroidBitmap(
+                            context,
+                            it,
+                            (16 * density).roundToInt().coerceAtLeast(24)
+                        )
+                    }
                     if (iconBmp != null) {
                         setViewVisibility(RECENT_ICON_IDS[i], View.VISIBLE)
                         setImageViewBitmap(RECENT_ICON_IDS[i], iconBmp)
@@ -260,23 +262,6 @@ class StatsDetailWidgetProvider : AppWidgetProvider() {
                         setViewVisibility(RECENT_ICON_IDS[i], View.GONE)
                     }
                 }
-            }
-        }
-
-        private fun loadAppIconBitmap(context: Context, packageName: String, sizePx: Int): Bitmap? {
-            return try {
-                val drawable = context.packageManager.getApplicationIcon(packageName)
-                if (drawable is BitmapDrawable && drawable.bitmap != null) {
-                    Bitmap.createScaledBitmap(drawable.bitmap, sizePx, sizePx, true)
-                } else {
-                    val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-                    val canvas = Canvas(bmp)
-                    drawable.setBounds(0, 0, sizePx, sizePx)
-                    drawable.draw(canvas)
-                    bmp
-                }
-            } catch (_: Exception) {
-                null
             }
         }
     }

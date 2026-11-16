@@ -222,6 +222,16 @@ data class AppLatestMsgRow(
     val messageId: Long
 )
 
+data class DayCountRow(
+    val dayKey: String,
+    val cnt: Int
+)
+
+data class HourCountRow(
+    val hour: Int,
+    val cnt: Int
+)
+
 @Dao
 interface MessageDao {
     @Query("SELECT * FROM messages ORDER BY timestamp DESC LIMIT :limit OFFSET :offset")
@@ -324,6 +334,21 @@ interface MessageDao {
 
     @Query("SELECT * FROM messages WHERE remindAt IS NOT NULL AND remindAt > :now ORDER BY remindAt ASC")
     suspend fun pendingReminders(now: Long): List<MessageEntity>
+
+    @Query("SELECT * FROM messages WHERE remindAt IS NOT NULL ORDER BY remindAt ASC")
+    suspend fun allScheduledReminders(): List<MessageEntity>
+
+    @Query(
+        "SELECT strftime('%Y%m%d', timestamp / 1000, 'unixepoch', 'localtime') AS dayKey, COUNT(*) AS cnt " +
+            "FROM messages WHERE timestamp >= :sinceTs GROUP BY dayKey"
+    )
+    suspend fun countByDaySince(sinceTs: Long): List<DayCountRow>
+
+    @Query(
+        "SELECT CAST(strftime('%H', timestamp / 1000, 'unixepoch', 'localtime') AS INTEGER) AS hour, COUNT(*) AS cnt " +
+            "FROM messages WHERE timestamp >= :sinceTs GROUP BY hour"
+    )
+    suspend fun countByHourSince(sinceTs: Long): List<HourCountRow>
 
     @Query("SELECT EXISTS(SELECT 1 FROM messages WHERE timestamp >= :minTs AND timestamp <= :maxTs AND dedupKey = :dedupKey)")
     suspend fun existsByDedupKeyInWindow(dedupKey: String, minTs: Long, maxTs: Long): Boolean

@@ -72,10 +72,9 @@ object WeeklySummaryPolicy {
             .setConstraints(constraints)
             .build()
 
-        // 使用 KEEP 避免重開機或每次進 App 重設既定週期排程
         workManager.enqueueUniquePeriodicWork(
             UNIQUE_WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
+            ExistingPeriodicWorkPolicy.UPDATE,
             request
         )
     }

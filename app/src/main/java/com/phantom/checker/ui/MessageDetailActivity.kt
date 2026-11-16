@@ -342,7 +342,7 @@ fun MessageDetailScreen(
                                     Text("複製驗證碼 $otpCode")
                                 }
                             }
-                            if (msg.remindAt != null && msg.remindAt > 0L) {
+                            if (msg.remindAt != null && msg.remindAt > System.currentTimeMillis()) {
                                 val remindStr = remember(msg.remindAt) {
                                     PhantomPrefs.formatMessageTime(ctx, msg.remindAt, includeDate = true)
                                 }

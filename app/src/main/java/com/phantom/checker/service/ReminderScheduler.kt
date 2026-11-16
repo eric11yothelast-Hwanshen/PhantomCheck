@@ -68,6 +68,37 @@ object ReminderScheduler {
             )
         }
     }
+
+    suspend fun deliverReminder(ctx: Context, messageId: Long) {
+        val appCtx = ctx.applicationContext
+        val dao = AppDatabaseHolder.db(appCtx).messageDao()
+        val msg = dao.byId(messageId) ?: return
+        dao.setRemindAt(messageId, null)
+        ensureChannel(appCtx)
+        val openIntent = MessageDetailActivity.createIntent(appCtx, messageId).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val reqCode = (messageId xor (messageId ushr 32)).toInt()
+        val pi = PendingIntent.getActivity(
+            appCtx,
+            reqCode,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val title = "待辦提醒：${msg.sender}（${msg.appLabel}）"
+        val notif = Notification.Builder(appCtx, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_phantom)
+            .setContentTitle(title)
+            .setContentText(msg.content.take(120))
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+        val nm = appCtx.getSystemService(NotificationManager::class.java)
+        try {
+            nm?.notify(NotifIds.reminder(messageId), notif)
+        } catch (_: SecurityException) {
+        }
+    }
 }
 
 class ReminderReceiver : BroadcastReceiver() {
@@ -78,35 +109,7 @@ class ReminderReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val dao = AppDatabaseHolder.db(appCtx).messageDao()
-                val msg = dao.byId(messageId)
-                if (msg != null) {
-                    dao.setRemindAt(messageId, null)
-                    ReminderScheduler.ensureChannel(appCtx)
-                    val openIntent = MessageDetailActivity.createIntent(appCtx, messageId).apply {
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    }
-                    val reqCode = (messageId xor (messageId ushr 32)).toInt()
-                    val pi = PendingIntent.getActivity(
-                        appCtx,
-                        reqCode,
-                        openIntent,
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                    )
-                    val title = "待辦提醒：${msg.sender}（${msg.appLabel}）"
-                    val notif = Notification.Builder(appCtx, ReminderScheduler.CHANNEL_ID)
-                        .setSmallIcon(R.drawable.ic_stat_phantom)
-                        .setContentTitle(title)
-                        .setContentText(msg.content.take(120))
-                        .setContentIntent(pi)
-                        .setAutoCancel(true)
-                        .build()
-                    val nm = appCtx.getSystemService(NotificationManager::class.java)
-                    try {
-                        nm?.notify(NotifIds.reminder(messageId), notif)
-                    } catch (_: SecurityException) {
-                    }
-                }
+                ReminderScheduler.deliverReminder(appCtx, messageId)
             } finally {
                 pendingResult.finish()
             }
