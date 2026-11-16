@@ -526,4 +526,36 @@ object PhantomPrefs {
     fun setChatSuggestionsEnabled(ctx: Context, enabled: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_CHAT_SUGGESTIONS_ENABLED, enabled).apply()
     }
+
+    /** Shizuku 跨行程看門狗開關（預設開，需 Shizuku 已授權才生效） */
+    fun isShizukuWatchdogEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("shizuku_watchdog_enabled", true)
+
+    fun setShizukuWatchdogEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("shizuku_watchdog_enabled", enabled).apply()
+    }
+
+    /** Shizuku 已凍結（pm suspend）App 清單，供使用者在設定頁一鍵解除凍結 */
+    fun getShizukuSuspendedApps(ctx: Context): List<String> {
+        val raw = prefs(ctx).getString("shizuku_suspended_apps", null) ?: return emptyList()
+        return try {
+            val type = object : TypeToken<List<String>>() {}.type
+            gson.fromJson<List<String>>(raw, type)?.distinct() ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun addShizukuSuspendedApp(ctx: Context, packageName: String) {
+        val current = getShizukuSuspendedApps(ctx).toMutableList()
+        if (packageName !in current) {
+            current.add(packageName)
+            prefs(ctx).edit().putString("shizuku_suspended_apps", gson.toJson(current)).apply()
+        }
+    }
+
+    fun removeShizukuSuspendedApp(ctx: Context, packageName: String) {
+        val current = getShizukuSuspendedApps(ctx).filter { it != packageName }
+        prefs(ctx).edit().putString("shizuku_suspended_apps", gson.toJson(current)).apply()
+    }
 }

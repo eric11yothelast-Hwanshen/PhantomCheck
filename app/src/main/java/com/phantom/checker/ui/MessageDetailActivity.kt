@@ -69,6 +69,8 @@ import com.phantom.checker.data.TagEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.StatsForegroundService
+import com.phantom.checker.shizuku.ShizukuKeepAlive
+import com.phantom.checker.shizuku.ShizukuManager
 import com.phantom.checker.ui.components.pressableScale
 import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
@@ -540,6 +542,65 @@ fun MessageDetailScreen(
                                         .pressableScale()
                                 ) {
                                     Text("開啟原 App")
+                                }
+                            }
+                        }
+
+                        val shizukuReady = remember(msg.packageName) {
+                            ShizukuManager.init(appCtx)
+                            ShizukuManager.state.value.isReady && msg.packageName != appCtx.packageName
+                        }
+                        var showSuspendConfirm by remember { mutableStateOf(false) }
+
+                        if (showSuspendConfirm) {
+                            AlertDialog(
+                                onDismissRequest = { showSuspendConfirm = false },
+                                title = { Text("確認凍結來源 App") },
+                                text = { Text("確定要透過 Shizuku 凍結「${msg.appLabel} (${msg.packageName})」嗎？凍結後可至「設定 → Shizuku 進階」解除凍結。") },
+                                confirmButton = {
+                                    Button(onClick = {
+                                        scope.launch {
+                                            val res = ShizukuKeepAlive.suspendTargetApp(appCtx, msg.packageName)
+                                            showSuspendConfirm = false
+                                            snackbarHostState.showSnackbar(
+                                                if (res.isSuccess) "已凍結 ${msg.appLabel}" else "凍結失敗：${res.output}"
+                                            )
+                                        }
+                                    }) {
+                                        Text("確認凍結")
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showSuspendConfirm = false }) {
+                                        Text("取消")
+                                    }
+                                }
+                            )
+                        }
+
+                        if (shizukuReady) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            val res = ShizukuKeepAlive.forceStopTargetApp(appCtx, msg.packageName)
+                                            snackbarHostState.showSnackbar(
+                                                if (res.isSuccess) "已強行停止 ${msg.appLabel}" else "操作失敗：${res.output}"
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Shizuku 強行停止")
+                                }
+                                OutlinedButton(
+                                    onClick = { showSuspendConfirm = true },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("凍結來源 App", color = MaterialTheme.colorScheme.error)
                                 }
                             }
                         }

@@ -53,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,7 +67,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.service.AppDatabaseHolder
+import com.phantom.checker.shizuku.ShizukuKeepAlive
+import com.phantom.checker.shizuku.ShizukuManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -408,8 +412,43 @@ private fun ScamDetailDialog(
     onDismiss: () -> Unit
 ) {
     val ctx = LocalContext.current
+    val appCtx = ctx.applicationContext
+    val scope = rememberCoroutineScope()
     val fullTimeText = remember(message.timestamp) {
         SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()).format(Date(message.timestamp))
+    }
+    var showSuspendConfirm by remember { mutableStateOf(false) }
+    val shizukuReady = remember {
+        ShizukuManager.init(appCtx)
+        ShizukuManager.state.value.isReady && message.packageName != appCtx.packageName
+    }
+
+    if (showSuspendConfirm) {
+        AlertDialog(
+            onDismissRequest = { showSuspendConfirm = false },
+            title = { Text("確認凍結來源 App") },
+            text = { Text("確定要透過 Shizuku 凍結「${message.appLabel} (${message.packageName})」嗎？凍結後可至「設定 → Shizuku 進階」解除凍結。") },
+            confirmButton = {
+                Button(onClick = {
+                    scope.launch {
+                        val res = ShizukuKeepAlive.suspendTargetApp(appCtx, message.packageName)
+                        showSuspendConfirm = false
+                        Toast.makeText(
+                            ctx,
+                            if (res.isSuccess) "已凍結 ${message.appLabel}" else "凍結失敗：${res.output}",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }) {
+                    Text("確認凍結")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSuspendConfirm = false }) {
+                    Text("取消")
+                }
+            }
+        )
     }
 
     AlertDialog(
@@ -489,6 +528,41 @@ private fun ScamDetailDialog(
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(10.dp)
                     )
+                }
+
+                if (shizukuReady) {
+                    HorizontalDivider()
+                    Text(
+                        text = "Shizuku 進階處置",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    val res = ShizukuKeepAlive.forceStopTargetApp(appCtx, message.packageName)
+                                    Toast.makeText(
+                                        ctx,
+                                        if (res.isSuccess) "已強行停止 ${message.appLabel}" else "操作失敗：${res.output}",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("強行停止")
+                        }
+                        TextButton(
+                            onClick = { showSuspendConfirm = true },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("凍結 App", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
                 }
             }
         },

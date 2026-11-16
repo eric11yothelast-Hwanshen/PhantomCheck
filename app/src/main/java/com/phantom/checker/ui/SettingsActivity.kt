@@ -61,6 +61,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -88,6 +89,9 @@ import com.phantom.checker.service.HeartbeatPolicy
 import com.phantom.checker.service.RetentionConfig
 import com.phantom.checker.service.RetentionPolicy
 import com.phantom.checker.service.StatsForegroundService
+import com.phantom.checker.shizuku.ShizukuDiagItem
+import com.phantom.checker.shizuku.ShizukuKeepAlive
+import com.phantom.checker.shizuku.ShizukuManager
 import com.phantom.checker.ui.components.FluidSwitch
 import com.phantom.checker.ui.components.pressableScale
 import com.phantom.checker.util.FontScaleMode
@@ -1429,6 +1433,207 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                         ) {
                             Text("重新啟動前景保活服務")
                         }
+                    }
+                }
+            }
+
+            // 6. Shizuku 進階
+            item {
+                ShizukuAdvancedCard(
+                    expanded = isCardExpanded("shizuku_advanced"),
+                    onToggle = { toggleCard("shizuku_advanced") },
+                    glassState = glassState,
+                    onShowMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShizukuAdvancedCard(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    glassState: HazeState,
+    onShowMessage: (String) -> Unit
+) {
+    val ctx = LocalContext.current
+    val appCtx = ctx.applicationContext
+    val scope = rememberCoroutineScope()
+    val shizukuState by ShizukuManager.state.collectAsState()
+    var watchdogEnabled by remember { mutableStateOf(PhantomPrefs.isShizukuWatchdogEnabled(appCtx)) }
+    var suspendedApps by remember { mutableStateOf(PhantomPrefs.getShizukuSuspendedApps(appCtx)) }
+    var diagItems by remember { mutableStateOf<List<ShizukuDiagItem>>(emptyList()) }
+    var isBusy by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        ShizukuManager.init(appCtx)
+    }
+
+    val statusText = when {
+        !shizukuState.isInstalled -> "未安裝 Shizuku（目前停用，不影響一般保活）"
+        !shizukuState.isBinderAlive -> "Shizuku 服務未啟動（重開機或斷線後需重新啟動 Shizuku）"
+        !shizukuState.isPermissionGranted -> "Shizuku 已運行，尚未授權幻訊"
+        else -> "已連線授權（UID=${shizukuState.uid}）"
+    }
+
+    CollapsibleSettingsCard(
+        title = "Shizuku 進階",
+        expanded = expanded,
+        onToggle = onToggle,
+        glassState = glassState
+    ) {
+        Text(
+            text = statusText,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = if (shizukuState.isReady) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "Shizuku 為選用進階能力；即使未啟動或重開機斷線，一般保活機制仍正常運作。若被系統「強行停止 (force-stop)」，屬 OS 硬邊界，任何 App 皆無法自行復活。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            if (shizukuState.isBinderAlive && !shizukuState.isPermissionGranted) {
+                Button(
+                    onClick = { ShizukuManager.requestPermission(appCtx) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("請求 Shizuku 授權")
+                }
+            }
+            OutlinedButton(
+                onClick = {
+                    ShizukuManager.refreshState(appCtx)
+                    suspendedApps = PhantomPrefs.getShizukuSuspendedApps(appCtx)
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("重新檢查連線")
+            }
+        }
+
+        if (shizukuState.isReady) {
+            Spacer(Modifier.height(10.dp))
+            Button(
+                enabled = !isBusy,
+                onClick = {
+                    scope.launch {
+                        isBusy = true
+                        val res = ShizukuKeepAlive.applyKeepAliveEnhancements(appCtx)
+                        diagItems = res
+                        isBusy = false
+                        val okCount = res.count { it.ok }
+                        onShowMessage("Shizuku 保活強化完成：$okCount/${res.size} 項成功")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (isBusy) "套用中…" else "一鍵套用保活強化（Doze / AppOps / 權限自癒）")
+            }
+
+            Spacer(Modifier.height(6.dp))
+            OutlinedButton(
+                enabled = !isBusy,
+                onClick = {
+                    scope.launch {
+                        isBusy = true
+                        diagItems = ShizukuKeepAlive.runDiagnostics(appCtx)
+                        isBusy = false
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("執行保活診斷總覽")
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Shizuku 跨行程看門狗", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        text = if (shizukuState.isWatchdogActive) "運作中（每 60 秒檢查前景服務）" else "未啟動",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                FluidSwitch(
+                    checked = watchdogEnabled,
+                    onCheckedChange = { checked ->
+                        watchdogEnabled = checked
+                        PhantomPrefs.setShizukuWatchdogEnabled(appCtx, checked)
+                        scope.launch {
+                            if (checked) {
+                                ShizukuManager.startWatchdog(appCtx)
+                            } else {
+                                ShizukuManager.stopWatchdog(appCtx)
+                            }
+                        }
+                    }
+                )
+            }
+        }
+
+        if (diagItems.isNotEmpty()) {
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            Text(
+                text = "診斷結果",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(4.dp))
+            diagItems.forEach { item ->
+                Text(
+                    text = "${if (item.ok) "✓" else "✗"} ${item.label}：${item.detail}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (item.ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                )
+            }
+        }
+
+        if (suspendedApps.isNotEmpty()) {
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            Text(
+                text = "已凍結（pm suspend）App 清單",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(4.dp))
+            suspendedApps.forEach { pkg ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = pkg,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(
+                        enabled = shizukuState.isReady && !isBusy,
+                        onClick = {
+                            scope.launch {
+                                isBusy = true
+                                val res = ShizukuKeepAlive.unsuspendTargetApp(appCtx, pkg)
+                                suspendedApps = PhantomPrefs.getShizukuSuspendedApps(appCtx)
+                                isBusy = false
+                                onShowMessage(if (res.isSuccess) "已解除凍結 $pkg" else "解除失敗：${res.output}")
+                            }
+                        }
+                    ) {
+                        Text("解除凍結")
                     }
                 }
             }
