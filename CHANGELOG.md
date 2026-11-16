@@ -2,6 +2,24 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [1.12.1] - 2026-11-16
+
+### 變更與修正
+- **修正設定搜尋 catalog 五項對錯卡（#109，PR #110）**：
+  - 將 `notif_auto_reply` 改為 `ai_auto_reply`（`cardKey = "ai"`、title「SMS 自動回覆設定」，補齊 `sms`／`簡訊`／`回覆`／`時段`／`reply` 搜尋別名），修正「SMS 自動回覆」定位至通知卡的回報主因。
+  - 將 `ai_auto_tag` 改為 `cardKey = "quick"`，對應快速設定卡「每則訊息 AI 智慧掃描」開關。
+  - 將 `ai_rules` 改為 `cardKey = "data"`、title「自訂標籤管理」。
+  - 將 `notif_scam_alert` 拆分為 `quick_scam_popup`（`cardKey = "quick"`，「詐騙警示彈出通知」）與 `ai_alert_keywords`（`cardKey = "ai"`，「即時提醒關鍵字」）。
+  - 將 `appearance_widget_tour` 改為 `cardKey = "data"`、title「教學重播與桌面小工具」。
+- **新增兩項設定搜尋定位（#109，PR #110）**：
+  - 新增 `ai_scam_center`（`cardKey = "ai"`，「詐騙警示中心」）與 `notif_filter_rules`（`cardKey = "notif"`，「過濾關鍵字規則與命中動作」）。
+- **AI 定位支援「前往」直達頁面（#109，PR #110）**：
+  - `SettingSearchItem` 新增 nullable `page` 欄位，設定 `AutoReplySettingsActivity`（自動回覆設定）、`ScamCenterActivity`（詐騙警示中心）、`TagManagementActivity`（自訂標籤管理）與 `ApiKeySettingsActivity`（API Key 設定，含 `ai_providers` 補齊）。
+  - `aiSearchNote` 定位橫幅在第一個命中項目具備 `page` 時顯示「前往」`TextButton`，點擊直接開啟對應設定頁。
+- **資料管理卡補齊桌面小工具加入說明（#109，PR #110）**：
+  - 於資料管理卡「重新播放設定教學」按鈕下方補上「桌面小工具：桌面長按 → 小工具 → 幻訊統計」提示小字。
+- **版號更新**：`versionCode` 14、`versionName` `"1.12.1"`。
+
 ## [1.12.0] - 2026-11-16
 
 ### 變更與修正
