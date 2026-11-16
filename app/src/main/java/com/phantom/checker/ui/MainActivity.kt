@@ -1738,94 +1738,98 @@ private fun MessagesHomeTab(
             }
         }
 
-        // 快速篩選 Chip 列（固定 5 顆 + 「標籤 ▾」開啟 BottomSheet）
+        // 快速篩選 Chip 列（FlowRow 自動換行，免橫向滑動全部可見）
         item {
             val activeTag = (activeFilter as? MessageFilter.Tag)?.tag
-            LazyRow(
-                modifier = Modifier.onGloballyPositioned { coords ->
-                    onReportBounds(OnboardingTargets.FILTER_CHIPS, coords.boundsInRoot())
-                },
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            val chipShape = RoundedCornerShape(8.dp)
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { coords ->
+                        onReportBounds(OnboardingTargets.FILTER_CHIPS, coords.boundsInRoot())
+                    },
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                item {
+                FilterChip(
+                    selected = activeFilter == MessageFilter.All,
+                    onClick = { onSelectFilter(MessageFilter.All) },
+                    shape = chipShape,
+                    modifier = Modifier.height(32.dp),
+                    label = { Text("全部", style = MaterialTheme.typography.labelMedium) }
+                )
+                FilterChip(
+                    selected = activeFilter == MessageFilter.Unread,
+                    onClick = { onSelectFilter(MessageFilter.Unread) },
+                    shape = chipShape,
+                    modifier = Modifier.height(32.dp),
+                    label = { Text("未讀", style = MaterialTheme.typography.labelMedium) }
+                )
+                FilterChip(
+                    selected = activeFilter == MessageFilter.Starred,
+                    onClick = { onSelectFilter(MessageFilter.Starred) },
+                    shape = chipShape,
+                    modifier = Modifier.height(32.dp),
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    },
+                    label = { Text("星標", style = MaterialTheme.typography.labelMedium) }
+                )
+                FilterChip(
+                    selected = activeFilter == MessageFilter.Scams,
+                    onClick = { onSelectFilter(MessageFilter.Scams) },
+                    shape = chipShape,
+                    modifier = Modifier.height(32.dp),
+                    label = { Text("詐騙", style = MaterialTheme.typography.labelMedium) }
+                )
+                FilterChip(
+                    selected = activeFilter == MessageFilter.Filtered,
+                    onClick = { onSelectFilter(MessageFilter.Filtered) },
+                    shape = chipShape,
+                    modifier = Modifier.height(32.dp),
+                    label = { Text("已過濾", style = MaterialTheme.typography.labelMedium) }
+                )
+                if (activeTag != null) {
+                    val tagColor = parseTagColor(activeTag.colorHex)
                     FilterChip(
-                        selected = activeFilter == MessageFilter.All,
-                        onClick = { onSelectFilter(MessageFilter.All) },
-                        label = { Text("全部") }
-                    )
-                }
-                item {
-                    FilterChip(
-                        selected = activeFilter == MessageFilter.Unread,
-                        onClick = { onSelectFilter(MessageFilter.Unread) },
-                        label = { Text("未讀") }
-                    )
-                }
-                item {
-                    FilterChip(
-                        selected = activeFilter == MessageFilter.Starred,
-                        onClick = { onSelectFilter(MessageFilter.Starred) },
+                        selected = true,
+                        onClick = onOpenTagPicker,
+                        shape = chipShape,
+                        modifier = Modifier.height(32.dp),
                         leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Star,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(tagColor)
                             )
                         },
-                        label = { Text("星標") }
+                        trailingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "關閉標籤篩選",
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .clickable { onSelectFilter(MessageFilter.All) }
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = tagColor.copy(alpha = 0.2f)
+                        ),
+                        label = { Text(activeTag.name, style = MaterialTheme.typography.labelMedium) }
                     )
                 }
-                item {
-                    FilterChip(
-                        selected = activeFilter == MessageFilter.Scams,
-                        onClick = { onSelectFilter(MessageFilter.Scams) },
-                        label = { Text("詐騙") }
-                    )
-                }
-                item {
-                    FilterChip(
-                        selected = activeFilter == MessageFilter.Filtered,
-                        onClick = { onSelectFilter(MessageFilter.Filtered) },
-                        label = { Text("已過濾") }
-                    )
-                }
-                if (activeTag != null) {
-                    item {
-                        val tagColor = parseTagColor(activeTag.colorHex)
-                        FilterChip(
-                            selected = true,
-                            onClick = onOpenTagPicker,
-                            leadingIcon = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(tagColor)
-                                )
-                            },
-                            trailingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Clear,
-                                    contentDescription = "關閉標籤篩選",
-                                    modifier = Modifier
-                                        .size(16.dp)
-                                        .clickable { onSelectFilter(MessageFilter.All) }
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = tagColor.copy(alpha = 0.2f)
-                            ),
-                            label = { Text(activeTag.name) }
-                        )
-                    }
-                }
-                item {
-                    FilterChip(
-                        selected = activeTag != null,
-                        onClick = onOpenTagPicker,
-                        label = { Text("標籤 ▾") }
-                    )
-                }
+                FilterChip(
+                    selected = activeTag != null,
+                    onClick = onOpenTagPicker,
+                    shape = chipShape,
+                    modifier = Modifier.height(32.dp),
+                    label = { Text("標籤 ▾", style = MaterialTheme.typography.labelMedium) }
+                )
             }
         }
 
