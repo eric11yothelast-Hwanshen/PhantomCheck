@@ -36,12 +36,32 @@ jobs:
           PHANTOM_KEY_PASSWORD: ${{ secrets.PHANTOM_KEY_PASSWORD }}
         run: PHANTOM_KEYSTORE_FILE="$HOME/phantom-release.jks" ./gradlew :app:assembleDebug :app:assembleRelease --no-daemon
 
+      - name: Extract release notes from CHANGELOG.md
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          VER="${TAG_NAME#v}"
+          if [ -f CHANGELOG.md ]; then
+            awk -v ver="$VER" '
+              index($0, "## [" ver "]") == 1 { found=1; print; next }
+              found && /^## \[/ { exit }
+              found { print }
+            ' CHANGELOG.md > changelog_section.md
+          else
+            : > changelog_section.md
+          fi
+          if [ ! -s changelog_section.md ]; then
+            echo "::warning::CHANGELOG.md 中找不到版本 [$VER] 段落，fallback 為空 body。"
+            : > changelog_section.md
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           files: |
             app/build/outputs/apk/release/app-release.apk
             app/build/outputs/apk/debug/app-debug.apk
+          body_path: changelog_section.md
           generate_release_notes: true
 
       - name: Clean up keystore
