@@ -491,6 +491,5 @@ fun OnboardingOverlay(
                     }
                 }
             }
-        }
     }
 }
