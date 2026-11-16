@@ -1,6 +1,8 @@
 package com.phantom.checker.ui
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -2427,11 +2429,38 @@ private fun StatsTab(
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "更新於 $timeStr",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "更新於 $timeStr",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            TextButton(onClick = {
+                                val plain = stripMarkdown(summary.summary)
+                                val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                cm.setPrimaryClip(ClipData.newPlainText("daily_ai_summary", plain))
+                                onShowMessage("已複製今日 AI 摘要")
+                            }) {
+                                Text("複製")
+                            }
+                            TextButton(onClick = {
+                                val plain = stripMarkdown(summary.summary)
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_SUBJECT, "幻訊每日 AI 摘要")
+                                    putExtra(Intent.EXTRA_TEXT, plain)
+                                }
+                                ctx.startActivity(Intent.createChooser(shareIntent, "分享每日 AI 摘要"))
+                            }) {
+                                Text("分享")
+                            }
+                        }
+                    }
                 } else {
                     Text(
                         text = "尚無摘要",

@@ -13,9 +13,16 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -26,10 +33,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -65,17 +77,31 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -289,12 +315,52 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
     var showClearReadConfirm by remember { mutableStateOf(false) }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
 
-    // 五卡收合狀態
+    // 六卡收合狀態
     var expandQuick by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "quick")) }
     var expandAi by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "ai")) }
     var expandNotif by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "notif")) }
     var expandData by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "data")) }
     var expandAppearance by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "appearance")) }
+    var expandShizuku by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "shizuku_advanced")) }
+
+    // 設定頁高亮導覽狀態（0 = 未顯示，1..6 = 對應步驟）
+    var tourStepIndex by remember {
+        mutableIntStateOf(if (PhantomPrefs.isSettingsTourCompleted(appCtx)) 0 else 1)
+    }
+    val cardBounds = remember { mutableStateMapOf<String, Rect>() }
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(tourStepIndex) {
+        if (tourStepIndex in 1..6) {
+            when (tourStepIndex) {
+                1 -> {
+                    expandQuick = true
+                    PhantomPrefs.setSettingsCardExpanded(appCtx, "quick", true)
+                }
+                2 -> {
+                    expandAi = true
+                    PhantomPrefs.setSettingsCardExpanded(appCtx, "ai", true)
+                }
+                3 -> {
+                    expandNotif = true
+                    PhantomPrefs.setSettingsCardExpanded(appCtx, "notif", true)
+                }
+                4 -> {
+                    expandData = true
+                    PhantomPrefs.setSettingsCardExpanded(appCtx, "data", true)
+                }
+                5 -> {
+                    expandAppearance = true
+                    PhantomPrefs.setSettingsCardExpanded(appCtx, "appearance", true)
+                }
+                6 -> {
+                    expandShizuku = true
+                    PhantomPrefs.setSettingsCardExpanded(appCtx, "shizuku_advanced", true)
+                }
+            }
+            listState.animateScrollToItem(tourStepIndex - 1)
+        }
+    }
 
     // 外觀與互動
     val currentThemeMode = ThemePreferences.getThemeMode(appCtx)
@@ -533,40 +599,45 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("全部設定") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                }
-            )
-        },
-        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
-    ) { padding ->
-        val glassState = remember { HazeState() }
+    val glassState = remember { HazeState() }
 
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .phantomGlassSource(glassState)
-                .padding(padding)
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // 1. 快速設定（置頂）
-            item {
-                CollapsibleSettingsCard(
-                    title = "快速設定",
-                    expanded = expandQuick,
-                    onToggle = {
-                        expandQuick = !expandQuick
-                        PhantomPrefs.setSettingsCardExpanded(appCtx, "quick", expandQuick)
-                    },
-                    glassState = glassState
-                ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("全部設定") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        }
+                    }
+                )
+            },
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+        ) { padding ->
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .phantomGlassSource(glassState)
+                    .padding(padding)
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // 1. 快速設定（置頂）
+                item {
+                    CollapsibleSettingsCard(
+                        title = "快速設定",
+                        expanded = expandQuick,
+                        onToggle = {
+                            expandQuick = !expandQuick
+                            PhantomPrefs.setSettingsCardExpanded(appCtx, "quick", expandQuick)
+                        },
+                        glassState = glassState,
+                        modifier = Modifier.onGloballyPositioned { coords ->
+                            cardBounds["quick"] = coords.boundsInRoot()
+                        }
+                    ) {
                     SettingSwitchRow(
                         title = "省 token 模式",
                         subtitle = "暫停每則 AI 掃描與每日摘要排程，僅命中可疑特徵才分析；關閉即恢復原設定",
@@ -652,7 +723,10 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                         expandAi = !expandAi
                         PhantomPrefs.setSettingsCardExpanded(appCtx, "ai", expandAi)
                     },
-                    glassState = glassState
+                    glassState = glassState,
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        cardBounds["ai"] = coords.boundsInRoot()
+                    }
                 ) {
                     OutlinedButton(
                         onClick = { ctx.startActivity(Intent(ctx, ApiKeySettingsActivity::class.java)) },
@@ -809,7 +883,10 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                         expandNotif = !expandNotif
                         PhantomPrefs.setSettingsCardExpanded(appCtx, "notif", expandNotif)
                     },
-                    glassState = glassState
+                    glassState = glassState,
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        cardBounds["notif"] = coords.boundsInRoot()
+                    }
                 ) {
                     // 過濾規則新增
                     Row(
@@ -1108,7 +1185,10 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                         expandData = !expandData
                         PhantomPrefs.setSettingsCardExpanded(appCtx, "data", expandData)
                     },
-                    glassState = glassState
+                    glassState = glassState,
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        cardBounds["data"] = coords.boundsInRoot()
+                    }
                 ) {
                     // App 靜音清單
                     Row(
@@ -1266,6 +1346,17 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     ) {
                         Text("重新播放新手教學")
                     }
+                    Spacer(Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            PhantomPrefs.setSettingsTourCompleted(appCtx, false)
+                            tourStepIndex = 1
+                        },
+                        modifier = Modifier.fillMaxWidth().pressableScale()
+                    ) {
+                        Text("重新播放設定教學")
+                    }
                 }
             }
 
@@ -1278,7 +1369,10 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                         expandAppearance = !expandAppearance
                         PhantomPrefs.setSettingsCardExpanded(appCtx, "appearance", expandAppearance)
                     },
-                    glassState = glassState
+                    glassState = glassState,
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        cardBounds["appearance"] = coords.boundsInRoot()
+                    }
                 ) {
                     Text("主題模式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
@@ -1440,9 +1534,6 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
 
             // 6. Shizuku 進階
             item {
-                var expandShizuku by remember {
-                    mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "shizuku_advanced"))
-                }
                 ShizukuAdvancedCard(
                     expanded = expandShizuku,
                     onToggle = {
@@ -1450,9 +1541,33 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                         PhantomPrefs.setSettingsCardExpanded(appCtx, "shizuku_advanced", expandShizuku)
                     },
                     glassState = glassState,
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        cardBounds["shizuku"] = coords.boundsInRoot()
+                    },
                     onShowMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
                 )
             }
+        }
+    }
+
+        if (tourStepIndex in 1..6) {
+            SettingsTourOverlay(
+                stepIndex = tourStepIndex,
+                cardBounds = cardBounds,
+                glassState = glassState,
+                onNext = {
+                    if (tourStepIndex < 6) {
+                        tourStepIndex += 1
+                    } else {
+                        tourStepIndex = 0
+                        PhantomPrefs.setSettingsTourCompleted(appCtx, true)
+                    }
+                },
+                onSkip = {
+                    tourStepIndex = 0
+                    PhantomPrefs.setSettingsTourCompleted(appCtx, true)
+                }
+            )
         }
     }
 }
@@ -1462,6 +1577,7 @@ private fun ShizukuAdvancedCard(
     expanded: Boolean,
     onToggle: () -> Unit,
     glassState: HazeState,
+    modifier: Modifier = Modifier,
     onShowMessage: (String) -> Unit
 ) {
     val ctx = LocalContext.current
@@ -1488,7 +1604,8 @@ private fun ShizukuAdvancedCard(
         title = "Shizuku 進階",
         expanded = expanded,
         onToggle = onToggle,
-        glassState = glassState
+        glassState = glassState,
+        modifier = modifier
     ) {
         Text(
             text = statusText,
@@ -1654,11 +1771,12 @@ private fun CollapsibleSettingsCard(
     expanded: Boolean,
     onToggle: () -> Unit,
     glassState: HazeState,
+    modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
     PhantomGlassCard(
         glassState = glassState,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         cornerRadius = 20.dp,
         contentPadding = 14.dp
     ) {
@@ -1851,3 +1969,288 @@ private fun AppMutePickerDialog(
         }
     )
 }
+
+private enum class SettingsTourStep(
+    val index: Int,
+    val cardKey: String,
+    val title: String,
+    val description: String
+) {
+    QUICK(
+        index = 1,
+        cardKey = "quick",
+        title = "快速設定",
+        description = "最常用的核心開關都集中於此，包含省 token 模式、常駐統計通知與快速操作；你可以直接點擊洞內開關立即試用。"
+    ),
+    AI(
+        index = 2,
+        cardKey = "ai",
+        title = "AI 與分析",
+        description = "管理多 Provider API Key、每日分析額度、自然語言白名單規則、AI 自動標記與每日 AI 摘要排程。"
+    ),
+    NOTIF(
+        index = 3,
+        cardKey = "notif",
+        title = "訊息與通知",
+        description = "設定勿擾時段、即時關鍵字提醒、重複通知節流秒數，以及滑動刪除與點擊開啟行為。"
+    ),
+    DATA(
+        index = 4,
+        cardKey = "data",
+        title = "資料管理",
+        description = "管理 App 靜音清單、自訂標籤、訊息保留天數與則數上限、CSV 匯出，也可隨時重播新手或設定教學。"
+    ),
+    APPEARANCE(
+        index = 5,
+        cardKey = "appearance",
+        title = "外觀與保活",
+        description = "切換主題、動態取色、液態玻璃效果、觸覺震動回饋，並檢查系統電池最佳化與前景服務運作狀態。"
+    ),
+    SHIZUKU(
+        index = 6,
+        cardKey = "shizuku",
+        title = "Shizuku 進階",
+        description = "進階使用者可透過 Shizuku 進行系統級保活強化、權限補齊與連線診斷；未安裝時可略過不影響一般功能。"
+    );
+
+    companion object {
+        fun fromIndex(index: Int): SettingsTourStep =
+            entries.firstOrNull { it.index == index } ?: QUICK
+    }
+}
+
+@Composable
+private fun SettingsTourOverlay(
+    stepIndex: Int,
+    cardBounds: Map<String, Rect>,
+    glassState: HazeState,
+    onNext: () -> Unit,
+    onSkip: () -> Unit
+) {
+    val step = SettingsTourStep.fromIndex(stepIndex)
+    val density = LocalDensity.current
+    val expandPx = with(density) { 6.dp.toPx() }
+    val cornerPx = with(density) { 20.dp.toPx() }
+
+    var overlayOrigin by remember { mutableStateOf(Offset.Zero) }
+    var cardVisible by remember { mutableStateOf(false) }
+    var lastNextClickMs by remember { mutableLongStateOf(0L) }
+
+    val throttledNext: () -> Unit = {
+        val now = System.currentTimeMillis()
+        if (now - lastNextClickMs >= 450L) {
+            lastNextClickMs = now
+            onNext()
+        }
+    }
+
+    LaunchedEffect(stepIndex) {
+        cardVisible = false
+        cardVisible = true
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { coords ->
+                overlayOrigin = coords.positionInRoot()
+            }
+    ) {
+        val totalWidthPx = with(density) { maxWidth.toPx() }.coerceAtLeast(1f)
+        val totalHeightPx = with(density) { maxHeight.toPx() }.coerceAtLeast(1f)
+
+        val targetRect = cardBounds[step.cardKey]
+        val rawHoleRect = targetRect?.let {
+            val l = (it.left - overlayOrigin.x - expandPx).coerceIn(0f, totalWidthPx)
+            val t = (it.top - overlayOrigin.y - expandPx).coerceIn(0f, totalHeightPx)
+            val r = (it.right - overlayOrigin.x + expandPx).coerceIn(l, totalWidthPx)
+            val b = (it.bottom - overlayOrigin.y + expandPx).coerceIn(t, totalHeightPx)
+            Rect(l, t, r, b)
+        }
+        val hasHole = rawHoleRect != null && rawHoleRect.width > 1f && rawHoleRect.height > 1f
+
+        val animLeft by animateFloatAsState(
+            targetValue = rawHoleRect?.left ?: 0f,
+            animationSpec = tween(durationMillis = 200),
+            label = "settingsHoleLeft"
+        )
+        val animTop by animateFloatAsState(
+            targetValue = rawHoleRect?.top ?: 0f,
+            animationSpec = tween(durationMillis = 200),
+            label = "settingsHoleTop"
+        )
+        val animRight by animateFloatAsState(
+            targetValue = rawHoleRect?.right ?: 0f,
+            animationSpec = tween(durationMillis = 200),
+            label = "settingsHoleRight"
+        )
+        val animBottom by animateFloatAsState(
+            targetValue = rawHoleRect?.bottom ?: 0f,
+            animationSpec = tween(durationMillis = 200),
+            label = "settingsHoleBottom"
+        )
+
+        val holeLeft = animLeft.coerceIn(0f, totalWidthPx)
+        val holeTop = animTop.coerceIn(0f, totalHeightPx)
+        val holeRight = animRight.coerceIn(holeLeft, totalWidthPx)
+        val holeBottom = animBottom.coerceIn(holeTop, totalHeightPx)
+
+        // 1. 半透明遮罩（PathFillType.EvenOdd 挖洞，純繪製不攔截觸控）
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val path = Path().apply {
+                fillType = PathFillType.EvenOdd
+                addRect(Rect(0f, 0f, size.width, size.height))
+                if (hasHole && holeRight > holeLeft && holeBottom > holeTop) {
+                    addRoundRect(
+                        RoundRect(
+                            left = holeLeft,
+                            top = holeTop,
+                            right = holeRight,
+                            bottom = holeBottom,
+                            cornerRadius = CornerRadius(cornerPx, cornerPx)
+                        )
+                    )
+                }
+            }
+            drawPath(
+                path = path,
+                color = Color.Black.copy(alpha = 0.6f)
+            )
+        }
+
+        // 2. 洞外四個區域攔截點擊進下一步；洞內無任何觸控節點，觸控 100% 穿透至底層開關與按鈕
+        if (hasHole && holeRight > holeLeft && holeBottom > holeTop) {
+            val noIndication = remember { MutableInteractionSource() }
+            // 上方區域
+            if (holeTop > 0f) {
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(0, 0) }
+                        .size(
+                            width = with(density) { totalWidthPx.toDp() },
+                            height = with(density) { holeTop.toDp() }
+                        )
+                        .clickable(
+                            interactionSource = noIndication,
+                            indication = null,
+                            onClick = throttledNext
+                        )
+                )
+            }
+            // 下方區域
+            if (holeBottom < totalHeightPx) {
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(0, holeBottom.roundToInt()) }
+                        .size(
+                            width = with(density) { totalWidthPx.toDp() },
+                            height = with(density) { (totalHeightPx - holeBottom).toDp() }
+                        )
+                        .clickable(
+                            interactionSource = noIndication,
+                            indication = null,
+                            onClick = throttledNext
+                        )
+                )
+            }
+            // 左側區域
+            if (holeLeft > 0f) {
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(0, holeTop.roundToInt()) }
+                        .size(
+                            width = with(density) { holeLeft.toDp() },
+                            height = with(density) { (holeBottom - holeTop).toDp() }
+                        )
+                        .clickable(
+                            interactionSource = noIndication,
+                            indication = null,
+                            onClick = throttledNext
+                        )
+                )
+            }
+            // 右側區域
+            if (holeRight < totalWidthPx) {
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(holeRight.roundToInt(), holeTop.roundToInt()) }
+                        .size(
+                            width = with(density) { (totalWidthPx - holeRight).toDp() },
+                            height = with(density) { (holeBottom - holeTop).toDp() }
+                        )
+                        .clickable(
+                            interactionSource = noIndication,
+                            indication = null,
+                            onClick = throttledNext
+                        )
+                )
+            }
+        } else {
+            val noIndication = remember { MutableInteractionSource() }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = noIndication,
+                        indication = null,
+                        onClick = throttledNext
+                    )
+            )
+        }
+
+        // 3. 說明卡自動避開亮區（洞偏下時卡片放上方，否則放下方）
+        val holeCenterY = if (hasHole) (holeTop + holeBottom) / 2f else totalHeightPx * 0.3f
+        val placeCardAtTop = hasHole && holeCenterY > totalHeightPx * 0.52f
+
+        AnimatedVisibility(
+            visible = cardVisible,
+            enter = fadeIn(tween(200)) + slideInVertically(
+                animationSpec = tween(200),
+                initialOffsetY = { if (placeCardAtTop) -it / 2 else it / 2 }
+            ),
+            modifier = Modifier
+                .align(if (placeCardAtTop) Alignment.TopCenter else Alignment.BottomCenter)
+                .then(
+                    if (placeCardAtTop) {
+                        Modifier.statusBarsPadding().padding(top = 64.dp, start = 16.dp, end = 16.dp)
+                    } else {
+                        Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 20.dp)
+                    }
+                )
+        ) {
+            PhantomGlassCard(
+                glassState = glassState,
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 22.dp,
+                contentPadding = 16.dp
+            ) {
+                val totalSteps = SettingsTourStep.entries.size
+                Text(
+                    text = "步驟 ${step.index} / $totalSteps・${step.title}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = step.description,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(14.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onSkip) {
+                        Text("跳過")
+                    }
+                    Button(onClick = throttledNext) {
+                        Text(if (step.index == totalSteps) "完成" else "下一步")
+                    }
+                }
+            }
+        }
+    }
+}
+

@@ -1,5 +1,7 @@
 package com.phantom.checker.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import androidx.compose.animation.core.RepeatMode
@@ -7,8 +9,10 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -134,7 +138,7 @@ val AutoAwesomeIcon: ImageVector by lazy {
     }.build()
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatAssistantTab(
     glassState: HazeState,
@@ -529,7 +533,17 @@ fun ChatAssistantTab(
                                 Surface(
                                     shape = RoundedCornerShape(18.dp),
                                     color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.widthIn(max = userBubbleMaxWidth)
+                                    modifier = Modifier
+                                        .widthIn(max = userBubbleMaxWidth)
+                                        .clip(RoundedCornerShape(18.dp))
+                                        .combinedClickable(
+                                            onClick = {},
+                                            onLongClick = {
+                                                val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                cm.setPrimaryClip(ClipData.newPlainText("chat_message", msg.content))
+                                                onShowMessage("已複製訊息內容")
+                                            }
+                                        )
                                 ) {
                                     Text(
                                         text = msg.content,
@@ -541,7 +555,19 @@ fun ChatAssistantTab(
                             } else {
                                 PhantomGlassCard(
                                     glassState = glassState,
-                                    modifier = Modifier.widthIn(max = assistantBubbleMaxWidth),
+                                    modifier = Modifier
+                                        .widthIn(max = assistantBubbleMaxWidth)
+                                        .clip(RoundedCornerShape(18.dp))
+                                        .combinedClickable(
+                                            onClick = {},
+                                            onLongClick = {
+                                                val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                cm.setPrimaryClip(
+                                                    ClipData.newPlainText("assistant_reply", stripMarkdown(msg.content))
+                                                )
+                                                onShowMessage("已複製助手回覆")
+                                            }
+                                        ),
                                     cornerRadius = 18.dp,
                                     contentPadding = 12.dp
                                 ) {

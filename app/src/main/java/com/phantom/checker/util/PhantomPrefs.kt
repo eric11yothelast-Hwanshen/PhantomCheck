@@ -74,6 +74,7 @@ object PhantomPrefs {
     private const val KEY_ALERT_KEYWORDS = "instant_alert_keywords"
     private const val KEY_ONBOARDING_COMPLETED_V1 = "onboarding_completed_v1"
     private const val KEY_ONBOARDING_STEP_V2 = "onboarding_step_v2"
+    private const val KEY_SETTINGS_TOUR_COMPLETED_V1 = "settings_tour_completed_v1"
     private const val KEY_OEM_AUTOSTART_CONFIRMED = "oem_autostart_confirmed"
     private const val KEY_AI_AUTO_TAG_ENABLED = "ai_auto_tag_enabled"
     private const val KEY_DEFAULT_AI_TAGS_SEEDED = "default_ai_tags_seeded_v1"
@@ -329,6 +330,14 @@ object PhantomPrefs {
 
     fun setOnboardingCompleted(ctx: Context, completed: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_ONBOARDING_COMPLETED_V1, completed).apply()
+    }
+
+    /** 設定頁高亮教學是否已完成 */
+    fun isSettingsTourCompleted(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_SETTINGS_TOUR_COMPLETED_V1, false)
+
+    fun setSettingsTourCompleted(ctx: Context, completed: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_SETTINGS_TOUR_COMPLETED_V1, completed).apply()
     }
 
     /** AI 智慧標記開關（預設開） */
