@@ -1216,11 +1216,20 @@ private fun PhantomCheckApp(
         ) {
             // 頂部標題列：搜尋＋重新整理＋設定齒輪
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("幻訊 PhantomCheck", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    text = "幻訊 PhantomCheck",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = {
                         showSearchBar = !showSearchBar

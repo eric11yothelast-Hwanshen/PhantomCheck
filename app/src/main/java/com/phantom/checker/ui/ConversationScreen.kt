@@ -464,10 +464,13 @@ fun ConversationScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                expandedHeight = 52.dp,
                 title = {
                     Column {
                         Text(
                             text = sender,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )

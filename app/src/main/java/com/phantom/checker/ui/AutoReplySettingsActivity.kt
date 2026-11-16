@@ -100,7 +100,15 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("自動回覆設定") },
+                expandedHeight = 52.dp,
+                title = {
+                    Text(
+                        text = "自動回覆設定",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(

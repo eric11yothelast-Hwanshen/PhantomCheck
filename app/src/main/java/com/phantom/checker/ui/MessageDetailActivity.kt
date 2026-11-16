@@ -192,7 +192,15 @@ fun MessageDetailScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("訊息詳情") },
+                expandedHeight = 52.dp,
+                title = {
+                    Text(
+                        text = "訊息詳情",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")

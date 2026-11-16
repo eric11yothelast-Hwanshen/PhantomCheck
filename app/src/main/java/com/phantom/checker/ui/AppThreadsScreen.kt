@@ -281,16 +281,19 @@ fun AppThreadsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
+                expandedHeight = 52.dp,
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         AppIconImage(
                             packageName = packageName,
                             contentDescription = appLabel,
-                            size = 28.dp
+                            size = 24.dp
                         )
-                        Spacer(Modifier.width(10.dp))
+                        Spacer(Modifier.width(8.dp))
                         Text(
                             text = appLabel,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )

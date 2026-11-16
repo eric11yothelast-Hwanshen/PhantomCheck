@@ -124,7 +124,15 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("多 Provider AI 設定") },
+                expandedHeight = 52.dp,
+                title = {
+                    Text(
+                        text = "多 Provider AI 設定",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
