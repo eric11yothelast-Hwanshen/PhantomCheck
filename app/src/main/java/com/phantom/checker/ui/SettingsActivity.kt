@@ -1449,7 +1449,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "個別 App 節流覆寫（0 秒 = 永不節流）",
+                        text = "個別 App 節流覆寫（0 秒 = 永不節流，且通訊類若 postTime 更新則收錄同內容訊息）",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium
                     )
