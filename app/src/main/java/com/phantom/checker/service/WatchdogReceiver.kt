@@ -64,6 +64,7 @@ class WatchdogReceiver : BroadcastReceiver() {
     }
 
     private fun tryRequestListenerRebind(ctx: Context) {
+        if (NotificationCollectorService.isConnected) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
         val enabled = NotificationManagerCompat.getEnabledListenerPackages(ctx).contains(ctx.packageName)
         if (!enabled) return

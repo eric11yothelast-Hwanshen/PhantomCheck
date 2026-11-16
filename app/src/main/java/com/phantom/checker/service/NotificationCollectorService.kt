@@ -12,6 +12,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.LruCache
 import com.phantom.checker.R
+import com.phantom.checker.data.AppCategoryRule
 import com.phantom.checker.data.AppDatabase
 import com.phantom.checker.data.FilterRule
 import com.phantom.checker.data.IntelResultEntity
@@ -35,7 +36,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.security.MessageDigest
 import java.util.Calendar
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 核心：通知攔截服務。
@@ -59,7 +59,7 @@ class NotificationCollectorService : NotificationListenerService() {
 
     private val dedupCache = object : LruCache<String, Long>(256) {}
     private val sameKeyHistory = object : LruCache<String, KeyRecord>(256) {}
-    private val appLabelCache = ConcurrentHashMap<String, String>()
+    private val appLabelCache = object : LruCache<String, String>(64) {}
 
     private data class PendingBatch(
         val items: MutableList<AiClient.BatchAnalyzeItem> = mutableListOf(),
@@ -76,12 +76,14 @@ class NotificationCollectorService : NotificationListenerService() {
     }
 
     override fun onDestroy() {
+        isConnected = false
         scope.cancel()
         super.onDestroy()
     }
 
     override fun onListenerConnected() {
         super.onListenerConnected()
+        isConnected = true
         connectTime = System.currentTimeMillis()
         StatsForegroundService.startOrRefresh(applicationContext, force = true)
         KeepAlivePolicy.scheduleAll(applicationContext)
@@ -89,6 +91,7 @@ class NotificationCollectorService : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
+        isConnected = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 requestRebind(ComponentName(this, NotificationCollectorService::class.java))
@@ -206,7 +209,7 @@ class NotificationCollectorService : NotificationListenerService() {
                     return@launch
                 }
             }
-            val rules = db.filterDao().active()
+            val rules = cachedActiveFilterRules(db)
             val matchedRule = rules.firstOrNull { rule ->
                 if (rule.packageName != null && rule.packageName != pkg) return@firstOrNull false
                 text.contains(rule.keyword, ignoreCase = true)
@@ -237,7 +240,7 @@ class NotificationCollectorService : NotificationListenerService() {
             )
 
             // App 分類標籤（零 token 規則式，insert 後直接打標籤）
-            val appCatRules = db.appCategoryRuleDao().activeByPackage(pkg)
+            val appCatRules = cachedAppCategoryRules(db, pkg)
             if (appCatRules.isNotEmpty()) {
                 val catRefs = appCatRules.map { rule ->
                     MessageTagCrossRef(
@@ -255,7 +258,7 @@ class NotificationCollectorService : NotificationListenerService() {
 
             // 即時提醒關鍵字檢查（與過濾規則獨立）
             if (!silentMuted) {
-                val alertKeywords = PhantomPrefs.getAlertKeywords(applicationContext)
+                val alertKeywords = cachedAlertKeywords(applicationContext)
                 val hitAlertKw = alertKeywords.firstOrNull { kw ->
                     text.contains(kw, ignoreCase = true) || title.contains(kw, ignoreCase = true)
                 }
@@ -458,7 +461,9 @@ class NotificationCollectorService : NotificationListenerService() {
         input.filter { !it.isDigit() && !it.isWhitespace() }
 
     private fun cachedAppLabel(pkg: String): String {
-        appLabelCache[pkg]?.let { return it }
+        synchronized(appLabelCache) {
+            appLabelCache.get(pkg)?.let { return it }
+        }
         val resolved = try {
             packageManager.getApplicationLabel(
                 packageManager.getApplicationInfo(pkg, 0)
@@ -466,7 +471,9 @@ class NotificationCollectorService : NotificationListenerService() {
         } catch (_: Exception) {
             pkg
         }
-        appLabelCache[pkg] = resolved
+        synchronized(appLabelCache) {
+            appLabelCache.put(pkg, resolved)
+        }
         return resolved
     }
 
@@ -556,6 +563,9 @@ class NotificationCollectorService : NotificationListenerService() {
     }
 
     companion object {
+        @Volatile
+        var isConnected: Boolean = false
+
         private const val DEDUP_WINDOW_MS = 10L * 60L * 1000L
         private const val REPLAY_GRACE_MS = 5000L
         private const val MIN_AI_CONTENT_LENGTH = 10
@@ -563,6 +573,65 @@ class NotificationCollectorService : NotificationListenerService() {
         private const val BATCH_COALESCE_MS = 2500L
         private const val BATCH_WINDOW_MS = 60_000L
         private const val MAX_BATCH_SIZE = 5
+        private const val RULE_CACHE_TTL_MS = 30_000L
+
+        private val ruleCacheLock = Any()
+        private var cachedFilterRules: Pair<Long, List<FilterRule>>? = null
+        private val cachedAppCatRules = object : LruCache<String, Pair<Long, List<AppCategoryRule>>>(64) {}
+        private var cachedAlertKeywordsPair: Pair<Long, List<String>>? = null
+
+        fun invalidateRuleCaches() {
+            synchronized(ruleCacheLock) {
+                cachedFilterRules = null
+                cachedAppCatRules.evictAll()
+                cachedAlertKeywordsPair = null
+            }
+        }
+
+        private suspend fun cachedActiveFilterRules(db: AppDatabase): List<FilterRule> {
+            val now = System.currentTimeMillis()
+            synchronized(ruleCacheLock) {
+                val entry = cachedFilterRules
+                if (entry != null && (now - entry.first) < RULE_CACHE_TTL_MS) {
+                    return entry.second
+                }
+            }
+            val fresh = db.filterDao().active()
+            synchronized(ruleCacheLock) {
+                cachedFilterRules = System.currentTimeMillis() to fresh
+            }
+            return fresh
+        }
+
+        private suspend fun cachedAppCategoryRules(db: AppDatabase, pkg: String): List<AppCategoryRule> {
+            val now = System.currentTimeMillis()
+            synchronized(ruleCacheLock) {
+                val entry = cachedAppCatRules.get(pkg)
+                if (entry != null && (now - entry.first) < RULE_CACHE_TTL_MS) {
+                    return entry.second
+                }
+            }
+            val fresh = db.appCategoryRuleDao().activeByPackage(pkg)
+            synchronized(ruleCacheLock) {
+                cachedAppCatRules.put(pkg, System.currentTimeMillis() to fresh)
+            }
+            return fresh
+        }
+
+        private fun cachedAlertKeywords(ctx: Context): List<String> {
+            val now = System.currentTimeMillis()
+            synchronized(ruleCacheLock) {
+                val entry = cachedAlertKeywordsPair
+                if (entry != null && (now - entry.first) < RULE_CACHE_TTL_MS) {
+                    return entry.second
+                }
+            }
+            val fresh = PhantomPrefs.getAlertKeywords(ctx)
+            synchronized(ruleCacheLock) {
+                cachedAlertKeywordsPair = System.currentTimeMillis() to fresh
+            }
+            return fresh
+        }
 
         fun hasSuspiciousFeature(content: String, isRuleFiltered: Boolean): Boolean =
             IndicatorExtractor.hasSuspiciousFeature(content, isRuleFiltered)

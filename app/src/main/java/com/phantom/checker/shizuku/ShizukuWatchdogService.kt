@@ -19,6 +19,9 @@ class ShizukuWatchdogService : IShizukuShellService.Stub() {
     @Volatile
     private var running = false
 
+    @Volatile
+    private var intensiveUntilMs = 0L
+
     override fun destroy() {
         stopWatchdog()
         scheduler.shutdownNow()
@@ -46,23 +49,46 @@ class ShizukuWatchdogService : IShizukuShellService.Stub() {
         if (pkg.isEmpty() || cls.isEmpty()) return
         stopWatchdog()
         running = true
-        watchdogTask = scheduler.scheduleAtFixedRate({
+        intensiveUntilMs = 0L
+        scheduleNext(pkg, cls, STEADY_INTERVAL_SEC)
+    }
+
+    private fun scheduleNext(pkg: String, cls: String, delaySec: Long) {
+        if (!running) return
+        watchdogTask = scheduler.schedule({
+            if (!running) return@schedule
             try {
                 val check = exec("dumpsys activity services $pkg/$cls")
                 val alive = check.contains("ServiceRecord{") && !check.contains("(nothing)")
                 if (!alive) {
                     exec("am start-foreground-service -n $pkg/$cls")
+                    intensiveUntilMs = System.currentTimeMillis() + INTENSIVE_WINDOW_MS
                 }
             } catch (_: Exception) {
             }
-        }, 60L, 60L, TimeUnit.SECONDS)
+            if (running) {
+                val nextDelay = if (System.currentTimeMillis() < intensiveUntilMs) {
+                    INTENSIVE_INTERVAL_SEC
+                } else {
+                    STEADY_INTERVAL_SEC
+                }
+                scheduleNext(pkg, cls, nextDelay)
+            }
+        }, delaySec, TimeUnit.SECONDS)
     }
 
     override fun stopWatchdog() {
         running = false
+        intensiveUntilMs = 0L
         watchdogTask?.cancel(true)
         watchdogTask = null
     }
 
     override fun isWatchdogRunning(): Boolean = running
+
+    companion object {
+        private const val STEADY_INTERVAL_SEC = 300L
+        private const val INTENSIVE_INTERVAL_SEC = 60L
+        private const val INTENSIVE_WINDOW_MS = 10L * 60L * 1000L
+    }
 }

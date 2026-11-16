@@ -200,6 +200,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                     db.appCategoryRuleDao().deleteByTagId(target.id)
                                     db.tagDao().deleteById(target.id)
                                 }
+                                com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                             }
                             deleteCandidate = null
                             reloadAll()
@@ -235,6 +236,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                 isEnabled = true
                             )
                         )
+                        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                     }
                     showAddAppCatDialog = false
                     reloadAll()
@@ -255,6 +257,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                         scope.launch {
                             withContext(Dispatchers.IO) {
                                 AppDatabaseHolder.db(appCtx).appCategoryRuleDao().deleteById(rule.id)
+                                com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                             }
                             deleteAppCatCandidate = null
                             reloadAll()

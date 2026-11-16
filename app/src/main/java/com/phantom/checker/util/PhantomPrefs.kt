@@ -373,12 +373,14 @@ object PhantomPrefs {
         if (current.any { it.equals(trimmed, ignoreCase = true) }) return false
         current.add(trimmed)
         prefs(ctx).edit().putString(KEY_ALERT_KEYWORDS, gson.toJson(current)).apply()
+        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
         return true
     }
 
     fun removeAlertKeyword(ctx: Context, keyword: String) {
         val updated = getAlertKeywords(ctx).filterNot { it.equals(keyword, ignoreCase = true) }
         prefs(ctx).edit().putString(KEY_ALERT_KEYWORDS, gson.toJson(updated)).apply()
+        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
     }
 
     /** 新手引導 v1 完成旗標 */

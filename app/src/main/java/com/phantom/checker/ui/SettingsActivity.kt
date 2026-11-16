@@ -1322,6 +1322,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                                                 action = newRuleAction
                                             )
                                         )
+                                        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                                         dao.all()
                                     }
                                     newKeyword = ""
@@ -1384,6 +1385,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                                         val updated = rule.copy(isActive = checked)
                                         withContext(Dispatchers.IO) {
                                             AppDatabaseHolder.db(appCtx).filterDao().update(updated)
+                                            com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                                         }
                                         rules = rules.map { if (it.id == rule.id) updated else it }
                                     }
@@ -1392,6 +1394,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                                     scope.launch {
                                         withContext(Dispatchers.IO) {
                                             AppDatabaseHolder.db(appCtx).filterDao().delete(rule)
+                                            com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                                         }
                                         rules = rules.filterNot { it.id == rule.id }
                                     }

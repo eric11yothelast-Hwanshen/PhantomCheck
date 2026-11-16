@@ -8,13 +8,9 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.phantom.checker.util.PhantomPrefs
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
 /**
@@ -37,7 +33,10 @@ class HeartbeatWorker(
 
         val listenerEnabled = NotificationManagerCompat.getEnabledListenerPackages(ctx)
             .contains(ctx.packageName)
-        if (listenerEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        if (!NotificationCollectorService.isConnected &&
+            listenerEnabled &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+        ) {
             try {
                 NotificationListenerService.requestRebind(
                     ComponentName(ctx, NotificationCollectorService::class.java)
@@ -51,7 +50,6 @@ class HeartbeatWorker(
 
 object HeartbeatPolicy {
     private const val UNIQUE_WORK_NAME = "phantom_stats_heartbeat"
-    private val policyScope = CoroutineScope(Dispatchers.IO)
 
     fun schedule(ctx: Context) {
         val appCtx = ctx.applicationContext
@@ -60,23 +58,12 @@ object HeartbeatPolicy {
             workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
             return
         }
-        policyScope.launch {
-            val policy = try {
-                val infos = workManager.getWorkInfosForUniqueWork(UNIQUE_WORK_NAME).get()
-                val isActive = infos.any {
-                    it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING
-                }
-                if (isActive) ExistingPeriodicWorkPolicy.KEEP else ExistingPeriodicWorkPolicy.UPDATE
-            } catch (_: Exception) {
-                ExistingPeriodicWorkPolicy.UPDATE
-            }
-            val request = PeriodicWorkRequestBuilder<HeartbeatWorker>(15, TimeUnit.MINUTES)
-                .build()
-            workManager.enqueueUniquePeriodicWork(
-                UNIQUE_WORK_NAME,
-                policy,
-                request
-            )
-        }
+        val request = PeriodicWorkRequestBuilder<HeartbeatWorker>(15, TimeUnit.MINUTES)
+            .build()
+        workManager.enqueueUniquePeriodicWork(
+            UNIQUE_WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
     }
 }
