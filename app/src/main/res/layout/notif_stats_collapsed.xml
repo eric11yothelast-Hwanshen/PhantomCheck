@@ -36,7 +36,7 @@
             android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/notif_text"
+            android:id="@+id/notif_subtitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
@@ -46,7 +46,7 @@
     </LinearLayout>
 
     <ImageView
-        android:id="@+id/notif_recent_apps_strip"
+        android:id="@+id/notif_recent_strip"
         android:layout_width="wrap_content"
         android:layout_height="30dp"
         android:adjustViewBounds="true"
