@@ -95,7 +95,12 @@ class SmsAutoReplyReceiver : BroadcastReceiver() {
             body.contains(kw, ignoreCase = true)
         }
         val containsShortUrl = SHORT_URL_REGEX.containsMatchIn(body)
-        val shouldSkipReply = containsSensitiveKw || containsShortUrl || !TW_MOBILE_REGEX.matches(sender)
+        val template = AutoReplyConfig.smsTemplate.trim()
+        val isSelfTemplate = template.isNotEmpty() && body.trim() == template
+        val shouldSkipReply = containsSensitiveKw ||
+            containsShortUrl ||
+            isSelfTemplate ||
+            !TW_MOBILE_REGEX.matches(sender)
 
         CoroutineScope(Dispatchers.IO).launch {
             val db = AppDatabaseHolder.db(ctx)
@@ -106,7 +111,7 @@ class SmsAutoReplyReceiver : BroadcastReceiver() {
                     timestamp = System.currentTimeMillis()
                 )
             )
-            if (!shouldSkipReply) {
+            if (!shouldSkipReply && canReplyAndRecord(ctx, sender)) {
                 android.telephony.SmsManager.getDefault().sendTextMessage(
                     sender, null, AutoReplyConfig.smsTemplate, null, null
                 )
@@ -115,6 +120,10 @@ class SmsAutoReplyReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        private const val COOLDOWN_PREFS = "auto_reply_cooldown_prefs"
+        private const val COOLDOWN_MS = 4L * 60L * 60L * 1000L
+        private const val MAX_REPLIES_PER_DAY = 3
+
         private val SENSITIVE_SMS_KEYWORDS = listOf(
             "驗證碼", "OTP", "一次性密碼", "信用卡", "銀行", "帳單"
         )
@@ -123,6 +132,38 @@ class SmsAutoReplyReceiver : BroadcastReceiver() {
             RegexOption.IGNORE_CASE
         )
         private val TW_MOBILE_REGEX = Regex("^09\\d{8}$")
+
+        @Synchronized
+        internal fun canReplyAndRecord(
+            ctx: Context,
+            sender: String,
+            nowMs: Long = System.currentTimeMillis()
+        ): Boolean {
+            val prefs = ctx.applicationContext.getSharedPreferences(COOLDOWN_PREFS, Context.MODE_PRIVATE)
+            val tsKey = "last_reply_ts_$sender"
+            val dateKey = "daily_reply_date_$sender"
+            val countKey = "daily_reply_count_$sender"
+
+            val lastRepliedAt = prefs.getLong(tsKey, 0L)
+            if (lastRepliedAt > 0L && (nowMs - lastRepliedAt) < COOLDOWN_MS) {
+                return false
+            }
+
+            val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+                .format(java.util.Date(nowMs))
+            val savedDate = prefs.getString(dateKey, null)
+            val savedCount = if (savedDate == today) prefs.getInt(countKey, 0) else 0
+            if (savedCount >= MAX_REPLIES_PER_DAY) {
+                return false
+            }
+
+            prefs.edit()
+                .putLong(tsKey, nowMs)
+                .putString(dateKey, today)
+                .putInt(countKey, savedCount + 1)
+                .apply()
+            return true
+        }
     }
 }
 
