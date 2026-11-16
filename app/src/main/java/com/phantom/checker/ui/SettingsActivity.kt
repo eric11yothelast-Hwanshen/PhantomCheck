@@ -116,6 +116,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.room.withTransaction
 import com.phantom.checker.data.AppGroupRow
 import com.phantom.checker.data.FilterRule
+import com.phantom.checker.network.AiClient
 import com.phantom.checker.network.ApiKeySource
 import com.phantom.checker.network.IntelClient
 import com.phantom.checker.service.AppDatabaseHolder

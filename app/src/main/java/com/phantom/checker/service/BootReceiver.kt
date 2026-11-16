@@ -10,6 +10,9 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import com.phantom.checker.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * 接收開機完成、快速開機、App 更新完成廣播，恢復所有排程與常駐通知，
@@ -25,7 +28,7 @@ class BootReceiver : BroadcastReceiver() {
         KeepAlivePolicy.scheduleAll(appCtx)
         StatsForegroundService.startOrRefresh(appCtx, force = true)
         val pendingResult = goAsync()
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+        CoroutineScope(Dispatchers.IO).launch {
             try {
                 val now = System.currentTimeMillis()
                 val pending = AppDatabaseHolder.db(appCtx).messageDao().pendingReminders(now)

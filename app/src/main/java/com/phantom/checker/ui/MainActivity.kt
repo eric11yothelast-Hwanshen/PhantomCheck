@@ -1686,7 +1686,7 @@ private fun SearchResultsSection(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 private fun MessagesHomeTab(
     todayCount: Int,
@@ -2436,9 +2436,9 @@ private fun StatsTab(
                         dailyLabels = state.weeklyCounts.map { it.label },
                         dailyCounts = state.weeklyCounts.map { it.count },
                         topApps = state.rawAppGroups
-                            .sortedByDescending { it.totalCount }
+                            .sortedByDescending { it.cnt }
                             .take(5)
-                            .map { it.appLabel to it.totalCount }
+                            .map { it.appLabel to it.cnt }
                     )
                     val res = StatsShareCardGenerator.generateAndShare(ctx, data)
                     if (res.isFailure) {
