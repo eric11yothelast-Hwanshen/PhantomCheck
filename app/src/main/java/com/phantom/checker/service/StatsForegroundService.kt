@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
@@ -34,6 +35,7 @@ class StatsForegroundService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var screenStateReceiver: ScreenStateReceiver? = null
 
     @Volatile
     private var lastUpdateMs = 0L
@@ -60,6 +62,8 @@ class StatsForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         ensureChannel(applicationContext)
+        KeepAlivePolicy.scheduleAll(applicationContext)
+        registerScreenStateReceiver()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -101,9 +105,44 @@ class StatsForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        unregisterScreenStateReceiver()
         mainHandler.removeCallbacks(delayedRefreshRunnable)
         scope.cancel()
+        if (PhantomPrefs.isPersistentStatsEnabled(applicationContext) &&
+            hasPostNotificationsPermission(applicationContext)
+        ) {
+            KeepAlivePolicy.scheduleRescue(applicationContext, delayMs = 1000L)
+        }
         super.onDestroy()
+    }
+
+    private fun registerScreenStateReceiver() {
+        if (screenStateReceiver != null) return
+        val receiver = ScreenStateReceiver()
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+            addAction("android.net.conn.CONNECTIVITY_CHANGE")
+        }
+        try {
+            ContextCompat.registerReceiver(
+                this,
+                receiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+            screenStateReceiver = receiver
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun unregisterScreenStateReceiver() {
+        val receiver = screenStateReceiver ?: return
+        screenStateReceiver = null
+        try {
+            unregisterReceiver(receiver)
+        } catch (_: Exception) {
+        }
     }
 
     private fun scheduleThrottledRefresh() {
@@ -147,6 +186,7 @@ class StatsForegroundService : Service() {
                 lastUnread = stats.unread
                 lastScam = stats.scam
                 lastStripBitmap = cachedStripBitmap
+                lastRefreshMs = System.currentTimeMillis()
                 val notif = buildNotification(
                     ctx = applicationContext,
                     today = stats.today,
@@ -184,11 +224,18 @@ class StatsForegroundService : Service() {
         const val STATS_CHANNEL_ID = "stats_summary"
         const val STATS_NOTIF_ID = 1001
         private const val THROTTLE_MS = 5000L
+        private const val DEFAULT_STALE_MS = 30 * 60 * 1000L
 
         @Volatile private var lastToday = 0
         @Volatile private var lastUnread = 0
         @Volatile private var lastScam = 0
         @Volatile private var lastStripBitmap: Bitmap? = null
+        @Volatile var lastRefreshMs: Long = 0L
+
+        fun isRefreshStale(maxAgeMs: Long = DEFAULT_STALE_MS): Boolean {
+            val last = lastRefreshMs
+            return last == 0L || (System.currentTimeMillis() - last) >= maxAgeMs
+        }
 
         fun ensureChannel(ctx: Context) {
             val nm = ctx.getSystemService(NotificationManager::class.java) ?: return

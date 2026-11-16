@@ -4,8 +4,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.LruCache
@@ -73,6 +75,20 @@ class NotificationCollectorService : NotificationListenerService() {
         super.onListenerConnected()
         connectTime = System.currentTimeMillis()
         StatsForegroundService.startOrRefresh(applicationContext)
+        KeepAlivePolicy.scheduleAll(applicationContext)
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                requestRebind(ComponentName(this, NotificationCollectorService::class.java))
+            } catch (_: Exception) {
+                KeepAlivePolicy.scheduleRebindFallback(applicationContext)
+            }
+        } else {
+            KeepAlivePolicy.scheduleRebindFallback(applicationContext)
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
