@@ -1,0 +1,411 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_stats_bg"
+    android:orientation="vertical"
+    android:paddingStart="14dp"
+    android:paddingTop="10dp"
+    android:paddingEnd="14dp"
+    android:paddingBottom="10dp">
+
+    <!-- 頂部：品牌 + 三項統計 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingEnd="8dp">
+
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:contentDescription="幻訊"
+                android:src="@drawable/ic_stat_phantom"
+                android:tint="@color/widget_accent" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:text="幻訊"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/widget_detail_today_count"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textColor="@color/widget_text_primary"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="3dp"
+                android:text="今日"
+                android:textColor="@color/widget_text_secondary"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/widget_detail_unread_count"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textColor="@color/widget_accent"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="3dp"
+                android:text="未讀"
+                android:textColor="@color/widget_text_secondary"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/widget_detail_scam_count"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0"
+                android:textColor="@color/widget_scam"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="3dp"
+                android:text="警示"
+                android:textColor="@color/widget_text_secondary"
+                android:textSize="10sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 中段：近 7 日趨勢標題 + 最近來源圖示 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="近 7 日訊息趨勢"
+            android:textColor="@color/widget_text_secondary"
+            android:textSize="10sp" />
+
+        <ImageView
+            android:id="@+id/widget_recent_icon_0"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginStart="4dp"
+            android:contentDescription="來源 App 1"
+            android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/widget_recent_icon_1"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginStart="4dp"
+            android:contentDescription="來源 App 2"
+            android:visibility="gone" />
+
+        <ImageView
+            android:id="@+id/widget_recent_icon_2"
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:layout_marginStart="4dp"
+            android:contentDescription="來源 App 3"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- 7 日迷你比例條（RemoteViews LinearLayout + ImageView + setViewPadding） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="4dp"
+        android:layout_weight="1"
+        android:gravity="bottom"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="bottom|center_horizontal"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/widget_bar_col_0"
+                android:layout_width="12dp"
+                android:layout_height="38dp"
+                android:background="@color/widget_bar_track"
+                android:gravity="bottom"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:id="@+id/widget_bar_0"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="第1天"
+                    android:scaleType="fitXY"
+                    android:src="@drawable/widget_bar_fill" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/widget_bar_label_0"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="-6"
+                android:textColor="@color/widget_text_secondary"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="bottom|center_horizontal"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/widget_bar_col_1"
+                android:layout_width="12dp"
+                android:layout_height="38dp"
+                android:background="@color/widget_bar_track"
+                android:gravity="bottom"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:id="@+id/widget_bar_1"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="第2天"
+                    android:scaleType="fitXY"
+                    android:src="@drawable/widget_bar_fill" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/widget_bar_label_1"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="-5"
+                android:textColor="@color/widget_text_secondary"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="bottom|center_horizontal"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/widget_bar_col_2"
+                android:layout_width="12dp"
+                android:layout_height="38dp"
+                android:background="@color/widget_bar_track"
+                android:gravity="bottom"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:id="@+id/widget_bar_2"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="第3天"
+                    android:scaleType="fitXY"
+                    android:src="@drawable/widget_bar_fill" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/widget_bar_label_2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="-4"
+                android:textColor="@color/widget_text_secondary"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="bottom|center_horizontal"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/widget_bar_col_3"
+                android:layout_width="12dp"
+                android:layout_height="38dp"
+                android:background="@color/widget_bar_track"
+                android:gravity="bottom"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:id="@+id/widget_bar_3"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="第4天"
+                    android:scaleType="fitXY"
+                    android:src="@drawable/widget_bar_fill" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/widget_bar_label_3"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="-3"
+                android:textColor="@color/widget_text_secondary"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="bottom|center_horizontal"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/widget_bar_col_4"
+                android:layout_width="12dp"
+                android:layout_height="38dp"
+                android:background="@color/widget_bar_track"
+                android:gravity="bottom"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:id="@+id/widget_bar_4"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="第5天"
+                    android:scaleType="fitXY"
+                    android:src="@drawable/widget_bar_fill" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/widget_bar_label_4"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="-2"
+                android:textColor="@color/widget_text_secondary"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="bottom|center_horizontal"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/widget_bar_col_5"
+                android:layout_width="12dp"
+                android:layout_height="38dp"
+                android:background="@color/widget_bar_track"
+                android:gravity="bottom"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:id="@+id/widget_bar_5"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="第6天"
+                    android:scaleType="fitXY"
+                    android:src="@drawable/widget_bar_fill" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/widget_bar_label_5"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="-1"
+                android:textColor="@color/widget_text_secondary"
+                android:textSize="9sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="bottom|center_horizontal"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/widget_bar_col_6"
+                android:layout_width="12dp"
+                android:layout_height="38dp"
+                android:background="@color/widget_bar_track"
+                android:gravity="bottom"
+                android:orientation="vertical">
+
+                <ImageView
+                    android:id="@+id/widget_bar_6"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="今日"
+                    android:scaleType="fitXY"
+                    android:src="@drawable/widget_bar_fill" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/widget_bar_label_6"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="今"
+                android:textColor="@color/widget_accent"
+                android:textSize="9sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

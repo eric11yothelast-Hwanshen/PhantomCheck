@@ -221,16 +221,28 @@ class StatsForegroundService : Service() {
                 val startOfDay = NotificationCollectorService.startOfTodayMillis()
                 val dao = AppDatabaseHolder.db(applicationContext).messageDao()
                 val snap = dao.statsSnapshot(startOfDay)
+                val showIcons = PhantomPrefs.isPersistentNotifShowIcons(applicationContext)
+                val style = PhantomPrefs.getPersistentNotifStyle(applicationContext)
+                val clickBehavior = PhantomPrefs.getNotifClickBehavior(applicationContext)
+                val recentPkgs = if (showIcons) snap.recentPackages() else emptyList()
                 com.phantom.checker.widget.StatsWidgetProvider.updateAllIfChanged(
                     applicationContext,
                     snap.today,
                     snap.unread,
                     snap.scam
                 )
-                val showIcons = PhantomPrefs.isPersistentNotifShowIcons(applicationContext)
-                val style = PhantomPrefs.getPersistentNotifStyle(applicationContext)
-                val clickBehavior = PhantomPrefs.getNotifClickBehavior(applicationContext)
-                val recentPkgs = if (showIcons) snap.recentPackages() else emptyList()
+                com.phantom.checker.widget.StatsMiniWidgetProvider.updateAllIfChanged(
+                    applicationContext,
+                    snap.today,
+                    snap.scam
+                )
+                com.phantom.checker.widget.StatsDetailWidgetProvider.updateAllIfChanged(
+                    applicationContext,
+                    snap.today,
+                    snap.unread,
+                    snap.scam,
+                    snap.recentPackages()
+                )
 
                 val newSig = RefreshSignature(
                     today = snap.today,

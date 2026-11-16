@@ -86,7 +86,7 @@
 
         <receiver
             android:name=".widget.StatsWidgetProvider"
-            android:label="幻訊今日統計"
+            android:label="幻訊今日統計 (4x1)"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -94,6 +94,30 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/stats_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.StatsMiniWidgetProvider"
+            android:label="幻訊迷你統計 (2x1)"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/stats_mini_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.StatsDetailWidgetProvider"
+            android:label="幻訊趨勢詳情 (4x2)"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/stats_detail_widget_info" />
         </receiver>
 
         <receiver android:name=".service.ReminderReceiver" android:exported="false" />
