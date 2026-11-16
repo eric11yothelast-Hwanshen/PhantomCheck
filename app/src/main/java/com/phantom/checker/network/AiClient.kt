@@ -43,7 +43,10 @@ data class ChatRequest(
     val temperature: Double = 0.2
 )
 
-data class ChatChoice(val message: ChatMessage)
+data class ChatChoice(
+    val message: ChatMessage,
+    @SerializedName("finish_reason") val finishReason: String? = null
+)
 data class ChatResponse(val choices: List<ChatChoice>)
 
 interface ChatApi {
@@ -155,6 +158,7 @@ object AiClient {
     private var appContext: Context? = null
 
     private val apiCache = object : LruCache<String, ChatApi>(16) {}
+    private val chatApiCache = object : LruCache<String, ChatApi>(16) {}
     private val lastCallTimeMs = AtomicLong(0L)
 
     data class AiAnalysisResult(
@@ -373,6 +377,30 @@ object AiClient {
                 .build()
                 .create(ChatApi::class.java)
             apiCache.put(normalized, created)
+            return created
+        }
+    }
+
+    private val chatOkHttpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
+            .callTimeout(180, TimeUnit.SECONDS)
+            .build()
+    }
+
+    private fun getChatApi(baseUrl: String): ChatApi {
+        val normalized = normalizeBaseUrl(baseUrl)
+        synchronized(chatApiCache) {
+            chatApiCache.get(normalized)?.let { return it }
+            val created = Retrofit.Builder()
+                .baseUrl(normalized)
+                .client(chatOkHttpClient)
+                .addConverterFactory(GsonConverterFactory.create())
+                .build()
+                .create(ChatApi::class.java)
+            chatApiCache.put(normalized, created)
             return created
         }
     }
@@ -777,7 +805,7 @@ object AiClient {
         val body = ChatRequest(
             model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
             messages = msgs,
-            maxTokens = 2048,
+            maxTokens = 4096,
             temperature = 0.4
         )
         val auth = "Bearer ${profile.apiKey.trim()}"
@@ -786,14 +814,17 @@ object AiClient {
         while (true) {
             try {
                 enforceRateLimit()
-                val res = getApi(profile.baseUrl).chat(
+                val res = getChatApi(profile.baseUrl).chat(
                     url = fullUrl,
                     auth = auth,
                     body = body
                 )
-                val reply = res.choices.firstOrNull()?.message?.content?.trim()
+                val choice = res.choices.firstOrNull()
+                val reply = choice?.message?.content?.trim()
                 return@withContext if (reply.isNullOrEmpty()) {
                     Result.failure(IllegalStateException("AI 回應為空"))
+                } else if (choice.finishReason == "length") {
+                    Result.success("$reply\n\n⚠ 本回應因長度上限被截斷")
                 } else {
                     Result.success(reply)
                 }
