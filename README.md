@@ -25,7 +25,7 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 - 🧭 **視覺化新手與設定教學**：10 步主頁高光引導＋6 步設定頁導覽，支援淺色、深色、動態取色三模式高對比閱讀與洞內觸控穿透。
 - 🔋 **省 token 模式與省電優化**：一鍵開啟省 token 模式；省電模式下自動停用玻璃模糊；支援關閉液態玻璃模糊效果以節省 GPU。
 - 🚨 **詐騙警示中心、勿擾時段與 SMS 自動回覆**：集中顯示高風險詐騙訊息、情報來源與趨勢比較；支援勿擾時段與 SMS 自動回覆。
-- 📄 **CSV 匯出、保留政策與加密金鑰**：一鍵匯出 CSV 至 `Downloads`；`EncryptedSharedPreferences` 本機加密儲存 API Key；Safe Browsing Key 由 `local.properties` 注入 `BuildConfig`。
+- 📄 **CSV 匯出、保留政策與加密金鑰**：一鍵匯出 CSV 至 `Downloads`；`EncryptedSharedPreferences` 本機加密儲存 AI 與情報源（Safe Browsing／PhishTank／Chainabuse）API Key，支援設定頁直接輸入（`local.properties` 為 fallback）。
 
 ---
 
@@ -33,21 +33,21 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
 
-### v1.8.0 更新重點
+### v1.9.0 更新重點
 
-- **公開防詐情報庫接入**（#65）：新增 `IntelClient` 與 `IndicatorExtractor`，支援 72 小時快取、`fraud.tw`（165）、Google Safe Browsing v4、PhishTank / Chainabuse，白名單優先、失敗靜默降級。
-- **震動回饋與液態玻璃門檻修復**（#68）：`areAllEffectsSupported` 探測＋`createWaveform` fallback；`Glass.kt` 模糊門檻下修至 API 31（Android 12+）。
-- **常駐通知版面與點擊修復**（#69）：自訂 collapsed `RemoteViews` 固定左側幻訊圖示與右側左新右舊標記條；點擊支援開啟最新訊息原 App。
-- **效能、耗電與教學主題適配**（#67）：Tab TTL 快取、對話 keyset 分頁（200 則）、圖示 `LruCache`、省電模式自動停用模糊、移除 `CONNECTIVITY_CHANGE`、教學三模式 WCAG AA 對比適配。
-- **模型即時切換＋自然語言建規則**（#71）：對話頁與每日摘要卡即時切換模型；對話中確認新增 `ai_rules`（含 prompt injection 防護）。
-- **發佈流程文件化**（#70）：建立 `CHANGELOG.md` 與 `AGENTS.md` 發佈檢查清單。
+- **桌面小工具（4x1）**（#78）：顯示今日訊息數／未讀／詐騙警示，點擊開啟幻訊，跟隨系統深淺色主題，隨常駐通知差異刷新更新（不增高頻鬧鐘）。
+- **每週 AI 摘要報告**（#79）：每週日 22:00 自動生成當週統計與風險趨勢，統計頁支援手動生成、歷史週報展開、複製與分享（不受省 token 模式限制）。
+- **訊息一鍵 AI 深度分析**（#80）：訊息詳情頁產生段落式風險解說（詐騙類型、可疑點、建議處理動作），可取消，計入每日 AI 額度。
+- **AI 助手對話逾時修復**（#74）：Retrofit 改用自訂 `OkHttpClient`（read 90s／callTimeout 120s），對話逾時自動重試一次並誠實標注。
+- **防詐情報四來源連線與金鑰修復**（#75）：`fraud.tw` 改用 `/api/check?d=`、PhishTank 描述性 UA＋可選 `app_key`、Chainabuse Basic 認證＋`chain` 參數；Safe Browsing／PhishTank／Chainabuse 皆可於設定頁直接加密輸入 key（不再強制依賴 `local.properties`）。
+- **常駐通知版面與省電優化**（#76, #77）：移除左側重複彩色圖示、標題不再被卡；實作差異刷新、單一 SQL 統計查詢、熄屏跳過閒置刷新與圖示 `LruCache`。
 
 ---
 
 ## 安裝指南（免編譯直接安裝）
 
 1. **從 GitHub Releases 下載 APK（正式發佈版）**
-   - 前往本倉庫右側 **Releases** 頁面，選擇最新版本（如 `v1.8.0`）下載隨附的 `.apk` 檔案。
+   - 前往本倉庫右側 **Releases** 頁面，選擇最新版本（如 `v1.9.0`）下載隨附的 `.apk` 檔案。
 
 2. **或從 GitHub Actions 下載最新開發版 APK**
    - 開啟本倉庫的 GitHub 頁面，點選上方 **Actions** 分頁。
