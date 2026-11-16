@@ -519,6 +519,17 @@ object AiClient {
         return base.toString()
     }
 
+    private val PROMPT_TAG_REGEX = Regex(
+        """<\s*/?\s*(?:message_[a-z_]*|user_[a-z_]*|system|msg)\b""",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** 消毒外部訊息中的提示詞隔離標籤（把 < 轉為全形 ＜），防止 prompt injection 逃脫包裝 */
+    fun sanitizeForPrompt(input: String): String =
+        PROMPT_TAG_REGEX.replace(input) { match ->
+            match.value.replace('<', '＜')
+        }
+
     /** 單次 API 呼叫同時回傳風險分析與智慧標籤 ID 清單；未設定 key 或解析失敗回 null */
     suspend fun analyzeMessage(
         sender: String,
@@ -549,6 +560,8 @@ object AiClient {
             enforceRateLimit()
             val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
             val systemPrompt = buildSystemPrompt(activeTags, activeRules, enableAutoTag)
+            val safeSender = sanitizeForPrompt(sender)
+            val safeContent = sanitizeForPrompt(content)
             val res = getApi(profile.baseUrl).chat(
                 url = fullUrl,
                 auth = "Bearer ${profile.apiKey.trim()}",
@@ -558,7 +571,7 @@ object AiClient {
                         ChatMessage("system", systemPrompt),
                         ChatMessage(
                             "user",
-                            "<message_sender>$sender</message_sender>\n<message_content>$content</message_content>"
+                            "<message_sender>$safeSender</message_sender>\n<message_content>$safeContent</message_content>"
                         )
                     ),
                     maxTokens = 260
@@ -614,8 +627,8 @@ object AiClient {
             val userContent = buildString {
                 batchItems.forEach { item ->
                     appendLine("<msg id=\"${item.messageId}\">")
-                    appendLine("<message_sender>${item.sender}</message_sender>")
-                    appendLine("<message_content>${item.content}</message_content>")
+                    appendLine("<message_sender>${sanitizeForPrompt(item.sender)}</message_sender>")
+                    appendLine("<message_content>${sanitizeForPrompt(item.content)}</message_content>")
                     appendLine("</msg>")
                 }
             }
@@ -949,8 +962,8 @@ object AiClient {
             if (!intelSummary.isNullOrBlank()) {
                 appendLine("公開防詐情報比對結果：$intelSummary")
             }
-            appendLine("<message_sender>$sender</message_sender>")
-            append("<message_content>$content</message_content>")
+            appendLine("<message_sender>${sanitizeForPrompt(sender)}</message_sender>")
+            append("<message_content>${sanitizeForPrompt(content)}</message_content>")
         }
         val body = ChatRequest(
             model = profile.model.trim().ifEmpty { FALLBACK_MODEL },

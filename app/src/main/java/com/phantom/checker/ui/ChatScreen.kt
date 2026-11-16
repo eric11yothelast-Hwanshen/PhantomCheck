@@ -861,8 +861,9 @@ private suspend fun buildRagSystemPrompt(ctx: Context, query: String): String {
             msgs.forEachIndexed { idx, m ->
                 val t = timeFmt.format(Date(m.timestamp))
                 val risk = if (m.riskLabel.isNotBlank()) "風險:${m.riskLabel}(${m.riskScore})" else "未分析"
-                val contentShort = m.content.replace("\n", " ").take(200)
-                appendLine("${idx + 1}. [${m.appLabel}] ${m.sender} ($t) [$risk]: $contentShort")
+                val safeSender = AiClient.sanitizeForPrompt(m.sender)
+                val contentShort = AiClient.sanitizeForPrompt(m.content.replace("\n", " ").take(200))
+                appendLine("${idx + 1}. [${m.appLabel}] $safeSender ($t) [$risk]: $contentShort")
             }
             appendLine("</message_content>")
         }
