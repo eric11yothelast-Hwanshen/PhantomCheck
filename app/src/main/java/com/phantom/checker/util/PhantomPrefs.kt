@@ -607,4 +607,20 @@ object PhantomPrefs {
     fun setIntelChainabuseEnabled(ctx: Context, enabled: Boolean) {
         prefs(ctx).edit().putBoolean("intel_chainabuse_enabled", enabled).apply()
     }
+
+    /** 今日 AI 摘要卡是否展開（預設收合） */
+    fun isDailySummaryExpanded(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("daily_summary_card_expanded", false)
+
+    fun setDailySummaryExpanded(ctx: Context, expanded: Boolean) {
+        prefs(ctx).edit().putBoolean("daily_summary_card_expanded", expanded).apply()
+    }
+
+    /** 本週 AI 摘要卡是否展開（預設收合） */
+    fun isWeeklySummaryExpanded(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("weekly_summary_card_expanded", false)
+
+    fun setWeeklySummaryExpanded(ctx: Context, expanded: Boolean) {
+        prefs(ctx).edit().putBoolean("weekly_summary_card_expanded", expanded).apply()
+    }
 }
