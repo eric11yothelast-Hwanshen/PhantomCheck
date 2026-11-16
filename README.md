@@ -17,14 +17,14 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 - 📩 **通知攔截預覽**：透過 `NotificationListenerService` 即時讀取通知內容，無需開啟 LINE、IG 或簡訊等原 App，不觸發「已讀」。
 - 🕵️ **公開防詐情報預查（零 Token）**：AI 分析前先抽取 URL、短連結與加密貨幣地址（BTC/ETH/TRON），依序查詢本地 72 小時快取、`fraud.tw`（165 通報）、Google Safe Browsing v4 及可選 PhishTank / Chainabuse（不傳送訊息全文，命中直接警示且不消耗每日 AI 額度）。
 - 🛡️ **多 Provider AI 詐騙分析與即時切換**：支援 Mistral、OpenAI、Groq、OpenRouter、Gemini（OpenAI 相容）、DeepSeek 等多組 AI Profile，可於 AI 助手與統計頁摘要卡即時切換模型。
-- 🚫 **智慧通知去重與過濾**：自動過濾持續性通知、群組摘要與 10 分鐘內重複通知，支援關鍵字過濾（含指定 App）與 App 靜音清單。
+- 🚫 **智慧通知去重與過濾**：自動過濾持續性通知、群組摘要與斷線重播重複通知，支援同 Key 重複節流與個別 App 覆寫（`0 秒 = 永不節流`；通訊類通知若 `postTime` 更新則收錄同內容新訊息）、關鍵字過濾（含指定 App）與 App 靜音清單。
 - 📊 **常駐統計通知與儀表板**：自訂 `RemoteViews` 常駐通知左側固定顯示幻訊圖示、右側「左新右舊」呈現最近通知 App 並標記最新一則，點擊遵循原 App／幻訊設定（滑掉無縫原地重建 + 15 分鐘心跳 + Shizuku 跨行程看門狗）；App 內提供 4 Tab 統計儀表板。
 - 🤖 **AI 助手、昨日簡報與自然語言建規則**：內建唯讀 RAG 對話助手，支援多會話切換、`PhantomMarkdownText` 渲染、「昨日簡報」，以及透過對話提出新增白名單／標籤規則（強制彈出確認對話框防範 prompt injection）。
 - 🏷️ **AI 智慧標記、App 分類與規則管理**：單次 AI 分析支援 0~3 個標籤＋零 token App 分類規則自動疊加；支援自訂自然語言白名單與標籤規則；氣泡顯示最多 3 個標籤色點。
 - 💬 **App 分組與聊天式對話頁**：依 App 與寄件者分組瀏覽，支援我的最愛與 VIP 寄件者置頂、對話 keyset 分頁載入（LIMIT 200）、左滑氣泡刪除、平面清單多選批次操作。
 - 🧭 **視覺化新手與設定教學**：10 步主頁高光引導＋6 步設定頁導覽，支援淺色、深色、動態取色三模式高對比閱讀與洞內觸控穿透。
 - 🔋 **省 token 模式與省電優化**：一鍵開啟省 token 模式；省電模式下自動停用玻璃模糊；支援關閉液態玻璃模糊效果以節省 GPU。
-- 🚨 **詐騙警示中心、勿擾時段與 SMS 自動回覆**：集中顯示高風險詐騙訊息、情報來源與趨勢比較；支援勿擾時段與 SMS 自動回覆。
+- 🚨 **詐騙警示中心、勿擾時段與 SMS 自動回覆**：集中顯示高風險詐騙訊息、情報來源與趨勢比較；支援勿擾時段與 SMS 自動回覆（含 per-sender 4 小時冷卻、單日上限 3 次與範本自回防護）。
 - 📄 **CSV 匯出、保留政策與加密金鑰**：一鍵匯出 CSV 至 `Downloads`；`EncryptedSharedPreferences` 本機加密儲存 AI 與情報源（Safe Browsing／PhishTank／Chainabuse）API Key，支援設定頁直接輸入（`local.properties` 為 fallback）。
 
 ---
@@ -32,6 +32,12 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 ## 版本紀錄
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
+
+### v1.12.0 更新重點（versionCode 13）
+
+- **設定搜尋與通知收錄修正**（#99, #101）：拆分設定搜尋目錄的「同 key 重複節流」至通知卡並對齊副標說明；通訊類通知若 `postTime` 更新即收錄同內容連續訊息（`dedupCache` 僅擋斷線重播，非通訊類維持節流）。
+- **資料完整性與安全強化**（#100, #102, #103, #104）：保留清理直接排除詐騙證據並清理孤兒標籤；`NotifIds` 集中管理互斥通知 ID；`AiClient.sanitizeForPrompt` 防護四個 AI Prompt Injection 注入點；SMS 自動回覆新增 4 小時冷卻、單日上限 3 次與範本自回防護。
+- **技術債清理與效能優化**（#105）：過期提醒開機即觸發、`HeartbeatPolicy`/`WeeklySummaryPolicy` 改用 `UPDATE`、`PhantomPrefs` 節流表 30 秒快取與分層解耦、7 日／小時統計 SQL 聚合與 Widget 共用圖示 `LruCache`。
 
 ### v1.11.0 更新重點
 
@@ -44,7 +50,7 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 ## 安裝指南（免編譯直接安裝）
 
 1. **從 GitHub Releases 下載 APK（正式發佈版）**
-   - 前往本倉庫右側 **Releases** 頁面，選擇最新版本（如 `v1.11.0`）下載隨附的 `.apk` 檔案。
+   - 前往本倉庫右側 **Releases** 頁面，選擇最新版本（如 `v1.12.0`）下載隨附的 `.apk` 檔案。
 
 2. **或從 GitHub Actions 下載最新開發版 APK**
    - 開啟本倉庫的 GitHub 頁面，點選上方 **Actions** 分頁。

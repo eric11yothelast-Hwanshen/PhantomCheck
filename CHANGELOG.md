@@ -2,6 +2,32 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [1.12.0] - 2026-11-16
+
+### 變更與修正
+- **設定搜尋「同 key 節流」定位修正（#99）**：
+  - 將 `SettingsActivity` `SETTINGS_SEARCH_CATALOG` 中的 `data_throttle_retention` 拆分為 `notif_throttle`（`cardKey = "notif"`，補齊「同 key」「重複通知」「漏訊」「流量」「數字微變」「覆寫」等搜尋別名）與 `data_retention`（`cardKey = "data"`，「訊息保留與清理」）。
+  - 同步更新設定頁「個別 App 節流覆寫」副標說明，清楚標示 `0 秒 = 永不節流` 與通訊類通知 `postTime` 更新時收錄同內容訊息的行為。
+- **保留清理維護詐騙證據與標籤完整性（#100，免 Room migration）**：
+  - `MessageDao.prune` 與 `deleteOlderThanCount` 改以 `AND riskLabel != 'scam'` 直接排除詐騙證據，移除 `RetentionWorker` 重插邏輯以保留原 `id`、`message_tags` 與 `intel_results` 關聯。
+  - 新增 `TagDao.deleteOrphanCrossRefs()` 並於 `RetentionWorker` transaction 結尾清理孤兒關聯；`TagDao.allTagCounts()` 補齊 `LEFT JOIN messages` 防護對齊 `todayAiTagCounts()`。
+- **通訊類同內容連續訊息不再吞訊（#101，維持被動 listener）**：
+  - `NotificationCollectorService` 偵測通訊類通知（`CATEGORY_MESSAGE` / `EXTRA_MESSAGES` / `MessagingStyle`），僅於同 key + 同內容 + `postTime` 未變時視為系統 re-post 丟棄；`postTime` 有更新的同內容訊息即時收錄。非通訊類通知（如系統／流量監控）維持 `exactSame || digitMicroChange` 節流。
+  - `dedupCache` 改為僅於 `isSuspectedReplay`（斷線重播補投）時阻擋，一般路徑交由 throttle 層判斷；個別 App 覆寫設為 0 秒時兩層皆放行。
+- **通知 ID 集中管理與防撞號（#102）**：
+  - 新增 `NotifIds` object 集中管理互斥區段：`1001..1004`（常駐統計／開機提醒／每日摘要／週報）、`scamAlert` `2000..21999`、`importantAlert` `22000..41999`、`reminder` `100000..109999`，消除 `ReminderReceiver` 與 `alertScam` 區間重疊與裸數字常數。
+- **AI Prompt Injection 防護（#103）**：
+  - 新增 `AiClient.sanitizeForPrompt()`，將 `</message_*`、`</user_*`、`</system`、`</msg` 等隔離標籤的 `<` 轉為全形 `＜`（不影響 `cacheKey` 原始內容計算），並套用於 `analyzeMessage`、`analyzeMessageBatch`、`deepAnalyzeMessage` 與 `ChatScreen.buildRagSystemPrompt`（`chatAssistant` RAG）四個注入點。
+- **SMS 自動回覆防回圈冷卻（#104）**：
+  - `SmsAutoReplyReceiver` 新增 `canReplyAndRecord()`（per-sender 4 小時冷卻與單日上限 3 次，記錄於 `auto_reply_cooldown_prefs`）及回覆範本自回比對，避免雙向自動回覆無限互發。
+- **技術債清理（#105）**：
+  - **過期提醒開機即觸發**：新增 `MessageDao.allScheduledReminders()` 與 `ReminderScheduler.deliverReminder()`，`BootReceiver` 對開機期間已過期提醒立即觸發並清除 `remindAt`；`MessageDetailActivity` 改以 `remindAt > System.currentTimeMillis()` 顯示狀態。
+  - **排程自癒策略**：`HeartbeatPolicy` 與 `WeeklySummaryPolicy` 的 `ExistingPeriodicWorkPolicy.KEEP` 改為 `UPDATE`。
+  - **節流查詢快取**：`PhantomPrefs.getAppSameKeyThrottleMap` 加入 30 秒 TTL 快取（於 `setAppSameKeyThrottle` 失效），減少通知熱路徑重複 Gson 反序列化。
+  - **統計 SQL 聚合**：新增 `MessageDao.countByDaySince` 與 `countByHourSince`，取代 `StatsDetailWidgetProvider.loadSevenDayCounts` 與 `MainActivity` 統計頁的 `dao.since()` 全欄位載入。
+  - **Widget 圖示共用快取**：新增 `AppIconHelper.loadAppIconAndroidBitmap` 共用 `appIconBitmapCache`（`LruCache`），取代 `StatsDetailWidgetProvider` 重複 decode。
+  - **分層解耦**：移除 `PhantomPrefs` 對 `service.NotificationCollectorService` 的反向依賴，改為 `onRuleCachesInvalidated` callback 註冊。
+
 ## [1.11.0] - 2026-11-16
 
 ### 新增
