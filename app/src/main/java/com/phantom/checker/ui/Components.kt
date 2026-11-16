@@ -542,7 +542,7 @@ fun MessageCard(
         if (message.riskReason.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
             Text(
-                text = message.riskReason,
+                text = stripMarkdown(message.riskReason),
                 color = if (highlightAsScam) {
                     MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f)
                 } else {

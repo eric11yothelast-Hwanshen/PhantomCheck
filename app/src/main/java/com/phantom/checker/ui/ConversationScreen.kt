@@ -658,8 +658,8 @@ private fun ChatBubbleItem(
             }
             if (message.riskReason.isNotBlank()) {
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    text = message.riskReason,
+                PhantomMarkdownText(
+                    markdown = message.riskReason,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

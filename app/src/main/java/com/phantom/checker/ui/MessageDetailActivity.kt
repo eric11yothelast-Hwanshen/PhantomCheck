@@ -323,8 +323,8 @@ fun MessageDetailScreen(
                             )
                             if (msg.riskReason.isNotBlank()) {
                                 Spacer(Modifier.height(8.dp))
-                                Text(
-                                    text = msg.riskReason,
+                                PhantomMarkdownText(
+                                    markdown = msg.riskReason,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

@@ -2339,8 +2339,8 @@ private fun StatsTab(
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(Modifier.height(2.dp))
-                                Text(
-                                    text = item.summary,
+                                PhantomMarkdownText(
+                                    markdown = item.summary,
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -2422,8 +2422,8 @@ private fun StatsTab(
                 if (summary != null) {
                     val timeStr = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
                         .format(Date(summary.generatedAt))
-                    Text(
-                        text = summary.summary,
+                    PhantomMarkdownText(
+                        markdown = summary.summary,
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Spacer(Modifier.height(4.dp))

@@ -751,7 +751,7 @@ object AiClient {
             val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
             val msgs = buildList {
                 add(ChatMessage("system", systemPrompt))
-                addAll(history.takeLast(12))
+                addAll(history.takeLast(30))
                 add(ChatMessage("user", userMessage))
             }
             val res = getApi(profile.baseUrl).chat(
@@ -760,7 +760,7 @@ object AiClient {
                 body = ChatRequest(
                     model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
                     messages = msgs,
-                    maxTokens = 800,
+                    maxTokens = 2048,
                     temperature = 0.4
                 )
             )
@@ -791,10 +791,13 @@ object AiClient {
                 body = ChatRequest(
                     model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
                     messages = listOf(
-                        ChatMessage("system", "你是個人通訊助理，請用簡潔的繁體中文整理今日訊息重點與詐騙風險提醒。"),
+                        ChatMessage(
+                            "system",
+                            "你是個人通訊助理，請用簡潔的繁體中文整理今日訊息重點與詐騙風險提醒。請使用 Markdown 格式（如 ## 標題、**重點粗體**、- 清單）條列呈現。"
+                        ),
                         ChatMessage("user", prompt)
                     ),
-                    maxTokens = 400,
+                    maxTokens = 1200,
                     temperature = 0.3
                 )
             )

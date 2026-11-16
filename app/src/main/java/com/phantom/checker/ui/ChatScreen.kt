@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -51,6 +52,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +71,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import com.phantom.checker.data.ChatMessageEntity
 import com.phantom.checker.data.ChatSessionEntity
 import com.phantom.checker.network.AiClient
@@ -151,7 +156,7 @@ fun ChatAssistantTab(
     var deleteSessionConfirm by remember { mutableStateOf<ChatSessionEntity?>(null) }
     var suggestionChips by remember { mutableStateOf(listOf<String>()) }
     var hasApiKey by remember { mutableStateOf(AiClient.getActiveProfile(appCtx) != null) }
-    val showSuggestions = remember { PhantomPrefs.isChatSuggestionsEnabled(appCtx) }
+    var showSuggestions by remember { mutableStateOf(PhantomPrefs.isChatSuggestionsEnabled(appCtx)) }
 
     suspend fun loadSessionsAndSuggestions() {
         withContext(Dispatchers.IO) {
@@ -182,20 +187,38 @@ fun ChatAssistantTab(
     }
 
     suspend fun loadMessages(sessionId: Long?) {
-        messages = if (sessionId == null) {
+        val loaded = if (sessionId == null) {
             emptyList()
         } else {
             withContext(Dispatchers.IO) {
                 AppDatabaseHolder.db(appCtx).chatDao().messagesForSession(sessionId)
             }
         }
+        if (currentSessionId == sessionId) {
+            messages = loaded
+        }
+    }
+
+    val lifecycleOwner = ctx as? LifecycleOwner
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                showSuggestions = PhantomPrefs.isChatSuggestionsEnabled(appCtx)
+                hasApiKey = AiClient.getActiveProfile(appCtx) != null
+            }
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose {
+            lifecycleOwner?.lifecycle?.removeObserver(observer)
+        }
     }
 
     LaunchedEffect(Unit) {
         loadSessionsAndSuggestions()
         if (currentSessionId == null && sessions.isNotEmpty()) {
-            currentSessionId = sessions.first().id
-            loadMessages(currentSessionId)
+            val latestId = sessions.first().id
+            currentSessionId = latestId
+            loadMessages(latestId)
         }
     }
 
@@ -481,7 +504,9 @@ fun ChatAssistantTab(
         }
 
         // 對話內容區
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            val userBubbleMaxWidth = maxWidth * 0.82f
+            val assistantBubbleMaxWidth = maxWidth * 0.88f
             if (messages.isEmpty() && !isSending) {
                 EmptyStateView(
                     icon = AutoAwesomeIcon,
@@ -504,7 +529,7 @@ fun ChatAssistantTab(
                                 Surface(
                                     shape = RoundedCornerShape(18.dp),
                                     color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.widthIn(max = 290.dp)
+                                    modifier = Modifier.widthIn(max = userBubbleMaxWidth)
                                 ) {
                                     Text(
                                         text = msg.content,
@@ -516,7 +541,7 @@ fun ChatAssistantTab(
                             } else {
                                 PhantomGlassCard(
                                     glassState = glassState,
-                                    modifier = Modifier.widthIn(max = 310.dp),
+                                    modifier = Modifier.widthIn(max = assistantBubbleMaxWidth),
                                     cornerRadius = 18.dp,
                                     contentPadding = 12.dp
                                 ) {
@@ -586,7 +611,7 @@ fun ChatAssistantTab(
                 value = inputText,
                 onValueChange = { inputText = it },
                 modifier = Modifier.weight(1f),
-                maxLines = 3,
+                maxLines = 5,
                 placeholder = { Text("詢問訊息紀錄、昨日簡報或風險…") }
             )
             Button(
@@ -672,7 +697,7 @@ private suspend fun buildRagSystemPrompt(ctx: Context, query: String): String {
         startTs = startTs,
         endTs = endTs,
         packageName = matchedApp?.packageName,
-        limit = 40
+        limit = 80
     )
 
     val stats = dao.statsOverview(startOfToday)
@@ -680,7 +705,7 @@ private suspend fun buildRagSystemPrompt(ctx: Context, query: String): String {
 
     return buildString {
         appendLine("你是「幻訊 PhantomCheck」的個人訊息 AI 助手（唯讀查詢，不可修改資料庫）。")
-        appendLine("請一律使用繁體中文回答，引用訊息時務必標示來源 App 與時間。")
+        appendLine("請一律使用繁體中文回答，引用訊息時務必標示來源 App 與時間。可使用 Markdown 格式（標題、粗體、條列清單）排版回覆，讓重點更清楚。")
         appendLine("若查無符合訊息，請誠實告知使用者，切勿編造不存在的訊息內容。")
         appendLine()
         appendLine("【整體統計】總訊息 ${stats.total} 則、今日 ${stats.today} 則、未讀 ${stats.unread} 則、今日詐騙 ${stats.scam} 則。")
@@ -693,11 +718,11 @@ private suspend fun buildRagSystemPrompt(ctx: Context, query: String): String {
         if (msgs.isEmpty()) {
             appendLine("【符合條件的訊息節錄】無符合訊息。")
         } else {
-            appendLine("【符合條件的訊息節錄（最多 40 則）】")
+            appendLine("【符合條件的訊息節錄（最多 80 則）】")
             msgs.forEachIndexed { idx, m ->
                 val t = timeFmt.format(Date(m.timestamp))
                 val risk = if (m.riskLabel.isNotBlank()) "風險:${m.riskLabel}(${m.riskScore})" else "未分析"
-                val contentShort = m.content.replace("\n", " ").take(80)
+                val contentShort = m.content.replace("\n", " ").take(200)
                 appendLine("${idx + 1}. [${m.appLabel}] ${m.sender} ($t) [$risk]: $contentShort")
             }
         }

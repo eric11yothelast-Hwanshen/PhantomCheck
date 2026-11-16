@@ -185,3 +185,27 @@ private fun parseInlineMarkdown(text: String, codeBg: Color): AnnotatedString {
         }
     }
 }
+
+/**
+ * 剝除 Markdown 語法符號，供系統通知、單行預覽與純文字複製/分享使用。
+ */
+fun stripMarkdown(raw: String): String {
+    if (raw.isBlank()) return ""
+    return raw
+        .replace("\r\n", "\n")
+        .replace(Regex("```[a-zA-Z0-9_-]*\\n?"), "")
+        .replace("```", "")
+        .replace(Regex("(?m)^\\s{0,3}#{1,6}\\s+"), "")
+        .replace(Regex("(?m)^\\s*([-*_])\\1{2,}\\s*$"), "")
+        .replace(Regex("(?m)^\\s*[-*+]\\s+"), "• ")
+        .replace(Regex("!\\[([^\\]]*)]\\([^)]*\\)"), "$1")
+        .replace(Regex("\\[([^\\]]+)]\\([^)]*\\)"), "$1")
+        .replace(Regex("\\*\\*(.+?)\\*\\*"), "$1")
+        .replace(Regex("__(.+?)__"), "$1")
+        .replace(Regex("(?<!\\*)\\*(?!\\s)(.+?)(?<!\\s)\\*(?!\\*)"), "$1")
+        .replace(Regex("(?<!_)_(?!\\s)(.+?)(?<!\\s)_(?!_)"), "$1")
+        .replace(Regex("`([^`]+)`"), "$1")
+        .replace(Regex("\n{3,}"), "\n\n")
+        .trim()
+}
+

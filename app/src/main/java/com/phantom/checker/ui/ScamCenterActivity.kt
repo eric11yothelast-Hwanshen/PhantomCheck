@@ -386,7 +386,7 @@ private fun ScamMessageCard(
             if (message.riskReason.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = message.riskReason,
+                    text = stripMarkdown(message.riskReason),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
                     maxLines = 2,
@@ -522,8 +522,8 @@ private fun ScamDetailDialog(
                     shape = RoundedCornerShape(8.dp),
                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
                 ) {
-                    Text(
-                        text = message.riskReason.ifBlank { "（無詳細分析理由）" },
+                    PhantomMarkdownText(
+                        markdown = message.riskReason.ifBlank { "（無詳細分析理由）" },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(10.dp)

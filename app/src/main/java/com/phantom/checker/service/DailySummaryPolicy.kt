@@ -136,13 +136,13 @@ object DailySummaryPolicy {
             PhantomPrefs.isEffectiveDailySummaryNotifEnabled(appCtx) &&
             StatsForegroundService.hasPostNotificationsPermission(appCtx)
         ) {
-            postSummaryNotification(appCtx)
+            postSummaryNotification(appCtx, summaryText)
         }
 
         return Result.success(entity)
     }
 
-    private fun postSummaryNotification(ctx: Context) {
+    private fun postSummaryNotification(ctx: Context, summaryText: String = "") {
         val nm = ctx.getSystemService(android.app.NotificationManager::class.java) ?: return
         nm.createNotificationChannel(
             android.app.NotificationChannel(
@@ -161,10 +161,15 @@ object DailySummaryPolicy {
             intent,
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
         )
+        val plainPreview = com.phantom.checker.ui.stripMarkdown(summaryText)
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(120)
+            .ifBlank { "點擊查看今日訊息重點與風險統計" }
         val notif = android.app.Notification.Builder(ctx, "daily_summary")
             .setSmallIcon(com.phantom.checker.R.drawable.ic_stat_phantom)
             .setContentTitle("今日訊息摘要已生成")
-            .setContentText("點擊查看今日訊息重點與風險統計")
+            .setContentText(plainPreview)
             .setContentIntent(pi)
             .setAutoCancel(true)
             .build()
