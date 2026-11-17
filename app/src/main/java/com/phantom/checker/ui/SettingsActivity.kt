@@ -1243,18 +1243,20 @@ fun FilterSettingsScreen(
                     Spacer(Modifier.height(6.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
-                            selected = quickCommandDefaultMode == "direct",
+                            selected = quickCommandDefaultMode == PhantomPrefs.QuickChatCommand.MODE_DIRECT,
                             onClick = {
-                                quickCommandDefaultMode = "direct"
-                                PhantomPrefs.setQuickCommandDefaultMode(appCtx, "direct")
+                                quickCommandDefaultMode = PhantomPrefs.QuickChatCommand.MODE_DIRECT
+                                PhantomPrefs.setQuickCommandDefaultMode(appCtx, PhantomPrefs.QuickChatCommand.MODE_DIRECT)
+                                quickChatCommands = PhantomPrefs.getQuickChatCommands(appCtx)
                             },
                             label = { Text("直接執行") }
                         )
                         FilterChip(
-                            selected = quickCommandDefaultMode == "prefill",
+                            selected = quickCommandDefaultMode == PhantomPrefs.QuickChatCommand.MODE_PREFILL,
                             onClick = {
-                                quickCommandDefaultMode = "prefill"
-                                PhantomPrefs.setQuickCommandDefaultMode(appCtx, "prefill")
+                                quickCommandDefaultMode = PhantomPrefs.QuickChatCommand.MODE_PREFILL
+                                PhantomPrefs.setQuickCommandDefaultMode(appCtx, PhantomPrefs.QuickChatCommand.MODE_PREFILL)
+                                quickChatCommands = PhantomPrefs.getQuickChatCommands(appCtx)
                             },
                             label = { Text("預輸入") }
                         )
@@ -1270,10 +1272,19 @@ fun FilterSettingsScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
-                        TextButton(onClick = { showAddQuickCommandDialog = true }) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("新增指令")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (quickChatCommands.any { it.id.startsWith("default_") && it.mode != PhantomPrefs.QuickChatCommand.MODE_FOLLOW }) {
+                                TextButton(onClick = {
+                                    quickChatCommands = PhantomPrefs.resetBuiltInQuickCommandsToFollow(appCtx)
+                                }) {
+                                    Text("內建重設為跟隨預設")
+                                }
+                            }
+                            TextButton(onClick = { showAddQuickCommandDialog = true }) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("新增指令")
+                            }
                         }
                     }
                     if (quickChatCommands.isEmpty()) {
@@ -1285,6 +1296,10 @@ fun FilterSettingsScreen(
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             quickChatCommands.forEach { cmd ->
+                                val resolvedMode = PhantomPrefs.resolveQuickCommandMode(cmd.mode, quickCommandDefaultMode)
+                                val isFollow = cmd.mode == PhantomPrefs.QuickChatCommand.MODE_FOLLOW
+                                val resolvedText = if (resolvedMode == PhantomPrefs.QuickChatCommand.MODE_DIRECT) "直接執行" else "預輸入"
+                                val chipLabel = if (isFollow) "跟隨預設($resolvedText)" else resolvedText
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
                                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -1312,16 +1327,20 @@ fun FilterSettingsScreen(
                                             )
                                         }
                                         FilterChip(
-                                            selected = cmd.mode == "direct",
+                                            selected = resolvedMode == PhantomPrefs.QuickChatCommand.MODE_DIRECT,
                                             onClick = {
-                                                val nextMode = if (cmd.mode == "direct") "prefill" else "direct"
+                                                val nextMode = when (cmd.mode) {
+                                                    PhantomPrefs.QuickChatCommand.MODE_FOLLOW -> PhantomPrefs.QuickChatCommand.MODE_DIRECT
+                                                    PhantomPrefs.QuickChatCommand.MODE_DIRECT -> PhantomPrefs.QuickChatCommand.MODE_PREFILL
+                                                    else -> PhantomPrefs.QuickChatCommand.MODE_FOLLOW
+                                                }
                                                 val updated = quickChatCommands.map {
                                                     if (it.id == cmd.id) it.copy(mode = nextMode) else it
                                                 }
                                                 PhantomPrefs.saveQuickChatCommands(appCtx, updated)
                                                 quickChatCommands = PhantomPrefs.getQuickChatCommands(appCtx)
                                             },
-                                            label = { Text(if (cmd.mode == "direct") "直接執行" else "預輸入") }
+                                            label = { Text(chipLabel) }
                                         )
                                         IconButton(
                                             onClick = {
@@ -1343,7 +1362,7 @@ fun FilterSettingsScreen(
                     if (showAddQuickCommandDialog) {
                         var draftLabel by remember { mutableStateOf("") }
                         var draftPrompt by remember { mutableStateOf("") }
-                        var draftMode by remember { mutableStateOf(quickCommandDefaultMode) }
+                        var draftMode by remember { mutableStateOf(PhantomPrefs.QuickChatCommand.MODE_FOLLOW) }
                         AlertDialog(
                             onDismissRequest = { showAddQuickCommandDialog = false },
                             title = { Text("新增常用指令") },
@@ -1365,15 +1384,20 @@ fun FilterSettingsScreen(
                                         maxLines = 3,
                                         modifier = Modifier.fillMaxWidth()
                                     )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         FilterChip(
-                                            selected = draftMode == "direct",
-                                            onClick = { draftMode = "direct" },
+                                            selected = draftMode == PhantomPrefs.QuickChatCommand.MODE_FOLLOW,
+                                            onClick = { draftMode = PhantomPrefs.QuickChatCommand.MODE_FOLLOW },
+                                            label = { Text("跟隨預設") }
+                                        )
+                                        FilterChip(
+                                            selected = draftMode == PhantomPrefs.QuickChatCommand.MODE_DIRECT,
+                                            onClick = { draftMode = PhantomPrefs.QuickChatCommand.MODE_DIRECT },
                                             label = { Text("直接執行") }
                                         )
                                         FilterChip(
-                                            selected = draftMode == "prefill",
-                                            onClick = { draftMode = "prefill" },
+                                            selected = draftMode == PhantomPrefs.QuickChatCommand.MODE_PREFILL,
+                                            onClick = { draftMode = PhantomPrefs.QuickChatCommand.MODE_PREFILL },
                                             label = { Text("預輸入") }
                                         )
                                     }

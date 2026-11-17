@@ -2646,8 +2646,18 @@ fun ChatAssistantTab(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
+                        val defaultMode = PhantomPrefs.getQuickCommandDefaultMode(appCtx)
                         quickCommands.forEach { cmd ->
-                            val isDirect = cmd.mode == PhantomPrefs.QuickChatCommand.MODE_DIRECT
+                            val resolvedMode = PhantomPrefs.resolveQuickCommandMode(cmd.mode, defaultMode)
+                            val isDirect = resolvedMode == PhantomPrefs.QuickChatCommand.MODE_DIRECT
+                            val isFollow = cmd.mode == PhantomPrefs.QuickChatCommand.MODE_FOLLOW
+                            val modeLabel = if (isFollow) {
+                                "跟隨預設・${if (isDirect) "直接執行" else "預輸入"}"
+                            } else if (isDirect) {
+                                "直接執行"
+                            } else {
+                                "預輸入"
+                            }
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
@@ -2691,7 +2701,7 @@ fun ChatAssistantTab(
                                         }
                                     ) {
                                         Text(
-                                            text = if (isDirect) "直接執行" else "預輸入",
+                                            text = modeLabel,
                                             style = MaterialTheme.typography.labelSmall,
                                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                         )

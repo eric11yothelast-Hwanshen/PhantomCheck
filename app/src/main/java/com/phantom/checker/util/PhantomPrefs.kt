@@ -725,18 +725,19 @@ object PhantomPrefs {
         val id: String = java.util.UUID.randomUUID().toString(),
         val label: String,
         val prompt: String,
-        val mode: String = MODE_DIRECT
+        val mode: String = MODE_FOLLOW
     ) {
         companion object {
             const val MODE_DIRECT = "direct"
             const val MODE_PREFILL = "prefill"
+            const val MODE_FOLLOW = "follow"
         }
     }
 
     private fun defaultQuickChatCommands(): List<QuickChatCommand> = listOf(
-        QuickChatCommand("default_yesterday", "昨日簡報", "請幫我整理昨日簡報", QuickChatCommand.MODE_DIRECT),
-        QuickChatCommand("default_must_see", "今日必看訊息", "今天有哪些必看訊息？", QuickChatCommand.MODE_DIRECT),
-        QuickChatCommand("default_scam_risk", "最可能的詐騙風險", "最近最可能的詐騙風險是什麼？", QuickChatCommand.MODE_DIRECT)
+        QuickChatCommand("default_yesterday", "昨日簡報", "請幫我整理昨日簡報", QuickChatCommand.MODE_FOLLOW),
+        QuickChatCommand("default_must_see", "今日必看訊息", "今天有哪些必看訊息？", QuickChatCommand.MODE_FOLLOW),
+        QuickChatCommand("default_scam_risk", "最可能的詐騙風險", "最近最可能的詐騙風險是什麼？", QuickChatCommand.MODE_FOLLOW)
     )
 
     fun getQuickCommandDefaultMode(ctx: Context): String {
@@ -748,6 +749,18 @@ object PhantomPrefs {
         val norm = if (mode == QuickChatCommand.MODE_PREFILL) QuickChatCommand.MODE_PREFILL else QuickChatCommand.MODE_DIRECT
         prefs(ctx).edit().putString("quick_command_default_mode", norm).apply()
     }
+
+    fun resolveQuickCommandMode(cmdMode: String, defaultMode: String): String {
+        return when (cmdMode) {
+            QuickChatCommand.MODE_FOLLOW ->
+                if (defaultMode == QuickChatCommand.MODE_PREFILL) QuickChatCommand.MODE_PREFILL else QuickChatCommand.MODE_DIRECT
+            QuickChatCommand.MODE_PREFILL -> QuickChatCommand.MODE_PREFILL
+            else -> QuickChatCommand.MODE_DIRECT
+        }
+    }
+
+    fun resolveQuickCommandMode(ctx: Context, cmdMode: String): String =
+        resolveQuickCommandMode(cmdMode, getQuickCommandDefaultMode(ctx))
 
     fun getQuickChatCommands(ctx: Context): List<QuickChatCommand> {
         val raw = prefs(ctx).getString("quick_chat_commands_v2", null)
@@ -766,9 +779,21 @@ object PhantomPrefs {
         prefs(ctx).edit().putString("quick_chat_commands_v2", gson.toJson(commands)).apply()
     }
 
+    fun resetBuiltInQuickCommandsToFollow(ctx: Context): List<QuickChatCommand> {
+        val updated = getQuickChatCommands(ctx).map {
+            if (it.id.startsWith("default_")) it.copy(mode = QuickChatCommand.MODE_FOLLOW) else it
+        }
+        saveQuickChatCommands(ctx, updated)
+        return updated
+    }
+
     fun addQuickChatCommand(ctx: Context, label: String, prompt: String, mode: String): List<QuickChatCommand> {
         val current = getQuickChatCommands(ctx).toMutableList()
-        val normMode = if (mode == QuickChatCommand.MODE_PREFILL) QuickChatCommand.MODE_PREFILL else QuickChatCommand.MODE_DIRECT
+        val normMode = when (mode) {
+            QuickChatCommand.MODE_PREFILL -> QuickChatCommand.MODE_PREFILL
+            QuickChatCommand.MODE_FOLLOW -> QuickChatCommand.MODE_FOLLOW
+            else -> QuickChatCommand.MODE_DIRECT
+        }
         current.add(QuickChatCommand(label = label.trim(), prompt = prompt.trim(), mode = normMode))
         saveQuickChatCommands(ctx, current)
         return current
