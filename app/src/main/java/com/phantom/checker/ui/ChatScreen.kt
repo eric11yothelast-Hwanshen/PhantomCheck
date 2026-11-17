@@ -856,7 +856,7 @@ fun ChatAssistantTab(
                 if (hasExtendedProposals) {
                     withContext(Dispatchers.IO) {
                         val db = AppDatabaseHolder.db(appCtx)
-                        val appGroups by lazy { db.messageDao().groupByApp() }
+                        val appGroups = db.messageDao().groupByApp()
 
                         fun resolveAppPackage(rawPkgOrLabel: String?): Pair<String, String>? {
                             val needle = rawPkgOrLabel?.trim()?.takeIf { it.isNotEmpty() } ?: return null
