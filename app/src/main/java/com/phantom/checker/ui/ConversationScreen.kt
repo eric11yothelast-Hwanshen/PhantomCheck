@@ -596,15 +596,28 @@ fun ConversationScreen(
                     )
                 }
                 else -> {
+                    val dateHeaders = remember(messages) {
+                        var lastDay: String? = null
+                        messages.map { msg ->
+                            val day = formatDateDivider(msg.timestamp)
+                            val show = day != lastDay
+                            lastDay = day
+                            if (show) day else null
+                        }
+                    }
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        itemsIndexed(messages, key = { _, m -> m.id }) { idx, msg ->
-                            val currentDay = formatDateDivider(msg.timestamp)
-                            val prevDay = if (idx > 0) formatDateDivider(messages[idx - 1].timestamp) else null
-                            if (currentDay != prevDay) {
+                        itemsIndexed(
+                            messages,
+                            key = { _, m -> m.id },
+                            contentType = { _, _ -> "message_bubble" }
+                        ) { idx, msg ->
+                            val headerDay = dateHeaders.getOrNull(idx)
+                            if (headerDay != null) {
+                                val currentDay = headerDay
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()

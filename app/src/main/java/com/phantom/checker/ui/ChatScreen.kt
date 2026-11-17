@@ -1200,7 +1200,7 @@ fun ChatAssistantTab(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(messages, key = { it.id }) { msg ->
+                    items(messages, key = { it.id }, contentType = { it.role }) { msg ->
                         val isUser = msg.role == ChatMessageEntity.ROLE_USER
                         Row(
                             modifier = Modifier.fillMaxWidth(),

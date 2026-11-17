@@ -275,6 +275,7 @@ class StatsForegroundService : Service() {
                 } else {
                     cachedStripPackages = emptyList()
                     cachedStripBitmap = null
+                    lastStripBitmap = null
                 }
 
                 lastToday = snap.today
@@ -317,6 +318,7 @@ class StatsForegroundService : Service() {
     private fun stopForegroundCompat() {
         stopForeground(STOP_FOREGROUND_REMOVE)
         isForegroundStarted = false
+        lastStripBitmap = null
     }
 
     companion object {

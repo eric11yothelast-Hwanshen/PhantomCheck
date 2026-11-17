@@ -200,14 +200,35 @@ object PhantomPrefs {
         }
     }
 
+    private const val PREF_MAP_CACHE_TTL_MS = 30_000L
+    private val prefCacheLock = Any()
+    @Volatile private var cachedAppMuteModeMap: Map<String, String>? = null
+    @Volatile private var cachedAppMuteModeMapAt: Long = 0L
+
     fun getAppMuteModeMap(ctx: Context): Map<String, String> {
-        val raw = prefs(ctx).getString(KEY_MUTE_MODES, null) ?: return emptyMap()
-        return try {
-            val type = object : TypeToken<Map<String, String>>() {}.type
-            gson.fromJson<Map<String, String>>(raw, type) ?: emptyMap()
-        } catch (_: Exception) {
-            emptyMap()
+        val now = System.currentTimeMillis()
+        synchronized(prefCacheLock) {
+            val cached = cachedAppMuteModeMap
+            if (cached != null && (now - cachedAppMuteModeMapAt) < PREF_MAP_CACHE_TTL_MS) {
+                return cached
+            }
         }
+        val raw = prefs(ctx).getString(KEY_MUTE_MODES, null)
+        val parsed = if (raw == null) {
+            emptyMap()
+        } else {
+            try {
+                val type = object : TypeToken<Map<String, String>>() {}.type
+                gson.fromJson<Map<String, String>>(raw, type) ?: emptyMap()
+            } catch (_: Exception) {
+                emptyMap()
+            }
+        }
+        synchronized(prefCacheLock) {
+            cachedAppMuteModeMap = parsed
+            cachedAppMuteModeMapAt = System.currentTimeMillis()
+        }
+        return parsed
     }
 
     fun getAppMuteMode(ctx: Context, packageName: String): MuteMode =
@@ -216,7 +237,12 @@ object PhantomPrefs {
     fun setAppMuteMode(ctx: Context, packageName: String, mode: MuteMode) {
         val map = getAppMuteModeMap(ctx).toMutableMap()
         map[packageName] = mode.prefValue
-        prefs(ctx).edit().putString(KEY_MUTE_MODES, gson.toJson(map)).apply()
+        val snapshot = map.toMap()
+        synchronized(prefCacheLock) {
+            cachedAppMuteModeMap = snapshot
+            cachedAppMuteModeMapAt = System.currentTimeMillis()
+        }
+        prefs(ctx).edit().putString(KEY_MUTE_MODES, gson.toJson(snapshot)).apply()
     }
 
     /** 詐騙警示彈出通知開關（預設開） */
@@ -318,11 +344,32 @@ object PhantomPrefs {
     }
 
     /** 同 sbn.key 更新節流秒數（預設 60，0 = 關閉） */
-    fun getSameKeyThrottleSeconds(ctx: Context): Int =
-        prefs(ctx).getInt(KEY_SAME_KEY_THROTTLE_SEC, 60).coerceIn(0, 300)
+    @Volatile private var cachedSameKeyThrottleSec: Int? = null
+    @Volatile private var cachedSameKeyThrottleSecAt: Long = 0L
+
+    fun getSameKeyThrottleSeconds(ctx: Context): Int {
+        val now = System.currentTimeMillis()
+        synchronized(prefCacheLock) {
+            val cached = cachedSameKeyThrottleSec
+            if (cached != null && (now - cachedSameKeyThrottleSecAt) < PREF_MAP_CACHE_TTL_MS) {
+                return cached
+            }
+        }
+        val value = prefs(ctx).getInt(KEY_SAME_KEY_THROTTLE_SEC, 60).coerceIn(0, 300)
+        synchronized(prefCacheLock) {
+            cachedSameKeyThrottleSec = value
+            cachedSameKeyThrottleSecAt = System.currentTimeMillis()
+        }
+        return value
+    }
 
     fun setSameKeyThrottleSeconds(ctx: Context, seconds: Int) {
-        prefs(ctx).edit().putInt(KEY_SAME_KEY_THROTTLE_SEC, seconds.coerceIn(0, 300)).apply()
+        val clamped = seconds.coerceIn(0, 300)
+        synchronized(prefCacheLock) {
+            cachedSameKeyThrottleSec = clamped
+            cachedSameKeyThrottleSecAt = System.currentTimeMillis()
+        }
+        prefs(ctx).edit().putInt(KEY_SAME_KEY_THROTTLE_SEC, clamped).apply()
     }
 
     /** 數字微變視為同一則更新（預設開，抑制監控類通知每分鐘數字跳動洗版） */
@@ -341,9 +388,11 @@ object PhantomPrefs {
     /** Per-app 同 key 節流覆寫表（0 = 永不節流，1..300 = 自訂秒數） */
     fun getAppSameKeyThrottleMap(ctx: Context): Map<String, Int> {
         val now = System.currentTimeMillis()
-        val cached = cachedAppThrottleMap
-        if (cached != null && (now - cachedAppThrottleMapAt) < APP_THROTTLE_CACHE_TTL_MS) {
-            return cached
+        synchronized(prefCacheLock) {
+            val cached = cachedAppThrottleMap
+            if (cached != null && (now - cachedAppThrottleMapAt) < APP_THROTTLE_CACHE_TTL_MS) {
+                return cached
+            }
         }
         val raw = prefs(ctx).getString(KEY_APP_SAME_KEY_THROTTLE_MAP, null)
         val parsed = if (raw == null) {
@@ -356,8 +405,10 @@ object PhantomPrefs {
                 emptyMap()
             }
         }
-        cachedAppThrottleMap = parsed
-        cachedAppThrottleMapAt = now
+        synchronized(prefCacheLock) {
+            cachedAppThrottleMap = parsed
+            cachedAppThrottleMapAt = System.currentTimeMillis()
+        }
         return parsed
     }
 
@@ -368,9 +419,12 @@ object PhantomPrefs {
         } else {
             map[packageName] = seconds.coerceIn(0, 300)
         }
-        cachedAppThrottleMap = map
-        cachedAppThrottleMapAt = System.currentTimeMillis()
-        prefs(ctx).edit().putString(KEY_APP_SAME_KEY_THROTTLE_MAP, gson.toJson(map)).apply()
+        val snapshot = map.toMap()
+        synchronized(prefCacheLock) {
+            cachedAppThrottleMap = snapshot
+            cachedAppThrottleMapAt = System.currentTimeMillis()
+        }
+        prefs(ctx).edit().putString(KEY_APP_SAME_KEY_THROTTLE_MAP, gson.toJson(snapshot)).apply()
     }
 
     fun getEffectiveSameKeyThrottleSeconds(ctx: Context, packageName: String): Int {

@@ -56,17 +56,36 @@ private fun drawableToBitmap(drawable: Drawable, sizePx: Int = 96): Bitmap {
     return bitmap
 }
 
-private val appIconBitmapCache = object : android.util.LruCache<String, ImageBitmap>(64) {}
+private const val MAX_ICON_CACHE_KB = 4 * 1024 // 4 MB
 
-fun loadAppIconBitmap(context: Context, packageName: String): ImageBitmap? {
-    synchronized(appIconBitmapCache) {
-        appIconBitmapCache.get(packageName)?.let { return it }
+private val unifiedBitmapCache = object : android.util.LruCache<String, Bitmap>(MAX_ICON_CACHE_KB) {
+    override fun sizeOf(key: String, value: Bitmap): Int =
+        (value.byteCount / 1024).coerceAtLeast(1)
+}
+
+private val appIconImageCache = object : android.util.LruCache<String, ImageBitmap>(64) {}
+
+private fun loadCachedIconBitmap(context: Context, packageName: String, sizePx: Int = 96): Bitmap? {
+    val target = sizePx.coerceAtLeast(1)
+    val sizedKey = "$packageName:$target"
+    synchronized(unifiedBitmapCache) {
+        unifiedBitmapCache.get(sizedKey)?.let { if (!it.isRecycled) return it }
+        if (target != 96) {
+            unifiedBitmapCache.get("$packageName:96")?.let { base ->
+                if (!base.isRecycled) {
+                    val scaled = Bitmap.createScaledBitmap(base, target, target, true)
+                    unifiedBitmapCache.put(sizedKey, scaled)
+                    return scaled
+                }
+            }
+        }
     }
     return try {
-        val drawable = context.packageManager.getApplicationIcon(packageName)
-        val bmp = drawableToBitmap(drawable).asImageBitmap()
-        synchronized(appIconBitmapCache) {
-            appIconBitmapCache.put(packageName, bmp)
+        val appCtx = context.applicationContext ?: context
+        val drawable = appCtx.packageManager.getApplicationIcon(packageName)
+        val bmp = drawableToBitmap(drawable, target)
+        synchronized(unifiedBitmapCache) {
+            unifiedBitmapCache.put(sizedKey, bmp)
         }
         bmp
     } catch (_: Exception) {
@@ -74,16 +93,20 @@ fun loadAppIconBitmap(context: Context, packageName: String): ImageBitmap? {
     }
 }
 
-fun loadAppIconAndroidBitmap(context: Context, packageName: String, sizePx: Int): Bitmap? {
-    val cached = loadAppIconBitmap(context, packageName) ?: return null
-    val target = sizePx.coerceAtLeast(1)
-    val src = cached.asAndroidBitmap()
-    return if (src.width == target && src.height == target) {
-        src
-    } else {
-        Bitmap.createScaledBitmap(src, target, target, true)
+fun loadAppIconBitmap(context: Context, packageName: String): ImageBitmap? {
+    synchronized(appIconImageCache) {
+        appIconImageCache.get(packageName)?.let { return it }
     }
+    val bmp = loadCachedIconBitmap(context, packageName, 96) ?: return null
+    val img = bmp.asImageBitmap()
+    synchronized(appIconImageCache) {
+        appIconImageCache.put(packageName, img)
+    }
+    return img
 }
+
+fun loadAppIconAndroidBitmap(context: Context, packageName: String, sizePx: Int): Bitmap? =
+    loadCachedIconBitmap(context, packageName, sizePx)
 
 /**
  * 將最多 4 個最近通知 App 的圖示繪入高解析正方形 ARGB_8888 Bitmap（1×1 / 1×2 / 2×2 方格，
@@ -136,24 +159,8 @@ fun buildRecentAppsStripBitmap(
     return bitmap
 }
 
-private val stripIconBitmapCache = object : android.util.LruCache<String, Bitmap>(32) {}
-
-private fun loadStripIconBitmap(context: Context, packageName: String, iconPx: Int): Bitmap? {
-    val key = "$packageName:$iconPx"
-    synchronized(stripIconBitmapCache) {
-        stripIconBitmapCache.get(key)?.let { if (!it.isRecycled) return it }
-    }
-    return try {
-        val drawable = context.packageManager.getApplicationIcon(packageName)
-        val bmp = drawableToBitmap(drawable, iconPx)
-        synchronized(stripIconBitmapCache) {
-            stripIconBitmapCache.put(key, bmp)
-        }
-        bmp
-    } catch (_: Exception) {
-        null
-    }
-}
+private fun loadStripIconBitmap(context: Context, packageName: String, iconPx: Int): Bitmap? =
+    loadCachedIconBitmap(context, packageName, iconPx)
 
 /**
  * 水平條狀圖示列（左新右舊，最多 4 個 App 圖示），最左側最新 App 加上高亮邊框與角標，

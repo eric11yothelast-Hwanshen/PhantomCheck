@@ -2278,7 +2278,7 @@ private fun MessagesHomeTab(
                             }
                         }
                     }
-                    items(filteredMessages, key = { it.id }) { m ->
+                    items(filteredMessages, key = { it.id }, contentType = { "message_card" }) { m ->
                         val checked = m.id in selectedIds
                         val msgTags = messageTagsMap[m.id].orEmpty()
                         Row(
@@ -2467,7 +2467,7 @@ private fun StatsTab(
         )
     }
 
-    val tokenSaverOn = PhantomPrefs.isTokenSaverEnabled(appCtx)
+    val tokenSaverOn = remember { PhantomPrefs.isTokenSaverEnabled(appCtx) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
