@@ -826,11 +826,12 @@ private suspend fun buildRagSystemPrompt(ctx: Context, query: String): String {
             ((lowerQuery.contains("簡訊") || lowerQuery.contains("sms")) && (pkgLower == "sms" || pkgLower.contains("mms")))
     }
 
+    val ragLimit = PhantomPrefs.getEffectiveChatRagMessageLimit(context)
     val msgs = dao.queryRange(
         startTs = startTs,
         endTs = endTs,
         packageName = matchedApp?.packageName,
-        limit = 80
+        limit = ragLimit
     )
 
     val stats = dao.statsOverview(startOfToday)
@@ -856,7 +857,7 @@ private suspend fun buildRagSystemPrompt(ctx: Context, query: String): String {
         if (msgs.isEmpty()) {
             appendLine("【符合條件的訊息節錄】無符合訊息。")
         } else {
-            appendLine("【符合條件的訊息節錄（最多 80 則）】")
+            appendLine("【符合條件的訊息節錄（最多 $ragLimit 則）】")
             appendLine("<message_content>")
             msgs.forEachIndexed { idx, m ->
                 val t = timeFmt.format(Date(m.timestamp))

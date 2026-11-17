@@ -116,8 +116,13 @@ object PhantomPrefs {
     private const val KEY_HAPTIC_ENABLED = "haptic_feedback_enabled"
     private const val KEY_GLASS_EFFECT_ENABLED = "glass_effect_enabled"
     private const val KEY_CHAT_SUGGESTIONS_ENABLED = "chat_suggestions_enabled"
+    private const val KEY_CHAT_RAG_MESSAGE_LIMIT = "chat_rag_message_limit"
 
     const val MAX_ALERT_KEYWORDS = 20
+    const val DEFAULT_CHAT_RAG_MESSAGE_LIMIT = 400
+    const val MIN_CHAT_RAG_MESSAGE_LIMIT = 50
+    const val MAX_CHAT_RAG_MESSAGE_LIMIT = 800
+    const val TOKEN_SAVER_CHAT_RAG_LIMIT = 100
 
     private val gson = Gson()
 
@@ -567,6 +572,20 @@ object PhantomPrefs {
 
     fun isEffectiveDailySummaryNotifEnabled(ctx: Context): Boolean =
         !isTokenSaverEnabled(ctx) && isDailySummaryNotifEnabled(ctx)
+
+    /** AI 助手單次閱讀訊息上限（預設 400，範圍 50–800） */
+    fun getChatRagMessageLimit(ctx: Context): Int =
+        prefs(ctx).getInt(KEY_CHAT_RAG_MESSAGE_LIMIT, DEFAULT_CHAT_RAG_MESSAGE_LIMIT)
+            .coerceIn(MIN_CHAT_RAG_MESSAGE_LIMIT, MAX_CHAT_RAG_MESSAGE_LIMIT)
+
+    fun setChatRagMessageLimit(ctx: Context, limit: Int) {
+        val clamped = limit.coerceIn(MIN_CHAT_RAG_MESSAGE_LIMIT, MAX_CHAT_RAG_MESSAGE_LIMIT)
+        prefs(ctx).edit().putInt(KEY_CHAT_RAG_MESSAGE_LIMIT, clamped).apply()
+    }
+
+    /** 實際生效的 AI 助手單次閱讀上限（省 token 模式開啟時覆寫為 100，不改動使用者設定值） */
+    fun getEffectiveChatRagMessageLimit(ctx: Context): Int =
+        if (isTokenSaverEnabled(ctx)) TOKEN_SAVER_CHAT_RAG_LIMIT else getChatRagMessageLimit(ctx)
 
     /** 常駐通知顯示 App 圖示條（預設開） */
     fun isPersistentNotifShowIcons(ctx: Context): Boolean =

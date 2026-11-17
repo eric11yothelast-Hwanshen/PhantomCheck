@@ -161,6 +161,7 @@ private val SETTINGS_SEARCH_CATALOG = listOf(
     SettingSearchItem("ai_auto_tag", "quick", "AI 自動標籤", "依訊息內容自動套用 AI 管理標籤", listOf("標籤", "自動分類", "tag")),
     SettingSearchItem("ai_providers", "ai", "多 Provider AI 設定", "管理 OpenAI / Gemini / Groq / 自訂端點與 API Key", listOf("key", "apikey", "模型", "openai", "gemini", "provider", "金鑰"), page = "ApiKeySettingsActivity"),
     SettingSearchItem("ai_daily_limit", "ai", "每日 AI 額度上限", "限制每日 AI 呼叫次數", listOf("額度", "上限", "次數", "quota", "limit")),
+    SettingSearchItem("ai_chat_rag_limit", "ai", "AI 助手單次閱讀訊息數", "調整 AI 助手每次讀取的歷史訊息上限（50–800 則；省 token 模式降為 100）", listOf("閱讀", "筆數", "訊息數", "rag", "context", "上下文", "400", "上限")),
     SettingSearchItem("ai_daily_summary", "ai", "每日 AI 摘要與排程", "設定每日自動生成摘要時間與摘要通知", listOf("摘要", "日報", "每日", "排程", "summary")),
     SettingSearchItem("ai_auto_reply", "ai", "SMS 自動回覆設定", "開啟 SMS 自動回覆設定頁：啟用開關、回覆時段與回覆範本", listOf("自動回覆", "sms", "簡訊", "回覆", "時段", "reply"), page = "AutoReplySettingsActivity"),
     SettingSearchItem("ai_scam_center", "ai", "詐騙警示中心", "檢視高風險詐騙記錄與處置", listOf("詐騙", "警示", "中心", "高風險", "封鎖"), page = "ScamCenterActivity"),
@@ -354,6 +355,7 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
     var aiAutoTagEnabled by remember { mutableStateOf(PhantomPrefs.isAiAutoTagEnabled(appCtx)) }
     var chatSuggestionsEnabled by remember { mutableStateOf(PhantomPrefs.isChatSuggestionsEnabled(appCtx)) }
     var dailyAiLimit by remember { mutableIntStateOf(PhantomPrefs.getDailyAiLimit(appCtx)) }
+    var chatRagLimit by remember { mutableIntStateOf(PhantomPrefs.getChatRagMessageLimit(appCtx)) }
     val todayAiUsage = remember { PhantomPrefs.getTodayAiUsage(appCtx) }
     var dailySummaryEnabled by remember { mutableStateOf(PhantomPrefs.isDailySummaryEnabled(appCtx)) }
     var dailySummaryNotifEnabled by remember { mutableStateOf(PhantomPrefs.isDailySummaryNotifEnabled(appCtx)) }
@@ -1174,6 +1176,35 @@ fun FilterSettingsScreen(onBack: () -> Unit) {
                             )
                         }
                     }
+
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    Text(
+                        text = if (tokenSaverEnabled) {
+                            "AI 助手單次閱讀訊息數：$chatRagLimit 則（省 token 模式生效中：實際 100 則）"
+                        } else {
+                            "AI 助手單次閱讀訊息數：$chatRagLimit 則"
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "範圍 50–800 則（預設 400 則，全量讀取將消耗較多 token，請留意額度）；省 token 模式開啟時自動降為 100 則。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Slider(
+                        value = chatRagLimit.toFloat(),
+                        onValueChange = { raw ->
+                            val stepped = ((raw / 50f).roundToInt() * 50)
+                                .coerceIn(PhantomPrefs.MIN_CHAT_RAG_MESSAGE_LIMIT, PhantomPrefs.MAX_CHAT_RAG_MESSAGE_LIMIT)
+                            if (stepped != chatRagLimit) {
+                                chatRagLimit = stepped
+                                PhantomPrefs.setChatRagMessageLimit(appCtx, stepped)
+                            }
+                        },
+                        valueRange = PhantomPrefs.MIN_CHAT_RAG_MESSAGE_LIMIT.toFloat()..PhantomPrefs.MAX_CHAT_RAG_MESSAGE_LIMIT.toFloat(),
+                        steps = 14
+                    )
 
                     if (dailySummaryEnabled) {
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
