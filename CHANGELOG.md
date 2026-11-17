@@ -2,6 +2,37 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.4.0] - 2026-11-17
+
+### 新增
+- **AI 省 Token 五合一與視覺模型修正（#174, #173）**：
+  - `ChatRequest` 支援 `prompt_cache_key`（對話使用穩定 session key、分析使用固定 key），分析系統提示與標籤/規則清單採明確排序且位元組級一致置於最前；記錄 `usage.prompt_tokens_details.cached_tokens`。
+  - 重構 `ChatScreen.buildRagSystemPrompt` 為「靜態前綴（系統提示＋規則＋完整上下文）＋動態尾段（時間、本筆查詢）」，RAG 訊息改採舊→新固定順序以逐筆命中前綴快取；並導入增量情境摘要快取（300~500 token，支援跨日/RAG 上限變更失效與降級）。
+  - 新增「雙模型信心路由」（`ai_dual_routing_enabled` 預設開、`ai_cheap_model` 預設 `mistral-small-2603`，進 `SettingsCatalog`）：先打便宜模型，risk < 30 或 > 70 直接採用，30~70 才升級原模型重判並取較高風險（不重複扣減額度）。
+  - 輸出精簡與視覺 Token 優化：Chat 系統提示加入回覆精簡規範；圖片編碼降採樣並依實際尺寸動態估算 `imageTokenOverhead`；每日／週報摘要去重高風險節錄、補齊未分析訊息並設定 token 上限。
+  - 修復 `AiClient.isVisionModelSupported`（#173）：`knownTextOnly` 改為精確清單，`mistral-small-2603`（Mistral Small 4 內建視覺）不再被誤擋。
+- **卡片底色模式設定（#175）**：
+  - 新增 `CardBgMode`（跟隨玻璃強度／透明模式 0–100% 滑桿／深色底）於外觀設定區，並註冊 `card_bg_mode` 與 `card_bg_transparent_alpha` 至 `SettingsCatalog`。
+- **待辦事項全面強化（#176）**：
+  - `AppDatabase` 升版至 v14（`MIGRATION_13_14` 註冊於 `AppDatabaseHolder`），`TodoEntity` 新增 `completedAt`、`priority`（低/中/高）、`notes` 與 `repeatRule`（每日/每週，完成後自動派生下一筆並重排提醒）。
+  - 記事分頁支援逾期變色與「已逾期 X 天」／「今天到期」標籤、篩選（全部/未完成/已完成/逾期）、智慧排序（逾期 > 到期日 > 優先級，與桌面小工具同步）、手動新增「+」與完整 `TodoEditorDialog`（AI 建立之待辦亦可編輯）。
+- **白名單管理介面（#177）**：
+  - 設定頁新增可依 App 分組收合的「白名單管理」卡片（顯示寄件者、App 圖示、模式、時間、防重複手動新增、啟用切換、滑動/按鈕刪除確認與空狀態），並註冊 `whitelist_management` 至 `SettingsCatalog`；任何變更統一呼叫 `invalidateRuleCaches()`。
+- **桌面 2x1 待辦小工具互動按鈕（#179）**：
+  - `ReminderWidgetProvider` 新增每列「完成 ✓」（僅待辦顯示，寫入 `isDone`＋`completedAt`）、「編輯 ✎」（跳轉主頁記事分頁並開啟編輯對話框）、「刪除 ✕」按鈕，採 `PendingIntent.getBroadcast`（request code 含 `itemId` 防多實例衝突）＋ `goAsync()` 非同步寫入與立即刷新（快照 key 納入全項 ID）。
+- **統一下拉式玻璃搜尋槓與全螢幕搜尋（#180）**：
+  - 於 `ui/Components.kt` 實作 `PhantomSearchBarPill` 與 `PhantomFullScreenSearchOverlay`（fade+slide 動畫、自動聚焦、IME inset、即時 `LazyColumn` 搜尋、保留上次字串、AI 語意搜尋額度入口與 ≥48dp 無障礙觸控目標），替換訊息頁、App 對話清單、對話頁與記事頁搜尋欄。
+
+### 變更與修正
+- **卡片黑底溢出修復（#175）**：
+  - `ui/Components.kt` `phantomGlassSurface` 與 `PhantomGlassCard` 統一共用單一 `RoundedCornerShape` 實例進行背景與外框裁切，並修正 API < S fallback 雙層深色背景疊加問題（`ui/components/` 目錄維持零改動）。
+- **白名單注入與 AI 功能全面健檢（#177, #178）**：
+  - `ChatScreen.buildRagSystemPrompt` 靜態前綴常設注入結構化白名單（超過 20 筆依 App 分組壓縮），新增 `whitelist_delete` 確認卡動作與 DB 回讀驗證。
+  - 盤點全 7 項 `AiPurpose`：`CHAT` 補齊待辦（含逾期/完成）、備忘錄、VIP 寄件者、靜音 App 與提醒關鍵字上下文；`DEEP_ANALYSIS` 補齊寄件者歷史訊息與風險摘要；統一所有 AI 寫入動作（待辦、白名單、規則、標籤）採「執行→回讀驗證→成敗明確回報」模式。
+- **新手與設定教學修復與擴充（#181）**：
+  - 移除 `Onboarding.kt` 非必要步驟之連鎖自動跳步（僅權限步驟單次自動跳過，缺目標改提示並手動下一步），新增依洞區中心動態上下避讓之字卡定位；主頁教學擴充至 15 步（納入 `SEARCH_PILL`），設定頁導覽由 6 步擴充至 8 步（納入白名單管理、卡片底色、分用途模型與省 token 設定）。
+- **版號更新**：`versionCode` 22、`versionName` `"2.4.0"`。
+
 ## [2.3.1] - 2026-11-17
 
 ### 變更與修正
