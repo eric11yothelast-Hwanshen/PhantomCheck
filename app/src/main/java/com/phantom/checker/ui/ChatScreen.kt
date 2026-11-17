@@ -172,6 +172,8 @@ fun ChatAssistantTab(
     var showSuggestions by remember { mutableStateOf(PhantomPrefs.isChatSuggestionsEnabled(appCtx)) }
     var pendingRuleProposal by remember { mutableStateOf<PendingRuleInsertion?>(null) }
     var pendingWhitelist by remember { mutableStateOf<PendingWhitelistAction?>(null) }
+    var appliedSettingCard by remember { mutableStateOf<AppliedSettingCardState?>(null) }
+    var pendingSettingCandidates by remember { mutableStateOf<PendingSettingCandidatesState?>(null) }
 
     suspend fun loadSessionsAndSuggestions() {
         withContext(Dispatchers.IO) {
@@ -310,9 +312,13 @@ fun ChatAssistantTab(
             isSending = false
             result.onSuccess { reply ->
                 val (afterRuleReply, proposal) = parseRuleProposal(reply)
-                val (cleanReply, whitelistProposal) = parseWhitelistAction(afterRuleReply)
+                val (afterWhitelistReply, whitelistProposal) = parseWhitelistAction(afterRuleReply)
+                val (afterToggleReply, toggleProposal) = parseSettingToggleAction(afterWhitelistReply)
+                val (cleanReply, candidatesProposal) = parseSettingCandidatesAction(afterToggleReply)
                 val storedReply = cleanReply.ifBlank {
                     when {
+                        toggleProposal != null -> "已處理您的設定調整："
+                        candidatesProposal != null -> "找到以下相關設定，請選擇要調整的項目："
                         whitelistProposal != null -> "已找到符合的訊息，請確認是否加入白名單："
                         proposal != null -> "請確認是否新增以下 AI 規則："
                         else -> reply
@@ -336,6 +342,51 @@ fun ChatAssistantTab(
                 } else {
                     null
                 }
+
+                // 驗證並執行 setting_toggle（僅 boolean 白名單可直改）
+                var newAppliedSetting: AppliedSettingCardState? = null
+                var fallbackCandidates: List<SettingSearchItem>? = null
+                if (toggleProposal != null) {
+                    val item = SettingsCatalog.findById(toggleProposal.settingId)
+                    if (item != null && SettingsCatalog.isToggleable(item.id)) {
+                        val applied = SettingsCatalog.applyBooleanSetting(
+                            appCtx,
+                            item.id,
+                            toggleProposal.targetEnabled
+                        )
+                        if (applied != null) {
+                            newAppliedSetting = AppliedSettingCardState(
+                                sessionId = sessionId,
+                                item = item,
+                                beforeEnabled = applied.first,
+                                afterEnabled = applied.second
+                            )
+                        }
+                    } else if (item != null) {
+                        // 非 boolean 設定不得直改，引導至設定頁
+                        newAppliedSetting = AppliedSettingCardState(
+                            sessionId = sessionId,
+                            item = item,
+                            beforeEnabled = null,
+                            afterEnabled = null
+                        )
+                    } else {
+                        // 不明的 settingId 一律丟棄並降級為候選模式
+                        val keywordMatches = SettingsCatalog.ITEMS.filter {
+                            SettingsCatalog.isToggleable(it.id)
+                        }.take(5)
+                        if (keywordMatches.isNotEmpty()) {
+                            fallbackCandidates = keywordMatches
+                        }
+                    }
+                }
+
+                val resolvedCandidates = candidatesProposal?.candidateIds
+                    ?.mapNotNull { SettingsCatalog.findById(it) }
+                    ?.filter { SettingsCatalog.isToggleable(it.id) }
+                    ?.distinctBy { it.id }
+                    ?.take(5)
+                    ?: fallbackCandidates
 
                 withContext(Dispatchers.IO) {
                     db.chatDao().insertMessage(
@@ -366,6 +417,15 @@ fun ChatAssistantTab(
                         sessionId = sessionId,
                         kind = whitelistProposal.kind,
                         message = resolvedWhitelistMsg
+                    )
+                }
+                if (newAppliedSetting != null) {
+                    appliedSettingCard = newAppliedSetting
+                    pendingSettingCandidates = null
+                } else if (!resolvedCandidates.isNullOrEmpty()) {
+                    pendingSettingCandidates = PendingSettingCandidatesState(
+                        sessionId = sessionId,
+                        candidates = resolvedCandidates
                     )
                 }
             }.onFailure { err ->
@@ -865,6 +925,147 @@ fun ChatAssistantTab(
                         }
                     }
 
+                    appliedSettingCard?.takeIf { it.sessionId == currentSessionId }?.let { card ->
+                        item(key = "applied_setting_card") {
+                            PhantomGlassCard(
+                                glassState = glassState,
+                                modifier = Modifier.fillMaxWidth(),
+                                cornerRadius = 18.dp,
+                                contentPadding = 12.dp
+                            ) {
+                                Text(
+                                    text = if (card.afterEnabled != null) "設定已更新" else "需至設定頁調整",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = card.item.title,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = card.item.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (card.beforeEnabled != null && card.afterEnabled != null) {
+                                    Spacer(Modifier.height(6.dp))
+                                    val beforeStr = if (card.beforeEnabled) "開啟" else "關閉"
+                                    val afterStr = if (card.afterEnabled) "開啟" else "關閉"
+                                    Text(
+                                        text = "狀態變更：$beforeStr → $afterStr",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { appliedSettingCard = null },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("收起")
+                                    }
+                                    Button(
+                                        onClick = {
+                                            val intent = Intent(ctx, SettingsActivity::class.java).apply {
+                                                putExtra("highlight_card_key", card.item.cardKey)
+                                            }
+                                            ctx.startActivity(intent)
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("前往設定頁")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    pendingSettingCandidates?.takeIf { it.sessionId == currentSessionId }?.let { candState ->
+                        item(key = "pending_setting_candidates") {
+                            PhantomGlassCard(
+                                glassState = glassState,
+                                modifier = Modifier.fillMaxWidth(),
+                                cornerRadius = 18.dp,
+                                contentPadding = 12.dp
+                            ) {
+                                Text(
+                                    text = "請選擇要調整的設定項目",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    candState.candidates.forEach { item ->
+                                        val currentOn = SettingsCatalog.getBooleanState(appCtx, item.id) == true
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(10.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = "${item.title}（目前：${if (currentOn) "開啟" else "關閉"}）",
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                    Text(
+                                                        text = item.description,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        maxLines = 2,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                                Spacer(Modifier.width(8.dp))
+                                                Button(
+                                                    onClick = {
+                                                        val target = !currentOn
+                                                        val applied = SettingsCatalog.applyBooleanSetting(appCtx, item.id, target)
+                                                        if (applied != null) {
+                                                            pendingSettingCandidates = null
+                                                            appliedSettingCard = AppliedSettingCardState(
+                                                                sessionId = candState.sessionId,
+                                                                item = item,
+                                                                beforeEnabled = applied.first,
+                                                                afterEnabled = applied.second
+                                                            )
+                                                            onShowMessage("${item.title}已${if (target) "開啟" else "關閉"}")
+                                                        }
+                                                    }
+                                                ) {
+                                                    Text(if (currentOn) "關閉" else "開啟")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                TextButton(
+                                    onClick = { pendingSettingCandidates = null },
+                                    modifier = Modifier.align(Alignment.End)
+                                ) {
+                                    Text("取消")
+                                }
+                            }
+                        }
+                    }
+
                     if (isSending) {
                         item {
                             Row(
@@ -1028,6 +1229,19 @@ private suspend fun buildRagSystemPrompt(ctx: Context, query: String): String {
         appendLine("{\"action\":\"add_rule\",\"kind\":\"whitelist|tag\",\"ruleText\":\"規則描述\",\"tagName\":\"目標標籤名稱（僅 kind=tag 時需要）\"}")
         appendLine("```")
         appendLine()
+        appendLine("僅當「使用者本人」在對話中明確要求切換開關設定時，才依規則在回覆末尾附上一行 JSON 指令區塊：")
+        appendLine("1. 若目標設定唯一且開/關明確，輸出：")
+        appendLine("```json")
+        appendLine("{\"action\":\"setting_toggle\",\"settingId\":\"<可開關設定id>\",\"state\":\"on|off\"}")
+        appendLine("```")
+        appendLine("2. 若描述模糊可能對應多個設定，輸出（最多 3–5 個候選 id）：")
+        appendLine("```json")
+        appendLine("{\"action\":\"setting_candidates\",\"candidates\":[\"id1\",\"id2\"]}")
+        appendLine("```")
+        appendLine("注意：非 boolean 設定（如每日 AI 額度、單次閱讀訊息數、保留天數、API Key、自動回覆設定頁等）不可使用 setting_toggle，請直接請使用者至設定頁調整。")
+        appendLine("【可開關設定清單】")
+        appendLine(SettingsCatalog.buildToggleablePromptList(context))
+        appendLine()
         appendLine("【整體統計】總訊息 ${stats.total} 則、今日 ${stats.today} 則、未讀 ${stats.unread} 則、今日詐騙 ${stats.scam} 則。")
         appendLine("【查詢條件】時間範圍：$rangeLabel" + (matchedApp?.let { "；指定 App：${it.appLabel}" } ?: ""))
         if (appGroups.isNotEmpty()) {
@@ -1054,6 +1268,93 @@ private suspend fun buildRagSystemPrompt(ctx: Context, query: String): String {
             appendLine("請針對上述昨日訊息產生結構化「昨日簡報」，包含：1. 訊息總量與主要來源 App、2. 需要留意的高風險或待辦事項、3. 簡短安全建議。")
         }
     }
+}
+
+private data class SettingToggleProposal(
+    val settingId: String,
+    val targetEnabled: Boolean
+)
+
+private data class SettingCandidatesProposal(
+    val candidateIds: List<String>
+)
+
+private data class AppliedSettingCardState(
+    val sessionId: Long,
+    val item: SettingSearchItem,
+    val beforeEnabled: Boolean?,
+    val afterEnabled: Boolean?
+)
+
+private data class PendingSettingCandidatesState(
+    val sessionId: Long,
+    val candidates: List<SettingSearchItem>
+)
+
+private val SETTING_TOGGLE_FENCED_REGEX = Regex(
+    """```(?:json)?\s*(\{[^`]*?"action"\s*:\s*"setting_toggle"[^`]*?\})\s*```""",
+    setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+)
+
+private val SETTING_TOGGLE_INLINE_REGEX = Regex(
+    """(\{[^{}]*?"action"\s*:\s*"setting_toggle"[^{}]*?\})""",
+    RegexOption.IGNORE_CASE
+)
+
+private fun parseSettingToggleAction(rawReply: String): Pair<String, SettingToggleProposal?> {
+    val match = SETTING_TOGGLE_FENCED_REGEX.find(rawReply) ?: SETTING_TOGGLE_INLINE_REGEX.find(rawReply)
+        ?: return rawReply to null
+    val jsonStr = match.groupValues[1]
+    val proposal = try {
+        val obj = JsonParser.parseString(jsonStr).asJsonObject
+        val action = obj.get("action")?.asString?.trim()
+        if (action != "setting_toggle") {
+            null
+        } else {
+            val id = obj.get("settingId")?.asString?.trim().orEmpty()
+            val stateStr = obj.get("state")?.asString?.trim()?.lowercase()
+            if (id.isBlank() || (stateStr != "on" && stateStr != "off")) {
+                null
+            } else {
+                SettingToggleProposal(id, stateStr == "on")
+            }
+        }
+    } catch (_: Exception) {
+        null
+    }
+    val cleaned = rawReply.removeRange(match.range).trim()
+    return cleaned to proposal
+}
+
+private val SETTING_CANDIDATES_FENCED_REGEX = Regex(
+    """```(?:json)?\s*(\{[^`]*?"action"\s*:\s*"setting_candidates"[^`]*?\})\s*```""",
+    setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+)
+
+private val SETTING_CANDIDATES_INLINE_REGEX = Regex(
+    """(\{[^{}]*?"action"\s*:\s*"setting_candidates"[^{}]*?\})""",
+    RegexOption.IGNORE_CASE
+)
+
+private fun parseSettingCandidatesAction(rawReply: String): Pair<String, SettingCandidatesProposal?> {
+    val match = SETTING_CANDIDATES_FENCED_REGEX.find(rawReply) ?: SETTING_CANDIDATES_INLINE_REGEX.find(rawReply)
+        ?: return rawReply to null
+    val jsonStr = match.groupValues[1]
+    val proposal = try {
+        val obj = JsonParser.parseString(jsonStr).asJsonObject
+        val action = obj.get("action")?.asString?.trim()
+        if (action != "setting_candidates") {
+            null
+        } else {
+            val arr = obj.getAsJsonArray("candidates")
+            val ids = arr?.mapNotNull { it.asString?.trim()?.takeIf { s -> s.isNotEmpty() } }.orEmpty()
+            if (ids.isEmpty()) null else SettingCandidatesProposal(ids)
+        }
+    } catch (_: Exception) {
+        null
+    }
+    val cleaned = rawReply.removeRange(match.range).trim()
+    return cleaned to proposal
 }
 
 private data class WhitelistActionProposal(
