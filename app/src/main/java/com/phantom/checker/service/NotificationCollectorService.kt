@@ -174,7 +174,7 @@ class NotificationCollectorService : NotificationListenerService() {
                 ?: extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()
             )?.trim()?.takeIf { it.isNotEmpty() }
         val normalizedConversationTitle = rawConversationTitle
-            ?.replace(Regex("\\s+"), " ")
+            ?.replace(WHITESPACE_REGEX, " ")
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
 
@@ -653,7 +653,7 @@ class NotificationCollectorService : NotificationListenerService() {
         val notifId = NotifIds.scamAlert(msgId)
         val pendingIntent = buildClickPendingIntent(ctx, notifId, msgId, pkg)
         val plainReason = com.phantom.checker.ui.stripMarkdown(reason)
-            .replace(Regex("\\s+"), " ")
+            .replace(WHITESPACE_REGEX, " ")
             .trim()
             .ifBlank { "請前往詐騙警示中心查看風險分析" }
         val notif = Notification.Builder(ctx, "scam_alert")
@@ -852,6 +852,7 @@ class NotificationCollectorService : NotificationListenerService() {
         private const val BATCH_WINDOW_MS = 60_000L
         private const val MAX_BATCH_SIZE = 5
         private const val RULE_CACHE_TTL_MS = 30_000L
+        private val WHITESPACE_REGEX = Regex("\\s+")
 
         private val ruleCacheLock = Any()
         private var cachedFilterRules: Pair<Long, List<FilterRule>>? = null

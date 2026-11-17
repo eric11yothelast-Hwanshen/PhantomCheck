@@ -12,6 +12,9 @@ import com.phantom.checker.data.UserTagRuleEntity
  */
 object TagRuleEngine {
 
+    private val KW_SPLIT_REGEX = Regex("[|｜,，]+")
+    private val OTP_DIGITS_REGEX = Regex("(?<!\\d)\\d{4,8}(?!\\d)")
+
     val SEMANTIC_CATEGORIES: List<Pair<String, String>> = listOf(
         "otp" to "OTP／驗證碼",
         "system" to "系統公告／裝置管家",
@@ -78,7 +81,7 @@ object TagRuleEngine {
         }
 
         if (kwCond != null) {
-            val tokens = kwCond.split(Regex("[|｜,，]+")).map { it.trim() }.filter { it.isNotEmpty() }
+            val tokens = kwCond.split(KW_SPLIT_REGEX).map { it.trim() }.filter { it.isNotEmpty() }
             val hitKw = tokens.any { tok ->
                 content.contains(tok, ignoreCase = true) || sender.contains(tok, ignoreCase = true)
             }
@@ -136,7 +139,7 @@ object TagRuleEngine {
                 val hasOtpWord = listOf(
                     "驗證碼", "otp", "一次性密碼", "動態密碼", "安全碼", "認證碼", "verification code", "passcode"
                 ).any { combined.contains(it, ignoreCase = true) }
-                val hasDigits = Regex("(?<!\\d)\\d{4,8}(?!\\d)").containsMatchIn(content)
+                val hasDigits = OTP_DIGITS_REGEX.containsMatchIn(content)
                 hasOtpWord || (hasDigits && (combined.contains("驗證", ignoreCase = true) || combined.contains("code", ignoreCase = true)))
             }
             "system" -> {
