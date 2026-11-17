@@ -1344,8 +1344,10 @@ object AiClient {
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            null
+            return@withContext null
         }
+        @Suppress("UNREACHABLE_CODE")
+        null
     }
 
     /** 每週 AI 摘要生成（含 413 降載與 429 Retry-After 重試，回傳 Result 供誠實顯示失敗原因） */
