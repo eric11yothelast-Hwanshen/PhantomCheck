@@ -19,9 +19,9 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 - 🛡️ **多 Provider AI 詐騙分析與即時切換**：支援 Mistral、OpenAI、Groq、OpenRouter、Gemini（OpenAI 相容）、DeepSeek 等多組 AI Profile，可於 AI 助手與統計頁摘要卡即時切換模型。
 - 🚫 **智慧通知去重與過濾**：自動過濾持續性通知、群組摘要與斷線重播重複通知，支援同 Key 重複節流與個別 App 覆寫（`0 秒 = 永不節流`；通訊類通知若 `postTime` 更新則收錄同內容新訊息）、關鍵字過濾（含指定 App）與 App 靜音清單。
 - 📊 **常駐統計通知與儀表板**：自訂 `RemoteViews` 常駐通知左側固定顯示幻訊圖示、右側「左新右舊」呈現最近通知 App 並標記最新一則，點擊遵循原 App／幻訊設定（滑掉無縫原地重建 + 15 分鐘心跳 + Shizuku 跨行程看門狗）；App 內提供 4 Tab 統計儀表板。
-- 🤖 **AI 助手、昨日簡報與自然語言建規則**：內建唯讀 RAG 對話助手，支援多會話切換、`PhantomMarkdownText` 渲染、「昨日簡報」，以及透過對話提出新增白名單／標籤規則（強制彈出確認對話框防範 prompt injection）。
+- 🤖 **AI 助手、自然語言待辦與昨日簡報**：內建唯讀 RAG 對話助手（預設開啟新對話，支援多會話切換與一鍵清除全部對話）、`PhantomMarkdownText` 渲染、「昨日簡報」、自然語言待辦提醒（同步鬧鐘排程與桌面小工具），以及透過對話提出新增白名單／標籤規則（強制彈出確認對話框防範 prompt injection）。
 - 🏷️ **AI 智慧標記、App 分類與規則管理**：單次 AI 分析支援 0~3 個標籤＋零 token App 分類規則自動疊加；支援自訂自然語言白名單與標籤規則；氣泡顯示最多 3 個標籤色點。
-- 💬 **App 分組與聊天式對話頁**：依 App 與寄件者分組瀏覽，支援我的最愛與 VIP 寄件者置頂、對話 keyset 分頁載入（LIMIT 200）、左滑氣泡刪除、平面清單多選批次操作。
+- 💬 **App 分組與聊天式對話頁**：依 App 與 `MessagingStyle` 對話鍵分組瀏覽（精準區分群組與私聊），支援我的最愛與 VIP 寄件者置頂、對話 keyset 分頁載入（LIMIT 200）、左滑氣泡刪除，以及首頁清單、對話頁與對話清單多選批次管理（上限 100，詐騙保護排除）。
 - 🧭 **視覺化新手與設定教學**：10 步主頁高光引導＋6 步設定頁導覽，支援淺色、深色、動態取色三模式高對比閱讀與洞內觸控穿透。
 - 🔋 **省 token 模式與省電優化**：一鍵開啟省 token 模式；省電模式下自動停用玻璃模糊；支援關閉液態玻璃模糊效果以節省 GPU。
 - 🚨 **詐騙警示中心、勿擾時段與 SMS 自動回覆**：集中顯示高風險詐騙訊息、情報來源與趨勢比較；支援勿擾時段與 SMS 自動回覆（含 per-sender 4 小時冷卻、單日上限 3 次與範本自回防護）。
@@ -32,6 +32,13 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 ## 版本紀錄
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
+
+### v2.1.0 更新重點（versionCode 18）
+
+- **AI 自然語言待辦提醒與小工具整合（#143）**：Room 升版至 v12（`MIGRATION_11_12`）新增 `todos` 資料表；AI 助手支援 `reminder_add` 與確定性時間解析 fallback、待辦確認卡與管理 Sheet，透過 `AlarmManager.setAndAllowWhileIdle` 排程與 `BootReceiver` 開機重排，並同步刷新 `ReminderWidgetProvider`。
+- **對話頁／對話清單多選批量管理（#144）**：補齊 `ConversationScreen` 與 `AppThreadsScreen` 多選批次操作（已讀／星標／刪除，上限 100 則），選取模式停用左滑與詳情誤觸，批次刪除嚴格保護詐騙訊息並清理 `message_tags` cross-ref。
+- **AI 助手與常用指令體驗改善（#142, #145, #146）**：進入 AI 助手預設開啟新對話並於歷史抽屜提供「清除全部對話」；AI 分頁改用獨立內嵌 `SnackbarHost` 不再遮擋輸入框；常用指令新增「跟隨預設」模式並動態解析預設行為。
+- **群組對話分割、關於區塊與發佈流程（#140, #141, #112）**：Room v11（`MIGRATION_10_11`）導入 `MessagingStyle` `conversationKey` 修復 LINE 群組對話分割；設定頁最底新增「關於」區塊（runtime 自動同步版本號）；`release.yml` 改為抽取 `CHANGELOG.md` 版本段落搭配自動 PR 清單。
 
 ### v2.0.0 更新重點（versionCode 17）
 
@@ -72,7 +79,7 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 ## 安裝指南（免編譯直接安裝）
 
 1. **從 GitHub Releases 下載 APK（正式發佈版）**
-   - 前往本倉庫右側 **Releases** 頁面，選擇最新版本（如 `v2.0.0`）下載隨附的 `.apk` 檔案。
+   - 前往本倉庫右側 **Releases** 頁面，選擇最新版本（如 `v2.1.0`）下載隨附的 `.apk` 檔案。
 
 2. **或從 GitHub Actions 下載最新開發版 APK**
    - 開啟本倉庫的 GitHub 頁面，點選上方 **Actions** 分頁。

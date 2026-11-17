@@ -2,6 +2,21 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.1.0] - 2026-11-17
+
+### 新增
+- **AI 自然語言待辦提醒＋桌面小工具整合（#143）**：`AppDatabase` 升版至 v12（`MIGRATION_11_12`）新增 `todos` 資料表；AI 助手支援 `reminder_add` 與用戶端確定性時間解析 fallback、待辦確認卡與清單 Sheet，透過 `AlarmManager.setAndAllowWhileIdle` 排程（`NotifIds` 互斥區段 `110000..119999`）並於開機由 `BootReceiver` 重排，同步刷新 `ReminderWidgetProvider`。
+- **對話頁與對話清單手動多選批量管理（#144）**：`ConversationScreen` 與 `AppThreadsScreen` 新增多選模式（上限 100 則），支援批次已讀／星標／刪除（選取模式中停用 `SwipeToRevealRow` 與單則詳情誤觸）；批次刪除嚴格排除 `riskLabel = 'scam'` 並同步清理 `message_tags` cross-ref。
+- **AI 助手預設新對話＋一鍵清除全部對話（#145）**：進入 AI 助手分頁預設為新對話（不自動載入上次會話），歷史對話抽屜新增「清除全部對話」按鈕與二次確認（`ChatDao.clearAllSessions()`，AI 回覆中拒絕清除）。
+- **設定頁「關於」區塊（#141）**：於「全部設定」最底新增「關於」卡片，透過 runtime `PackageManager.getPackageInfo` 自動同步顯示 `versionName (versionCode)`、作者、GitHub 倉庫連結、第三方元件與隱私說明，並於 `SettingsCatalog` 註冊搜尋項目 `about_section`。
+- **常用指令「跟隨預設」模式與動態解析（#146）**：`QuickChatCommand` 新增 `MODE_FOLLOW`（內建三則預設跟隨）、`resolveQuickCommandMode` 動態解析與設定頁三態切換／即時刷新。
+
+### 變更與修正
+- **LINE 群組對話分割修復（#140）**：`AppDatabase` 升版至 v11（`MIGRATION_10_11`）新增 `conversationKey` 欄位，解析 `MessagingStyle`（`EXTRA_CONVERSATION_TITLE`、sender `Person`）區分群組與私聊對話，無 `MessagingStyle` 通知維持原 fallback 行為並同步遷移置頂 `vipSenders`。
+- **AI 助手分頁獨立 SnackbarHost（#142）**：`MainActivity` 為 AI 助手分頁配置獨立內嵌於輸入區上方的 `SnackbarHost`，徹底避免刪除會話等提示遮擋底部輸入框。
+- **Release Notes 自動抽取 CHANGELOG 段落（#112）**：`.github/workflows/release.yml` 於發佈步驟前自動抽取對應版本之 `CHANGELOG.md` 段落並與 GitHub 自動 PR 清單共存（本版 tag 首次生效）。
+- **版號更新**：`versionCode` 18、`versionName` `"2.1.0"`。
+
 ## [2.0.0] - 2026-11-17
 
 ### 新增
