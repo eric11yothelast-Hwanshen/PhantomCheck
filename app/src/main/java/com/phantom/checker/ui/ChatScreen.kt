@@ -2367,7 +2367,8 @@ fun ChatAssistantTab(
                         }
                     }
 
-                    pendingTodoQueue.firstOrNull()?.takeIf { it.sessionId == currentSessionId }?.let { pendingTodo ->
+                    val sessionPendingTodos = pendingTodoQueue.filter { it.sessionId == currentSessionId }
+                    sessionPendingTodos.firstOrNull()?.let { pendingTodo ->
                         item(key = "pending_todo_card") {
                             val dueFormatted = remember(pendingTodo.dueAt) {
                                 PhantomPrefs.formatMessageTime(appCtx, pendingTodo.dueAt, includeDate = true)
@@ -2379,8 +2380,8 @@ fun ChatAssistantTab(
                                 contentPadding = 12.dp
                             ) {
                                 Text(
-                                    text = if (pendingTodoQueue.size > 1) {
-                                        "新增待辦提醒（尚有 ${pendingTodoQueue.size} 筆）"
+                                    text = if (sessionPendingTodos.size > 1) {
+                                        "新增待辦提醒（尚有 ${sessionPendingTodos.size} 筆）"
                                     } else {
                                         "新增待辦提醒"
                                     },
@@ -2412,7 +2413,7 @@ fun ChatAssistantTab(
                                     OutlinedButton(
                                         onClick = {
                                             val sid = pendingTodo.sessionId
-                                            pendingTodoQueue = pendingTodoQueue.drop(1)
+                                            pendingTodoQueue = pendingTodoQueue.filterNot { it === pendingTodo }
                                             scope.launch {
                                                 withContext(Dispatchers.IO) {
                                                     AppDatabaseHolder.db(appCtx).chatDao().insertMessage(
@@ -2433,7 +2434,7 @@ fun ChatAssistantTab(
                                     Button(
                                         onClick = {
                                             val sid = pendingTodo.sessionId
-                                            pendingTodoQueue = pendingTodoQueue.drop(1)
+                                            pendingTodoQueue = pendingTodoQueue.filterNot { it === pendingTodo }
                                             scope.launch {
                                                 withContext(Dispatchers.IO) {
                                                     val db = AppDatabaseHolder.db(appCtx)
