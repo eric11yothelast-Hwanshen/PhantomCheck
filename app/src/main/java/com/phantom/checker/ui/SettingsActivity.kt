@@ -334,6 +334,7 @@ fun FilterSettingsScreen(
     var aiAutoTagEnabled by remember { mutableStateOf(PhantomPrefs.isAiAutoTagEnabled(appCtx)) }
     var aiOfflineRetryEnabled by remember { mutableStateOf(PhantomPrefs.isAiOfflineRetryEnabled(appCtx)) }
     var aiAutoMemoEnabled by remember { mutableStateOf(PhantomPrefs.isAiAutoMemoEnabled(appCtx)) }
+    var aiTagFailureNotifEnabled by remember { mutableStateOf(PhantomPrefs.isAiTagFailureNotifEnabled(appCtx)) }
     var chatSuggestionsEnabled by remember { mutableStateOf(PhantomPrefs.isChatSuggestionsEnabled(appCtx)) }
     var quickCommandDefaultMode by remember { mutableStateOf(PhantomPrefs.getQuickCommandDefaultMode(appCtx)) }
     var quickChatCommands by remember { mutableStateOf(PhantomPrefs.getQuickChatCommands(appCtx)) }
@@ -1408,6 +1409,17 @@ fun FilterSettingsScreen(
                         }
                     }
                     Spacer(Modifier.height(10.dp))
+
+                    SettingSwitchRow(
+                        title = "AI 標籤分發失敗通知",
+                        subtitle = "24 小時內累積失敗 5 次時發送低干擾提醒（6 小時冷卻）",
+                        checked = aiTagFailureNotifEnabled,
+                        onCheckedChange = { checked ->
+                            aiTagFailureNotifEnabled = checked
+                            PhantomPrefs.setAiTagFailureNotifEnabled(appCtx, checked)
+                        }
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(
                         title = "AI 助手常用指令選單",

@@ -38,11 +38,14 @@ import java.util.concurrent.atomic.AtomicLong
 
 data class ChatMessage(val role: String, val content: String)
 
+data class ResponseFormat(val type: String = "json_object")
+
 data class ChatRequest(
     val model: String = "mistral-small-2603",
     val messages: List<ChatMessage>,
     @SerializedName("max_tokens") val maxTokens: Int = 200,
-    val temperature: Double = 0.2
+    val temperature: Double = 0.2,
+    @SerializedName("response_format") val responseFormat: ResponseFormat? = null
 )
 
 data class ChatChoice(
@@ -129,6 +132,9 @@ object AiClient {
     private const val KEY_ACTIVE_PROVIDER = "ai_active_provider"
     private const val RISK_CACHE_TTL_MS = 24L * 60L * 60L * 1000L
     private const val MIN_AI_INTERVAL_MS = 1000L
+    private const val PARSE_LOG_TAG = "PhantomAiParse"
+    private const val CORRECTIVE_JSON_PROMPT =
+        "你的上一次回覆無法解析為有效 JSON。請只輸出一個合法 JSON 物件，不要使用 markdown 圍欄（```），也不要附加任何說明文字。"
 
     val PRESETS = listOf(
         AiProviderPreset(
@@ -582,6 +588,7 @@ object AiClient {
             base.appendLine("若訊息含值得備忘的資訊（約定時間/日期、繳費或付款期限、取貨編號、會議、回訪約定、待回覆事項等），輸出 memo 欄位（繁體中文、40 字內、不含訊息原文照抄）；無則 memo 為空字串 \"\"。")
         }
 
+        base.appendLine("只輸出一個 JSON 物件，不得使用 markdown 圍欄，不得附加任何說明文字或註解。")
         val memoSchemaPart = if (includeAutoMemo) ", \"memo\": \"\"" else ""
         if (activeTags.isNotEmpty()) {
             base.append("只輸出 JSON：{\"risk_score\": 0-100, \"risk_label\": \"safe|suspicious|scam\", \"risk_reason\": \"一句話說明\", \"tags\": [1]$memoSchemaPart}")
@@ -651,7 +658,9 @@ object AiClient {
         val safeSender = sanitizeForPrompt(sender)
         val safeContent = sanitizeForPrompt(content)
 
-        suspend fun callOnce(targetContent: String, maxTok: Int): AiAnalysisResult? {
+        val responseFormat = if (supportsJsonObjectResponseFormat(profile)) ResponseFormat("json_object") else null
+
+        suspend fun sendChat(msgs: List<ChatMessage>, maxTok: Int): String? {
             var rateLimitRetries = 0
             while (true) {
                 try {
@@ -661,18 +670,12 @@ object AiClient {
                         auth = "Bearer ${profile.apiKey.trim()}",
                         body = ChatRequest(
                             model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
-                            messages = listOf(
-                                ChatMessage("system", systemPrompt),
-                                ChatMessage(
-                                    "user",
-                                    "<message_sender>$safeSender</message_sender>\n<message_content>$targetContent</message_content>"
-                                )
-                            ),
-                            maxTokens = maxTok
+                            messages = msgs,
+                            maxTokens = maxTok,
+                            responseFormat = responseFormat
                         )
                     )
-                    val text = res.choices.firstOrNull()?.message?.content ?: return null
-                    return parseAnalysisJson(text, activeTags)
+                    return res.choices.firstOrNull()?.message?.content
                 } catch (e: HttpException) {
                     if (e.code() == 429 && rateLimitRetries < 2) {
                         rateLimitRetries++
@@ -682,6 +685,26 @@ object AiClient {
                     throw e
                 }
             }
+        }
+
+        suspend fun callOnce(targetContent: String, maxTok: Int): AiAnalysisResult? {
+            val baseMsgs = listOf(
+                ChatMessage("system", systemPrompt),
+                ChatMessage(
+                    "user",
+                    "<message_sender>$safeSender</message_sender>\n<message_content>$targetContent</message_content>"
+                )
+            )
+            val text = sendChat(baseMsgs, maxTok) ?: return null
+            parseAnalysisJson(text, activeTags)?.let { return it }
+
+            // 解析失敗時僅做一次 corrective 重試（不重扣每日額度）
+            val retryMsgs = baseMsgs + listOf(
+                ChatMessage("assistant", text.take(1000)),
+                ChatMessage("user", CORRECTIVE_JSON_PROMPT)
+            )
+            val retryText = sendChat(retryMsgs, maxTok) ?: return null
+            return parseAnalysisJson(retryText, activeTags)
         }
 
         val result = try {
@@ -717,6 +740,7 @@ object AiClient {
         val systemPrompt = buildSystemPrompt(activeTags, emptyList(), enableAutoTag = true)
         val sampleSender = "蝦皮購物通知"
         val sampleContent = "【限時優惠】全館滿額免運折價券已發送至您的帳戶，今晚 23:59 截止使用。"
+        val responseFormat = if (supportsJsonObjectResponseFormat(profile)) ResponseFormat("json_object") else null
         try {
             enforceRateLimit()
             val msgs = listOf(
@@ -730,14 +754,41 @@ object AiClient {
                 body = ChatRequest(
                     model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
                     messages = msgs,
-                    maxTokens = 260
+                    maxTokens = 260,
+                    responseFormat = responseFormat
                 )
             )
             val text = res.choices.firstOrNull()?.message?.content?.trim()
                 ?: return@withContext Result.failure(IllegalStateException("AI 回應為空，請檢查模型設定。"))
-            val parsed = parseAnalysisJson(text, activeTags)
-                ?: return@withContext Result.failure(IllegalStateException("AI 回傳格式無法解析為風險與標籤 JSON，建議改用指令遵循能力較佳的模型。"))
-            Result.success(parsed)
+            parseAnalysisJson(text, activeTags)?.let { return@withContext Result.success(it) }
+
+            // 測試路徑同樣附 corrective 訊息重試一次
+            enforceRateLimit()
+            val retryMsgs = msgs + listOf(
+                ChatMessage("assistant", text.take(1000)),
+                ChatMessage("user", CORRECTIVE_JSON_PROMPT)
+            )
+            val retryRes = getApi(profile.baseUrl).chat(
+                url = fullUrl,
+                auth = "Bearer ${profile.apiKey.trim()}",
+                body = ChatRequest(
+                    model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
+                    messages = retryMsgs,
+                    maxTokens = 260,
+                    responseFormat = responseFormat
+                )
+            )
+            val retryText = retryRes.choices.firstOrNull()?.message?.content?.trim().orEmpty()
+            val parsedRetry = if (retryText.isNotEmpty()) parseAnalysisJson(retryText, activeTags) else null
+            if (parsedRetry != null) {
+                return@withContext Result.success(parsedRetry)
+            }
+            val diagRaw = retryText.ifEmpty { text }.replace(Regex("\\s+"), " ").take(200)
+            Result.failure(
+                IllegalStateException(
+                    "AI 回傳格式無法解析為風險與標籤 JSON（已自動重試一次仍失敗），建議改用指令遵循能力較佳的模型。\n原始回應前 200 字：$diagRaw"
+                )
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: HttpException) {
@@ -990,30 +1041,204 @@ object AiClient {
         )
     }
 
-    private fun parseAnalysisJson(rawText: String, allowedTags: List<TagEntity>): AiAnalysisResult? {
-        val start = rawText.indexOf('{')
-        val end = rawText.lastIndexOf('}')
-        if (start < 0 || end <= start) return null
-        val jsonStr = rawText.substring(start, end + 1)
+    private fun supportsJsonObjectResponseFormat(profile: AiProviderProfile): Boolean {
+        val url = profile.baseUrl.lowercase()
+        return url.contains("api.openai.com") ||
+            url.contains("api.mistral.ai") ||
+            url.contains("api.groq.com") ||
+            url.contains("api.deepseek.com") ||
+            url.contains("generativelanguage.googleapis.com")
+    }
 
-        try {
-            val obj = JsonParser.parseString(jsonStr).asJsonObject
-            return parseJsonObjectToResult(obj, allowedTags)
-        } catch (_: Exception) {
-            // 降級：正則解析 risk 欄位同時保留 tags 欄位解析（避免吞掉 auto-tag）
-            val risk = Regex("\"(?:risk_score|risk)\"\\s*:\\s*(\\d+)").find(jsonStr)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100)
-                ?: return null
-            val rawLabel = Regex("\"(?:risk_label|label)\"\\s*:\\s*\"(\\w+)\"").find(jsonStr)?.groupValues?.get(1)?.lowercase() ?: "safe"
-            val label = if (rawLabel in setOf("safe", "suspicious", "scam")) rawLabel else "safe"
-            val reason = Regex("\"(?:risk_reason|reason)\"\\s*:\\s*\"([^\"]*)\"").find(jsonStr)?.groupValues?.get(1) ?: ""
-            val tagsRaw = Regex("\"tags\"\\s*:\\s*\\[([^\\]]*)\\]").find(jsonStr)?.groupValues?.get(1).orEmpty()
-            val tagIds = if (tagsRaw.isNotBlank()) {
-                resolveTagIdsFromElements(tagsRaw.split(","), allowedTags)
-            } else {
-                emptyList()
+    private fun stripMarkdownFences(raw: String): String =
+        raw.replace(Regex("```[a-zA-Z0-9_-]*\\s*"), "\n")
+            .replace("```", "\n")
+
+    /**
+     * 以平衡括號掃描擷取所有頂層 `{...}` 或 `[...]` 片段（字串與跳脫安全）。
+     */
+    private fun extractBalancedJsonSegments(
+        text: String,
+        openChar: Char,
+        closeChar: Char
+    ): List<String> {
+        val results = mutableListOf<String>()
+        var depth = 0
+        var startIdx = -1
+        var inString = false
+        var escaped = false
+        for (i in text.indices) {
+            val ch = text[i]
+            if (inString) {
+                if (escaped) {
+                    escaped = false
+                } else if (ch == '\\') {
+                    escaped = true
+                } else if (ch == '"') {
+                    inString = false
+                }
+                continue
             }
-            return AiAnalysisResult(riskScore = risk, riskLabel = label, riskReason = reason, tagIds = tagIds)
+            when (ch) {
+                '"' -> inString = true
+                openChar -> {
+                    if (depth == 0) startIdx = i
+                    depth++
+                }
+                closeChar -> {
+                    if (depth > 0) {
+                        depth--
+                        if (depth == 0 && startIdx >= 0) {
+                            results.add(text.substring(startIdx, i + 1))
+                            startIdx = -1
+                        }
+                    }
+                }
+            }
         }
+        return results
+    }
+
+    /**
+     * 寬容預處理（僅在嚴格 Gson 解析失敗後套用）：
+     * - 字串外部的全形冒號「：」/逗號「，」轉半形
+     * - 移除 `}` 或 `]` 前的 trailing comma
+     */
+    private fun lenientJsonPreprocess(json: String): String {
+        val sb = StringBuilder(json.length)
+        var inString = false
+        var escaped = false
+        for (i in json.indices) {
+            val ch = json[i]
+            if (inString) {
+                sb.append(ch)
+                if (escaped) {
+                    escaped = false
+                } else if (ch == '\\') {
+                    escaped = true
+                } else if (ch == '"') {
+                    inString = false
+                }
+            } else {
+                when (ch) {
+                    '"' -> {
+                        inString = true
+                        sb.append(ch)
+                    }
+                    '：' -> sb.append(':')
+                    '，' -> sb.append(',')
+                    else -> sb.append(ch)
+                }
+            }
+        }
+        // 移除字串外部的 trailing comma（例如 `{"a": 1,}` 或 `[1, 2,]`）
+        val noFullWidth = sb.toString()
+        val out = StringBuilder(noFullWidth.length)
+        inString = false
+        escaped = false
+        var i = 0
+        while (i < noFullWidth.length) {
+            val ch = noFullWidth[i]
+            if (inString) {
+                out.append(ch)
+                if (escaped) {
+                    escaped = false
+                } else if (ch == '\\') {
+                    escaped = true
+                } else if (ch == '"') {
+                    inString = false
+                }
+                i++
+                continue
+            }
+            if (ch == '"') {
+                inString = true
+                out.append(ch)
+                i++
+                continue
+            }
+            if (ch == ',') {
+                var j = i + 1
+                while (j < noFullWidth.length && noFullWidth[j].isWhitespace()) j++
+                if (j < noFullWidth.length && (noFullWidth[j] == '}' || noFullWidth[j] == ']')) {
+                    i++
+                    continue
+                }
+            }
+            out.append(ch)
+            i++
+        }
+        return out.toString()
+    }
+
+    private fun regexFallbackParseAnalysis(jsonStr: String, allowedTags: List<TagEntity>): AiAnalysisResult? {
+        val risk = Regex("\"(?:risk_score|risk)\"\\s*:\\s*(\\d+)").find(jsonStr)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100)
+            ?: return null
+        val rawLabel = Regex("\"(?:risk_label|label)\"\\s*:\\s*\"(\\w+)\"").find(jsonStr)?.groupValues?.get(1)?.lowercase() ?: "safe"
+        val label = if (rawLabel in setOf("safe", "suspicious", "scam")) rawLabel else "safe"
+        val reason = Regex("\"(?:risk_reason|reason)\"\\s*:\\s*\"([^\"]*)\"").find(jsonStr)?.groupValues?.get(1) ?: ""
+        val tagsRaw = Regex("\"tags\"\\s*:\\s*\\[([^\\]]*)\\]").find(jsonStr)?.groupValues?.get(1).orEmpty()
+        val tagIds = if (tagsRaw.isNotBlank()) {
+            resolveTagIdsFromElements(tagsRaw.split(","), allowedTags)
+        } else {
+            emptyList()
+        }
+        return AiAnalysisResult(riskScore = risk, riskLabel = label, riskReason = reason, tagIds = tagIds)
+    }
+
+    private fun parseAnalysisJson(rawText: String, allowedTags: List<TagEntity>): AiAnalysisResult? {
+        val cleaned = stripMarkdownFences(rawText)
+        val candidates = extractBalancedJsonSegments(cleaned, '{', '}')
+        val searchList = if (candidates.isNotEmpty()) {
+            candidates
+        } else {
+            val start = cleaned.indexOf('{')
+            val end = cleaned.lastIndexOf('}')
+            if (start < 0 || end <= start) {
+                runCatching {
+                    android.util.Log.w(PARSE_LOG_TAG, "parseAnalysisJson failed: reason=no_braces rawLen=${rawText.length}")
+                }
+                return null
+            }
+            listOf(cleaned.substring(start, end + 1))
+        }
+
+        // 1. 嚴格 Gson 解析（不更動既有成功路徑）
+        for (candidate in searchList) {
+            try {
+                val obj = JsonParser.parseString(candidate).asJsonObject
+                if (obj.has("risk_score") || obj.has("risk")) {
+                    return parseJsonObjectToResult(obj, allowedTags)
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        // 2. 嚴格解析失敗後套用寬容預處理（全形冒號/逗號、trailing comma）
+        for (candidate in searchList) {
+            try {
+                val lenient = lenientJsonPreprocess(candidate)
+                val obj = JsonParser.parseString(lenient).asJsonObject
+                if (obj.has("risk_score") || obj.has("risk")) {
+                    return parseJsonObjectToResult(obj, allowedTags)
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        // 3. 最後一道：既有正則降級解析
+        for (candidate in searchList) {
+            regexFallbackParseAnalysis(candidate, allowedTags)?.let { return it }
+            regexFallbackParseAnalysis(lenientJsonPreprocess(candidate), allowedTags)?.let { return it }
+        }
+
+        runCatching {
+            android.util.Log.w(
+                PARSE_LOG_TAG,
+                "parseAnalysisJson failed: reason=unparseable_or_missing_risk candidates=${searchList.size} rawLen=${rawText.length}"
+            )
+        }
+        return null
     }
 
     private fun parseBatchAnalysisJson(
@@ -1021,26 +1246,57 @@ object AiClient {
         allowedTags: List<TagEntity>,
         expectedIds: Set<Long>
     ): Map<Long, AiAnalysisResult> {
-        val start = rawText.indexOf('[')
-        val end = rawText.lastIndexOf(']')
-        if (start < 0 || end <= start) return emptyMap()
-        val arrStr = rawText.substring(start, end + 1)
-        return try {
-            val arr = JsonParser.parseString(arrStr).asJsonArray
+        val cleaned = stripMarkdownFences(rawText)
+        val candidates = extractBalancedJsonSegments(cleaned, '[', ']')
+        val arrCandidates = if (candidates.isNotEmpty()) {
+            candidates
+        } else {
+            val start = cleaned.indexOf('[')
+            val end = cleaned.lastIndexOf(']')
+            if (start < 0 || end <= start) {
+                runCatching {
+                    android.util.Log.w(PARSE_LOG_TAG, "parseBatchAnalysisJson failed: reason=no_brackets rawLen=${rawText.length}")
+                }
+                return emptyMap()
+            }
+            listOf(cleaned.substring(start, end + 1))
+        }
+
+        for (arrStr in arrCandidates) {
+            val arr = try {
+                JsonParser.parseString(arrStr).asJsonArray
+            } catch (_: Exception) {
+                try {
+                    JsonParser.parseString(lenientJsonPreprocess(arrStr)).asJsonArray
+                } catch (_: Exception) {
+                    null
+                }
+            } ?: continue
+
             val out = mutableMapOf<Long, AiAnalysisResult>()
             arr.forEach { el ->
-                if (el.isJsonObject) {
-                    val obj = el.asJsonObject
-                    val id = obj.get("id")?.asLong
-                    if (id != null && id in expectedIds) {
-                        out[id] = parseJsonObjectToResult(obj, allowedTags)
+                runCatching {
+                    if (el.isJsonObject) {
+                        val obj = el.asJsonObject
+                        val id = obj.get("id")?.asLong
+                        if (id != null && id in expectedIds && (obj.has("risk_score") || obj.has("risk"))) {
+                            out[id] = parseJsonObjectToResult(obj, allowedTags)
+                        }
                     }
                 }
             }
-            out
-        } catch (_: Exception) {
-            emptyMap()
+            if (out.isNotEmpty()) return out
         }
+
+        if (expectedIds.isNotEmpty()) {
+            runCatching {
+                android.util.Log.w(
+                    PARSE_LOG_TAG,
+                    "parseBatchAnalysisJson failed: reason=empty_or_unparseable expected=${expectedIds.size} rawLen=${rawText.length}"
+                )
+            }
+        }
+        return emptyMap()
     }
 
     /** 回傳 (分數, 標籤, 原因)；未設定 key 或解析失敗回 null；同內容 24 小時內命中快取 */

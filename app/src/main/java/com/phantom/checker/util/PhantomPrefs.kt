@@ -1055,4 +1055,12 @@ object PhantomPrefs {
     fun setAiAutoMemoEnabled(ctx: Context, enabled: Boolean) {
         prefs(ctx).edit().putBoolean("ai_auto_memo_enabled", enabled).apply()
     }
+
+    /** AI 標籤分發失敗通知開關（預設開） */
+    fun isAiTagFailureNotifEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("ai_tag_failure_notif_enabled", true)
+
+    fun setAiTagFailureNotifEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("ai_tag_failure_notif_enabled", enabled).apply()
+    }
 }

@@ -738,25 +738,35 @@ class NotificationCollectorService : NotificationListenerService() {
     private fun aiTagFailurePrefs(ctx: Context) =
         ctx.getSharedPreferences("phantom_ai_tag_status", Context.MODE_PRIVATE)
 
-    private fun resetAiTagFailureCount(ctx: Context) {
-        val prefs = aiTagFailurePrefs(ctx)
-        if (prefs.getInt("consecutive_failures", 0) != 0) {
-            prefs.edit().putInt("consecutive_failures", 0).apply()
-        }
+    private fun resetAiTagFailureCount(@Suppress("UNUSED_PARAMETER") ctx: Context) {
+        // 單次成功不重置 24 小時時間窗計數（僅時間窗滑出才清除）
     }
 
     private fun recordAndMaybeNotifyAiTagFailure(ctx: Context) {
         val prefs = aiTagFailurePrefs(ctx)
-        val count = prefs.getInt("consecutive_failures", 0) + 1
         val now = System.currentTimeMillis()
-        val lastNotifAt = prefs.getLong("last_failure_notif_at", 0L)
+        val windowMs = 24L * 3600_000L
         val cooldownMs = 6L * 3600_000L
-        // 三重防噪音：同批合併＋首次失敗靜默（連續第 2 次起才發）＋6 小時冷卻期
-        if (count >= 2 && (now - lastNotifAt) >= cooldownMs) {
-            prefs.edit()
-                .putInt("consecutive_failures", count)
-                .putLong("last_failure_notif_at", now)
-                .apply()
+        val recentTimestamps = prefs.getString("failure_timestamps", "")
+            .orEmpty()
+            .split(",")
+            .mapNotNull { it.trim().toLongOrNull() }
+            .filter { it in (now - windowMs)..now }
+            .toMutableList()
+        recentTimestamps.add(now)
+        val count = recentTimestamps.size
+        val lastNotifAt = prefs.getLong("last_failure_notif_at", 0L)
+
+        val editor = prefs.edit()
+            .putString("failure_timestamps", recentTimestamps.joinToString(","))
+
+        val shouldNotify = count >= 5 &&
+            (now - lastNotifAt) >= cooldownMs &&
+            PhantomPrefs.isAiTagFailureNotifEnabled(ctx) &&
+            !PhantomPrefs.isInQuietHoursNow(ctx)
+
+        if (shouldNotify) {
+            editor.putLong("last_failure_notif_at", now).apply()
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             val chId = "ai_tag_status"
             nm.createNotificationChannel(
@@ -770,10 +780,12 @@ class NotificationCollectorService : NotificationListenerService() {
                 },
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
+            val bodyText = "AI 標籤分發近 24 小時已失敗 $count 次，請檢查所用模型的指令遵循能力，或至設定更換訊息分析模型"
             val notif = Notification.Builder(ctx, chId)
                 .setSmallIcon(R.drawable.ic_stat_phantom)
-                .setContentTitle("AI 標籤暫時無法套用")
-                .setContentText("已先以 App 分類處理；請檢查網路或 AI Provider 設定。")
+                .setContentTitle("AI 標籤分發多次失敗")
+                .setContentText(bodyText)
+                .setStyle(Notification.BigTextStyle().bigText(bodyText))
                 .setAutoCancel(true)
                 .setOnlyAlertOnce(true)
                 .setContentIntent(openAppIntent)
@@ -783,7 +795,7 @@ class NotificationCollectorService : NotificationListenerService() {
             } catch (_: SecurityException) {
             }
         } else {
-            prefs.edit().putInt("consecutive_failures", count).apply()
+            editor.apply()
         }
     }
 
