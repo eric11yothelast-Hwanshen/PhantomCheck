@@ -347,6 +347,7 @@ fun FilterSettingsScreen(
     var expandShizuku by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "shizuku_advanced")) }
     var expandIntel by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "intel")) }
     var expandPersonalization by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "personalization")) }
+    var expandAbout by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "about")) }
 
     // 個人化設定
     var cardDensity by remember { mutableStateOf(PhantomPrefs.getCardDensity(appCtx)) }
@@ -695,7 +696,7 @@ fun FilterSettingsScreen(
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
         ) { padding ->
             val allCardKeys = remember {
-                listOf("quick", "personalization", "ai", "notif", "data", "appearance", "shizuku", "intel")
+                listOf("quick", "personalization", "ai", "notif", "data", "appearance", "shizuku", "intel", "about")
             }
             LaunchedEffect(initialHighlightCardKey) {
                 val key = initialHighlightCardKey ?: return@LaunchedEffect
@@ -708,6 +709,7 @@ fun FilterSettingsScreen(
                     "appearance" -> expandAppearance = true
                     "shizuku" -> expandShizuku = true
                     "intel" -> expandIntel = true
+                    "about" -> expandAbout = true
                 }
                 val idx = allCardKeys.indexOf(key)
                 if (idx >= 0) {
@@ -772,6 +774,7 @@ fun FilterSettingsScreen(
                         if ("appearance" in targetCards) expandAppearance = true
                         if ("shizuku" in targetCards) expandShizuku = true
                         if ("intel" in targetCards) expandIntel = true
+                        if ("about" in targetCards) expandAbout = true
 
                         aiSearchNote = "AI 定位：${matchedItems.joinToString("、") { it.title }}"
                         val firstCardKey = matchedItems.firstOrNull()?.cardKey
@@ -2368,6 +2371,21 @@ fun FilterSettingsScreen(
                 )
             }
             }
+
+            // 8. 關於
+            if ("about" in visibleCardKeys) {
+            item(key = "card_about") {
+                AboutSettingsCard(
+                    expanded = expandAbout || ("about" in highlightedCardKeys),
+                    highlighted = "about" in highlightedCardKeys,
+                    onToggle = {
+                        expandAbout = !expandAbout
+                        PhantomPrefs.setSettingsCardExpanded(appCtx, "about", expandAbout)
+                    },
+                    glassState = glassState
+                )
+            }
+            }
         }
         }
     }
@@ -2867,6 +2885,98 @@ private fun ShizukuAdvancedCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AboutSettingsCard(
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    glassState: HazeState,
+    modifier: Modifier = Modifier,
+    highlighted: Boolean = false
+) {
+    val ctx = LocalContext.current
+    val appCtx = ctx.applicationContext
+    val repoUrl = "https://github.com/eric11yothelast-Hwanshen/PhantomCheck"
+    val versionDisplay = remember(appCtx) {
+        try {
+            val pm = appCtx.packageManager
+            val pkgInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(
+                    appCtx.packageName,
+                    android.content.pm.PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(appCtx.packageName, 0)
+            }
+            val verName = pkgInfo.versionName.orEmpty()
+            val verCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                pkgInfo.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                pkgInfo.versionCode.toLong()
+            }
+            if (verName.isNotBlank()) "$verName ($verCode)" else "($verCode)"
+        } catch (_: Exception) {
+            "—"
+        }
+    }
+
+    CollapsibleSettingsCard(
+        title = "關於",
+        expanded = expanded,
+        onToggle = onToggle,
+        glassState = glassState,
+        modifier = modifier,
+        highlighted = highlighted
+    ) {
+        Text(
+            text = "幻訊 PhantomCheck",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "版本：$versionDisplay",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = "作者：邱柏鈞（eric11yothelast-Hwanshen）",
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "本 App 只在本機被動讀取通知備份，不上傳訊息內容。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = {
+                try {
+                    ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(repoUrl)))
+                } catch (_: Exception) {
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("GitHub 倉庫：eric11yothelast-Hwanshen/PhantomCheck")
+        }
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+        Text(
+            text = "第三方元件",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "Jetpack Compose / Material 3、Room、WorkManager、Retrofit、OkHttp、Gson、Haze、Shizuku API",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
