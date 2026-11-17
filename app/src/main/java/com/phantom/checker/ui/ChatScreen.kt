@@ -44,10 +44,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -198,7 +200,11 @@ private val PhotoIcon: ImageVector by lazy {
 @Composable
 fun ChatAssistantTab(
     glassState: HazeState,
-    onShowMessage: (String) -> Unit
+    onShowMessage: (String) -> Unit,
+    isSearchActive: Boolean = false,
+    onToggleSearch: () -> Unit = {},
+    onRefresh: () -> Unit = {},
+    onOpenSettings: () -> Unit = {}
 ) {
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
@@ -1104,18 +1110,49 @@ fun ChatAssistantTab(
             }
         }
 
-        // Provider / 模型即時切換列
-        AiProviderSwitcherChip(
-            profiles = profiles,
-            activeProfile = activeProfile,
-            onSelectProfile = { selected ->
-                AiClient.setActiveProvider(appCtx, selected.id)
-                activeProfile = selected
-                hasApiKey = true
-                onShowMessage("已切換模型：${selected.name}・${selected.model}")
-            },
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-        )
+        // Provider / 模型即時切換列＋搜尋、重整、設定入口
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            AiProviderSwitcherChip(
+                profiles = profiles,
+                activeProfile = activeProfile,
+                onSelectProfile = { selected ->
+                    AiClient.setActiveProvider(appCtx, selected.id)
+                    activeProfile = selected
+                    hasApiKey = true
+                    onShowMessage("已切換模型：${selected.name}・${selected.model}")
+                },
+                modifier = Modifier.weight(1f)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onToggleSearch) {
+                    Icon(
+                        imageVector = if (isSearchActive) Icons.Default.Clear else Icons.Default.Search,
+                        contentDescription = "搜尋訊息",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                IconButton(onClick = onRefresh) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "重新整理",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                IconButton(onClick = onOpenSettings) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "設定",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
 
         if (!hasApiKey) {
             PhantomGlassCard(
@@ -2142,12 +2179,12 @@ fun ChatAssistantTab(
             }
         }
 
-        // 輸入列（單一收合工具圖標 + 輸入框 + 送出按鈕）
-        Spacer(Modifier.height(6.dp))
+        // 輸入列（單一收合工具圖標 + 精簡輸入框 + 送出按鈕）
+        Spacer(Modifier.height(4.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Box {
                 IconButton(
@@ -2186,16 +2223,28 @@ fun ChatAssistantTab(
             OutlinedTextField(
                 value = inputText,
                 onValueChange = { inputText = it },
-                modifier = Modifier.weight(1f),
-                maxLines = 5,
-                placeholder = { Text("詢問訊息紀錄、昨日簡報或風險…") }
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 44.dp),
+                maxLines = 3,
+                shape = RoundedCornerShape(22.dp),
+                textStyle = MaterialTheme.typography.bodyMedium,
+                placeholder = {
+                    Text(
+                        text = "詢問訊息紀錄、昨日簡報或風險…",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             )
             Button(
                 onClick = { sendQuery(inputText) },
                 enabled = (inputText.isNotBlank() || pendingImageAttachment != null) && !isSending,
-                shape = CircleShape
+                shape = CircleShape,
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.size(44.dp)
             ) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "送出")
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "送出", modifier = Modifier.size(20.dp))
             }
         }
     }

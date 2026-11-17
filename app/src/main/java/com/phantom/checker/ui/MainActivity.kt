@@ -13,6 +13,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -1254,48 +1259,54 @@ private fun PhantomCheckApp(
                 .padding(padding)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            // 頂部標題列：搜尋＋重新整理＋設定齒輪
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 2.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // 頂部標題列：搜尋＋重新整理＋設定齒輪（切到 AI 助手分頁時平滑隱藏，改由分頁內提供入口）
+            AnimatedVisibility(
+                visible = selectedTab != MainTab.ASSISTANT,
+                enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
+                exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
             ) {
-                Text(
-                    text = "幻訊 PhantomCheck",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = {
-                        showSearchBar = !showSearchBar
-                        if (!showSearchBar) {
-                            searchQuery = ""
-                            searchRiskFilter = SearchRiskFilter.ALL
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "幻訊 PhantomCheck",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = {
+                            showSearchBar = !showSearchBar
+                            if (!showSearchBar) {
+                                searchQuery = ""
+                                searchRiskFilter = SearchRiskFilter.ALL
+                            }
+                        }) {
+                            Icon(
+                                imageVector = if (showSearchBar) Icons.Default.Clear else Icons.Default.Search,
+                                contentDescription = "搜尋"
+                            )
                         }
-                    }) {
-                        Icon(
-                            imageVector = if (showSearchBar) Icons.Default.Clear else Icons.Default.Search,
-                            contentDescription = "搜尋"
-                        )
-                    }
-                    IconButton(onClick = { refreshTrigger++ }) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "重新整理"
-                        )
-                    }
-                    IconButton(onClick = {
-                        ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "設定"
-                        )
+                        IconButton(onClick = { refreshTrigger++ }) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "重新整理"
+                            )
+                        }
+                        IconButton(onClick = {
+                            ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "設定"
+                            )
+                        }
                     }
                 }
             }
@@ -1501,6 +1512,18 @@ private fun PhantomCheckApp(
                         glassState = glassState,
                         onShowMessage = { msg ->
                             scope.launch { snackbarHostState.showSnackbar(msg) }
+                        },
+                        isSearchActive = showSearchBar,
+                        onToggleSearch = {
+                            showSearchBar = !showSearchBar
+                            if (!showSearchBar) {
+                                searchQuery = ""
+                                searchRiskFilter = SearchRiskFilter.ALL
+                            }
+                        },
+                        onRefresh = { refreshTrigger++ },
+                        onOpenSettings = {
+                            ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
                         }
                     )
                     MainTab.SCAMS -> ScamsTab(
