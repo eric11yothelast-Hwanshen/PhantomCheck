@@ -21,6 +21,7 @@ import com.phantom.checker.data.IntelResultEntity
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.data.MessageTagCrossRef
 import com.phantom.checker.data.TagEntity
+import com.phantom.checker.data.UserTagRuleEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.network.IndicatorExtractor
 import com.phantom.checker.network.IntelClient
@@ -287,7 +288,7 @@ class NotificationCollectorService : NotificationListenerService() {
 
             // 使用者標籤記憶規則（確定性、零 LLM token，優先序高於 App 分類與 AI 標籤）
             val userTagRules = try {
-                db.userTagRuleDao().active()
+                cachedActiveUserTagRules(db)
             } catch (_: Exception) {
                 emptyList()
             }
@@ -855,6 +856,7 @@ class NotificationCollectorService : NotificationListenerService() {
         private val ruleCacheLock = Any()
         private var cachedFilterRules: Pair<Long, List<FilterRule>>? = null
         private var cachedAiRules: Pair<Long, List<AiRuleEntity>>? = null
+        private var cachedUserTagRules: Pair<Long, List<UserTagRuleEntity>>? = null
         private val cachedAppCatRules = object : LruCache<String, Pair<Long, List<AppCategoryRuleEntity>>>(64) {}
         private var cachedAlertKeywordsPair: Pair<Long, List<String>>? = null
 
@@ -862,6 +864,7 @@ class NotificationCollectorService : NotificationListenerService() {
             synchronized(ruleCacheLock) {
                 cachedFilterRules = null
                 cachedAiRules = null
+                cachedUserTagRules = null
                 cachedAppCatRules.evictAll()
                 cachedAlertKeywordsPair = null
             }
@@ -893,6 +896,21 @@ class NotificationCollectorService : NotificationListenerService() {
             val fresh = db.aiRuleDao().active()
             synchronized(ruleCacheLock) {
                 cachedAiRules = System.currentTimeMillis() to fresh
+            }
+            return fresh
+        }
+
+        private suspend fun cachedActiveUserTagRules(db: AppDatabase): List<UserTagRuleEntity> {
+            val now = System.currentTimeMillis()
+            synchronized(ruleCacheLock) {
+                val entry = cachedUserTagRules
+                if (entry != null && (now - entry.first) < RULE_CACHE_TTL_MS) {
+                    return entry.second
+                }
+            }
+            val fresh = db.userTagRuleDao().active()
+            synchronized(ruleCacheLock) {
+                cachedUserTagRules = System.currentTimeMillis() to fresh
             }
             return fresh
         }

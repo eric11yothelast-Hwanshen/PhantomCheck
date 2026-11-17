@@ -1195,6 +1195,7 @@ fun ChatAssistantTab(
                                         createdAt = System.currentTimeMillis()
                                     )
                                 )
+                                NotificationCollectorService.invalidateRuleCaches()
                                 db.chatDao().insertMessage(
                                     ChatMessageEntity(
                                         sessionId = sid,

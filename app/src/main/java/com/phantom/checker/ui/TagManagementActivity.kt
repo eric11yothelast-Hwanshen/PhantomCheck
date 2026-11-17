@@ -350,6 +350,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                         scope.launch {
                             withContext(Dispatchers.IO) {
                                 AppDatabaseHolder.db(appCtx).userTagRuleDao().deleteById(rule.id)
+                                com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                             }
                             deleteUserTagRuleCandidate = null
                             reloadAll()
@@ -923,6 +924,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                                 withContext(Dispatchers.IO) {
                                                     AppDatabaseHolder.db(appCtx).userTagRuleDao()
                                                         .update(rule.copy(isEnabled = enabled))
+                                                    com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                                                 }
                                                 reloadAll()
                                             }
