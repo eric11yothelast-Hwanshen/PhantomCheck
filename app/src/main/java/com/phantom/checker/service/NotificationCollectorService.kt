@@ -302,7 +302,7 @@ class NotificationCollectorService : NotificationListenerService() {
             if (IntelClient.isMessageWhitelisted(
                     sender = title,
                     packageName = pkg,
-                    appLabel = appLabel,
+                    appLabel = cachedAppLabel(pkg),
                     content = text,
                     aiRules = activeAiRules,
                     indicators = indicators
