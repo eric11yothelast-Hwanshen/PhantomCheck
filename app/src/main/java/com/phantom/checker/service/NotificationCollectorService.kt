@@ -436,7 +436,10 @@ class NotificationCollectorService : NotificationListenerService() {
             context = applicationContext,
             rules = aiRules
         )
-        if (results.isEmpty()) return
+        if (results.isEmpty()) {
+            PhantomPrefs.refundTodayAiUsage(applicationContext)
+            return
+        }
 
         var hasNewScam = false
         results.forEach { (msgId, result) ->
