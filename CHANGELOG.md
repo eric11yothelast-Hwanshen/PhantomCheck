@@ -13,7 +13,7 @@
 
 ### 變更與修正
 - **LINE 群組對話分割修復（#140）**：`AppDatabase` 升版至 v11（`MIGRATION_10_11`）新增 `conversationKey` 欄位，解析 `MessagingStyle`（`EXTRA_CONVERSATION_TITLE`、sender `Person`）區分群組與私聊對話，無 `MessagingStyle` 通知維持原 fallback 行為並同步遷移置頂 `vipSenders`。
-- **AI 助手分頁獨立 SnackbarHost（#142）**：`MainActivity` 為 AI 助手分頁配置獨立內嵌於輸入區上方的 `SnackbarHost`，徹底避免刪除會話等提示遮擋底部輸入框。
+- **AI 助手分頁獨立 SnackbarHost（#142）**：`MainActivity` 為 AI 助手分頁配置分頁專屬、內嵌於版面的 `SnackbarHost`（顯示於分頁頂部、脫離 Scaffold 底部 overlay），徹底避免刪除會話等提示遮擋底部輸入框。
 - **Release Notes 自動抽取 CHANGELOG 段落（#112）**：`.github/workflows/release.yml` 於發佈步驟前自動抽取對應版本之 `CHANGELOG.md` 段落並與 GitHub 自動 PR 清單共存（本版 tag 首次生效）。
 - **版號更新**：`versionCode` 18、`versionName` `"2.1.0"`。
 
