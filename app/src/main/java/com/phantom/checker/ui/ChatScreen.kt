@@ -690,17 +690,22 @@ fun ChatAssistantTab(
                 val finalCandidates = if (usedNumericFallback) null else resolvedCandidates
 
                 val resolvedTagRuleInsertions = if (parsed.tagRuleProposals.isNotEmpty()) {
-                    withContext(Dispatchers.IO) {
-                        val db = AppDatabaseHolder.db(appCtx)
-                        val tags = db.tagDao().all()
-                        parsed.tagRuleProposals.map { tp ->
-                            val matchedTag = tags.firstOrNull { it.name.equals(tp.tagName.trim(), ignoreCase = true) }
-                                ?: tags.firstOrNull { it.name.contains(tp.tagName.trim(), ignoreCase = true) }
-                                ?: tags.firstOrNull()
+                    val tags = withContext(Dispatchers.IO) {
+                        AppDatabaseHolder.db(appCtx).tagDao().all()
+                    }
+                    parsed.tagRuleProposals.mapNotNull { tp ->
+                        val targetName = tp.tagName.trim()
+                        val matchedTag = tags.firstOrNull { it.name.equals(targetName, ignoreCase = true) }
+                            ?: tags.firstOrNull { it.name.contains(targetName, ignoreCase = true) }
+                        if (matchedTag == null) {
+                            android.util.Log.w("ChatScreen", "tag_rule skipped: target tag '$targetName' not found")
+                            resolutionErrors.add("找不到目標標籤「$targetName」，已略過建立標籤規則。")
+                            null
+                        } else {
                             PendingTagRuleInsertion(
                                 sessionId = sessionId,
                                 proposal = tp,
-                                resolvedTagId = matchedTag?.id,
+                                resolvedTagId = matchedTag.id,
                                 availableTags = tags
                             )
                         }
