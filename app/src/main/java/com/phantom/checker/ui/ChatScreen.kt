@@ -258,6 +258,8 @@ fun ChatAssistantTab(
     var pendingMsgActionQueue by remember { mutableStateOf<List<PendingMessageActionState>>(emptyList()) }
     var pendingTodoQueue by remember { mutableStateOf<List<PendingTodoInsertion>>(emptyList()) }
     var editingTodoTimeTarget by remember { mutableStateOf<PendingTodoInsertion?>(null) }
+    var searchResultCard by remember { mutableStateOf<SearchResultCardState?>(null) }
+    var pendingExtendedActionQueue by remember { mutableStateOf<List<PendingExtendedAction>>(emptyList()) }
     var showTodoListSheet by remember { mutableStateOf(false) }
     var todoListItems by remember { mutableStateOf<List<TodoEntity>>(emptyList()) }
 
@@ -837,6 +839,291 @@ fun ChatAssistantTab(
                 }
                 if (resolvedTodoInsertions.isNotEmpty()) {
                     pendingTodoQueue = resolvedTodoInsertions
+                }
+
+                // #160 擴充動作解析與執行（唯讀直接執行，mutating 一律進確認卡佇列）
+                var resolvedSearchCard: SearchResultCardState? = null
+                val immediateExtraReplies = mutableListOf<String>()
+                val resolvedExtendedActions = mutableListOf<PendingExtendedAction>()
+
+                val hasExtendedProposals = parsed.searchProposals.isNotEmpty() ||
+                    parsed.todoManageProposals.isNotEmpty() ||
+                    parsed.vipPinProposals.isNotEmpty() ||
+                    parsed.muteAppProposals.isNotEmpty() ||
+                    parsed.markReadProposals.isNotEmpty() ||
+                    parsed.exportProposals.isNotEmpty()
+
+                if (hasExtendedProposals) {
+                    withContext(Dispatchers.IO) {
+                        val db = AppDatabaseHolder.db(appCtx)
+                        val appGroups by lazy { db.messageDao().groupByApp() }
+
+                        fun resolveAppPackage(rawPkgOrLabel: String?): Pair<String, String>? {
+                            val needle = rawPkgOrLabel?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+                            val exact = appGroups.firstOrNull {
+                                it.packageName.equals(needle, ignoreCase = true) ||
+                                    it.appLabel.equals(needle, ignoreCase = true)
+                            }
+                            if (exact != null) return exact.packageName to exact.appLabel.ifBlank { exact.packageName }
+                            val containsMatches = appGroups.filter {
+                                it.appLabel.contains(needle, ignoreCase = true) ||
+                                    it.packageName.contains(needle, ignoreCase = true)
+                            }
+                            return if (containsMatches.size == 1) {
+                                val g = containsMatches.first()
+                                g.packageName to g.appLabel.ifBlank { g.packageName }
+                            } else null
+                        }
+
+                        // 1. search_messages（唯讀）
+                        parsed.searchProposals.forEach { sp ->
+                            val days = sp.days ?: 2
+                            val cal = java.util.Calendar.getInstance().apply {
+                                set(java.util.Calendar.HOUR_OF_DAY, 0)
+                                set(java.util.Calendar.MINUTE, 0)
+                                set(java.util.Calendar.SECOND, 0)
+                                set(java.util.Calendar.MILLISECOND, 0)
+                                add(java.util.Calendar.DAY_OF_YEAR, -(days - 1).coerceAtLeast(0))
+                            }
+                            val sinceTs = cal.timeInMillis
+                            val resolvedPkg = if (sp.packageName != null) {
+                                resolveAppPackage(sp.packageName)?.first ?: sp.packageName
+                            } else null
+                            val hits = db.messageDao().searchFiltered(
+                                sinceTs = sinceTs,
+                                packageName = resolvedPkg,
+                                sender = sp.sender,
+                                query = sp.query,
+                                limit = 5
+                            )
+                            if (hits.isEmpty()) {
+                                immediateExtraReplies.add("查無符合條件的訊息（搜尋範圍：近 ${days} 天）。")
+                            } else {
+                                val summaryParts = listOfNotNull(
+                                    sp.query?.let { "關鍵字「$it」" },
+                                    sp.sender?.let { "寄件者「$it」" },
+                                    sp.packageName?.let { "App「$it」" }
+                                ).joinToString("、").ifBlank { "近 ${days} 天" }
+                                resolvedSearchCard = SearchResultCardState(
+                                    sessionId = sessionId,
+                                    querySummary = summaryParts,
+                                    results = hits
+                                )
+                                immediateExtraReplies.add("已找到 ${hits.size} 筆符合「$summaryParts」的訊息，請點擊下方結果卡查看詳情。")
+                            }
+                        }
+
+                        // 2. todo_list / todo_done / todo_delete / todo_edit
+                        if (parsed.todoManageProposals.isNotEmpty()) {
+                            val allTodos = db.todoDao().all()
+                            val pendingTodos = allTodos.filter { !it.isDone }
+                            parsed.todoManageProposals.forEach { tp ->
+                                when (tp.action) {
+                                    "todo_list" -> {
+                                        if (allTodos.isEmpty()) {
+                                            immediateExtraReplies.add("目前沒有任何待辦事項。")
+                                        } else {
+                                            val rows = allTodos.take(20).joinToString("\n") { t ->
+                                                val status = if (t.isDone) "已完成" else "待辦"
+                                                val timeStr = PhantomPrefs.formatMessageTime(appCtx, t.dueAt, includeDate = true)
+                                                val safeTitle = t.title.replace("|", "｜").replace("\n", " ")
+                                                "| $status | $safeTitle | $timeStr |"
+                                            }
+                                            immediateExtraReplies.add("### 待辦事項清單\n| 狀態 | 事項 | 提醒時間 |\n|---|---|---|\n$rows")
+                                        }
+                                    }
+                                    "todo_done" -> {
+                                        val needle = tp.title.orEmpty()
+                                        val matches = pendingTodos.filter { it.title.contains(needle, ignoreCase = true) }
+                                        when {
+                                            matches.isEmpty() -> resolutionErrors.add("找不到包含「$needle」的未完成待辦事項。")
+                                            matches.size > 1 -> resolutionErrors.add(
+                                                "找到多筆符合「$needle」的待辦，請指定更精確的名稱：\n" +
+                                                    matches.take(5).joinToString("\n") { "• ${it.title}" }
+                                            )
+                                            else -> resolvedExtendedActions.add(PendingExtendedAction.TodoDone(sessionId, matches.first()))
+                                        }
+                                    }
+                                    "todo_delete" -> {
+                                        val needle = tp.title.orEmpty()
+                                        val matches = (pendingTodos.filter { it.title.contains(needle, ignoreCase = true) })
+                                            .ifEmpty { allTodos.filter { it.title.contains(needle, ignoreCase = true) } }
+                                        when {
+                                            matches.isEmpty() -> resolutionErrors.add("找不到包含「$needle」的待辦事項。")
+                                            matches.size > 1 -> resolutionErrors.add(
+                                                "找到多筆符合「$needle」的待辦，請指定更精確的名稱：\n" +
+                                                    matches.take(5).joinToString("\n") { "• ${it.title}" }
+                                            )
+                                            else -> resolvedExtendedActions.add(PendingExtendedAction.TodoDelete(sessionId, matches.first()))
+                                        }
+                                    }
+                                    "todo_edit" -> {
+                                        val needle = tp.title.orEmpty()
+                                        val matches = (pendingTodos.filter { it.title.contains(needle, ignoreCase = true) })
+                                            .ifEmpty { allTodos.filter { it.title.contains(needle, ignoreCase = true) } }
+                                        when {
+                                            matches.isEmpty() -> resolutionErrors.add("找不到包含「$needle」的待辦事項。")
+                                            matches.size > 1 -> resolutionErrors.add(
+                                                "找到多筆符合「$needle」的待辦，請指定更精確的名稱：\n" +
+                                                    matches.take(5).joinToString("\n") { "• ${it.title}" }
+                                            )
+                                            else -> {
+                                                val target = matches.first()
+                                                val updatedTitle = tp.newTitle?.takeIf { it.isNotBlank() } ?: target.title
+                                                val updatedDueAt = if (!tp.time.isNullOrBlank()) {
+                                                    when (val tr = parseNaturalReminderTime(tp.time, query, System.currentTimeMillis())) {
+                                                        is NaturalTimeParseResult.Success -> tr.epochMillis
+                                                        is NaturalTimeParseResult.PastTime -> {
+                                                            resolutionErrors.add("修改後的提醒時間已過期，請指定未來的時間。")
+                                                            null
+                                                        }
+                                                        NaturalTimeParseResult.Unparseable -> {
+                                                            resolutionErrors.add("無法解析修改後的提醒時間「${tp.time}」。")
+                                                            null
+                                                        }
+                                                    }
+                                                } else target.dueAt
+                                                if (updatedDueAt != null) {
+                                                    if (updatedTitle == target.title && updatedDueAt == target.dueAt) {
+                                                        resolutionErrors.add("請提供要修改的新標題或新提醒時間。")
+                                                    } else {
+                                                        resolvedExtendedActions.add(
+                                                            PendingExtendedAction.TodoEdit(
+                                                                sessionId = sessionId,
+                                                                original = target,
+                                                                newTitle = updatedTitle,
+                                                                newDueAt = updatedDueAt
+                                                            )
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 3. vip_pin
+                        if (parsed.vipPinProposals.isNotEmpty()) {
+                            val recentMsgs = db.messageDao().recent()
+                            parsed.vipPinProposals.forEach { vp ->
+                                val pkgFilter = vp.packageName?.let { resolveAppPackage(it)?.first ?: it }
+                                val matchedMsg = recentMsgs.firstOrNull { m ->
+                                    val senderHit = m.sender.equals(vp.sender, ignoreCase = true) ||
+                                        m.sender.contains(vp.sender, ignoreCase = true)
+                                    val pkgHit = pkgFilter == null || m.packageName.equals(pkgFilter, ignoreCase = true)
+                                    senderHit && pkgHit
+                                }
+                                if (matchedMsg == null) {
+                                    resolutionErrors.add("近期訊息中找不到寄件者「${vp.sender}」，無法設定 VIP 釘選。")
+                                } else {
+                                    resolvedExtendedActions.add(
+                                        PendingExtendedAction.VipPin(
+                                            sessionId = sessionId,
+                                            sender = matchedMsg.sender,
+                                            packageName = matchedMsg.packageName,
+                                            appLabel = matchedMsg.appLabel.ifBlank { matchedMsg.packageName },
+                                            pin = vp.pin
+                                        )
+                                    )
+                                }
+                            }
+                        }
+
+                        // 4. mute_app
+                        parsed.muteAppProposals.forEach { mp ->
+                            val resolved = resolveAppPackage(mp.appLabel)
+                            if (resolved == null) {
+                                val candidatesText = appGroups.take(8).joinToString("、") { it.appLabel.ifBlank { it.packageName } }
+                                resolutionErrors.add(
+                                    if (candidatesText.isBlank()) "目前無任何 App 訊息紀錄，無法設定靜音。"
+                                    else "找不到名為「${mp.appLabel}」的 App，目前可選 App：$candidatesText"
+                                )
+                            } else {
+                                resolvedExtendedActions.add(
+                                    PendingExtendedAction.MuteApp(
+                                        sessionId = sessionId,
+                                        packageName = resolved.first,
+                                        appLabel = resolved.second,
+                                        mute = mp.mute
+                                    )
+                                )
+                            }
+                        }
+
+                        // 5. mark_read
+                        parsed.markReadProposals.forEach { mr ->
+                            when (mr.scope) {
+                                "today" -> resolvedExtendedActions.add(
+                                    PendingExtendedAction.MarkRead(sessionId, "today", null, "今日未讀訊息（不含詐騙紀錄）")
+                                )
+                                "all" -> resolvedExtendedActions.add(
+                                    PendingExtendedAction.MarkRead(sessionId, "all", null, "全部未讀訊息（不含詐騙紀錄）")
+                                )
+                                "app" -> {
+                                    val resolved = resolveAppPackage(mr.packageName)
+                                    if (resolved == null) {
+                                        val candidatesText = appGroups.take(8).joinToString("、") { it.appLabel.ifBlank { it.packageName } }
+                                        resolutionErrors.add("請指定有效的 App 名稱（可選：$candidatesText）。")
+                                    } else {
+                                        resolvedExtendedActions.add(
+                                            PendingExtendedAction.MarkRead(
+                                                sessionId,
+                                                "app",
+                                                resolved.first,
+                                                "${resolved.second} 的未讀訊息（不含詐騙紀錄）"
+                                            )
+                                        )
+                                    }
+                                }
+                                else -> resolutionErrors.add("不支援的標記已讀範圍「${mr.scope}」，請使用 today、app 或 all。")
+                            }
+                        }
+
+                        // 6. export_messages
+                        parsed.exportProposals.forEach { ep ->
+                            val resolvedApp = if (ep.packageName != null) resolveAppPackage(ep.packageName) else null
+                            if (ep.packageName != null && resolvedApp == null) {
+                                val candidatesText = appGroups.take(8).joinToString("、") { it.appLabel.ifBlank { it.packageName } }
+                                resolutionErrors.add("找不到要匯出的 App「${ep.packageName}」（可選：$candidatesText）。")
+                            } else {
+                                val appDesc = resolvedApp?.second ?: "全部 App"
+                                val daysDesc = ep.days?.let { "近 $it 天" } ?: "全部時間"
+                                resolvedExtendedActions.add(
+                                    PendingExtendedAction.ExportMessages(
+                                        sessionId = sessionId,
+                                        packageName = resolvedApp?.first,
+                                        days = ep.days,
+                                        scopeLabel = "$appDesc · $daysDesc"
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (immediateExtraReplies.isNotEmpty()) {
+                    withContext(Dispatchers.IO) {
+                        val db = AppDatabaseHolder.db(appCtx)
+                        immediateExtraReplies.forEach { extraText ->
+                            db.chatDao().insertMessage(
+                                ChatMessageEntity(
+                                    sessionId = sessionId,
+                                    role = ChatMessageEntity.ROLE_ASSISTANT,
+                                    content = extraText,
+                                    createdAt = System.currentTimeMillis()
+                                )
+                            )
+                        }
+                    }
+                    loadMessages(sessionId)
+                }
+                if (resolvedSearchCard != null) {
+                    searchResultCard = resolvedSearchCard
+                }
+                if (resolvedExtendedActions.isNotEmpty()) {
+                    pendingExtendedActionQueue = pendingExtendedActionQueue.filterNot { it.sessionId == sessionId } + resolvedExtendedActions
                 }
                 if (newAppliedSettings.isNotEmpty()) {
                     val updatedKeys = newAppliedSettings.map { it.sessionId to it.item.id }.toSet()
@@ -2477,6 +2764,247 @@ fun ChatAssistantTab(
                         }
                     }
 
+                    searchResultCard?.takeIf { it.sessionId == currentSessionId }?.let { srCard ->
+                        item(key = "search_result_card") {
+                            PhantomGlassCard(
+                                glassState = glassState,
+                                modifier = Modifier.fillMaxWidth(),
+                                cornerRadius = 18.dp,
+                                contentPadding = 12.dp
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "搜尋結果（${srCard.results.size} 筆 · ${srCard.querySummary}）",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    TextButton(onClick = { searchResultCard = null }) {
+                                        Text("關閉")
+                                    }
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    srCard.results.forEach { msg ->
+                                        val timeStr = PhantomPrefs.formatMessageTime(appCtx, msg.timestamp, includeDate = true)
+                                        val snippet = msg.content.replace("\n", " ").trim().take(60)
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
+                                                }
+                                        ) {
+                                            Column(modifier = Modifier.padding(10.dp)) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    Text(
+                                                        text = "${msg.appLabel.ifBlank { msg.packageName }} · ${msg.sender.ifBlank { "未知寄件者" }}",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text(
+                                                        text = timeStr,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                                Spacer(Modifier.height(2.dp))
+                                                Text(
+                                                    text = snippet,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    val sessionExtActions = pendingExtendedActionQueue.filter { it.sessionId == currentSessionId }
+                    sessionExtActions.firstOrNull()?.let { ext ->
+                        item(key = "pending_extended_action_card") {
+                            val titleText = when (ext) {
+                                is PendingExtendedAction.TodoDone -> "確認標記待辦完成"
+                                is PendingExtendedAction.TodoDelete -> "確認刪除待辦"
+                                is PendingExtendedAction.TodoEdit -> "確認修改待辦"
+                                is PendingExtendedAction.VipPin -> if (ext.pin) "確認釘選 VIP 寄件者" else "確認取消 VIP 釘選"
+                                is PendingExtendedAction.MuteApp -> if (ext.mute) "確認靜音 App" else "確認取消靜音 App"
+                                is PendingExtendedAction.MarkRead -> "確認標記已讀"
+                                is PendingExtendedAction.ExportMessages -> "確認匯出訊息 CSV"
+                            }
+                            val bodyText = when (ext) {
+                                is PendingExtendedAction.TodoDone -> "將「${ext.todo.title}」標記為已完成並取消提醒排程。"
+                                is PendingExtendedAction.TodoDelete -> "確定要刪除待辦「${ext.todo.title}」嗎？"
+                                is PendingExtendedAction.TodoEdit -> {
+                                    val oldTime = PhantomPrefs.formatMessageTime(appCtx, ext.original.dueAt, includeDate = true)
+                                    val newTime = PhantomPrefs.formatMessageTime(appCtx, ext.newDueAt, includeDate = true)
+                                    "事項：${ext.original.title} → ${ext.newTitle}\n時間：$oldTime → $newTime"
+                                }
+                                is PendingExtendedAction.VipPin -> "${ext.appLabel} · ${ext.sender}"
+                                is PendingExtendedAction.MuteApp -> "${ext.appLabel}（${ext.packageName}）"
+                                is PendingExtendedAction.MarkRead -> "範圍：${ext.scopeLabel}"
+                                is PendingExtendedAction.ExportMessages -> "範圍：${ext.scopeLabel}\n將匯出至 Downloads 資料夾（含公式注入防護）。"
+                            }
+                            PhantomGlassCard(
+                                glassState = glassState,
+                                modifier = Modifier.fillMaxWidth(),
+                                cornerRadius = 18.dp,
+                                contentPadding = 12.dp
+                            ) {
+                                Text(
+                                    text = if (sessionExtActions.size > 1) "$titleText（尚有 ${sessionExtActions.size} 項）" else titleText,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = bodyText,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            val sid = ext.sessionId
+                                            pendingExtendedActionQueue = pendingExtendedActionQueue.filterNot { it === ext }
+                                            scope.launch {
+                                                withContext(Dispatchers.IO) {
+                                                    AppDatabaseHolder.db(appCtx).chatDao().insertMessage(
+                                                        ChatMessageEntity(
+                                                            sessionId = sid,
+                                                            role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                            content = "已取消操作（$titleText）。",
+                                                            createdAt = System.currentTimeMillis()
+                                                        )
+                                                    )
+                                                }
+                                                loadMessages(sid)
+                                            }
+                                        }
+                                    ) {
+                                        Text("取消")
+                                    }
+                                    Button(
+                                        onClick = {
+                                            val sid = ext.sessionId
+                                            pendingExtendedActionQueue = pendingExtendedActionQueue.filterNot { it === ext }
+                                            scope.launch {
+                                                val resultMsg = withContext(Dispatchers.IO) {
+                                                    val db = AppDatabaseHolder.db(appCtx)
+                                                    when (ext) {
+                                                        is PendingExtendedAction.TodoDone -> {
+                                                            db.todoDao().setDone(ext.todo.id, true)
+                                                            ReminderScheduler.cancelTodo(appCtx, ext.todo.id)
+                                                            ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                                                            "已完成待辦「${ext.todo.title}」。"
+                                                        }
+                                                        is PendingExtendedAction.TodoDelete -> {
+                                                            db.todoDao().deleteById(ext.todo.id)
+                                                            ReminderScheduler.cancelTodo(appCtx, ext.todo.id)
+                                                            ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                                                            "已刪除待辦「${ext.todo.title}」。"
+                                                        }
+                                                        is PendingExtendedAction.TodoEdit -> {
+                                                            val updated = ext.original.copy(
+                                                                title = ext.newTitle,
+                                                                dueAt = ext.newDueAt
+                                                            )
+                                                            db.todoDao().update(updated)
+                                                            ReminderScheduler.cancelTodo(appCtx, updated.id)
+                                                            if (!updated.isDone && updated.dueAt > System.currentTimeMillis()) {
+                                                                ReminderScheduler.scheduleTodo(appCtx, updated.id, updated.dueAt)
+                                                            }
+                                                            ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                                                            val newTimeStr = PhantomPrefs.formatMessageTime(appCtx, updated.dueAt, includeDate = true)
+                                                            "已更新待辦：「${updated.title}」（$newTimeStr）。"
+                                                        }
+                                                        is PendingExtendedAction.VipPin -> {
+                                                            val isCurrentlyVip = ext.sender in PhantomPrefs.getVipSenders(appCtx, ext.packageName)
+                                                            if (isCurrentlyVip != ext.pin) {
+                                                                PhantomPrefs.toggleVipSender(appCtx, ext.packageName, ext.sender)
+                                                            }
+                                                            if (ext.pin) "已將「${ext.sender}」（${ext.appLabel}）釘選為 VIP。"
+                                                            else "已取消「${ext.sender}」（${ext.appLabel}）的 VIP 釘選。"
+                                                        }
+                                                        is PendingExtendedAction.MuteApp -> {
+                                                            PhantomPrefs.setAppMuted(appCtx, ext.packageName, ext.mute)
+                                                            if (ext.mute) "已靜音「${ext.appLabel}」。"
+                                                            else "已取消靜音「${ext.appLabel}」。"
+                                                        }
+                                                        is PendingExtendedAction.MarkRead -> {
+                                                            val count = when (ext.scope) {
+                                                                "all" -> db.messageDao().markAllNonScamRead()
+                                                                "app" -> ext.packageName?.let { db.messageDao().markNonScamReadByApp(it) } ?: 0
+                                                                else -> {
+                                                                    val cal = java.util.Calendar.getInstance().apply {
+                                                                        set(java.util.Calendar.HOUR_OF_DAY, 0)
+                                                                        set(java.util.Calendar.MINUTE, 0)
+                                                                        set(java.util.Calendar.SECOND, 0)
+                                                                        set(java.util.Calendar.MILLISECOND, 0)
+                                                                    }
+                                                                    db.messageDao().markNonScamReadSince(cal.timeInMillis)
+                                                                }
+                                                            }
+                                                            StatsForegroundService.startOrRefresh(appCtx, force = true)
+                                                            "已將 $count 則非詐騙訊息標記為已讀（詐騙紀錄維持不變）。"
+                                                        }
+                                                        is PendingExtendedAction.ExportMessages -> {
+                                                            val res = com.phantom.checker.util.MessageExporter.exportToDownloads(
+                                                                ctx = appCtx,
+                                                                packageName = ext.packageName,
+                                                                daysBack = ext.days
+                                                            )
+                                                            res.fold(
+                                                                onSuccess = { fileName -> "已匯出 CSV 至 Downloads/$fileName。" },
+                                                                onFailure = { err -> "匯出失敗：${err.message ?: "未知錯誤"}" }
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                withContext(Dispatchers.IO) {
+                                                    AppDatabaseHolder.db(appCtx).chatDao().insertMessage(
+                                                        ChatMessageEntity(
+                                                            sessionId = sid,
+                                                            role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                            content = resultMsg,
+                                                            createdAt = System.currentTimeMillis()
+                                                        )
+                                                    )
+                                                }
+                                                loadTodos()
+                                                loadMessages(sid)
+                                                onRefresh()
+                                                onShowMessage(resultMsg)
+                                            }
+                                        }
+                                    ) {
+                                        Text("確認執行")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (isSending) {
                         item {
                             Row(
@@ -2877,6 +3405,10 @@ private suspend fun buildRagSystemPrompt(
         }
         appendLine("訊息操作指令（僅使用者明確要求時於末尾附上，系統會顯示確認卡）：")
         appendLine("- 回覆：{\"action\":\"reply_message\",\"messageId\":123,\"replyText\":\"內容\"} | 開App：{\"action\":\"open_app\",\"messageId\":123}")
+        appendLine("- 搜訊息：{\"action\":\"search_messages\",\"query\":\"關鍵字\",\"packageName\":\"可選\",\"sender\":\"可選\",\"days\":2}")
+        appendLine("- 待辦管理：{\"action\":\"todo_list\"} | {\"action\":\"todo_done\",\"title\":\"...\"} | {\"action\":\"todo_delete\",\"title\":\"...\"} | {\"action\":\"todo_edit\",\"title\":\"...\",\"newTitle\":\"可選\",\"time\":\"yyyy-MM-dd HH:mm\"}")
+        appendLine("- VIP釘選：{\"action\":\"vip_pin\",\"sender\":\"...\",\"packageName\":\"可選\",\"pin\":true} | App靜音：{\"action\":\"mute_app\",\"appLabel\":\"...\",\"mute\":true}")
+        appendLine("- 標已讀：{\"action\":\"mark_read\",\"scope\":\"today|app|all\",\"packageName\":\"可選\"} | 匯出CSV：{\"action\":\"export_messages\",\"packageName\":\"可選\",\"days\":7}")
         appendLine("- 刪除（禁刪scam）：{\"action\":\"delete_message\",\"messageIds\":[123]} | 標籤：{\"action\":\"tag_message\",\"messageIds\":[123],\"tagName\":\"標籤\",\"operation\":\"add|remove\"}")
         val tagNamesStr = allTags.joinToString("、") { it.name }.ifBlank { "無" }
         appendLine("【目前可用標籤】$tagNamesStr")
@@ -3087,6 +3619,85 @@ private sealed class NaturalTimeParseResult {
     data object Unparseable : NaturalTimeParseResult()
 }
 
+private data class SearchMessagesProposal(
+    val query: String?,
+    val packageName: String?,
+    val sender: String?,
+    val days: Int?
+)
+
+private data class TodoManageProposal(
+    val action: String,
+    val title: String?,
+    val newTitle: String?,
+    val time: String?
+)
+
+private data class VipPinProposal(
+    val sender: String,
+    val packageName: String?,
+    val pin: Boolean
+)
+
+private data class MuteAppProposal(
+    val appLabel: String,
+    val mute: Boolean
+)
+
+private data class MarkReadProposal(
+    val scope: String,
+    val packageName: String?
+)
+
+private data class ExportMessagesProposal(
+    val packageName: String?,
+    val days: Int?
+)
+
+private data class SearchResultCardState(
+    val sessionId: Long,
+    val querySummary: String,
+    val results: List<MessageEntity>
+)
+
+private sealed interface PendingExtendedAction {
+    val sessionId: Long
+
+    data class TodoDone(override val sessionId: Long, val todo: TodoEntity) : PendingExtendedAction
+    data class TodoDelete(override val sessionId: Long, val todo: TodoEntity) : PendingExtendedAction
+    data class TodoEdit(
+        override val sessionId: Long,
+        val original: TodoEntity,
+        val newTitle: String,
+        val newDueAt: Long
+    ) : PendingExtendedAction
+    data class VipPin(
+        override val sessionId: Long,
+        val sender: String,
+        val packageName: String,
+        val appLabel: String,
+        val pin: Boolean
+    ) : PendingExtendedAction
+    data class MuteApp(
+        override val sessionId: Long,
+        val packageName: String,
+        val appLabel: String,
+        val mute: Boolean
+    ) : PendingExtendedAction
+    data class MarkRead(
+        override val sessionId: Long,
+        val scope: String,
+        val packageName: String?,
+        val scopeLabel: String
+    ) : PendingExtendedAction
+    data class ExportMessages(
+        override val sessionId: Long,
+        val packageName: String?,
+        val days: Int?,
+        val scopeLabel: String
+    ) : PendingExtendedAction
+}
+
 private data class ParsedChatActions(
     val cleanReply: String,
     val ruleProposals: List<PendingRuleProposal> = emptyList(),
@@ -3099,6 +3710,12 @@ private data class ParsedChatActions(
     val adjustProposals: List<SettingAdjustProposal> = emptyList(),
     val openSettingProposals: List<OpenSettingProposal> = emptyList(),
     val messageActions: List<MessageActionProposal> = emptyList(),
+    val searchProposals: List<SearchMessagesProposal> = emptyList(),
+    val todoManageProposals: List<TodoManageProposal> = emptyList(),
+    val vipPinProposals: List<VipPinProposal> = emptyList(),
+    val muteAppProposals: List<MuteAppProposal> = emptyList(),
+    val markReadProposals: List<MarkReadProposal> = emptyList(),
+    val exportProposals: List<ExportMessagesProposal> = emptyList(),
     val invalidActionErrors: List<String> = emptyList()
 )
 
@@ -3120,7 +3737,16 @@ private val KNOWN_CHAT_ACTIONS = setOf(
     "reply_message",
     "open_app",
     "delete_message",
-    "tag_message"
+    "tag_message",
+    "search_messages",
+    "todo_list",
+    "todo_done",
+    "todo_delete",
+    "todo_edit",
+    "vip_pin",
+    "mute_app",
+    "mark_read",
+    "export_messages"
 )
 
 /**
@@ -3176,6 +3802,12 @@ private fun parseSingleActionJson(
     adjustOut: MutableList<SettingAdjustProposal>,
     openOut: MutableList<OpenSettingProposal>,
     messageOut: MutableList<MessageActionProposal>,
+    searchOut: MutableList<SearchMessagesProposal>,
+    todoManageOut: MutableList<TodoManageProposal>,
+    vipPinOut: MutableList<VipPinProposal>,
+    muteAppOut: MutableList<MuteAppProposal>,
+    markReadOut: MutableList<MarkReadProposal>,
+    exportOut: MutableList<ExportMessagesProposal>,
     errorsOut: MutableList<String>
 ): Boolean {
     val obj = try {
@@ -3340,6 +3972,62 @@ private fun parseSingleActionJson(
                 )
             }
         }
+        "search_messages" -> {
+            val q = obj.get("query")?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim()?.takeIf { it.isNotEmpty() }
+            val pkg = obj.get("packageName")?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim()?.takeIf { it.isNotEmpty() }
+            val sender = obj.get("sender")?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim()?.takeIf { it.isNotEmpty() }
+            val days = obj.get("days")?.takeIf { !it.isJsonNull }?.let { el ->
+                runCatching { el.asInt }.getOrNull() ?: el.asString.trim().toIntOrNull()
+            }?.coerceIn(1, 90)
+            searchOut.add(SearchMessagesProposal(query = q, packageName = pkg, sender = sender, days = days))
+        }
+        "todo_list" -> {
+            todoManageOut.add(TodoManageProposal(action = "todo_list", title = null, newTitle = null, time = null))
+        }
+        "todo_done", "todo_delete", "todo_edit" -> {
+            val title = obj.get("title")?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim()?.takeIf { it.isNotEmpty() }
+            val newTitle = obj.get("newTitle")?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim()?.takeIf { it.isNotEmpty() }
+            val time = obj.get("time")?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim()?.takeIf { it.isNotEmpty() }
+            if (title == null) {
+                errorsOut.add("請指定要操作的待辦事項名稱。")
+            } else {
+                todoManageOut.add(TodoManageProposal(action = action, title = title, newTitle = newTitle, time = time))
+            }
+        }
+        "vip_pin" -> {
+            val sender = obj.get("sender")?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim()?.takeIf { it.isNotEmpty() }
+            val pkg = obj.get("packageName")?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim()?.takeIf { it.isNotEmpty() }
+            val pinEl = obj.get("pin")?.takeIf { !it.isJsonNull }
+            val pin = runCatching { pinEl?.asBoolean }.getOrNull() ?: true
+            if (sender == null) {
+                errorsOut.add("請指定要釘選或取消釘選 VIP 的寄件者名稱。")
+            } else {
+                vipPinOut.add(VipPinProposal(sender = sender, packageName = pkg, pin = pin))
+            }
+        }
+        "mute_app" -> {
+            val appLabel = (obj.get("appLabel") ?: obj.get("packageName"))
+                ?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim()?.takeIf { it.isNotEmpty() }
+            val muteEl = obj.get("mute")?.takeIf { !it.isJsonNull }
+            val mute = runCatching { muteEl?.asBoolean }.getOrNull() ?: true
+            if (appLabel == null) {
+                errorsOut.add("請指定要靜音或取消靜音的 App 名稱。")
+            } else {
+                muteAppOut.add(MuteAppProposal(appLabel = appLabel, mute = mute))
+            }
+        }
+        "mark_read" -> {
+            val scope = obj.get("scope")?.takeIf { !it.isJsonNull }?.asString?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: "today"
+            val pkg = obj.get("packageName")?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim()?.takeIf { it.isNotEmpty() }
+            markReadOut.add(MarkReadProposal(scope = scope, packageName = pkg))
+        }
+        "export_messages" -> {
+            val pkg = obj.get("packageName")?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim()?.takeIf { it.isNotEmpty() }
+            val days = obj.get("days")?.takeIf { !it.isJsonNull }?.let { el ->
+                runCatching { el.asInt }.getOrNull() ?: el.asString.trim().toIntOrNull()
+            }?.coerceIn(1, 365)
+            exportOut.add(ExportMessagesProposal(packageName = pkg, days = days))
+        }
     }
     return true
 }
@@ -3355,6 +4043,12 @@ private fun parseAllChatActions(rawReply: String): ParsedChatActions {
     val adjusts = mutableListOf<SettingAdjustProposal>()
     val openSettings = mutableListOf<OpenSettingProposal>()
     val msgActions = mutableListOf<MessageActionProposal>()
+    val searchProposals = mutableListOf<SearchMessagesProposal>()
+    val todoManages = mutableListOf<TodoManageProposal>()
+    val vipPins = mutableListOf<VipPinProposal>()
+    val muteApps = mutableListOf<MuteAppProposal>()
+    val markReads = mutableListOf<MarkReadProposal>()
+    val exports = mutableListOf<ExportMessagesProposal>()
     val errors = mutableListOf<String>()
 
     val rangesToRemove = mutableListOf<IntRange>()
@@ -3369,7 +4063,7 @@ private fun parseAllChatActions(rawReply: String): ParsedChatActions {
             errors.add("動作指令格式無法解析，請重新嘗試。")
         } else {
             objs.forEach { (_, jsonStr) ->
-                parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, toggles, candidates, adjusts, openSettings, msgActions, errors)
+                parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, toggles, candidates, adjusts, openSettings, msgActions, searchProposals, todoManages, vipPins, muteApps, markReads, exports, errors)
             }
         }
     }
@@ -3387,7 +4081,7 @@ private fun parseAllChatActions(rawReply: String): ParsedChatActions {
     val inlineRangesToRemove = mutableListOf<IntRange>()
     splitBalancedJsonObjects(withoutFenced).forEach { (range, jsonStr) ->
         if (jsonStr.contains("\"action\"", ignoreCase = true)) {
-            val handled = parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, toggles, candidates, adjusts, openSettings, msgActions, errors)
+            val handled = parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, toggles, candidates, adjusts, openSettings, msgActions, searchProposals, todoManages, vipPins, muteApps, markReads, exports, errors)
             if (handled) {
                 inlineRangesToRemove.add(range)
             }
@@ -3426,6 +4120,12 @@ private fun parseAllChatActions(rawReply: String): ParsedChatActions {
         adjustProposals = adjusts.distinct(),
         openSettingProposals = openSettings.distinct(),
         messageActions = msgActions.distinct(),
+        searchProposals = searchProposals.distinct(),
+        todoManageProposals = todoManages.distinct(),
+        vipPinProposals = vipPins.distinct(),
+        muteAppProposals = muteApps.distinct(),
+        markReadProposals = markReads.distinct(),
+        exportProposals = exports.distinct(),
         invalidActionErrors = errors.distinct()
     )
 }

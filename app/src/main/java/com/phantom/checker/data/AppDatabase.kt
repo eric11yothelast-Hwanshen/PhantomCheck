@@ -362,6 +362,34 @@ interface MessageDao {
     @Query("UPDATE messages SET isRead = 1 WHERE isRead = 0")
     suspend fun markAllRead()
 
+    @Query("UPDATE messages SET isRead = 1 WHERE isRead = 0 AND riskLabel != 'scam'")
+    suspend fun markAllNonScamRead(): Int
+
+    @Query("UPDATE messages SET isRead = 1 WHERE isRead = 0 AND riskLabel != 'scam' AND timestamp >= :sinceTs")
+    suspend fun markNonScamReadSince(sinceTs: Long): Int
+
+    @Query("UPDATE messages SET isRead = 1 WHERE isRead = 0 AND riskLabel != 'scam' AND packageName = :packageName")
+    suspend fun markNonScamReadByApp(packageName: String): Int
+
+    @Query(
+        """
+        SELECT * FROM messages
+        WHERE timestamp >= :sinceTs
+          AND (:packageName IS NULL OR packageName = :packageName)
+          AND (:sender IS NULL OR sender LIKE '%' || :sender || '%' COLLATE NOCASE)
+          AND (:query IS NULL OR content LIKE '%' || :query || '%' COLLATE NOCASE OR sender LIKE '%' || :query || '%' COLLATE NOCASE)
+        ORDER BY timestamp DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun searchFiltered(
+        sinceTs: Long,
+        packageName: String?,
+        sender: String?,
+        query: String?,
+        limit: Int = 5
+    ): List<MessageEntity>
+
     @Query("UPDATE messages SET isRead = 1 WHERE id IN (:ids)")
     suspend fun markReadByIds(ids: List<Long>)
 
