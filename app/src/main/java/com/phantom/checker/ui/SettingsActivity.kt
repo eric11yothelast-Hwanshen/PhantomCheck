@@ -1,10 +1,13 @@
 package com.phantom.checker.ui
 
+import android.app.DownloadManager
 import android.app.NotificationManager
 import android.app.TimePickerDialog
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -12,6 +15,10 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.content.ContextCompat
+import com.phantom.checker.util.AppUpdateHelper
+import com.phantom.checker.util.UpdateCheckResult
+import java.io.File
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -2924,6 +2931,113 @@ private fun AboutSettingsCard(
         }
     }
 
+    val scope = rememberCoroutineScope()
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var updateResult by remember { mutableStateOf<UpdateCheckResult?>(null) }
+    var activeDownloadId by remember { mutableStateOf<Long?>(null) }
+    var downloadedApkFile by remember { mutableStateOf<File?>(null) }
+    var isDownloading by remember { mutableStateOf(false) }
+    var downloadStatusText by remember { mutableStateOf<String?>(null) }
+    var showUnknownSourceDialog by remember { mutableStateOf(false) }
+
+    fun attemptInstall(file: File) {
+        if (!file.exists() || file.length() <= 0L) {
+            downloadedApkFile = null
+            downloadStatusText = "更新檔已被移除，請重新下載。"
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !ctx.packageManager.canRequestPackageInstalls()) {
+            showUnknownSourceDialog = true
+            downloadStatusText = "已下載完成，授權「安裝未知應用程式」後即可安裝。"
+            return
+        }
+        AppUpdateHelper.launchApkInstaller(ctx, file).onFailure { err ->
+            downloadStatusText = err.message ?: "無法開啟系統安裝器，請前往檔案管理員手動安裝。"
+        }
+    }
+
+    DisposableEffect(activeDownloadId) {
+        val dlId = activeDownloadId
+        if (dlId == null) {
+            onDispose { }
+        } else {
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    if (intent?.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
+                    val completedId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
+                    if (completedId != dlId) return
+                    val dm = ctx.getSystemService(DownloadManager::class.java) ?: return
+                    val query = DownloadManager.Query().setFilterById(dlId)
+                    dm.query(query)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val statusIdx = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                            val reasonIdx = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
+                            val status = if (statusIdx >= 0) cursor.getInt(statusIdx) else -1
+                            val reason = if (reasonIdx >= 0) cursor.getInt(reasonIdx) else -1
+                            isDownloading = false
+                            activeDownloadId = null
+                            when (status) {
+                                DownloadManager.STATUS_SUCCESSFUL -> {
+                                    val file = downloadedApkFile
+                                    if (file != null && file.exists()) {
+                                        downloadStatusText = "下載完成：${file.name}"
+                                        attemptInstall(file)
+                                    } else {
+                                        downloadedApkFile = null
+                                        downloadStatusText = "下載完成但找不到更新檔，請重新下載。"
+                                    }
+                                }
+                                DownloadManager.STATUS_FAILED -> {
+                                    downloadedApkFile = null
+                                    downloadStatusText = "下載失敗（錯誤碼 $reason），請重試或前往 GitHub 下載。"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+            ContextCompat.registerReceiver(ctx, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
+            onDispose {
+                try {
+                    ctx.unregisterReceiver(receiver)
+                } catch (_: Exception) {
+                }
+            }
+        }
+    }
+
+    if (showUnknownSourceDialog) {
+        AlertDialog(
+            onDismissRequest = { showUnknownSourceDialog = false },
+            title = { Text("需要授權安裝權限") },
+            text = { Text("Android 需要您允許「幻訊」安裝未知來源應用程式，才能啟動系統 APK 安裝器。前往設定授權後，返回此頁面點擊「安裝更新」即可繼續。") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showUnknownSourceDialog = false
+                        try {
+                            ctx.startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                    Uri.parse("package:${ctx.packageName}")
+                                )
+                            )
+                        } catch (_: Exception) {
+                        }
+                    }
+                ) {
+                    Text("前往設定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUnknownSourceDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
     CollapsibleSettingsCard(
         title = "關於",
         expanded = expanded,
@@ -2944,7 +3058,7 @@ private fun AboutSettingsCard(
         )
         Spacer(Modifier.height(2.dp))
         Text(
-            text = "作者：邱柏鈞（eric11yothelast-Hwanshen）",
+            text = "作者：幻神（Hwanshen）",
             style = MaterialTheme.typography.bodyMedium
         )
         Spacer(Modifier.height(8.dp))
@@ -2953,6 +3067,144 @@ private fun AboutSettingsCard(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = {
+                if (!isCheckingUpdate) {
+                    isCheckingUpdate = true
+                    downloadStatusText = null
+                    scope.launch {
+                        updateResult = AppUpdateHelper.checkLatestRelease(ctx)
+                        isCheckingUpdate = false
+                    }
+                }
+            },
+            enabled = !isCheckingUpdate,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (isCheckingUpdate) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("檢查更新中…")
+            } else {
+                Text("檢查更新")
+            }
+        }
+        when (val res = updateResult) {
+            is UpdateCheckResult.UpToDate -> {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "已是最新版本（${res.currentVersion}）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            is UpdateCheckResult.UpdateAvailable -> {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "最新版本 ${res.latestVersion}（${res.publishedDate}）",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(6.dp))
+                if (res.apkDownloadUrl != null) {
+                    val readyFile = downloadedApkFile
+                    if (readyFile != null && readyFile.exists() && !isDownloading) {
+                        Button(
+                            onClick = { attemptInstall(readyFile) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("安裝更新（v${res.latestVersion}）")
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                if (!isDownloading) {
+                                    val enqueued = AppUpdateHelper.enqueueApkDownload(
+                                        ctx = ctx,
+                                        version = res.latestVersion,
+                                        downloadUrl = res.apkDownloadUrl
+                                    )
+                                    if (enqueued != null) {
+                                        activeDownloadId = enqueued.first
+                                        downloadedApkFile = enqueued.second
+                                        isDownloading = true
+                                        downloadStatusText = "正在下載 app-release-${res.latestVersion}.apk…"
+                                    } else {
+                                        downloadStatusText = "無法啟動系統下載管理員，請前往 GitHub 下載。"
+                                    }
+                                }
+                            },
+                            enabled = !isDownloading,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (isDownloading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("下載中…")
+                            } else {
+                                Text("下載更新")
+                            }
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "此發佈版本未附帶 APK 資產，請前往 GitHub 下載。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(res.htmlUrl)))
+                            } catch (_: Exception) {
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("前往 GitHub")
+                    }
+                }
+            }
+            is UpdateCheckResult.Error -> {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = res.message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(Modifier.height(4.dp))
+                OutlinedButton(
+                    onClick = {
+                        try {
+                            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(AppUpdateHelper.REPO_RELEASES_URL)))
+                        } catch (_: Exception) {
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("前往 GitHub")
+                }
+            }
+            null -> Unit
+        }
+        downloadStatusText?.let { msg ->
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Spacer(Modifier.height(8.dp))
         OutlinedButton(
             onClick = {
