@@ -391,6 +391,9 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE timestamp >= :startTs AND timestamp <= :endTs AND (:packageName IS NULL OR packageName = :packageName) ORDER BY timestamp DESC LIMIT :limit")
     suspend fun queryRange(startTs: Long, endTs: Long, packageName: String?, limit: Int = 40): List<MessageEntity>
 
+    @Query("SELECT DISTINCT sender FROM messages WHERE sender != '' ORDER BY timestamp DESC LIMIT 200")
+    suspend fun recentSenders(): List<String>
+
     @Query("SELECT COUNT(*) FROM messages WHERE riskLabel = :label")
     suspend fun countByRiskLabel(label: String): Int
 

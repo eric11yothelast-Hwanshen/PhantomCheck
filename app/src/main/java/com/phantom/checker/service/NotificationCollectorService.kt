@@ -72,11 +72,13 @@ class NotificationCollectorService : NotificationListenerService() {
 
     override fun onCreate() {
         super.onCreate()
+        activeInstance = this
         AiClient.init(applicationContext)
         PhantomPrefs.onRuleCachesInvalidated = { invalidateRuleCaches() }
     }
 
     override fun onDestroy() {
+        if (activeInstance === this) activeInstance = null
         PhantomPrefs.onRuleCachesInvalidated = null
         isConnected = false
         scope.cancel()
@@ -85,6 +87,7 @@ class NotificationCollectorService : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
+        activeInstance = this
         isConnected = true
         connectTime = System.currentTimeMillis()
         StatsForegroundService.startOrRefresh(applicationContext, force = true)
@@ -93,6 +96,7 @@ class NotificationCollectorService : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
+        if (activeInstance === this) activeInstance = null
         isConnected = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
@@ -593,6 +597,98 @@ class NotificationCollectorService : NotificationListenerService() {
     companion object {
         @Volatile
         var isConnected: Boolean = false
+
+        @Volatile
+        private var activeInstance: NotificationCollectorService? = null
+
+        sealed class ReplySendResult {
+            data object Success : ReplySendResult()
+            data class Unavailable(val reason: String) : ReplySendResult()
+        }
+
+        fun sendReplyToNotification(
+            context: Context,
+            packageName: String,
+            sender: String,
+            contentSnippet: String,
+            replyText: String
+        ): ReplySendResult {
+            val service = activeInstance
+                ?: return ReplySendResult.Unavailable("通知監聽服務尚未連線，無法取得即時通知，建議開啟原 App 回覆。")
+            val trimmedReply = replyText.trim()
+            if (trimmedReply.isEmpty()) {
+                return ReplySendResult.Unavailable("回覆內容不可為空。")
+            }
+            val active = try {
+                service.activeNotifications?.toList().orEmpty()
+            } catch (_: Exception) {
+                return ReplySendResult.Unavailable("無法讀取目前通知列狀態，建議開啟原 App 回覆。")
+            }
+            val pkgNotifs = active.filter { it.packageName == packageName }
+            if (pkgNotifs.isEmpty()) {
+                return ReplySendResult.Unavailable("該通知已被清除或不在通知列中，無法快速回覆，建議開啟原 App 回覆。")
+            }
+
+            val senderNorm = sender.trim()
+            val snippetNorm = contentSnippet.trim().take(40)
+            var foundMatchingNotifWithoutRemoteInput = false
+
+            val candidates = pkgNotifs.sortedByDescending { sbn ->
+                val extras = sbn.notification?.extras ?: return@sortedByDescending 0
+                val t = (extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
+                    ?: extras.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString()
+                    ?: "").trim()
+                val body = (extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+                    ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
+                    ?: "").trim()
+                var score = 0
+                if (senderNorm.isNotEmpty() && t.equals(senderNorm, ignoreCase = true)) score += 10
+                else if (senderNorm.isNotEmpty() && t.contains(senderNorm, ignoreCase = true)) score += 5
+                if (snippetNorm.isNotEmpty() && body.contains(snippetNorm, ignoreCase = true)) score += 4
+                score
+            }
+
+            for (sbn in candidates) {
+                val notif = sbn.notification ?: continue
+                val extras = notif.extras ?: continue
+                val t = (extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
+                    ?: extras.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString()
+                    ?: "").trim()
+                val senderMatches = senderNorm.isEmpty() ||
+                    t.equals(senderNorm, ignoreCase = true) ||
+                    t.contains(senderNorm, ignoreCase = true) ||
+                    senderNorm.contains(t, ignoreCase = true)
+                if (!senderMatches && pkgNotifs.size > 1) continue
+
+                val actions = notif.actions ?: emptyArray()
+                val replyAction = actions.firstOrNull { act ->
+                    act.actionIntent != null &&
+                        act.remoteInputs?.any { it.allowFreeFormInput } == true
+                }
+                if (replyAction == null) {
+                    foundMatchingNotifWithoutRemoteInput = true
+                    continue
+                }
+                val remoteInput = replyAction.remoteInputs.first { it.allowFreeFormInput }
+                return try {
+                    val replyIntent = Intent()
+                    val bundle = android.os.Bundle().apply {
+                        putCharSequence(remoteInput.resultKey, trimmedReply)
+                    }
+                    android.app.RemoteInput.addResultsToIntent(arrayOf(remoteInput), replyIntent, bundle)
+                    replyAction.actionIntent.send(context, 0, replyIntent)
+                    ReplySendResult.Success
+                } catch (e: Exception) {
+                    ReplySendResult.Unavailable("傳送快速回覆失敗（${e.message ?: "未知錯誤"}），建議開啟原 App 回覆。")
+                }
+            }
+
+            return if (foundMatchingNotifWithoutRemoteInput) {
+                ReplySendResult.Unavailable("該通知不支援快速回覆（無 RemoteInput），建議開啟原 App 回覆。")
+            } else {
+                ReplySendResult.Unavailable("找不到來自「${sender.ifBlank { packageName }}」的可回覆通知，可能已被清除，建議開啟原 App 回覆。")
+            }
+        }
 
         private const val DEDUP_WINDOW_MS = 10L * 60L * 1000L
         private const val REPLAY_GRACE_MS = 5000L
