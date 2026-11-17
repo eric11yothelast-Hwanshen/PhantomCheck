@@ -58,6 +58,17 @@ enum class CardDensity(val prefValue: String, val label: String) {
     }
 }
 
+enum class TabBarDisplayMode(val prefValue: String, val label: String) {
+    STANDARD("standard", "標準"),
+    COMPACT("compact", "縮小"),
+    AUTO_HIDE("auto_hide", "自動隱藏");
+
+    companion object {
+        fun fromPref(value: String?): TabBarDisplayMode =
+            entries.firstOrNull { it.prefValue == value } ?: STANDARD
+    }
+}
+
 enum class HomeSortOrder(val prefValue: String, val label: String) {
     RECENT("recent", "時間新→舊"),
     UNREAD("unread", "未讀多→少"),
@@ -638,6 +649,14 @@ object PhantomPrefs {
 
     fun setGlassEffectEnabled(ctx: Context, enabled: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_GLASS_EFFECT_ENABLED, enabled).apply()
+    }
+
+    /** 底部分頁欄顯示模式（標準／縮小／自動隱藏，預設標準） */
+    fun getTabBarDisplayMode(ctx: Context): TabBarDisplayMode =
+        TabBarDisplayMode.fromPref(prefs(ctx).getString("tab_bar_display_mode", null))
+
+    fun setTabBarDisplayMode(ctx: Context, mode: TabBarDisplayMode) {
+        prefs(ctx).edit().putString("tab_bar_display_mode", mode.prefValue).apply()
     }
 
     /** AI 助手建議問題開關（預設開） */

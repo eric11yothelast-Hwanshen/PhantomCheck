@@ -63,6 +63,7 @@ fun LiquidGlassTabBar(
     glassState: dev.chrisbanes.haze.HazeState,
     tabs: @Composable RowScope.() -> Unit,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
     /** S49 滑動／fling 放手後的分頁切換回呼（點擊行為零變更，仍走各分頁項 onClick） */
     onSelect: (Int) -> Unit = {},
 ) {
@@ -113,16 +114,16 @@ fun LiquidGlassTabBar(
             modifier = Modifier
                 .matchParentSize()
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(top = 8.dp, bottom = 8.dp)
+                .padding(top = if (compact) 4.dp else 8.dp, bottom = if (compact) 4.dp else 8.dp)
         ) {
             if (tabCount <= 0) return@Canvas
             val tabWidthPx = barWidth.toPx() / tabCount
             val index = animatedIndex.value
             val velocity = if (isDragging) dragVelocityIndex else animatedIndex.velocity
             val centerX = tabWidthPx * (index + 0.5f)
-            // S50：水滴貼合內容——高 56dp、寬 tabWidth×0.72（內容垂直置中後上下各約 5~8dp 餘裕）
+            // S50：水滴貼合內容——標準高 56dp、縮小模式 44dp
             val baseWidth = tabWidthPx * 0.72f
-            val baseHeight = 56.dp.toPx()
+            val baseHeight = (if (compact) 44.dp else 56.dp).toPx()
             // 液態變形：移動速度越快，水滴沿移動方向拉得越長、高度越扁（Bézier 控制點隨之變形）
             val stretch = min(0.38f, abs(velocity) / 6f)
             val halfWidth = baseWidth * (1f + stretch) / 2f
@@ -221,7 +222,7 @@ fun LiquidGlassTabBar(
                     )
                 }
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .height(80.dp),
+                .height(if (compact) 60.dp else 80.dp),
         ) {
             tabs()
         }
@@ -236,6 +237,7 @@ fun LiquidGlassTabBarItem(
     icon: ImageVector,
     label: String,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     val contentColor = if (selected) {
         MaterialTheme.colorScheme.primary
@@ -258,11 +260,12 @@ fun LiquidGlassTabBarItem(
             imageVector = icon,
             contentDescription = label,
             tint = contentColor,
+            modifier = if (compact) Modifier.size(20.dp) else Modifier,
         )
-        Spacer(Modifier.height(2.dp))
+        Spacer(Modifier.height(if (compact) 1.dp else 2.dp))
         Text(
             text = label,
-            style = MaterialTheme.typography.labelMedium,
+            style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
             color = contentColor,
             maxLines = 1,
         )

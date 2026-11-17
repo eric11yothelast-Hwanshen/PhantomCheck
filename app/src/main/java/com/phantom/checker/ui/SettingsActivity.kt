@@ -406,6 +406,7 @@ fun FilterSettingsScreen(
     val fontScaleMode = ThemePreferences.getFontScaleMode(appCtx)
     var hapticEnabled by remember { mutableStateOf(PhantomPrefs.isHapticFeedbackEnabled(appCtx)) }
     val glassEffectEnabled = ThemePreferences.isGlassEffectEnabled(appCtx)
+    var tabBarDisplayMode by remember { mutableStateOf(PhantomPrefs.getTabBarDisplayMode(appCtx)) }
 
     // 保持運作狀態
     var listenerEnabled by remember {
@@ -2185,6 +2186,26 @@ fun FilterSettingsScreen(
                             ThemePreferences.setGlassEffectEnabled(appCtx, checked)
                         }
                     )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    Text("底部分頁欄顯示模式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text(
+                        text = "標準（預設）／縮小（80% 高度與圖示）／自動隱藏（向下捲動隱藏、向上捲動或點底部浮現）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        com.phantom.checker.util.TabBarDisplayMode.entries.forEach { mode ->
+                            FilterChip(
+                                selected = tabBarDisplayMode == mode,
+                                onClick = {
+                                    tabBarDisplayMode = mode
+                                    PhantomPrefs.setTabBarDisplayMode(appCtx, mode)
+                                },
+                                label = { Text(mode.label) }
+                            )
+                        }
+                    }
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
 
                     Text(
