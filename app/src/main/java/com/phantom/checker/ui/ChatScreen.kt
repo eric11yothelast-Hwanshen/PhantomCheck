@@ -238,6 +238,7 @@ fun ChatAssistantTab(
     var lastFailedQuery by remember { mutableStateOf<String?>(null) }
     var showSessionDrawer by remember { mutableStateOf(false) }
     var deleteSessionConfirm by remember { mutableStateOf<ChatSessionEntity?>(null) }
+    var showClearAllSessionsConfirm by remember { mutableStateOf(false) }
     var suggestionChips by remember { mutableStateOf(listOf<String>()) }
     var profiles by remember { mutableStateOf(AiClient.getProfiles(appCtx)) }
     var activeProfile by remember { mutableStateOf(AiClient.getActiveProfile(appCtx)) }
@@ -346,11 +347,6 @@ fun ChatAssistantTab(
 
     LaunchedEffect(Unit) {
         loadSessionsAndSuggestions()
-        if (currentSessionId == null && sessions.isNotEmpty()) {
-            val latestId = sessions.first().id
-            currentSessionId = latestId
-            loadMessages(latestId)
-        }
     }
 
     LaunchedEffect(messages.size, isSending) {
@@ -897,6 +893,46 @@ fun ChatAssistantTab(
         )
     }
 
+    if (showClearAllSessionsConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearAllSessionsConfirm = false },
+            title = { Text("清除全部對話") },
+            text = { Text("確定要永久刪除所有歷史對話與訊息紀錄嗎？此操作無法復原。") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (isSending) {
+                            showClearAllSessionsConfirm = false
+                            onShowMessage("AI 正在回覆中，請稍候再清除對話")
+                            return@Button
+                        }
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                AppDatabaseHolder.db(appCtx).chatDao().clearAllSessions()
+                            }
+                            currentSessionId = null
+                            messages = emptyList()
+                            lastError = null
+                            lastFailedQuery = null
+                            showClearAllSessionsConfirm = false
+                            showSessionDrawer = false
+                            loadSessionsAndSuggestions()
+                            onShowMessage("已清除全部對話")
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("確認清除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearAllSessionsConfirm = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
     if (showSessionDrawer) {
         ModalBottomSheet(onDismissRequest = { showSessionDrawer = false }) {
             Column(
@@ -915,13 +951,26 @@ fun ChatAssistantTab(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    TextButton(onClick = {
-                        currentSessionId = null
-                        messages = emptyList()
-                        lastError = null
-                        showSessionDrawer = false
-                    }) {
-                        Text("+ 新對話")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (sessions.isNotEmpty()) {
+                            TextButton(onClick = {
+                                if (isSending) {
+                                    onShowMessage("AI 正在回覆中，請稍候再清除對話")
+                                } else {
+                                    showClearAllSessionsConfirm = true
+                                }
+                            }) {
+                                Text("清除全部對話", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                        TextButton(onClick = {
+                            currentSessionId = null
+                            messages = emptyList()
+                            lastError = null
+                            showSessionDrawer = false
+                        }) {
+                            Text("+ 新對話")
+                        }
                     }
                 }
                 if (sessions.isEmpty()) {

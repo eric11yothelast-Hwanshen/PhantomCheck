@@ -695,6 +695,18 @@ interface ChatDao {
         deleteMessagesBySession(sessionId)
         deleteSessionById(sessionId)
     }
+
+    @Query("DELETE FROM chat_messages")
+    suspend fun deleteAllMessages()
+
+    @Query("DELETE FROM chat_sessions")
+    suspend fun deleteAllSessions()
+
+    @Transaction
+    suspend fun clearAllSessions() {
+        deleteAllMessages()
+        deleteAllSessions()
+    }
 }
 
 @Dao
