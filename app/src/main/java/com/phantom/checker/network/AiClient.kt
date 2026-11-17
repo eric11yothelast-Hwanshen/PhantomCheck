@@ -49,12 +49,33 @@ data class ChatChoice(
 )
 data class ChatResponse(val choices: List<ChatChoice>)
 
+data class VisionImageUrl(val url: String)
+data class VisionContentPart(
+    val type: String,
+    val text: String? = null,
+    @SerializedName("image_url") val imageUrl: VisionImageUrl? = null
+)
+data class VisionChatMessage(val role: String, val content: Any)
+data class VisionChatRequest(
+    val model: String,
+    val messages: List<VisionChatMessage>,
+    @SerializedName("max_tokens") val maxTokens: Int = 1024,
+    val temperature: Double = 0.4
+)
+
 interface ChatApi {
     @POST
     suspend fun chat(
         @Url url: String,
         @Header("Authorization") auth: String,
         @Body body: ChatRequest
+    ): ChatResponse
+
+    @POST
+    suspend fun chatVision(
+        @Url url: String,
+        @Header("Authorization") auth: String,
+        @Body body: VisionChatRequest
     ): ChatResponse
 }
 
@@ -1041,20 +1062,46 @@ object AiClient {
         return if (rawErr != null) "$base\n原始錯誤：$rawErr" else base
     }
 
-    /** AI 助手對話呼叫（事前 token 預算預估＋413/context-length 多階段降載＋429 Retry-After 退避重試） */
+    fun isVisionModelSupported(profile: AiProviderProfile): Boolean {
+        val m = profile.model.trim().lowercase()
+        if (m.isEmpty()) return false
+        val knownTextOnly = listOf(
+            "gpt-oss", "llama-3.1", "llama-3.3", "deepseek-chat", "deepseek-reasoner",
+            "mistral-small", "mixtral", "gemma", "qwen3-32b", "qwen-qwq"
+        )
+        if (knownTextOnly.any { m.contains(it) }) return false
+        val knownVision = listOf(
+            "vision", "pixtral", "mistral-large", "mistral-medium",
+            "gpt-4o", "gpt-4-turbo", "gpt-4.1", "gpt-5", "gpt-6",
+            "gemini", "claude-3", "claude-4",
+            "qwen3.8", "qwen2.5-vl", "qwen-vl", "vl",
+            "llama-3.2-11b-vision", "llama-3.2-90b-vision", "llama-4",
+            "llava", "muse-spark", "multimodal"
+        )
+        return knownVision.any { m.contains(it) }
+    }
+
+    /** AI 助手對話呼叫（事前 token 預算預估＋413/context-length 多階段降載＋429 Retry-After 退避重試；支援多模態圖片） */
     suspend fun chatAssistant(
         systemPrompt: String,
         history: List<ChatMessage>,
         userMessage: String,
         context: Context? = null,
         ragLimit: Int = 0,
+        imageDataUri: String? = null,
         onRebuildSystemPromptForRetry: (suspend (newRagLimit: Int) -> String)? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         val profile = getActiveProfile(context)
             ?: return@withContext Result.failure(IllegalStateException("尚未設定 AI Provider API Key"))
+        if (!imageDataUri.isNullOrBlank() && !isVisionModelSupported(profile)) {
+            return@withContext Result.failure(
+                IllegalStateException("目前模型「${profile.model}」不支援圖片視覺檢視，請切換至支援視覺的模型（如 Pixtral、Qwen3.8、GPT-4o、Gemini）後再試。")
+            )
+        }
         val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
         val auth = "Bearer ${profile.apiKey.trim()}"
         val budget = getProviderTotalTokenBudget(profile)
+        val imageTokenOverhead = if (!imageDataUri.isNullOrBlank()) 2048 else 0
 
         var currentSysPrompt = systemPrompt
         var currentRagLimit = ragLimit
@@ -1090,12 +1137,12 @@ object AiClient {
 
         // 事前預估：避免明顯超限仍送出浪費一次來回
         var preBody = buildBody(currentSysPrompt, activeHistoryLimit, activeMaxTokens)
-        if (estimateMessagesTokens(preBody.messages) + activeMaxTokens > budget) {
+        if (estimateMessagesTokens(preBody.messages) + imageTokenOverhead + activeMaxTokens > budget) {
             if (history.size > 15) {
                 activeHistoryLimit = 15
                 preBody = buildBody(currentSysPrompt, activeHistoryLimit, activeMaxTokens)
             }
-            if (estimateMessagesTokens(preBody.messages) + activeMaxTokens > budget &&
+            if (estimateMessagesTokens(preBody.messages) + imageTokenOverhead + activeMaxTokens > budget &&
                 onRebuildSystemPromptForRetry != null && currentRagLimit > 25
             ) {
                 val reduced = (currentRagLimit / 2).coerceAtLeast(25)
@@ -1104,11 +1151,11 @@ object AiClient {
                 currentSysPrompt = onRebuildSystemPromptForRetry(reduced)
                 preBody = buildBody(currentSysPrompt, activeHistoryLimit, activeMaxTokens)
             }
-            if (estimateMessagesTokens(preBody.messages) + activeMaxTokens > budget) {
+            if (estimateMessagesTokens(preBody.messages) + imageTokenOverhead + activeMaxTokens > budget) {
                 activeHistoryLimit = activeHistoryLimit.coerceAtMost(8)
                 preBody = buildBody(currentSysPrompt, activeHistoryLimit, activeMaxTokens)
             }
-            val promptEst = estimateMessagesTokens(preBody.messages)
+            val promptEst = estimateMessagesTokens(preBody.messages) + imageTokenOverhead
             if (promptEst + activeMaxTokens > budget) {
                 activeMaxTokens = (budget - promptEst).coerceIn(512, activeMaxTokens)
                 preBody = buildBody(currentSysPrompt, activeHistoryLimit, activeMaxTokens)
@@ -1124,11 +1171,39 @@ object AiClient {
             try {
                 enforceRateLimit()
                 logTokenEstimate("chatAssistant", profile, currentBody.messages, currentBody.maxTokens)
-                val res = getChatApi(profile.baseUrl).chat(
-                    url = fullUrl,
-                    auth = auth,
-                    body = currentBody
-                )
+                val res = if (!imageDataUri.isNullOrBlank()) {
+                    val visionMessages = currentBody.messages.dropLast(1).map {
+                        VisionChatMessage(it.role, it.content)
+                    } + VisionChatMessage(
+                        role = "user",
+                        content = listOf(
+                            VisionContentPart(
+                                type = "text",
+                                text = userMessage.ifBlank { "請檢視這張圖片的內容，並評估是否有任何詐騙或安全風險疑點。" }
+                            ),
+                            VisionContentPart(
+                                type = "image_url",
+                                imageUrl = VisionImageUrl(imageDataUri)
+                            )
+                        )
+                    )
+                    getChatApi(profile.baseUrl).chatVision(
+                        url = fullUrl,
+                        auth = auth,
+                        body = VisionChatRequest(
+                            model = currentBody.model,
+                            messages = visionMessages,
+                            maxTokens = currentBody.maxTokens,
+                            temperature = currentBody.temperature
+                        )
+                    )
+                } else {
+                    getChatApi(profile.baseUrl).chat(
+                        url = fullUrl,
+                        auth = auth,
+                        body = currentBody
+                    )
+                }
                 val choice = res.choices.firstOrNull()
                 val reply = choice?.message?.content?.trim()
                 return@withContext if (reply.isNullOrEmpty()) {

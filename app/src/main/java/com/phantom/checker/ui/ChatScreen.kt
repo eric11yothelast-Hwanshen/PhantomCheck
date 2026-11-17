@@ -4,12 +4,19 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -37,6 +44,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
@@ -74,8 +82,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -153,6 +163,37 @@ val AutoAwesomeIcon: ImageVector by lazy {
     }.build()
 }
 
+/** 自製相片圖示（無需額外 material-icons-extended 依賴） */
+private val PhotoIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "Photo",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(21f, 19f)
+            verticalLineTo(5f)
+            curveToRelative(0f, -1.1f, -0.9f, -2f, -2f, -2f)
+            horizontalLineTo(5f)
+            curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f)
+            verticalLineToRelative(14f)
+            curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f)
+            horizontalLineToRelative(14f)
+            curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
+            close()
+            moveTo(8.5f, 13.5f)
+            lineToRelative(2.5f, 3.01f)
+            lineTo(14.5f, 12f)
+            lineToRelative(4.5f, 6f)
+            horizontalLineTo(5f)
+            lineToRelative(3.5f, -4.5f)
+            close()
+        }
+    }.build()
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatAssistantTab(
@@ -178,6 +219,11 @@ fun ChatAssistantTab(
     var activeProfile by remember { mutableStateOf(AiClient.getActiveProfile(appCtx)) }
     var hasApiKey by remember { mutableStateOf(activeProfile != null) }
     var showSuggestions by remember { mutableStateOf(PhantomPrefs.isChatSuggestionsEnabled(appCtx)) }
+    var quickCommands by remember { mutableStateOf(PhantomPrefs.getQuickChatCommands(appCtx)) }
+    var showInputToolsMenu by remember { mutableStateOf(false) }
+    var showQuickCommandsDialog by remember { mutableStateOf(false) }
+    var pendingImageAttachment by remember { mutableStateOf<PendingImageAttachment?>(null) }
+    var pendingQuickCommandQueue by remember { mutableStateOf<List<PendingQuickCommandAddition>>(emptyList()) }
     var pendingRuleQueue by remember { mutableStateOf<List<PendingRuleInsertion>>(emptyList()) }
     var pendingTagRuleQueue by remember { mutableStateOf<List<PendingTagRuleInsertion>>(emptyList()) }
     var pendingWhitelist by remember { mutableStateOf<PendingWhitelistAction?>(null) }
@@ -185,6 +231,21 @@ fun ChatAssistantTab(
     var pendingSettingCandidates by remember { mutableStateOf<PendingSettingCandidatesState?>(null) }
     var pendingSettingAdjustQueue by remember { mutableStateOf<List<PendingSettingAdjustState>>(emptyList()) }
     var pendingMsgActionQueue by remember { mutableStateOf<List<PendingMessageActionState>>(emptyList()) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val encoded = withContext(Dispatchers.IO) { encodeImageUriToDataUri(appCtx, uri) }
+                if (encoded != null) {
+                    pendingImageAttachment = encoded
+                } else {
+                    onShowMessage("無法讀取所選圖片，請改選其他圖片")
+                }
+            }
+        }
+    }
 
     suspend fun loadSessionsAndSuggestions() {
         withContext(Dispatchers.IO) {
@@ -236,6 +297,7 @@ fun ChatAssistantTab(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 showSuggestions = PhantomPrefs.isChatSuggestionsEnabled(appCtx)
+                quickCommands = PhantomPrefs.getQuickChatCommands(appCtx)
                 profiles = AiClient.getProfiles(appCtx)
                 activeProfile = AiClient.getActiveProfile(appCtx)
                 hasApiKey = activeProfile != null
@@ -263,11 +325,21 @@ fun ChatAssistantTab(
     }
 
     fun sendQuery(rawQuery: String, isRetry: Boolean = false) {
-        val query = rawQuery.trim()
-        if (query.isEmpty() || isSending) return
+        val rawTrimmed = rawQuery.trim()
+        val attachedImage = if (!isRetry) pendingImageAttachment else null
+        if ((rawTrimmed.isEmpty() && attachedImage == null) || isSending) return
+        val query = rawTrimmed.ifBlank { "請檢視這張圖片的內容，並評估是否有任何詐騙或安全風險疑點。" }
+        val displayUserText = if (attachedImage != null) {
+            if (rawTrimmed.isNotEmpty()) "$rawTrimmed\n[已附加圖片]" else "[已附加圖片]"
+        } else {
+            query
+        }
         lastError = null
         lastFailedQuery = null
-        if (!isRetry) inputText = ""
+        if (!isRetry) {
+            inputText = ""
+            pendingImageAttachment = null
+        }
 
         scope.launch {
             isSending = true
@@ -277,7 +349,7 @@ fun ChatAssistantTab(
                 if (existingId != null) {
                     existingId
                 } else {
-                    val title = query.take(20).ifBlank { "新對話" }
+                    val title = displayUserText.take(20).ifBlank { "新對話" }
                     val newId = db.chatDao().insertSession(
                         ChatSessionEntity(title = title, createdAt = System.currentTimeMillis())
                     )
@@ -290,7 +362,7 @@ fun ChatAssistantTab(
                 val userEntity = ChatMessageEntity(
                     sessionId = sessionId,
                     role = ChatMessageEntity.ROLE_USER,
-                    content = query,
+                    content = displayUserText,
                     createdAt = System.currentTimeMillis()
                 )
                 withContext(Dispatchers.IO) {
@@ -298,7 +370,7 @@ fun ChatAssistantTab(
                     // 若為首則訊息，更新標題
                     val session = db.chatDao().sessionById(sessionId)
                     if (session != null && session.title == "新對話") {
-                        db.chatDao().updateSessionTitle(sessionId, query.take(20))
+                        db.chatDao().updateSessionTitle(sessionId, displayUserText.take(20))
                     }
                 }
                 loadMessages(sessionId)
@@ -320,6 +392,7 @@ fun ChatAssistantTab(
                 userMessage = query,
                 context = appCtx,
                 ragLimit = initialRagLimit,
+                imageDataUri = attachedImage?.dataUri,
                 onRebuildSystemPromptForRetry = { reducedLimit ->
                     withContext(Dispatchers.IO) {
                         buildRagSystemPrompt(appCtx, query, overrideLimit = reducedLimit)
@@ -608,6 +681,7 @@ fun ChatAssistantTab(
                 val allActionErrors = (parsed.invalidActionErrors + resolutionErrors).distinct()
                 val hasValidAction = parsed.ruleProposals.isNotEmpty() ||
                     resolvedTagRuleInsertions.isNotEmpty() ||
+                    parsed.quickCommandProposals.isNotEmpty() ||
                     dedupedWhitelistItems.isNotEmpty() ||
                     newAppliedSettings.isNotEmpty() ||
                     !finalCandidates.isNullOrEmpty() ||
@@ -648,6 +722,15 @@ fun ChatAssistantTab(
                 }
                 if (resolvedTagRuleInsertions.isNotEmpty()) {
                     pendingTagRuleQueue = resolvedTagRuleInsertions
+                }
+                if (parsed.quickCommandProposals.isNotEmpty()) {
+                    pendingQuickCommandQueue = parsed.quickCommandProposals.map {
+                        PendingQuickCommandAddition(
+                            sessionId = sessionId,
+                            proposal = it,
+                            defaultMode = it.mode ?: PhantomPrefs.getQuickCommandDefaultMode(appCtx)
+                        )
+                    }
                 }
                 if (dedupedWhitelistItems.isNotEmpty()) {
                     pendingWhitelist = PendingWhitelistAction(
@@ -1060,22 +1143,6 @@ fun ChatAssistantTab(
                 }
             }
             Spacer(Modifier.height(8.dp))
-        }
-
-        // 建議問題 chips
-        if (showSuggestions && suggestionChips.isNotEmpty()) {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(vertical = 4.dp)
-            ) {
-                items(suggestionChips, key = { it }) { chipText ->
-                    FilterChip(
-                        selected = false,
-                        onClick = { sendQuery(chipText) },
-                        label = { Text(chipText) }
-                    )
-                }
-            }
         }
 
         // 對話內容區
@@ -1920,6 +1987,71 @@ fun ChatAssistantTab(
                         }
                     }
 
+                    pendingQuickCommandQueue.firstOrNull()?.takeIf { it.sessionId == currentSessionId }?.let { pending ->
+                        item(key = "pending_quick_command_card_${pending.proposal.label}_${pending.proposal.prompt}") {
+                            var selectedMode by remember(pending) { mutableStateOf(pending.defaultMode) }
+                            PhantomGlassCard(
+                                glassState = glassState,
+                                modifier = Modifier.fillMaxWidth(),
+                                cornerRadius = 18.dp,
+                                contentPadding = 12.dp
+                            ) {
+                                Text(
+                                    text = "新增常用指令",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = "名稱：${pending.proposal.label}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "內容：${pending.proposal.prompt}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(
+                                        selected = selectedMode == PhantomPrefs.QuickChatCommand.MODE_DIRECT,
+                                        onClick = { selectedMode = PhantomPrefs.QuickChatCommand.MODE_DIRECT },
+                                        label = { Text("直接執行") }
+                                    )
+                                    FilterChip(
+                                        selected = selectedMode == PhantomPrefs.QuickChatCommand.MODE_PREFILL,
+                                        onClick = { selectedMode = PhantomPrefs.QuickChatCommand.MODE_PREFILL },
+                                        label = { Text("預輸入") }
+                                    )
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(
+                                        onClick = {
+                                            quickCommands = PhantomPrefs.addQuickChatCommand(
+                                                appCtx,
+                                                pending.proposal.label,
+                                                pending.proposal.prompt,
+                                                selectedMode
+                                            )
+                                            pendingQuickCommandQueue = pendingQuickCommandQueue.drop(1)
+                                            onShowMessage("已加入常用指令「${pending.proposal.label}」")
+                                        }
+                                    ) {
+                                        Text("確認加入")
+                                    }
+                                    OutlinedButton(
+                                        onClick = { pendingQuickCommandQueue = pendingQuickCommandQueue.drop(1) }
+                                    ) {
+                                        Text("取消")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (isSending) {
                         item {
                             Row(
@@ -1965,13 +2097,92 @@ fun ChatAssistantTab(
             }
         }
 
-        // 輸入列
+        // 圖片預覽 chip（取消後輸入框寬度完全復原）
+        pendingImageAttachment?.let { attachment ->
+            Spacer(Modifier.height(6.dp))
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Image(
+                        bitmap = attachment.thumbnail.asImageBitmap(),
+                        contentDescription = "已選擇的圖片預覽",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "已附加圖片（送出將由 AI 視覺模型檢視）",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "圖片會消耗較多 token，建議搭配簡短提問",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(
+                        onClick = { pendingImageAttachment = null },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "移除圖片")
+                    }
+                }
+            }
+        }
+
+        // 輸入列（單一收合工具圖標 + 輸入框 + 送出按鈕）
         Spacer(Modifier.height(6.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            Box {
+                IconButton(
+                    onClick = { showInputToolsMenu = true },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "常用指令與圖片上傳")
+                }
+                DropdownMenu(
+                    expanded = showInputToolsMenu,
+                    onDismissRequest = { showInputToolsMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("常用指令") },
+                        leadingIcon = { Icon(AutoAwesomeIcon, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        onClick = {
+                            showInputToolsMenu = false
+                            quickCommands = PhantomPrefs.getQuickChatCommands(appCtx)
+                            showQuickCommandsDialog = true
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("上傳圖片讓 AI 檢視") },
+                        leadingIcon = { Icon(PhotoIcon, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        onClick = {
+                            showInputToolsMenu = false
+                            photoPickerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        }
+                    )
+                }
+            }
             OutlinedTextField(
                 value = inputText,
                 onValueChange = { inputText = it },
@@ -1981,12 +2192,89 @@ fun ChatAssistantTab(
             )
             Button(
                 onClick = { sendQuery(inputText) },
-                enabled = inputText.isNotBlank() && !isSending,
+                enabled = (inputText.isNotBlank() || pendingImageAttachment != null) && !isSending,
                 shape = CircleShape
             ) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "送出")
             }
         }
+    }
+
+    if (showQuickCommandsDialog) {
+        AlertDialog(
+            onDismissRequest = { showQuickCommandsDialog = false },
+            title = { Text("常用指令") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (quickCommands.isEmpty()) {
+                        Text(
+                            text = "尚未設定常用指令，可至設定頁新增或對 AI 說「加入常用指令：…」。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        quickCommands.forEach { cmd ->
+                            val isDirect = cmd.mode == PhantomPrefs.QuickChatCommand.MODE_DIRECT
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .clickable {
+                                        showQuickCommandsDialog = false
+                                        if (isDirect) {
+                                            sendQuery(cmd.prompt)
+                                        } else {
+                                            inputText = cmd.prompt
+                                        }
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = cmd.label,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = cmd.prompt,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isDirect) {
+                                            MaterialTheme.colorScheme.primaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.tertiaryContainer
+                                        }
+                                    ) {
+                                        Text(
+                                            text = if (isDirect) "直接執行" else "預輸入",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showQuickCommandsDialog = false }) {
+                    Text("關閉")
+                }
+            }
+        )
     }
 }
 
@@ -2117,6 +2405,7 @@ private suspend fun buildRagSystemPrompt(
         appendLine("- 加入白名單：{\"action\":\"whitelist\",\"kind\":\"sender|message\",\"messageRef\":\"<id數字或寄件者>\"}")
         appendLine("- 新增規則：{\"action\":\"add_rule\",\"kind\":\"whitelist|tag\",\"ruleText\":\"規則描述\",\"tagName\":\"目標標籤(僅kind=tag)\"}")
         appendLine("- 建立標籤記憶規則（當使用者教 AI 把某 App／寄件者／關鍵字／語意類別如 otp、system、bill、marketing、delivery 歸類為特定標籤時使用；必須至少填一項條件）：{\"action\":\"tag_rule\",\"description\":\"規則簡述\",\"appLabel\":\"App名稱(可選)\",\"appPackage\":\"套件名(可選)\",\"senderPattern\":\"寄件者(可選)\",\"contentKeyword\":\"關鍵字(可選)\",\"contentRegex\":\"正則(可選)\",\"semanticCategory\":\"otp|system|bill|marketing|delivery(可選)\",\"tagName\":\"目標標籤\"}")
+        appendLine("- 加入常用指令（當使用者說「加入常用指令：…」時使用）：{\"action\":\"quick_command_add\",\"label\":\"指令簡稱\",\"prompt\":\"實際送出或預填的提問內容\",\"mode\":\"direct|prefill(可選)\"}")
         if (isSettingRelated) {
             appendLine("- 切換開關（僅限可開關清單）：{\"action\":\"setting_toggle\",\"settingId\":\"<id>\",\"state\":\"on|off\"}")
             appendLine("- 模糊候選（3-5個）：{\"action\":\"setting_candidates\",\"candidates\":[\"id1\",\"id2\"]}")
@@ -2309,10 +2598,28 @@ private data class PendingWhitelistAction(
     val items: List<WhitelistTargetItem>
 )
 
+private data class PendingImageAttachment(
+    val thumbnail: Bitmap,
+    val dataUri: String
+)
+
+private data class QuickCommandProposal(
+    val label: String,
+    val prompt: String,
+    val mode: String? = null
+)
+
+private data class PendingQuickCommandAddition(
+    val sessionId: Long,
+    val proposal: QuickCommandProposal,
+    val defaultMode: String
+)
+
 private data class ParsedChatActions(
     val cleanReply: String,
     val ruleProposals: List<PendingRuleProposal> = emptyList(),
     val tagRuleProposals: List<TagRuleProposal> = emptyList(),
+    val quickCommandProposals: List<QuickCommandProposal> = emptyList(),
     val whitelistProposals: List<WhitelistActionProposal> = emptyList(),
     val toggleProposals: List<SettingToggleProposal> = emptyList(),
     val candidatesProposals: List<SettingCandidatesProposal> = emptyList(),
@@ -2330,6 +2637,7 @@ private val ACTION_FENCED_BLOCK_REGEX = Regex(
 private val KNOWN_CHAT_ACTIONS = setOf(
     "add_rule",
     "tag_rule",
+    "quick_command_add",
     "whitelist",
     "setting_toggle",
     "setting_candidates",
@@ -2386,6 +2694,7 @@ private fun parseSingleActionJson(
     jsonStr: String,
     ruleOut: MutableList<PendingRuleProposal>,
     tagRuleOut: MutableList<TagRuleProposal>,
+    quickCommandOut: MutableList<QuickCommandProposal>,
     whitelistOut: MutableList<WhitelistActionProposal>,
     toggleOut: MutableList<SettingToggleProposal>,
     candidatesOut: MutableList<SettingCandidatesProposal>,

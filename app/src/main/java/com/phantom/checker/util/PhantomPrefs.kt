@@ -648,6 +648,65 @@ object PhantomPrefs {
         prefs(ctx).edit().putBoolean(KEY_CHAT_SUGGESTIONS_ENABLED, enabled).apply()
     }
 
+    data class QuickChatCommand(
+        val id: String = java.util.UUID.randomUUID().toString(),
+        val label: String,
+        val prompt: String,
+        val mode: String = MODE_DIRECT
+    ) {
+        companion object {
+            const val MODE_DIRECT = "direct"
+            const val MODE_PREFILL = "prefill"
+        }
+    }
+
+    private fun defaultQuickChatCommands(): List<QuickChatCommand> = listOf(
+        QuickChatCommand("default_yesterday", "昨日簡報", "請幫我整理昨日簡報", QuickChatCommand.MODE_DIRECT),
+        QuickChatCommand("default_must_see", "今日必看訊息", "今天有哪些必看訊息？", QuickChatCommand.MODE_DIRECT),
+        QuickChatCommand("default_scam_risk", "最可能的詐騙風險", "最近最可能的詐騙風險是什麼？", QuickChatCommand.MODE_DIRECT)
+    )
+
+    fun getQuickCommandDefaultMode(ctx: Context): String {
+        val raw = prefs(ctx).getString("quick_command_default_mode", QuickChatCommand.MODE_DIRECT)
+        return if (raw == QuickChatCommand.MODE_PREFILL) QuickChatCommand.MODE_PREFILL else QuickChatCommand.MODE_DIRECT
+    }
+
+    fun setQuickCommandDefaultMode(ctx: Context, mode: String) {
+        val norm = if (mode == QuickChatCommand.MODE_PREFILL) QuickChatCommand.MODE_PREFILL else QuickChatCommand.MODE_DIRECT
+        prefs(ctx).edit().putString("quick_command_default_mode", norm).apply()
+    }
+
+    fun getQuickChatCommands(ctx: Context): List<QuickChatCommand> {
+        val raw = prefs(ctx).getString("quick_chat_commands_v2", null)
+        if (raw.isNullOrBlank()) return defaultQuickChatCommands()
+        return try {
+            val type = object : TypeToken<List<QuickChatCommand>>() {}.type
+            val list = gson.fromJson<List<QuickChatCommand>>(raw, type).orEmpty()
+                .filter { it.label.isNotBlank() && it.prompt.isNotBlank() }
+            if (list.isEmpty()) defaultQuickChatCommands() else list
+        } catch (_: Exception) {
+            defaultQuickChatCommands()
+        }
+    }
+
+    fun saveQuickChatCommands(ctx: Context, commands: List<QuickChatCommand>) {
+        prefs(ctx).edit().putString("quick_chat_commands_v2", gson.toJson(commands)).apply()
+    }
+
+    fun addQuickChatCommand(ctx: Context, label: String, prompt: String, mode: String): List<QuickChatCommand> {
+        val current = getQuickChatCommands(ctx).toMutableList()
+        val normMode = if (mode == QuickChatCommand.MODE_PREFILL) QuickChatCommand.MODE_PREFILL else QuickChatCommand.MODE_DIRECT
+        current.add(QuickChatCommand(label = label.trim(), prompt = prompt.trim(), mode = normMode))
+        saveQuickChatCommands(ctx, current)
+        return current
+    }
+
+    fun deleteQuickChatCommand(ctx: Context, id: String): List<QuickChatCommand> {
+        val updated = getQuickChatCommands(ctx).filterNot { it.id == id }
+        saveQuickChatCommands(ctx, updated)
+        return updated
+    }
+
     /** Shizuku 跨行程看門狗開關（預設開，需 Shizuku 已授權才生效） */
     fun isShizukuWatchdogEnabled(ctx: Context): Boolean =
         prefs(ctx).getBoolean("shizuku_watchdog_enabled", true)
