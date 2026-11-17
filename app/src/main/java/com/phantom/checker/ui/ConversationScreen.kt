@@ -863,8 +863,7 @@ fun ConversationScreen(
                                     onLongClick = {
                                         haptic(HapticFeedbackType.LongPress)
                                         revealedMessageId = null
-                                        isMultiSelectMode = true
-                                        selectedMessageIds = setOf(msg.id)
+                                        sheetMessage = msg
                                     }
                                 )
                             }
