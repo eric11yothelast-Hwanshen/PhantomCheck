@@ -1219,8 +1219,8 @@ fun FilterSettingsScreen(
                     Spacer(Modifier.height(10.dp))
 
                     SettingSwitchRow(
-                        title = "AI 助手建議問題",
-                        subtitle = "在 AI 助手分頁顯示快速提問與昨日簡報建議",
+                        title = "AI 助手常用指令選單",
+                        subtitle = "在 AI 助手輸入列 + 選單顯示常用指令（關閉後僅保留圖片上傳）",
                         checked = chatSuggestionsEnabled,
                         onCheckedChange = { checked ->
                             chatSuggestionsEnabled = checked

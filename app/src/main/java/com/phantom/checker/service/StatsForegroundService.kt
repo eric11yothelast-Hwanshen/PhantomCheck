@@ -243,6 +243,8 @@ class StatsForegroundService : Service() {
                     snap.scam,
                     snap.recentPackages()
                 )
+                com.phantom.checker.widget.RiskActionWidgetProvider.updateAllIfChanged(applicationContext)
+                com.phantom.checker.widget.ReminderWidgetProvider.updateAllIfChanged(applicationContext)
 
                 val newSig = RefreshSignature(
                     today = snap.today,

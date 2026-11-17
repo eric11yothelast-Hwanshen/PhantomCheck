@@ -2195,22 +2195,27 @@ fun ChatAssistantTab(
                     onClick = { showInputToolsMenu = true },
                     modifier = Modifier.size(48.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "常用指令與圖片上傳")
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = if (showSuggestions) "常用指令與圖片上傳" else "圖片上傳"
+                    )
                 }
                 DropdownMenu(
                     expanded = showInputToolsMenu,
                     onDismissRequest = { showInputToolsMenu = false }
                 ) {
-                    DropdownMenuItem(
-                        text = { Text("常用指令") },
-                        leadingIcon = { Icon(AutoAwesomeIcon, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                        modifier = Modifier.heightIn(min = 48.dp),
-                        onClick = {
-                            showInputToolsMenu = false
-                            quickCommands = PhantomPrefs.getQuickChatCommands(appCtx)
-                            showQuickCommandsDialog = true
-                        }
-                    )
+                    if (showSuggestions) {
+                        DropdownMenuItem(
+                            text = { Text("常用指令") },
+                            leadingIcon = { Icon(AutoAwesomeIcon, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            onClick = {
+                                showInputToolsMenu = false
+                                quickCommands = PhantomPrefs.getQuickChatCommands(appCtx)
+                                showQuickCommandsDialog = true
+                            }
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("上傳圖片讓 AI 檢視") },
                         leadingIcon = { Icon(PhotoIcon, contentDescription = null, modifier = Modifier.size(20.dp)) },

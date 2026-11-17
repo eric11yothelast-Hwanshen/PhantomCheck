@@ -131,6 +131,7 @@ object DailySummaryPolicy {
             generatedAt = System.currentTimeMillis()
         )
         db.aiSummaryDao().insertOrReplace(entity)
+        com.phantom.checker.widget.AiSummaryWidgetProvider.updateAllIfChanged(appCtx)
 
         if (PhantomPrefs.isEffectiveDailySummaryEnabled(appCtx) &&
             PhantomPrefs.isEffectiveDailySummaryNotifEnabled(appCtx) &&
