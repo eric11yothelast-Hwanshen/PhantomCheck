@@ -2,7 +2,7 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
-## [1.13.0] - 2026-11-16
+## [1.13.0] - 2026-11-17
 
 ### 新增與強化
 - **PhantomMarkdownText 語法補全（#114）**：
@@ -11,9 +11,9 @@
 - **AI 預設模型清單更新（#115）**：
   - 更新 `AiClient.DEFAULT_PROVIDER_PRESETS`（既有使用者已儲存之 profile 不受影響，僅影響新建設定）：
     - **Mistral**：`mistral-small-2603`（預設）、`mistral-large-4`（原 `mistral-small-latest` / `mistral-large-latest`）
-    - **OpenAI**：`gpt-6.1-terra`（預設）、`gpt-6.1-sol`（原 `gpt-4o-mini` / `gpt-4o`）
-    - **Groq**：`openai/gpt-oss-120b`（預設）、`openai/gpt-oss-20b`、`qwen/qwen3.8-27b`（原 `llama-3.3-70b-versatile` 等）
-    - **Gemini**：`gemini-4-hydrogen`（預設）、`gemini-4-carbon`、`gemini-4-argon`、`gemini-3.8-flash`（原 `gemini-2.5-flash` 等）
+    - **OpenAI**：`gpt-6.1-terra`（預設）、`gpt-6.1-sol`（原 `gpt-5.2`）
+    - **Groq**：`openai/gpt-oss-120b`（預設）、`openai/gpt-oss-20b`、`qwen/qwen3.8-27b`（原 `qwen/qwen3.6-27b` 等）
+    - **Gemini**：`gemini-4-hydrogen`（預設）、`gemini-4-carbon`、`gemini-4-argon`、`gemini-3.8-flash`（原 `gemini-3.8-flash` / `gemini-3.5-flash-lite`）
     - **DeepSeek / OpenRouter**：維持不變。
 - **AI 助手單次閱讀訊息數設定（#116）**：
   - `PhantomPrefs` 新增 `chatRagMessageLimit`（預設 `400`，範圍 `50–800`），省 token 模式啟用時透過 `getEffectiveChatRagMessageLimit()` 自動降為 `100`（不覆寫使用者原設定值）。
