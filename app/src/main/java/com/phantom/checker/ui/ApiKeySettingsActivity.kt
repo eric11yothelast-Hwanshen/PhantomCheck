@@ -569,7 +569,7 @@ private fun ProviderEditorDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     label = { Text("Model") },
-                    placeholder = { Text("mistral-small-latest") }
+                    placeholder = { Text("mistral-small-2603") }
                 )
                 OutlinedTextField(
                     value = apiKey,

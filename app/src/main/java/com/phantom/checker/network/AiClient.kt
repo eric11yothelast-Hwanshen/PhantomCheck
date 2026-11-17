@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.AtomicLong
 data class ChatMessage(val role: String, val content: String)
 
 data class ChatRequest(
-    val model: String = "mistral-small-latest",
+    val model: String = "mistral-small-2603",
     val messages: List<ChatMessage>,
     @SerializedName("max_tokens") val maxTokens: Int = 200,
     val temperature: Double = 0.2
@@ -99,7 +99,7 @@ enum class ApiKeySource {
  */
 object AiClient {
     private const val FALLBACK_URL = "https://api.mistral.ai/"
-    private const val FALLBACK_MODEL = "mistral-small-latest"
+    private const val FALLBACK_MODEL = "mistral-small-2603"
     private const val PREFS_NAME = "phantom_secure_prefs"
     private const val KEY_LEGACY_MISTRAL_API_KEY = "mistral_api_key"
     private const val KEY_AI_PROVIDERS = "ai_providers"
@@ -112,29 +112,34 @@ object AiClient {
             name = "Mistral",
             baseUrl = "https://api.mistral.ai/",
             apiPath = "v1/chat/completions",
-            defaultModel = "mistral-small-latest",
-            alternativeModels = listOf("mistral-small-latest", "mistral-large-latest")
+            defaultModel = "mistral-small-2603",
+            alternativeModels = listOf("mistral-small-2603", "mistral-large-4")
         ),
         AiProviderPreset(
             name = "OpenAI",
             baseUrl = "https://api.openai.com/",
             apiPath = "v1/chat/completions",
-            defaultModel = "gpt-5.2",
-            alternativeModels = listOf("gpt-5.2")
+            defaultModel = "gpt-6.1-terra",
+            alternativeModels = listOf("gpt-6.1-terra", "gpt-6.1-sol")
         ),
         AiProviderPreset(
             name = "Groq",
             baseUrl = "https://api.groq.com/openai/",
             apiPath = "v1/chat/completions",
             defaultModel = "openai/gpt-oss-120b",
-            alternativeModels = listOf("openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b")
+            alternativeModels = listOf("openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b")
         ),
         AiProviderPreset(
             name = "Gemini",
             baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai/",
             apiPath = "chat/completions",
-            defaultModel = "gemini-3.8-flash",
-            alternativeModels = listOf("gemini-3.8-flash", "gemini-3.5-flash-lite")
+            defaultModel = "gemini-4-hydrogen",
+            alternativeModels = listOf(
+                "gemini-4-hydrogen",
+                "gemini-4-carbon",
+                "gemini-4-argon",
+                "gemini-3.8-flash"
+            )
         ),
         AiProviderPreset(
             name = "DeepSeek",
