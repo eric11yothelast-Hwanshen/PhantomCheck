@@ -386,27 +386,51 @@ fun ChatAssistantTab(
 
                 // 解析多筆白名單提案
                 val resolvedWhitelistItems = mutableListOf<WhitelistTargetItem>()
+                val failedWhitelistRefs = mutableListOf<String>()
                 if (parsed.whitelistProposals.isNotEmpty()) {
                     withContext(Dispatchers.IO) {
                         parsed.whitelistProposals.forEach { wp ->
                             val ref = wp.messageRef.trim()
-                            val byId = ref.toLongOrNull()?.let { db.messageDao().byId(it) }
+                            val extractedId = ref.toLongOrNull()
+                                ?: Regex("^(?:#|id[:=\\s]*)(\\d+)$", RegexOption.IGNORE_CASE)
+                                    .matchEntire(ref)?.groupValues?.getOrNull(1)?.toLongOrNull()
+                            val byId = extractedId?.let { db.messageDao().byId(it) }
                             val resolved = if (byId != null) {
                                 byId
                             } else if (ref.isNotEmpty()) {
                                 val candidates = db.messageDao().search(ref)
-                                candidates.firstOrNull { it.sender.equals(ref, ignoreCase = true) }
+                                val direct = candidates.firstOrNull { it.sender.equals(ref, ignoreCase = true) }
                                     ?: candidates.firstOrNull { it.sender.contains(ref, ignoreCase = true) }
                                     ?: candidates.firstOrNull()
+                                if (direct != null) {
+                                    direct
+                                } else {
+                                    val prefix20 = ref.take(20).trim()
+                                    val prefixCandidates = if (prefix20.length >= 2 && prefix20 != ref) {
+                                        db.messageDao().search(prefix20)
+                                    } else {
+                                        emptyList()
+                                    }
+                                    prefixCandidates.firstOrNull {
+                                        it.sender.contains(prefix20, ignoreCase = true) ||
+                                            it.content.contains(prefix20, ignoreCase = true) ||
+                                            it.title.contains(prefix20, ignoreCase = true)
+                                    } ?: prefixCandidates.firstOrNull()
+                                }
                             } else {
                                 null
                             }
                             if (resolved == null) {
-                                resolutionErrors.add("找不到「$ref」對應的訊息紀錄，無法加入白名單。")
+                                val label = ref.ifBlank { "未指定" }
+                                failedWhitelistRefs.add(label)
+                                resolutionErrors.add("找不到：$label")
                             } else {
                                 resolvedWhitelistItems.add(WhitelistTargetItem(kind = wp.kind, message = resolved))
                             }
                         }
+                    }
+                    if (failedWhitelistRefs.size > 1 && resolvedWhitelistItems.isEmpty()) {
+                        resolutionErrors.add("白名單動作全部失敗（共 ${failedWhitelistRefs.size} 筆找不到對應訊息），請確認寄件者或訊息 ID。")
                     }
                 }
                 val dedupedWhitelistItems = resolvedWhitelistItems.distinctBy { item ->
@@ -2362,17 +2386,28 @@ private fun parseAllChatActions(rawReply: String): ParsedChatActions {
             cursor = (r.last + 1).coerceAtLeast(cursor)
         }
         if (cursor < withoutFenced.length) append(withoutFenced.substring(cursor))
-    }.trim()
+    }
+        // 移除未閉合的動作 JSON 片段或殘留 JSON 陣列外殼，避免原始 JSON 顯示給使用者
+        .replace(Regex("""```(?:json)?[\s\S]*?"action"[\s\S]*$""", RegexOption.IGNORE_CASE)) {
+            errors.add("部分動作指令的 JSON 區塊未閉合，已略過。")
+            ""
+        }
+        .replace(Regex("""\{[^{}]*"action"[^{}]*$""", RegexOption.IGNORE_CASE)) {
+            errors.add("部分動作指令的 JSON 格式不完整，已略過。")
+            ""
+        }
+        .replace(Regex("""^\s*\[\s*(?:,\s*)*\]\s*$""", RegexOption.MULTILINE), "")
+        .trim()
 
     return ParsedChatActions(
         cleanReply = cleanReply,
-        ruleProposals = rules,
-        whitelistProposals = whitelists,
-        toggleProposals = toggles,
-        candidatesProposals = candidates,
-        adjustProposals = adjusts,
-        openSettingProposals = openSettings,
-        messageActions = msgActions,
+        ruleProposals = rules.distinct(),
+        whitelistProposals = whitelists.distinct(),
+        toggleProposals = toggles.distinct(),
+        candidatesProposals = candidates.distinct(),
+        adjustProposals = adjusts.distinct(),
+        openSettingProposals = openSettings.distinct(),
+        messageActions = msgActions.distinct(),
         invalidActionErrors = errors.distinct()
     )
 }
