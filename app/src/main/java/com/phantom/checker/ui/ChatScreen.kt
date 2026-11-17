@@ -2753,6 +2753,22 @@ private fun parseSingleActionJson(
                 tagRuleOut.add(TagRuleProposal(desc, appPkg, appLbl, senderPat, kw, regex, sem, tagName))
             }
         }
+        "quick_command_add" -> {
+            val label = obj.get("label")?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
+            val prompt = obj.get("prompt")?.takeIf { !it.isJsonNull }?.asString?.trim()
+                ?: obj.get("content")?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
+            val modeRaw = obj.get("mode")?.takeIf { !it.isJsonNull }?.asString?.trim()?.lowercase()
+            val mode = when (modeRaw) {
+                PhantomPrefs.QuickChatCommand.MODE_PREFILL, "prefill" -> PhantomPrefs.QuickChatCommand.MODE_PREFILL
+                PhantomPrefs.QuickChatCommand.MODE_DIRECT, "direct" -> PhantomPrefs.QuickChatCommand.MODE_DIRECT
+                else -> null
+            }
+            if (label.isBlank() || prompt.isBlank()) {
+                errorsOut.add("加入常用指令動作缺少名稱（label）或指令內容（prompt）。")
+            } else {
+                quickCommandOut.add(QuickCommandProposal(label = label, prompt = prompt, mode = mode))
+            }
+        }
         "whitelist" -> {
             val rawKind = obj.get("kind")?.takeIf { !it.isJsonNull }?.asString?.trim()?.lowercase()
             val kind = if (rawKind == "message") "message" else "sender"
@@ -2847,6 +2863,7 @@ private fun parseSingleActionJson(
 private fun parseAllChatActions(rawReply: String): ParsedChatActions {
     val rules = mutableListOf<PendingRuleProposal>()
     val tagRules = mutableListOf<TagRuleProposal>()
+    val quickCommands = mutableListOf<QuickCommandProposal>()
     val whitelists = mutableListOf<WhitelistActionProposal>()
     val toggles = mutableListOf<SettingToggleProposal>()
     val candidates = mutableListOf<SettingCandidatesProposal>()
@@ -2867,7 +2884,7 @@ private fun parseAllChatActions(rawReply: String): ParsedChatActions {
             errors.add("動作指令格式無法解析，請重新嘗試。")
         } else {
             objs.forEach { (_, jsonStr) ->
-                parseSingleActionJson(jsonStr, rules, tagRules, whitelists, toggles, candidates, adjusts, openSettings, msgActions, errors)
+                parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, whitelists, toggles, candidates, adjusts, openSettings, msgActions, errors)
             }
         }
     }
@@ -2885,7 +2902,7 @@ private fun parseAllChatActions(rawReply: String): ParsedChatActions {
     val inlineRangesToRemove = mutableListOf<IntRange>()
     splitBalancedJsonObjects(withoutFenced).forEach { (range, jsonStr) ->
         if (jsonStr.contains("\"action\"", ignoreCase = true)) {
-            val handled = parseSingleActionJson(jsonStr, rules, tagRules, whitelists, toggles, candidates, adjusts, openSettings, msgActions, errors)
+            val handled = parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, whitelists, toggles, candidates, adjusts, openSettings, msgActions, errors)
             if (handled) {
                 inlineRangesToRemove.add(range)
             }
@@ -2916,6 +2933,7 @@ private fun parseAllChatActions(rawReply: String): ParsedChatActions {
         cleanReply = cleanReply,
         ruleProposals = rules.distinct(),
         tagRuleProposals = tagRules.distinct(),
+        quickCommandProposals = quickCommands.distinct(),
         whitelistProposals = whitelists.distinct(),
         toggleProposals = toggles.distinct(),
         candidatesProposals = candidates.distinct(),
@@ -2982,5 +3000,49 @@ fun AiProviderSwitcherChip(
                 }
             }
         }
+    }
+}
+
+private fun encodeImageUriToDataUri(ctx: Context, uri: android.net.Uri): PendingImageAttachment? {
+    return try {
+        val rawBitmap = ctx.contentResolver.openInputStream(uri)?.use { stream ->
+            BitmapFactory.decodeStream(stream)
+        } ?: return null
+
+        val maxSide = 1024
+        val w = rawBitmap.width
+        val h = rawBitmap.height
+        val scaledBitmap = if (w > maxSide || h > maxSide) {
+            val scale = maxSide.toFloat() / maxOf(w, h).toFloat()
+            val nw = (w * scale).roundToInt().coerceAtLeast(1)
+            val nh = (h * scale).roundToInt().coerceAtLeast(1)
+            Bitmap.createScaledBitmap(rawBitmap, nw, nh, true).also {
+                if (it !== rawBitmap) rawBitmap.recycle()
+            }
+        } else {
+            rawBitmap
+        }
+
+        val baos = java.io.ByteArrayOutputStream()
+        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 82, baos)
+        val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+        val thumbScale = 128f / maxOf(scaledBitmap.width, scaledBitmap.height).toFloat()
+        val thumb = if (thumbScale < 1f) {
+            Bitmap.createScaledBitmap(
+                scaledBitmap,
+                (scaledBitmap.width * thumbScale).roundToInt().coerceAtLeast(1),
+                (scaledBitmap.height * thumbScale).roundToInt().coerceAtLeast(1),
+                true
+            )
+        } else {
+            scaledBitmap
+        }
+        if (thumb !== scaledBitmap) scaledBitmap.recycle()
+        PendingImageAttachment(
+            thumbnail = thumb,
+            dataUri = "data:image/jpeg;base64,$b64"
+        )
+    } catch (_: Exception) {
+        null
     }
 }
