@@ -8,6 +8,7 @@ package com.phantom.checker.service
  * - 2000..21999：詐騙警示（2000 + msgId % 20000）
  * - 22000..41999：重要訊息提醒（22000 + msgId % 20000）
  * - 100000..109999：待辦提醒（100000 + messageId % 10000）
+ * - 110000..119999：AI 自然語言待辦提醒（110000 + todoId % 10000）
  */
 object NotifIds {
     const val STATS_PERSISTENT = 1001
@@ -25,6 +26,9 @@ object NotifIds {
     private const val REMINDER_BASE = 100000
     private const val REMINDER_SPAN = 10000L
 
+    private const val TODO_REMINDER_BASE = 110000
+    private const val TODO_REMINDER_SPAN = 10000L
+
     fun scamAlert(msgId: Long): Int =
         SCAM_ALERT_BASE + Math.floorMod(msgId, SCAM_ALERT_SPAN).toInt()
 
@@ -33,4 +37,7 @@ object NotifIds {
 
     fun reminder(messageId: Long): Int =
         REMINDER_BASE + Math.floorMod(messageId, REMINDER_SPAN).toInt()
+
+    fun todoReminder(todoId: Long): Int =
+        TODO_REMINDER_BASE + Math.floorMod(todoId, TODO_REMINDER_SPAN).toInt()
 }

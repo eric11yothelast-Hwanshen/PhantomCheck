@@ -36,15 +36,12 @@ class ReminderWidgetProvider : AppWidgetProvider() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val now = System.currentTimeMillis()
-                val items = AppDatabaseHolder.db(appCtx).messageDao()
-                    .pendingReminders(now)
-                    .filter { (it.remindAt ?: 0L) >= now }
-                    .sortedBy { it.remindAt ?: Long.MAX_VALUE }
-                    .take(2)
-                val firstId = items.firstOrNull()?.id
+                val items = loadUpcomingItems(appCtx, now)
+                val firstMsgId = items.firstOrNull()?.messageId
+                val firstKey = items.firstOrNull()?.snapshotKey
                 val lines = formatLines(items)
-                lastSnapshot = Triple(firstId, lines.first, lines.second)
-                val views = buildRemoteViews(appCtx, firstId, lines.first, lines.second)
+                lastSnapshot = Triple(firstKey, lines.first, lines.second)
+                val views = buildRemoteViews(appCtx, firstMsgId, lines.first, lines.second)
                 appWidgetManager.updateAppWidget(appWidgetIds, views)
             } catch (_: Exception) {
             } finally {
@@ -65,18 +62,52 @@ class ReminderWidgetProvider : AppWidgetProvider() {
     companion object {
         private const val WIDGET_CLICK_REQUEST_CODE = 2008
 
-        @Volatile
-        private var lastSnapshot: Triple<Long?, String, String>? = null
+        private data class UpcomingReminderItem(
+            val snapshotKey: String,
+            val dueAt: Long,
+            val summary: String,
+            val messageId: Long? = null
+        )
 
-        private fun formatLines(items: List<com.phantom.checker.data.MessageEntity>): Pair<String, String> {
+        @Volatile
+        private var lastSnapshot: Triple<String?, String, String>? = null
+
+        private suspend fun loadUpcomingItems(ctx: Context, now: Long): List<UpcomingReminderItem> {
+            val db = AppDatabaseHolder.db(ctx)
+            val msgItems = db.messageDao().pendingReminders(now)
+                .filter { (it.remindAt ?: 0L) >= now }
+                .map { m ->
+                    val title = m.sender.ifBlank { m.appLabel }
+                    val snippet = m.content.replace("\n", " ").trim().take(20)
+                    val summary = if (snippet.isNotEmpty()) "$title：$snippet" else title
+                    UpcomingReminderItem(
+                        snapshotKey = "m:${m.id}:${m.remindAt}",
+                        dueAt = m.remindAt ?: Long.MAX_VALUE,
+                        summary = summary,
+                        messageId = m.id
+                    )
+                }
+            val todoItems = db.todoDao().pendingTodos()
+                .filter { !it.isDone && it.dueAt >= now }
+                .map { t ->
+                    UpcomingReminderItem(
+                        snapshotKey = "t:${t.id}:${t.dueAt}",
+                        dueAt = t.dueAt,
+                        summary = t.title.replace("\n", " ").trim().take(28),
+                        messageId = t.relatedMessageId
+                    )
+                }
+            return (msgItems + todoItems)
+                .sortedBy { it.dueAt }
+                .take(2)
+        }
+
+        private fun formatLines(items: List<UpcomingReminderItem>): Pair<String, String> {
             if (items.isEmpty()) return "目前無待辦提醒" to ""
             val fmt = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
-            fun lineFor(m: com.phantom.checker.data.MessageEntity): String {
-                val timeStr = m.remindAt?.let { fmt.format(Date(it)) } ?: ""
-                val title = m.sender.ifBlank { m.appLabel }
-                val snippet = m.content.replace("\n", " ").trim().take(20)
-                val summary = if (snippet.isNotEmpty()) "$title：$snippet" else title
-                return if (timeStr.isNotEmpty()) "$timeStr · $summary" else summary
+            fun lineFor(item: UpcomingReminderItem): String {
+                val timeStr = fmt.format(Date(item.dueAt))
+                return if (timeStr.isNotEmpty()) "$timeStr · ${item.summary}" else item.summary
             }
             val l1 = lineFor(items[0])
             val l2 = items.getOrNull(1)?.let { lineFor(it) } ?: ""
@@ -100,17 +131,14 @@ class ReminderWidgetProvider : AppWidgetProvider() {
                 return
             }
             val now = System.currentTimeMillis()
-            val items = AppDatabaseHolder.db(appCtx).messageDao()
-                .pendingReminders(now)
-                .filter { (it.remindAt ?: 0L) >= now }
-                .sortedBy { it.remindAt ?: Long.MAX_VALUE }
-                .take(2)
-            val firstId = items.firstOrNull()?.id
+            val items = loadUpcomingItems(appCtx, now)
+            val firstMsgId = items.firstOrNull()?.messageId
+            val firstKey = items.firstOrNull()?.snapshotKey
             val lines = formatLines(items)
-            val snapshot = Triple(firstId, lines.first, lines.second)
+            val snapshot = Triple(firstKey, lines.first, lines.second)
             if (lastSnapshot == snapshot) return
             lastSnapshot = snapshot
-            val views = buildRemoteViews(appCtx, firstId, lines.first, lines.second)
+            val views = buildRemoteViews(appCtx, firstMsgId, lines.first, lines.second)
             try {
                 mgr.updateAppWidget(ids, views)
             } catch (_: Exception) {

@@ -31,7 +31,8 @@ class BootReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val now = System.currentTimeMillis()
-                val scheduled = AppDatabaseHolder.db(appCtx).messageDao().allScheduledReminders()
+                val db = AppDatabaseHolder.db(appCtx)
+                val scheduled = db.messageDao().allScheduledReminders()
                 scheduled.forEach { msg ->
                     val ts = msg.remindAt
                     if (ts != null) {
@@ -40,6 +41,14 @@ class BootReceiver : BroadcastReceiver() {
                         } else {
                             ReminderScheduler.deliverReminder(appCtx, msg.id)
                         }
+                    }
+                }
+                val pendingTodos = db.todoDao().pendingTodos()
+                pendingTodos.forEach { todo ->
+                    if (todo.dueAt > now) {
+                        ReminderScheduler.scheduleTodo(appCtx, todo.id, todo.dueAt)
+                    } else {
+                        ReminderScheduler.deliverTodoReminder(appCtx, todo.id)
                     }
                 }
             } catch (_: Exception) {

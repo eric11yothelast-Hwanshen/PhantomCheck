@@ -105,6 +105,23 @@ data class UserTagRuleEntity(
 )
 
 @Entity(
+    tableName = "todos",
+    indices = [
+        Index(value = ["isDone", "dueAt"]),
+        Index(value = ["dueAt"])
+    ]
+)
+data class TodoEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val dueAt: Long,
+    val isDone: Boolean = false,
+    val createdAt: Long = System.currentTimeMillis(),
+    val relatedMessageId: Long? = null,
+    val sourceSessionId: Long? = null
+)
+
+@Entity(
     tableName = "app_category_rules",
     indices = [Index(value = ["packageName"])]
 )
@@ -710,6 +727,33 @@ interface UserTagRuleDao {
     suspend fun deleteById(id: Long)
 }
 
+@Dao
+interface TodoDao {
+    @Query("SELECT * FROM todos WHERE isDone = 0 ORDER BY dueAt ASC, id ASC")
+    suspend fun pendingTodos(): List<TodoEntity>
+
+    @Query("SELECT * FROM todos ORDER BY isDone ASC, dueAt ASC, id DESC")
+    suspend fun all(): List<TodoEntity>
+
+    @Query("SELECT * FROM todos WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): TodoEntity?
+
+    @Query("SELECT * FROM todos WHERE isDone = 0 AND dueAt > :now ORDER BY dueAt ASC")
+    suspend fun futurePending(now: Long): List<TodoEntity>
+
+    @Insert
+    suspend fun insert(todo: TodoEntity): Long
+
+    @Update
+    suspend fun update(todo: TodoEntity)
+
+    @Query("UPDATE todos SET isDone = :done WHERE id = :id")
+    suspend fun setDone(id: Long, done: Boolean)
+
+    @Query("DELETE FROM todos WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
 @Database(
     entities = [
         MessageEntity::class,
@@ -723,9 +767,10 @@ interface UserTagRuleDao {
         ChatMessageEntity::class,
         IntelCacheEntity::class,
         IntelResultEntity::class,
-        UserTagRuleEntity::class
+        UserTagRuleEntity::class,
+        TodoEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -738,6 +783,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
     abstract fun intelDao(): IntelDao
     abstract fun userTagRuleDao(): UserTagRuleDao
+    abstract fun todoDao(): TodoDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -927,6 +973,26 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE messages ADD COLUMN conversationKey TEXT NOT NULL DEFAULT ''")
                 db.execSQL("UPDATE messages SET conversationKey = sender WHERE conversationKey = ''")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_messages_packageName_conversationKey` ON `messages` (`packageName`, `conversationKey`)")
+            }
+        }
+
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `todos` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `dueAt` INTEGER NOT NULL,
+                        `isDone` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL,
+                        `relatedMessageId` INTEGER DEFAULT NULL,
+                        `sourceSessionId` INTEGER DEFAULT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_todos_isDone_dueAt` ON `todos` (`isDone`, `dueAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_todos_dueAt` ON `todos` (`dueAt`)")
             }
         }
     }
