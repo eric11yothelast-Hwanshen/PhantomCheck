@@ -1589,6 +1589,18 @@ private fun PhantomCheckApp(
         }
     }
 
+        if (tabBarDisplayMode == TabBarDisplayMode.AUTO_HIDE && !tabBarVisible && !isMultiSelectMode) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(28.dp)
+                    .pointerInput(Unit) {
+                        detectTapGestures { tabBarVisible = true }
+                    }
+            )
+        }
+
         if (!onboardingCompleted) {
             OnboardingOverlay(
                 step = onboardingStep,
