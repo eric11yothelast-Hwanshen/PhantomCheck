@@ -116,22 +116,51 @@ fun Modifier.phantomGlassSurface(
             false
         }
     }
+    val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val glassStrength = ThemePreferences.getGlassStrengthPercent(ctx)
+    val cardBgMode = ThemePreferences.getCardBgMode(ctx)
+    val cardBgAlpha = ThemePreferences.getCardBgAlphaPercent(ctx) / 100f
+    val darkCardColor = if (isDark) {
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+    } else {
+        Color(0xFF16181F).copy(alpha = 0.94f)
+    }
+    val resolvedFallback = when (cardBgMode) {
+        PhantomPrefs.CardBgMode.FOLLOW_GLASS -> fallbackColor
+        PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(alpha = cardBgAlpha)
+        PhantomPrefs.CardBgMode.DARK -> darkCardColor
+    }
+
     return if (ThemePreferences.isGlassEffectEnabled(ctx) && !isPowerSave) {
-        val base = this.glassSurface(
-            state = state,
-            fallbackColor = fallbackColor,
-            outlineColor = outlineColor,
-            cornerRadius = cornerRadius
-        )
-        if (glassStrength > 0 && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            base.background(MaterialTheme.colorScheme.surface.copy(alpha = (glassStrength / 100f) * 0.45f))
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            val base = this.glassSurface(
+                state = state,
+                fallbackColor = resolvedFallback,
+                outlineColor = outlineColor,
+                cornerRadius = cornerRadius
+            )
+            val overlayColor: Color? = when (cardBgMode) {
+                PhantomPrefs.CardBgMode.FOLLOW_GLASS -> if (glassStrength > 0) {
+                    MaterialTheme.colorScheme.surface.copy(alpha = (glassStrength / 100f) * 0.45f)
+                } else null
+                PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(alpha = cardBgAlpha)
+                PhantomPrefs.CardBgMode.DARK -> darkCardColor
+            }
+            if (overlayColor != null) {
+                base.clip(shape).background(overlayColor, shape)
+            } else {
+                base
+            }
         } else {
-            base
+            this.glassSurface(
+                state = state,
+                fallbackColor = resolvedFallback,
+                outlineColor = outlineColor,
+                cornerRadius = cornerRadius
+            )
         }
     } else {
-        val shape = RoundedCornerShape(cornerRadius)
-        val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
         val resolvedOutline = outlineColor ?: if (isDark) {
             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
         } else {
@@ -139,7 +168,7 @@ fun Modifier.phantomGlassSurface(
         }
         this
             .clip(shape)
-            .background(fallbackColor)
+            .background(resolvedFallback, shape)
             .border(width = 1.dp, color = resolvedOutline, shape = shape)
     }
 }
@@ -161,34 +190,71 @@ fun PhantomGlassCard(
             false
         }
     }
+    val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val glassStrength = ThemePreferences.getGlassStrengthPercent(ctx)
-    if (ThemePreferences.isGlassEffectEnabled(ctx) && !isPowerSave) {
-        val extraMod = if (glassStrength > 0 && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            modifier
-                .clip(RoundedCornerShape(cornerRadius))
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = (glassStrength / 100f) * 0.45f))
-        } else {
-            modifier
-        }
-        GlassCard(
-            glassState = glassState,
-            modifier = extraMod,
-            cornerRadius = cornerRadius,
-            contentPadding = contentPadding,
-            content = content
-        )
+    val cardBgMode = ThemePreferences.getCardBgMode(ctx)
+    val cardBgAlpha = ThemePreferences.getCardBgAlphaPercent(ctx) / 100f
+    val darkCardColor = if (isDark) {
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
     } else {
-        val shape = RoundedCornerShape(cornerRadius)
-        val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-        val outline = if (isDark) {
-            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+        Color(0xFF16181F).copy(alpha = 0.94f)
+    }
+    val outline = if (isDark) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+    } else {
+        MaterialTheme.colorScheme.outlineVariant
+    }
+
+    if (ThemePreferences.isGlassEffectEnabled(ctx) && !isPowerSave) {
+        val fallbackColor = when (cardBgMode) {
+            PhantomPrefs.CardBgMode.FOLLOW_GLASS -> MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
+            PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(alpha = cardBgAlpha)
+            PhantomPrefs.CardBgMode.DARK -> darkCardColor
+        }
+        val overlayColor: Color? = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            when (cardBgMode) {
+                PhantomPrefs.CardBgMode.FOLLOW_GLASS -> if (glassStrength > 0) {
+                    MaterialTheme.colorScheme.surface.copy(alpha = (glassStrength / 100f) * 0.45f)
+                } else null
+                PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(alpha = cardBgAlpha)
+                PhantomPrefs.CardBgMode.DARK -> darkCardColor
+            }
         } else {
-            MaterialTheme.colorScheme.outlineVariant
+            null
+        }
+
+        Box(
+            modifier = modifier
+                .animateContentSize(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
+                )
+                .clip(shape)
+                .glassSurface(
+                    state = glassState,
+                    fallbackColor = fallbackColor,
+                    cornerRadius = cornerRadius
+                )
+                .let { m -> if (overlayColor != null) m.background(overlayColor, shape) else m }
+        ) {
+            Column(
+                modifier = Modifier.padding(contentPadding),
+                content = content
+            )
+        }
+    } else {
+        val solidBg = when (cardBgMode) {
+            PhantomPrefs.CardBgMode.FOLLOW_GLASS -> MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
+            PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(alpha = cardBgAlpha)
+            PhantomPrefs.CardBgMode.DARK -> darkCardColor
         }
         Box(
             modifier = modifier
                 .clip(shape)
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
+                .background(solidBg, shape)
                 .border(width = 1.dp, color = outline, shape = shape)
         ) {
             Column(

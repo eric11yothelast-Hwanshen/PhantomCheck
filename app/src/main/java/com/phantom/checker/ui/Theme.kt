@@ -39,6 +39,8 @@ object ThemePreferences {
     private val _backgroundVersion = mutableStateOf(0)
     private val _backgroundScrimPercent = mutableStateOf<Int?>(null)
     private val _glassStrengthPercent = mutableStateOf<Int?>(null)
+    private val _cardBgMode = mutableStateOf<PhantomPrefs.CardBgMode?>(null)
+    private val _cardBgAlphaPercent = mutableStateOf<Int?>(null)
 
     fun getThemeMode(context: Context): ThemeMode {
         val cached = _themeMode.value
@@ -126,6 +128,32 @@ object ThemePreferences {
     fun setGlassStrengthPercent(context: Context, percent: Int) {
         PhantomPrefs.setGlassStrengthPercent(context, percent)
         _glassStrengthPercent.value = PhantomPrefs.getGlassStrengthPercent(context)
+    }
+
+    fun getCardBgMode(context: Context): PhantomPrefs.CardBgMode {
+        val cached = _cardBgMode.value
+        if (cached != null) return cached
+        val loaded = PhantomPrefs.getCardBgMode(context)
+        _cardBgMode.value = loaded
+        return loaded
+    }
+
+    fun setCardBgMode(context: Context, mode: PhantomPrefs.CardBgMode) {
+        PhantomPrefs.setCardBgMode(context, mode)
+        _cardBgMode.value = mode
+    }
+
+    fun getCardBgAlphaPercent(context: Context): Int {
+        val cached = _cardBgAlphaPercent.value
+        if (cached != null) return cached
+        val loaded = PhantomPrefs.getCardBgAlphaPercent(context)
+        _cardBgAlphaPercent.value = loaded
+        return loaded
+    }
+
+    fun setCardBgAlphaPercent(context: Context, percent: Int) {
+        PhantomPrefs.setCardBgAlphaPercent(context, percent)
+        _cardBgAlphaPercent.value = PhantomPrefs.getCardBgAlphaPercent(context)
     }
 }
 

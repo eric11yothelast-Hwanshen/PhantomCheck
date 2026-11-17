@@ -1363,6 +1363,53 @@ fun FilterSettingsScreen(
                             },
                             valueRange = 0f..100f
                         )
+
+                        Spacer(Modifier.height(12.dp))
+                        var cardBgMode by remember { mutableStateOf(ThemePreferences.getCardBgMode(appCtx)) }
+                        var cardBgAlpha by remember { mutableIntStateOf(ThemePreferences.getCardBgAlphaPercent(appCtx)) }
+                        Text(
+                            text = "卡片底色模式",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "自訂訊息卡、對話氣泡與待辦卡的底色不透明度",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            PhantomPrefs.CardBgMode.entries.forEach { mode ->
+                                FilterChip(
+                                    selected = cardBgMode == mode,
+                                    onClick = {
+                                        cardBgMode = mode
+                                        ThemePreferences.setCardBgMode(appCtx, mode)
+                                    },
+                                    label = { Text(mode.label) }
+                                )
+                            }
+                        }
+                        if (cardBgMode == PhantomPrefs.CardBgMode.TRANSPARENT) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = "卡片底色透明度（不透明度 $cardBgAlpha%）",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Slider(
+                                value = cardBgAlpha.toFloat(),
+                                onValueChange = { v ->
+                                    val pct = v.roundToInt().coerceIn(0, 100)
+                                    cardBgAlpha = pct
+                                    ThemePreferences.setCardBgAlphaPercent(appCtx, pct)
+                                },
+                                valueRange = 0f..100f
+                            )
+                        }
                     }
                 }
             }
