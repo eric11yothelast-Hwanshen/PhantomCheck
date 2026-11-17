@@ -100,17 +100,13 @@ fun buildRecentAppsStripBitmap(
     val density = context.resources.displayMetrics.density
     val baseCellPx = maxOf((48f * density).roundToInt(), (iconSizeDp * density).roundToInt(), 96)
     val gapPx = (spacingDp * density).roundToInt().coerceAtLeast(4)
-    val drawables = pkgs.mapNotNull { pkg ->
-        try {
-            context.packageManager.getApplicationIcon(pkg)
-        } catch (_: Exception) {
-            null
-        }
+    val iconBitmaps = pkgs.mapNotNull { pkg ->
+        loadAppIconBitmap(context, pkg)?.asAndroidBitmap()
     }
-    if (drawables.isEmpty()) return null
+    if (iconBitmaps.isEmpty()) return null
 
-    val cols = if (drawables.size == 1) 1 else 2
-    val rows = if (drawables.size <= 2) 1 else 2
+    val cols = if (iconBitmaps.size == 1) 1 else 2
+    val rows = if (iconBitmaps.size <= 2) 1 else 2
     val contentMax = maxOf(
         cols * baseCellPx + (cols - 1) * gapPx,
         rows * baseCellPx + (rows - 1) * gapPx
@@ -130,12 +126,11 @@ fun buildRecentAppsStripBitmap(
     val canvas = Canvas(bitmap)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
 
-    drawables.forEachIndexed { idx, drawable ->
+    iconBitmaps.forEachIndexed { idx, iconBmp ->
         val col = idx % cols
         val row = idx / cols
         val left = startX + col * (cellPx + gapPx)
         val top = startY + row * (cellPx + gapPx)
-        val iconBmp = drawableToBitmap(drawable, cellPx)
         canvas.drawBitmap(iconBmp, null, Rect(left, top, left + cellPx, top + cellPx), paint)
     }
     return bitmap

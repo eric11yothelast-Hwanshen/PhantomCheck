@@ -319,7 +319,7 @@ class NotificationCollectorService : NotificationListenerService() {
             }
 
             val activeAiRules = try {
-                db.aiRuleDao().active()
+                cachedActiveAiRules(db)
             } catch (_: Exception) {
                 emptyList()
             }
@@ -452,7 +452,7 @@ class NotificationCollectorService : NotificationListenerService() {
         val db = AppDatabaseHolder.db(applicationContext)
         val enableAutoTag = PhantomPrefs.isEffectiveAiAutoTagEnabled(applicationContext)
         val aiTags = if (enableAutoTag) db.tagDao().aiManagedTags() else emptyList()
-        val aiRules = db.aiRuleDao().active()
+        val aiRules = cachedActiveAiRules(db)
 
         val results = AiClient.analyzeMessageBatch(
             items = items,
@@ -811,12 +811,14 @@ class NotificationCollectorService : NotificationListenerService() {
 
         private val ruleCacheLock = Any()
         private var cachedFilterRules: Pair<Long, List<FilterRule>>? = null
+        private var cachedAiRules: Pair<Long, List<AiRuleEntity>>? = null
         private val cachedAppCatRules = object : LruCache<String, Pair<Long, List<AppCategoryRuleEntity>>>(64) {}
         private var cachedAlertKeywordsPair: Pair<Long, List<String>>? = null
 
         fun invalidateRuleCaches() {
             synchronized(ruleCacheLock) {
                 cachedFilterRules = null
+                cachedAiRules = null
                 cachedAppCatRules.evictAll()
                 cachedAlertKeywordsPair = null
             }
@@ -833,6 +835,21 @@ class NotificationCollectorService : NotificationListenerService() {
             val fresh = db.filterDao().active()
             synchronized(ruleCacheLock) {
                 cachedFilterRules = System.currentTimeMillis() to fresh
+            }
+            return fresh
+        }
+
+        private suspend fun cachedActiveAiRules(db: AppDatabase): List<AiRuleEntity> {
+            val now = System.currentTimeMillis()
+            synchronized(ruleCacheLock) {
+                val entry = cachedAiRules
+                if (entry != null && (now - entry.first) < RULE_CACHE_TTL_MS) {
+                    return entry.second
+                }
+            }
+            val fresh = db.aiRuleDao().active()
+            synchronized(ruleCacheLock) {
+                cachedAiRules = System.currentTimeMillis() to fresh
             }
             return fresh
         }
