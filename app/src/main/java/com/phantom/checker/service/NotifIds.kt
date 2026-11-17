@@ -14,6 +14,7 @@ object NotifIds {
     const val BOOT_ALERT = 1002
     const val DAILY_SUMMARY = 1003
     const val WEEKLY_SUMMARY = 1004
+    const val AI_TAG_FAILURE = 1005
 
     private const val SCAM_ALERT_BASE = 2000
     private const val SCAM_ALERT_SPAN = 20000L

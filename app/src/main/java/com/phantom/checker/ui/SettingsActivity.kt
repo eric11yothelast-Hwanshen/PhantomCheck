@@ -1139,6 +1139,78 @@ fun FilterSettingsScreen(
                     ) {
                         Text("多 Provider AI 與 API Key 設定")
                     }
+                    Spacer(Modifier.height(8.dp))
+
+                    var tagDispatchTesting by remember { mutableStateOf(false) }
+                    var tagDispatchResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+                    val remainingQuotaText = if (dailyAiLimit <= 0) {
+                        "不限"
+                    } else {
+                        "${(dailyAiLimit - todayAiUsage).coerceAtLeast(0)} / $dailyAiLimit 則"
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            enabled = !tagDispatchTesting,
+                            onClick = {
+                                if (!PhantomPrefs.canUseAiTodayAndIncrement(appCtx)) {
+                                    tagDispatchResult = false to "今日 AI 額度已達上限（$dailyAiLimit 則），無法執行測試。"
+                                    return@OutlinedButton
+                                }
+                                todayAiUsage = PhantomPrefs.getTodayAiUsage(appCtx)
+                                tagDispatchTesting = true
+                                tagDispatchResult = null
+                                scope.launch {
+                                    val allTags = withContext(Dispatchers.IO) {
+                                        AppDatabaseHolder.db(appCtx).tagDao().all()
+                                    }
+                                    val res = AiClient.testAutoTagDispatch(allTags, appCtx)
+                                    tagDispatchTesting = false
+                                    res.onSuccess { analysis ->
+                                        val tagMap = allTags.associateBy { it.id }
+                                        val tagNames = analysis.tagIds.mapNotNull { tagMap[it]?.name }
+                                        val tagStr = if (tagNames.isEmpty()) "（未指派標籤）" else tagNames.joinToString("、")
+                                        tagDispatchResult = true to "測試成功：風險=${analysis.riskLabel} (${analysis.riskScore})｜標籤=$tagStr\n理由：${analysis.riskReason}"
+                                    }.onFailure { err ->
+                                        PhantomPrefs.refundTodayAiUsage(appCtx)
+                                        todayAiUsage = PhantomPrefs.getTodayAiUsage(appCtx)
+                                        tagDispatchResult = false to (err.message ?: "測試失敗，請檢查網路或 API Key 設定。")
+                                    }
+                                }
+                            },
+                            modifier = Modifier.pressableScale()
+                        ) {
+                            Text(if (tagDispatchTesting) "測試中..." else "AI 標籤分發測試")
+                        }
+                        Text(
+                            text = "計入每日額度（剩餘：$remainingQuotaText）",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    tagDispatchResult?.let { (ok, msg) ->
+                        Spacer(Modifier.height(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (ok) {
+                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                            } else {
+                                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = msg,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (ok) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(10.dp))
 
                     SettingSwitchRow(

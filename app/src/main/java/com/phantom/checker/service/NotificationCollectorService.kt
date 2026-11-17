@@ -22,6 +22,7 @@ import com.phantom.checker.data.TagEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.network.IndicatorExtractor
 import com.phantom.checker.network.IntelClient
+import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.ui.MessageDetailActivity
 import com.phantom.checker.ui.ScamCenterActivity
 import com.phantom.checker.util.MuteMode
@@ -462,8 +463,31 @@ class NotificationCollectorService : NotificationListenerService() {
         )
         if (results.isEmpty()) {
             PhantomPrefs.refundTodayAiUsage(applicationContext)
+            if (enableAutoTag) {
+                // 自動降回 App 分類標籤（不中斷訊息入庫與風險流程）
+                val appCatRules = cachedAppCategoryRules(db, pkg)
+                if (appCatRules.isNotEmpty()) {
+                    items.forEach { item ->
+                        val existing = db.tagDao().crossRefsForMessage(item.messageId)
+                        if (existing.isEmpty()) {
+                            val refs = appCatRules.map { rule ->
+                                MessageTagCrossRef(
+                                    messageId = item.messageId,
+                                    tagId = rule.tagId,
+                                    source = MessageTagCrossRef.SOURCE_AUTO
+                                )
+                            }
+                            db.tagDao().addTagsToMessageBatch(refs)
+                        }
+                    }
+                }
+                if (AiClient.getActiveProfile(applicationContext) != null) {
+                    recordAndMaybeNotifyAiTagFailure(applicationContext)
+                }
+            }
             return
         }
+        resetAiTagFailureCount(applicationContext)
 
         var hasNewScam = false
         results.forEach { (msgId, result) ->
@@ -625,6 +649,58 @@ class NotificationCollectorService : NotificationListenerService() {
         try {
             nm.notify(notifId, notif)
         } catch (_: SecurityException) {
+        }
+    }
+
+    private fun aiTagFailurePrefs(ctx: Context) =
+        ctx.getSharedPreferences("phantom_ai_tag_status", Context.MODE_PRIVATE)
+
+    private fun resetAiTagFailureCount(ctx: Context) {
+        val prefs = aiTagFailurePrefs(ctx)
+        if (prefs.getInt("consecutive_failures", 0) != 0) {
+            prefs.edit().putInt("consecutive_failures", 0).apply()
+        }
+    }
+
+    private fun recordAndMaybeNotifyAiTagFailure(ctx: Context) {
+        val prefs = aiTagFailurePrefs(ctx)
+        val count = prefs.getInt("consecutive_failures", 0) + 1
+        val now = System.currentTimeMillis()
+        val lastNotifAt = prefs.getLong("last_failure_notif_at", 0L)
+        val cooldownMs = 6L * 3600_000L
+        // 三重防噪音：同批合併＋首次失敗靜默（連續第 2 次起才發）＋6 小時冷卻期
+        if (count >= 2 && (now - lastNotifAt) >= cooldownMs) {
+            prefs.edit()
+                .putInt("consecutive_failures", count)
+                .putLong("last_failure_notif_at", now)
+                .apply()
+            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val chId = "ai_tag_status"
+            nm.createNotificationChannel(
+                NotificationChannel(chId, "AI 標籤狀態通知", NotificationManager.IMPORTANCE_LOW)
+            )
+            val openAppIntent = PendingIntent.getActivity(
+                ctx,
+                NotifIds.AI_TAG_FAILURE,
+                Intent(ctx, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val notif = Notification.Builder(ctx, chId)
+                .setSmallIcon(R.drawable.ic_stat_phantom)
+                .setContentTitle("AI 標籤暫時無法套用")
+                .setContentText("已先以 App 分類處理；請檢查網路或 AI Provider 設定。")
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(true)
+                .setContentIntent(openAppIntent)
+                .build()
+            try {
+                nm.notify(NotifIds.AI_TAG_FAILURE, notif)
+            } catch (_: SecurityException) {
+            }
+        } else {
+            prefs.edit().putInt("consecutive_failures", count).apply()
         }
     }
 

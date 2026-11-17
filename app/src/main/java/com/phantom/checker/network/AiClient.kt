@@ -627,6 +627,59 @@ object AiClient {
         }
     }
 
+    /**
+     * 設定頁「AI 標籤分發測試」：以固定樣本訊息執行一次風險＋標籤分析，
+     * 成功回傳 AiAnalysisResult，失敗回傳分類後的誠實錯誤訊息與建議。
+     */
+    suspend fun testAutoTagDispatch(
+        tags: List<TagEntity>,
+        context: Context
+    ): Result<AiAnalysisResult> = withContext(Dispatchers.IO) {
+        val profile = getActiveProfile(context)
+            ?: return@withContext Result.failure(IllegalStateException("尚未設定 AI Provider API Key，請先至「多 Provider AI 與 API Key 設定」新增金鑰。"))
+        val activeTags = tags.filter { it.isAiManaged }
+        if (activeTags.isEmpty()) {
+            return@withContext Result.failure(IllegalStateException("目前沒有啟用 AI 自動管理的標籤，請先至「標籤管理」確認標籤設定。"))
+        }
+        val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
+        val systemPrompt = buildSystemPrompt(activeTags, emptyList(), enableAutoTag = true)
+        val sampleSender = "蝦皮購物通知"
+        val sampleContent = "【限時優惠】全館滿額免運折價券已發送至您的帳戶，今晚 23:59 截止使用。"
+        try {
+            enforceRateLimit()
+            val msgs = listOf(
+                ChatMessage("system", systemPrompt),
+                ChatMessage("user", "<message_sender>$sampleSender</message_sender>\n<message_content>$sampleContent</message_content>")
+            )
+            logTokenEstimate("testAutoTagDispatch", profile, msgs, 260)
+            val res = getApi(profile.baseUrl).chat(
+                url = fullUrl,
+                auth = "Bearer ${profile.apiKey.trim()}",
+                body = ChatRequest(
+                    model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
+                    messages = msgs,
+                    maxTokens = 260
+                )
+            )
+            val text = res.choices.firstOrNull()?.message?.content?.trim()
+                ?: return@withContext Result.failure(IllegalStateException("AI 回應為空，請檢查模型設定。"))
+            val parsed = parseAnalysisJson(text, activeTags)
+                ?: return@withContext Result.failure(IllegalStateException("AI 回傳格式無法解析為風險與標籤 JSON，建議改用指令遵循能力較佳的模型。"))
+            Result.success(parsed)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: HttpException) {
+            Result.failure(Exception(formatHttpErrorMessage(e)))
+        } catch (e: Exception) {
+            val msg = if (isTimeoutException(e)) {
+                "連線逾時，請確認網路狀態或切換其他 AI Provider。"
+            } else {
+                "網路或連線失敗：${e.localizedMessage ?: "請檢查網路連線"}"
+            }
+            Result.failure(Exception(msg))
+        }
+    }
+
     /** 批次分析（1~5 則同寄件者連續訊息合併成單次 prompt 節省 token） */
     suspend fun analyzeMessageBatch(
         items: List<BatchAnalyzeItem>,
