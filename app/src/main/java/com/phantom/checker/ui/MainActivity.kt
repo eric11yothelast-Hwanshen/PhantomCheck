@@ -78,6 +78,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -279,6 +280,7 @@ private fun PhantomCheckApp(
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val assistantSnackbarHostState = remember { SnackbarHostState() }
 
     var selectedTab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(MainTab.MESSAGES) }
     var showSearchBar by remember { mutableStateOf(false) }
@@ -1547,24 +1549,35 @@ private fun PhantomCheckApp(
                             targetBounds = targetBounds + (key to rect)
                         }
                     )
-                    MainTab.ASSISTANT -> ChatAssistantTab(
-                        glassState = glassState,
-                        onShowMessage = { msg ->
-                            scope.launch { snackbarHostState.showSnackbar(msg) }
-                        },
-                        isSearchActive = showSearchBar,
-                        onToggleSearch = {
-                            showSearchBar = !showSearchBar
-                            if (!showSearchBar) {
-                                searchQuery = ""
-                                searchRiskFilter = SearchRiskFilter.ALL
-                            }
-                        },
-                        onRefresh = { refreshTrigger++ },
-                        onOpenSettings = {
-                            ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
+                    MainTab.ASSISTANT -> Column(modifier = Modifier.fillMaxSize()) {
+                        SnackbarHost(hostState = assistantSnackbarHostState)
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            ChatAssistantTab(
+                                glassState = glassState,
+                                onShowMessage = { msg ->
+                                    scope.launch {
+                                        assistantSnackbarHostState.showSnackbar(
+                                            message = msg,
+                                            withDismissAction = true,
+                                            duration = SnackbarDuration.Short
+                                        )
+                                    }
+                                },
+                                isSearchActive = showSearchBar,
+                                onToggleSearch = {
+                                    showSearchBar = !showSearchBar
+                                    if (!showSearchBar) {
+                                        searchQuery = ""
+                                        searchRiskFilter = SearchRiskFilter.ALL
+                                    }
+                                },
+                                onRefresh = { refreshTrigger++ },
+                                onOpenSettings = {
+                                    ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
+                                }
+                            )
                         }
-                    )
+                    }
                     MainTab.SCAMS -> ScamsTab(
                         scamMessages = scamMessages,
                         isLoading = isLoading,
