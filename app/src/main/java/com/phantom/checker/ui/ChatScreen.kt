@@ -741,7 +741,7 @@ fun ChatAssistantTab(
                             }
                         }
                     }
-                } else if (isNaturalReminderIntent(query) && !isSettingRelated) {
+                } else if (isNaturalReminderIntent(query) && resolvedAdjustStates.isEmpty() && newAppliedSettings.isEmpty()) {
                     if (isRecurringReminderExpression(query)) {
                         resolutionErrors.add("目前僅支援單次待辦提醒，暫不支援「每天／每週」等重複提醒。")
                     } else {
