@@ -697,6 +697,12 @@ interface AiRuleDao {
     @Query("SELECT * FROM ai_rules WHERE isEnabled = 1 ORDER BY createdAt ASC, id ASC LIMIT 20")
     suspend fun active(): List<AiRuleEntity>
 
+    @Query("SELECT * FROM ai_rules WHERE kind = :kind AND isEnabled = 1 ORDER BY packageName ASC, id ASC")
+    suspend fun activeByKind(kind: String): List<AiRuleEntity>
+
+    @Query("SELECT * FROM ai_rules WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): AiRuleEntity?
+
     @Insert
     suspend fun insert(rule: AiRuleEntity): Long
 

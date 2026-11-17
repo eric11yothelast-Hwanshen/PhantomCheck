@@ -63,6 +63,7 @@ object SettingsCatalog {
         SettingSearchItem("data_retention", "data", "訊息保留與清理", "訊息保留天數與最大保留則數上限", listOf("保留", "天數", "上限", "清理")),
         SettingSearchItem("data_muted_apps", "data", "App 靜音清單", "設定特定 App 完全不記錄或靜默記錄", listOf("靜音", "封鎖", "app", "略過")),
         SettingSearchItem("ai_rules", "data", "自訂標籤與白名單規則管理", "管理自訂標籤、App 分類與寄件者/訊息白名單規則", listOf("標籤", "規則", "分類", "標籤管理", "白名單", "whitelist"), page = "TagManagementActivity"),
+        SettingSearchItem("whitelist_management", "data", "白名單管理", "依 App 分組檢視、新增、啟停或刪除寄件者與訊息白名單", listOf("白名單", "whitelist", "信任", "寄件者", "免警示", "略過詐騙")),
         SettingSearchItem("data_export_clear", "data", "匯出資料與清除紀錄", "匯出 CSV 或刪除全部訊息", listOf("匯出", "備份", "csv", "清除", "刪除全部")),
         SettingSearchItem("appearance_widget_tour", "data", "教學重播與桌面小工具", "重播新手或設定頁教學；統計小工具請在桌面長按 → 小工具加入", listOf("小工具", "widget", "桌面", "導覽", "教學")),
         SettingSearchItem("appearance_theme", "appearance", "主題模式、動態取色與字體大小", "深淺色主題、Material You 動態色與字體縮放", listOf("外觀", "主題", "字體", "大小", "動態取色", "深色", "淺色")),

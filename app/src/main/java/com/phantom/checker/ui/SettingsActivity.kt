@@ -2433,7 +2433,15 @@ fun FilterSettingsScreen(
                     ) {
                         Text("自訂標籤管理")
                     }
-                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+
+                    WhitelistManagementSection(
+                        appCtx = appCtx,
+                        onShowMessage = { msg ->
+                            scope.launch { snackbarHostState.showSnackbar(msg) }
+                        }
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 10.dp))
 
                     // 保留天數與則數上限
                     Text("訊息保留天數（詐騙記錄永久保留）", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
@@ -4254,4 +4262,378 @@ private fun SettingsTourOverlay(
         }
     }
 }
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun WhitelistManagementSection(
+    appCtx: Context,
+    onShowMessage: (String) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var rules by remember { mutableStateOf<List<com.phantom.checker.data.AiRuleEntity>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var expandedGroups by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var showAddForm by remember { mutableStateOf(false) }
+    var addModeSender by remember { mutableStateOf(true) }
+    var inputTarget by remember { mutableStateOf("") }
+    var inputAllApps by remember { mutableStateOf(true) }
+    var inputPackage by remember { mutableStateOf("") }
+    var deleteTarget by remember { mutableStateOf<com.phantom.checker.data.AiRuleEntity?>(null) }
+
+    val timeFmt = remember { SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()) }
+
+    fun reloadRules() {
+        scope.launch {
+            isLoading = true
+            val loaded = withContext(Dispatchers.IO) {
+                AppDatabaseHolder.db(appCtx).aiRuleDao().all()
+                    .filter { it.kind == com.phantom.checker.data.AiRuleEntity.KIND_WHITELIST }
+            }
+            rules = loaded
+            if (expandedGroups.isEmpty() && loaded.isNotEmpty()) {
+                expandedGroups = loaded.map { it.packageName?.takeIf { p -> p.isNotBlank() } ?: "" }.toSet()
+            }
+            isLoading = false
+        }
+    }
+
+    LaunchedEffect(Unit) { reloadRules() }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "白名單管理（${rules.size} 筆）",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "白名單內的寄件者或內容會跳過詐騙警示與情報查詢",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            OutlinedButton(
+                onClick = { showAddForm = !showAddForm },
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "新增白名單", modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(if (showAddForm) "收起" else "新增")
+            }
+        }
+
+        AnimatedVisibility(visible = showAddForm) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = addModeSender,
+                            onClick = { addModeSender = true },
+                            label = { Text("寄件者白名單") }
+                        )
+                        FilterChip(
+                            selected = !addModeSender,
+                            onClick = { addModeSender = false },
+                            label = { Text("內容規則白名單") }
+                        )
+                    }
+                    OutlinedTextField(
+                        value = inputTarget,
+                        onValueChange = { inputTarget = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text(if (addModeSender) "寄件者名稱" else "白名單規則描述／關鍵字") },
+                        placeholder = { Text(if (addModeSender) "例如：台灣大哥大、玉山銀行" else "例如：官方帳單通知不是詐騙") }
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = inputAllApps,
+                            onClick = { inputAllApps = true },
+                            label = { Text("全部 App（全域）") }
+                        )
+                        FilterChip(
+                            selected = !inputAllApps,
+                            onClick = { inputAllApps = false },
+                            label = { Text("指定 App") }
+                        )
+                    }
+                    if (!inputAllApps) {
+                        OutlinedTextField(
+                            value = inputPackage,
+                            onValueChange = { inputPackage = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            label = { Text("來源 App Package 名稱") },
+                            placeholder = { Text("例如：jp.naver.line.android") }
+                        )
+                    }
+                    val trimmedTarget = inputTarget.trim()
+                    val resolvedPkg = if (inputAllApps) null else inputPackage.trim().takeIf { it.isNotEmpty() }
+                    val isDuplicate = trimmedTarget.isNotEmpty() && rules.any { r ->
+                        if (addModeSender) {
+                            r.sender?.equals(trimmedTarget, ignoreCase = true) == true &&
+                                (r.packageName ?: "") == (resolvedPkg ?: "")
+                        } else {
+                            r.ruleText.equals(trimmedTarget, ignoreCase = true) &&
+                                (r.packageName ?: "") == (resolvedPkg ?: "")
+                        }
+                    }
+                    if (isDuplicate) {
+                        Text(
+                            text = "已存在相同的白名單規則，請勿重複新增。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    val canSubmit = trimmedTarget.isNotEmpty() &&
+                        (inputAllApps || resolvedPkg != null) &&
+                        !isDuplicate
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Button(
+                            enabled = canSubmit,
+                            onClick = {
+                                scope.launch {
+                                    val insertedOk = withContext(Dispatchers.IO) {
+                                        val dao = AppDatabaseHolder.db(appCtx).aiRuleDao()
+                                        val ruleText = if (addModeSender) {
+                                            "白名單寄件者：$trimmedTarget"
+                                        } else {
+                                            trimmedTarget
+                                        }
+                                        val id = dao.insert(
+                                            com.phantom.checker.data.AiRuleEntity(
+                                                ruleText = ruleText,
+                                                kind = com.phantom.checker.data.AiRuleEntity.KIND_WHITELIST,
+                                                isEnabled = true,
+                                                createdAt = System.currentTimeMillis(),
+                                                sender = if (addModeSender) trimmedTarget else null,
+                                                packageName = resolvedPkg
+                                            )
+                                        )
+                                        val verified = dao.byId(id)
+                                        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                        id > 0L && verified != null
+                                    }
+                                    if (insertedOk) {
+                                        inputTarget = ""
+                                        inputPackage = ""
+                                        showAddForm = false
+                                        reloadRules()
+                                        onShowMessage("已新增白名單：$trimmedTarget")
+                                    } else {
+                                        onShowMessage("新增白名單失敗，請重試。")
+                                    }
+                                }
+                            }
+                        ) {
+                            Text("確認新增")
+                        }
+                    }
+                }
+            }
+        }
+
+        if (isLoading) {
+            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+        } else if (rules.isEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Text("目前尚無白名單規則", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text(
+                        "可點擊右上角「新增」，或在訊息詳情／AI 助手中將信任的寄件者加入白名單。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else {
+            val grouped = remember(rules) {
+                rules.groupBy { it.packageName?.takeIf { p -> p.isNotBlank() } ?: "" }
+                    .toSortedMap()
+            }
+            grouped.forEach { (pkg, groupRules) ->
+                val isGroupExpanded = pkg in expandedGroups
+                val groupLabel = remember(pkg) {
+                    if (pkg.isBlank()) {
+                        "全域規則（全部 App）"
+                    } else {
+                        runCatching {
+                            val pm = appCtx.packageManager
+                            val ai = pm.getApplicationInfo(pkg, 0)
+                            pm.getApplicationLabel(ai).toString()
+                        }.getOrDefault(pkg)
+                    }
+                }
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    expandedGroups = if (isGroupExpanded) expandedGroups - pkg else expandedGroups + pkg
+                                },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (pkg.isNotBlank()) {
+                                AppIconImage(packageName = pkg, contentDescription = groupLabel, size = 24.dp)
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                            Text(
+                                text = "$groupLabel（${groupRules.size}）",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Icon(
+                                imageVector = if (isGroupExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = if (isGroupExpanded) "收合" else "展開"
+                            )
+                        }
+                        AnimatedVisibility(visible = isGroupExpanded) {
+                            Column(
+                                modifier = Modifier.padding(top = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                groupRules.forEach { rule ->
+                                    val isSenderMode = !rule.sender.isNullOrBlank()
+                                    val displayTitle = rule.sender?.takeIf { it.isNotBlank() } ?: rule.ruleText
+                                    val modeBadge = if (isSenderMode) "寄件者白名單" else "內容規則"
+                                    val timeStr = timeFmt.format(Date(rule.createdAt))
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = displayTitle,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 2,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = "$modeBadge · 建立於 $timeStr",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            Switch(
+                                                checked = rule.isEnabled,
+                                                onCheckedChange = { checked ->
+                                                    scope.launch {
+                                                        val updated = rule.copy(isEnabled = checked)
+                                                        withContext(Dispatchers.IO) {
+                                                            AppDatabaseHolder.db(appCtx).aiRuleDao().update(updated)
+                                                            com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                                        }
+                                                        rules = rules.map { if (it.id == rule.id) updated else it }
+                                                    }
+                                                }
+                                            )
+                                            IconButton(onClick = { deleteTarget = rule }) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Delete,
+                                                    contentDescription = "刪除白名單",
+                                                    tint = MaterialTheme.colorScheme.error
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    deleteTarget?.let { target ->
+        val titleDisp = target.sender?.takeIf { it.isNotBlank() } ?: target.ruleText
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("移出白名單") },
+            text = { Text("確定要刪除白名單規則「$titleDisp」嗎？刪除後將恢復正常詐騙風險檢查。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val toDelete = target
+                        deleteTarget = null
+                        scope.launch {
+                            val deletedOk = withContext(Dispatchers.IO) {
+                                val dao = AppDatabaseHolder.db(appCtx).aiRuleDao()
+                                dao.deleteById(toDelete.id)
+                                val stillExists = dao.byId(toDelete.id) != null
+                                com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                !stillExists
+                            }
+                            if (deletedOk) {
+                                rules = rules.filterNot { it.id == toDelete.id }
+                                onShowMessage("已移出白名單：$titleDisp")
+                            } else {
+                                onShowMessage("刪除失敗，請重試。")
+                            }
+                        }
+                    }
+                ) {
+                    Text("刪除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+}
+
 
