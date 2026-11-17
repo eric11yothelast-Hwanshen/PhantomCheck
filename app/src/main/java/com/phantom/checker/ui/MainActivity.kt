@@ -1583,16 +1583,10 @@ private fun PhantomCheckApp(
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .combinedClickable(
-                                    onClick = {
-                                        showSearchBar = false
-                                        ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
-                                    },
-                                    onLongClick = {
-                                        haptic(HapticFeedbackType.LongPress)
-                                        messageSheetTarget = msg
-                                    }
-                                )
+                                .clickable {
+                                    showSearchBar = false
+                                    ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
+                                }
                         )
                     }
                 }
