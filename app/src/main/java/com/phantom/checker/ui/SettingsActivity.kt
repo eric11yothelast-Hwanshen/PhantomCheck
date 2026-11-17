@@ -19,6 +19,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -1152,26 +1153,50 @@ fun FilterSettingsScreen(
                         )
                         Spacer(Modifier.height(8.dp))
 
-                        var pickingLayer by remember { mutableStateOf<BackgroundLayer?>(null) }
+                        var pickingLayerName by rememberSaveable { mutableStateOf<String?>(null) }
                         var bgUiVersion by remember { mutableIntStateOf(ThemePreferences.getBackgroundVersion()) }
-                        var bgStatusMsg by remember { mutableStateOf<String?>(null) }
-                        val bgPickerLauncher = rememberLauncherForActivityResult(
-                            contract = ActivityResultContracts.PickVisualMedia()
-                        ) { uri ->
-                            val targetLayer = pickingLayer
-                            pickingLayer = null
-                            if (uri != null && targetLayer != null) {
-                                scope.launch {
-                                    val res = BackgroundImageHelper.saveBackgroundFromUri(appCtx, targetLayer, uri)
-                                    res.onSuccess {
-                                        ThemePreferences.bumpBackgroundVersion()
-                                        bgUiVersion = ThemePreferences.getBackgroundVersion()
-                                        bgStatusMsg = "已設定「${targetLayer.label}」"
-                                    }.onFailure { err ->
-                                        bgStatusMsg = err.message ?: "圖片處理失敗"
+                        var bgStatusMsg by rememberSaveable { mutableStateOf<String?>(null) }
+                        var bgPickerFailed by rememberSaveable { mutableStateOf(false) }
+                        var failedLayerName by rememberSaveable { mutableStateOf<String?>(null) }
+
+                        fun handlePickedBackgroundUri(uri: Uri?, fromFallback: Boolean) {
+                            val targetLayer = pickingLayerName?.let { name ->
+                                BackgroundLayer.entries.firstOrNull { it.name == name }
+                            }
+                            pickingLayerName = null
+                            if (uri == null) return
+                            if (targetLayer == null) {
+                                bgStatusMsg = "選擇圖片時圖層狀態已重置，請再點擊一次欲設定的背景圖層"
+                                bgPickerFailed = false
+                                return
+                            }
+                            scope.launch {
+                                val res = BackgroundImageHelper.saveBackgroundFromUri(appCtx, targetLayer, uri)
+                                res.onSuccess {
+                                    ThemePreferences.bumpBackgroundVersion()
+                                    bgUiVersion = ThemePreferences.getBackgroundVersion()
+                                    bgStatusMsg = "已設定「${targetLayer.label}」"
+                                    bgPickerFailed = false
+                                    failedLayerName = null
+                                }.onFailure { err ->
+                                    bgStatusMsg = err.message ?: "圖片處理失敗"
+                                    if (!fromFallback) {
+                                        bgPickerFailed = true
+                                        failedLayerName = targetLayer.name
                                     }
                                 }
                             }
+                        }
+
+                        val bgPickerLauncher = rememberLauncherForActivityResult(
+                            contract = ActivityResultContracts.PickVisualMedia()
+                        ) { uri ->
+                            handlePickedBackgroundUri(uri, fromFallback = false)
+                        }
+                        val bgDocPickerLauncher = rememberLauncherForActivityResult(
+                            contract = ActivityResultContracts.OpenDocument()
+                        ) { uri ->
+                            handlePickedBackgroundUri(uri, fromFallback = true)
                         }
 
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1221,10 +1246,18 @@ fun FilterSettingsScreen(
                                     }
                                     OutlinedButton(
                                         onClick = {
-                                            pickingLayer = layer
-                                            bgPickerLauncher.launch(
-                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                            )
+                                            pickingLayerName = layer.name
+                                            bgPickerFailed = false
+                                            failedLayerName = null
+                                            try {
+                                                bgPickerLauncher.launch(
+                                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                                )
+                                            } catch (e: Exception) {
+                                                bgStatusMsg = "無法開啟系統相簿選擇器（${e.localizedMessage ?: "不支援"}），請改用檔案選擇器"
+                                                bgPickerFailed = true
+                                                failedLayerName = layer.name
+                                            }
                                         }
                                     ) {
                                         Text("選擇圖片")
@@ -1236,6 +1269,7 @@ fun FilterSettingsScreen(
                                                 ThemePreferences.bumpBackgroundVersion()
                                                 bgUiVersion = ThemePreferences.getBackgroundVersion()
                                                 bgStatusMsg = "已移除「${layer.label}」"
+                                                bgPickerFailed = false
                                             }
                                         ) {
                                             Text("移除")
@@ -1250,8 +1284,25 @@ fun FilterSettingsScreen(
                             Text(
                                 text = msg,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
+                                color = if (bgPickerFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                             )
+                        }
+                        if (bgPickerFailed) {
+                            val fallbackLayer = failedLayerName?.let { name ->
+                                BackgroundLayer.entries.firstOrNull { it.name == name }
+                            } ?: BackgroundLayer.GLOBAL
+                            TextButton(
+                                onClick = {
+                                    pickingLayerName = fallbackLayer.name
+                                    try {
+                                        bgDocPickerLauncher.launch(arrayOf("image/*"))
+                                    } catch (e: Exception) {
+                                        bgStatusMsg = "無法開啟檔案選擇器：${e.localizedMessage ?: "未知錯誤"}"
+                                    }
+                                }
+                            ) {
+                                Text("改用檔案選擇器（${fallbackLayer.label}）")
+                            }
                         }
 
                         val anyBgSet = remember(bgUiVersion) {

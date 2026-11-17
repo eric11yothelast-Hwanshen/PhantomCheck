@@ -152,10 +152,16 @@ object BackgroundImageHelper {
         }
         return withContext(Dispatchers.IO) {
             try {
-                if (!file.exists() || file.length() <= 0L) return@withContext null
+                if (!file.exists() || file.length() <= 0L) {
+                    android.util.Log.w("PhantomBackground", "loadBackgroundBitmap skipped: missing or empty file=${file.name}")
+                    return@withContext null
+                }
                 val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 BitmapFactory.decodeFile(file.absolutePath, boundsOpts)
-                if (boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) return@withContext null
+                if (boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) {
+                    android.util.Log.w("PhantomBackground", "loadBackgroundBitmap failed: invalid bounds for file=${file.name}")
+                    return@withContext null
+                }
 
                 val decodeOpts = BitmapFactory.Options().apply {
                     inSampleSize = calculateInSampleSize(
@@ -166,16 +172,22 @@ object BackgroundImageHelper {
                     )
                     inPreferredConfig = Bitmap.Config.ARGB_8888
                 }
-                val bmp = BitmapFactory.decodeFile(file.absolutePath, decodeOpts) ?: return@withContext null
+                val bmp = BitmapFactory.decodeFile(file.absolutePath, decodeOpts)
+                if (bmp == null) {
+                    android.util.Log.w("PhantomBackground", "loadBackgroundBitmap failed: decodeFile returned null for file=${file.name}")
+                    return@withContext null
+                }
                 val img = bmp.asImageBitmap()
                 synchronized(cacheLock) {
                     bitmapCache.put(key, img)
                 }
                 img
-            } catch (_: OutOfMemoryError) {
+            } catch (e: OutOfMemoryError) {
+                android.util.Log.w("PhantomBackground", "loadBackgroundBitmap OOM for file=${file.name}", e)
                 trimMemory()
                 null
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                android.util.Log.w("PhantomBackground", "loadBackgroundBitmap exception for file=${file.name}", e)
                 null
             }
         }

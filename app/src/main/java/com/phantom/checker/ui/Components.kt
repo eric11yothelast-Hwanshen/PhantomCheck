@@ -215,12 +215,18 @@ fun PhantomBackgroundBox(
     val bgFile = remember(ctx, layer, bgVersion) {
         BackgroundImageHelper.resolveBackgroundFile(ctx, layer)
     }
+    val fallbackBg = MaterialTheme.colorScheme.background
     if (bgFile == null) {
-        Box(modifier = modifier.phantomGlassSource(glassState), content = content)
+        Box(
+            modifier = modifier
+                .background(fallbackBg)
+                .phantomGlassSource(glassState),
+            content = content
+        )
         return
     }
 
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val isDark = fallbackBg.luminance() < 0.5f
     val scrimPref = ThemePreferences.getBackgroundScrimPercent(ctx)
     val scrimAlpha = if (scrimPref < 0) {
         if (isDark) 0.60f else 0.35f
@@ -228,7 +234,11 @@ fun PhantomBackgroundBox(
         (scrimPref / 100f).coerceIn(0f, 1f)
     }
 
-    BoxWithConstraints(modifier = modifier.phantomGlassSource(glassState)) {
+    BoxWithConstraints(
+        modifier = modifier
+            .background(fallbackBg)
+            .phantomGlassSource(glassState)
+    ) {
         val targetW = constraints.maxWidth
         val targetH = constraints.maxHeight
         var bitmap by remember(bgFile.absolutePath, bgFile.lastModified(), targetW, targetH, bgVersion) {
