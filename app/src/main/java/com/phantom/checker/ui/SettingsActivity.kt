@@ -2437,6 +2437,9 @@ fun FilterSettingsScreen(
 
                     WhitelistManagementSection(
                         appCtx = appCtx,
+                        modifier = Modifier.onGloballyPositioned { coords ->
+                            cardBounds["whitelist"] = coords.boundsInRoot()
+                        },
                         onShowMessage = { msg ->
                             scope.launch { snackbarHostState.showSnackbar(msg) }
                         }
@@ -2774,13 +2777,14 @@ fun FilterSettingsScreen(
         }
     }
 
-        if (tourStepIndex in 1..6) {
+        val totalTourSteps = SettingsTourStep.entries.size
+        if (tourStepIndex in 1..totalTourSteps) {
             SettingsTourOverlay(
                 stepIndex = tourStepIndex,
                 cardBounds = cardBounds,
                 glassState = glassState,
                 onNext = {
-                    if (tourStepIndex < 6) {
+                    if (tourStepIndex < totalTourSteps) {
                         tourStepIndex += 1
                     } else {
                         tourStepIndex = 0
@@ -3965,35 +3969,47 @@ private enum class SettingsTourStep(
     QUICK(
         index = 1,
         cardKey = "quick",
-        title = "快速設定",
-        description = "最常用的核心開關都集中於此，包含省 token 模式、常駐統計通知與快速操作；你可以直接點擊洞內開關立即試用。"
+        title = "快速設定與省 Token",
+        description = "最常用的核心開關都集中於此，包含「省 token 模式」、常駐統計通知與快速操作；你可以直接點擊洞內開關立即試用。"
+    ),
+    PERSONALIZATION(
+        index = 2,
+        cardKey = "personalization",
+        title = "個人化、玻璃強度與背景圖片",
+        description = "調整卡片密度、時間格式、首頁排序與篩選欄，並可自訂全域／AI 聊天／對話頁三層背景圖片與液態玻璃強度。"
     ),
     AI(
-        index = 2,
+        index = 3,
         cardKey = "ai",
-        title = "AI 與分析",
-        description = "管理多 Provider API Key 與分用途模型、每日分析額度、AI 觸發字數門檻、離線補佇列、自動備忘錄、AI 標籤分發測試／失敗通知，以及每日摘要排程。"
+        title = "AI 用途模型與雙模型路由",
+        description = "管理多 Provider API Key 與 7 種 AI 用途模型，並可開啟「雙模型信心路由」（先打輕量模型，高信心直接採用、不確定才升級主模型）進一步省 token。"
     ),
     NOTIF(
-        index = 3,
+        index = 4,
         cardKey = "notif",
         title = "訊息與通知",
-        description = "設定勿擾時段、即時關鍵字提醒、重複通知節流秒數、滑動刪除與點擊開啟行為，並可使用已遷入此卡的「清除已讀訊息」。"
+        description = "設定勿擾時段、即時關鍵字提醒、重複通知節流秒數、滑動刪除與點擊開啟行為，並可使用「清除已讀訊息」。"
     ),
     DATA(
-        index = 4,
+        index = 5,
         cardKey = "data",
-        title = "資料管理",
-        description = "管理 App 靜音清單、自訂標籤與白名單規則、訊息保留天數與則數上限、CSV 匯出，也可隨時重播新手或設定教學。"
+        title = "資料管理與自訂標籤",
+        description = "管理 App 靜音清單、自訂標籤規則、訊息保留天數與則數上限、CSV 匯出，也可隨時重播新手或設定教學。"
+    ),
+    WHITELIST(
+        index = 6,
+        cardKey = "whitelist",
+        title = "白名單管理卡",
+        description = "依 App 分組收合檢視所有寄件者／內容白名單，支援手動新增（防重複）、開關啟停與確認刪除；AI 助手也會同步讀取這份清單。"
     ),
     APPEARANCE(
-        index = 5,
+        index = 7,
         cardKey = "appearance",
-        title = "外觀與保活",
-        description = "切換主題、動態取色、三層背景圖片（全域／AI 聊天／對話頁）與暗色遮罩強度滑桿、液態玻璃與分頁欄模式，並檢查電池最佳化與前景保活狀態。"
+        title = "外觀、卡片底色與保活",
+        description = "切換深淺主題、Material You 動態取色、分頁欄模式，以及「卡片底色模式」（跟隨玻璃強度／透明模式滑桿／深色底），並檢查電池最佳化與前景保活狀態。"
     ),
     SHIZUKU(
-        index = 6,
+        index = 8,
         cardKey = "shizuku",
         title = "Shizuku 進階",
         description = "進階使用者可透過 Shizuku 進行系統級保活強化、權限補齊與連線診斷；未安裝時可略過不影響一般功能。"
@@ -4267,6 +4283,7 @@ private fun SettingsTourOverlay(
 @Composable
 private fun WhitelistManagementSection(
     appCtx: Context,
+    modifier: Modifier = Modifier,
     onShowMessage: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -4299,7 +4316,7 @@ private fun WhitelistManagementSection(
 
     LaunchedEffect(Unit) { reloadRules() }
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,

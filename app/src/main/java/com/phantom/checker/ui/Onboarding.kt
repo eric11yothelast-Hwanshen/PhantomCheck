@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -33,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +65,7 @@ object OnboardingTargets {
     const val AI_ASSISTANT_TAB = "ai_assistant_tab"
     const val NOTES_TAB = "notes_tab"
     const val STATS_TAB = "stats_tab"
+    const val SEARCH_PILL = "search_pill"
 }
 
 enum class OnboardingStep(val index: Int) {
@@ -79,7 +82,8 @@ enum class OnboardingStep(val index: Int) {
     TODO_AND_BATCH(11),
     APPEARANCE_AND_BG(12),
     KEEP_ALIVE(13),
-    DONE(14);
+    SEARCH_PILL(14),
+    DONE(15);
 
     companion object {
         fun fromIndex(index: Int): OnboardingStep =
@@ -146,6 +150,7 @@ fun OnboardingOverlay(
     val cornerPx = with(density) { 12.dp.toPx() }
 
     var overlayOrigin by remember { mutableStateOf(Offset.Zero) }
+    var overlayHeightPx by remember { mutableFloatStateOf(0f) }
     var cardVisible by remember { mutableStateOf(false) }
     var lastNextClickMs by remember { mutableLongStateOf(0L) }
 
@@ -164,72 +169,14 @@ fun OnboardingOverlay(
 
     var lastAutoSkippedStep by remember { mutableStateOf<OnboardingStep?>(null) }
 
-    // 衝突防護：目標不存在或權限已開啟時自動跳下一步（含防重入保護）
-    LaunchedEffect(step, isListenerEnabled, targetBounds) {
+    // 僅在權限步驟且已授權時單步自動跳轉，避免目標缺失時連鎖跳步
+    LaunchedEffect(step, isListenerEnabled) {
         if (lastAutoSkippedStep == step) return@LaunchedEffect
-        fun skipOnce() {
+        if (step == OnboardingStep.PERMISSION && isListenerEnabled) {
             lastAutoSkippedStep = step
             onNextStep()
-        }
-        when (step) {
-            OnboardingStep.PERMISSION -> {
-                if (isListenerEnabled) skipOnce()
-            }
-            OnboardingStep.HOME_APP -> {
-                kotlinx.coroutines.delay(120)
-                val hasTarget = targetBounds.containsKey(OnboardingTargets.FIRST_APP_ROW) ||
-                    targetBounds.containsKey(OnboardingTargets.STATS_CARD)
-                if (!hasTarget && targetBounds.isNotEmpty()) {
-                    skipOnce()
-                }
-            }
-            OnboardingStep.LONG_PRESS -> {
-                kotlinx.coroutines.delay(120)
-                if (targetBounds.isNotEmpty() && !targetBounds.containsKey(OnboardingTargets.FIRST_APP_ROW)) {
-                    skipOnce()
-                }
-            }
-            OnboardingStep.SWIPE_DELETE -> {
-                kotlinx.coroutines.delay(120)
-                if (targetBounds.isNotEmpty() && !targetBounds.containsKey(OnboardingTargets.FIRST_APP_ROW)) {
-                    skipOnce()
-                }
-            }
-            OnboardingStep.MULTI_SELECT -> {
-                kotlinx.coroutines.delay(120)
-                if (targetBounds.isNotEmpty() && !targetBounds.containsKey(OnboardingTargets.SELECT_BUTTON)) {
-                    skipOnce()
-                }
-            }
-            OnboardingStep.FILTER_CHIPS,
-            OnboardingStep.TAGS_AND_RULES -> {
-                kotlinx.coroutines.delay(120)
-                if (targetBounds.isNotEmpty() && !targetBounds.containsKey(OnboardingTargets.FILTER_CHIPS)) {
-                    skipOnce()
-                }
-            }
-            OnboardingStep.AI_ASSISTANT -> {
-                kotlinx.coroutines.delay(120)
-                if (targetBounds.isNotEmpty() && !targetBounds.containsKey(OnboardingTargets.AI_ASSISTANT_TAB)) {
-                    skipOnce()
-                }
-            }
-            OnboardingStep.NOTES_TAB,
-            OnboardingStep.TODO_AND_BATCH -> {
-                kotlinx.coroutines.delay(120)
-                if (targetBounds.isNotEmpty() && !targetBounds.containsKey(OnboardingTargets.NOTES_TAB)) {
-                    skipOnce()
-                }
-            }
-            OnboardingStep.STATS_AND_SUMMARY -> {
-                kotlinx.coroutines.delay(120)
-                if (targetBounds.isNotEmpty() && !targetBounds.containsKey(OnboardingTargets.STATS_TAB)) {
-                    skipOnce()
-                }
-            }
-            OnboardingStep.APPEARANCE_AND_BG,
-            OnboardingStep.KEEP_ALIVE,
-            OnboardingStep.DONE -> Unit
+        } else if (step != OnboardingStep.PERMISSION) {
+            lastAutoSkippedStep = null
         }
     }
 
@@ -259,6 +206,7 @@ fun OnboardingOverlay(
             OnboardingStep.NOTES_TAB,
             OnboardingStep.TODO_AND_BATCH -> targetBounds[OnboardingTargets.NOTES_TAB]
             OnboardingStep.STATS_AND_SUMMARY -> targetBounds[OnboardingTargets.STATS_TAB]
+            OnboardingStep.SEARCH_PILL -> targetBounds[OnboardingTargets.SEARCH_PILL]
             OnboardingStep.APPEARANCE_AND_BG,
             OnboardingStep.KEEP_ALIVE,
             OnboardingStep.DONE -> null
@@ -274,6 +222,7 @@ fun OnboardingOverlay(
     }
 
     val hasHole = rawHoleRect != null
+    val placeCardAtTop = hasHole && overlayHeightPx > 0f && rawHoleRect!!.center.y > overlayHeightPx * 0.52f
     val animLeft by animateFloatAsState(
         targetValue = rawHoleRect?.left ?: 0f,
         animationSpec = tween(durationMillis = 200),
@@ -305,6 +254,7 @@ fun OnboardingOverlay(
             .fillMaxSize()
             .onGloballyPositioned { coords ->
                 overlayOrigin = coords.positionInRoot()
+                overlayHeightPx = coords.size.height.toFloat()
             }
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -342,12 +292,17 @@ fun OnboardingOverlay(
             visible = cardVisible,
             enter = fadeIn(tween(200)) + slideInVertically(
                 animationSpec = tween(200),
-                initialOffsetY = { it / 2 }
+                initialOffsetY = { if (placeCardAtTop) -it / 2 else it / 2 }
             ),
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 20.dp)
+                .align(if (placeCardAtTop) Alignment.TopCenter else Alignment.BottomCenter)
+                .then(
+                    if (placeCardAtTop) {
+                        Modifier.statusBarsPadding().padding(horizontal = 16.dp, vertical = 20.dp)
+                    } else {
+                        Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 20.dp)
+                    }
+                )
         ) {
             PhantomGlassCard(
                 glassState = glassState,
@@ -370,12 +325,20 @@ fun OnboardingOverlay(
                     OnboardingStep.HOME_APP ->
                         "步驟 ${step.index} / $totalSteps・訊息分頁與風險卡" to
                             "點選 App 查看對話與訊息；頂部統計與風險卡顯示今日、未讀與詐騙數，並可一鍵進入「詐騙警示中心」。"
-                    OnboardingStep.LONG_PRESS ->
+                    OnboardingStep.LONG_PRESS -> {
+                        val noMsgNote = if (!targetBounds.containsKey(OnboardingTargets.FIRST_APP_ROW)) {
+                            "\n\n（目前尚無訊息，收到通知後即可長按操作，請點擊「下一步」繼續）"
+                        } else ""
                         "步驟 ${step.index} / $totalSteps・長按與深度分析" to
-                            "長按 App 或訊息可開啟操作選單，進行星標、釘選、靜音、AI 訊息深度分析或刪除。"
-                    OnboardingStep.SWIPE_DELETE ->
+                            "長按 App 或訊息可開啟操作選單，進行星標、釘選、靜音、AI 訊息深度分析或刪除。$noMsgNote"
+                    }
+                    OnboardingStep.SWIPE_DELETE -> {
+                        val noMsgNote = if (!targetBounds.containsKey(OnboardingTargets.FIRST_APP_ROW)) {
+                            "\n\n（目前尚無訊息，收到通知後即可左滑刪除，請點擊「下一步」繼續）"
+                        } else ""
                         "步驟 ${step.index} / $totalSteps・滑動刪除" to
-                            "進入對話頁後，將任一訊息向左滑動即可快速刪除（需在「設定 → 訊息與通知」開啟滑動刪除）。"
+                            "進入對話頁後，將任一訊息向左滑動即可快速刪除（需在「設定 → 訊息與通知」開啟滑動刪除）。$noMsgNote"
+                    }
                     OnboardingStep.MULTI_SELECT ->
                         "步驟 ${step.index} / $totalSteps・多選批次" to
                             "在篩選或搜尋清單點右上角「選取」，可一次批次標記已讀、星標或刪除多則訊息。"
@@ -387,7 +350,7 @@ fun OnboardingOverlay(
                             "切換到「AI 助手」分頁，支援自然語言查訊、常用快速指令、昨日簡報與截圖圖片分析。"
                     OnboardingStep.NOTES_TAB ->
                         "步驟 ${step.index} / $totalSteps・記事與自動備忘錄" to
-                            "切換到「記事」分頁可管理備忘與待辦；開啟「自動備忘錄」後，AI 分析訊息時會自動擷取繳費、取貨與約定事項寫入。"
+                            "切換到「記事」分頁可管理備忘與待辦（支援優先級、重複提醒與編輯）；開啟「自動備忘錄」後，AI 分析訊息時會自動擷取繳費、取貨與約定事項寫入。"
                     OnboardingStep.STATS_AND_SUMMARY ->
                         "步驟 ${step.index} / $totalSteps・統計、摘要與離線佇列" to
                             "「統計」分頁整合每日／每週 AI 摘要、訊息趨勢圖表與詐騙警示入口；斷網未分析的訊息會顯示離線補佇列橫幅並在連線後自動補齊。"
@@ -396,16 +359,19 @@ fun OnboardingOverlay(
                             "在「設定 → 標籤與 AI 規則」可設定零 token App 分類、自然語言白名單與 VIP 寄件者；AI 卡另提供觸發字數門檻與分發失敗通知開關。"
                     OnboardingStep.TODO_AND_BATCH ->
                         "步驟 ${step.index} / $totalSteps・待辦提醒與批次管理" to
-                            "在「記事」分頁可為待辦設定定時提醒通知，並支援多選批次完成或刪除；訊息與搜尋清單同樣支援批次管理。"
+                            "在「記事」分頁可手動「+」新增與編輯待辦提醒（含每日／每週重複與逾期標示）；訊息與搜尋清單同樣支援批次管理。"
                     OnboardingStep.APPEARANCE_AND_BG ->
                         "步驟 ${step.index} / $totalSteps・背景圖片、外觀與分用途模型" to
-                            "在「設定 → 外觀與保活」可自訂全域／AI 聊天／對話頁三層背景圖片與暗色遮罩強度；「多 Provider AI 設定」可為對話、分析與摘要分別指定模型。"
+                            "在「設定 → 外觀與保活」可自訂全域／AI 聊天／對話頁三層背景圖片與卡片底色模式；「多 Provider AI 設定」可為對話、分析與摘要分別指定模型。"
                     OnboardingStep.KEEP_ALIVE ->
                         "步驟 ${step.index} / $totalSteps・保活設定" to
                             "完成以下三項檢查，讓幻訊在背景穩定接收與分析通知："
+                    OnboardingStep.SEARCH_PILL ->
+                        "步驟 ${step.index} / $totalSteps・統一全域搜尋槓" to
+                            "點擊頂部玻璃搜尋槓可展開全螢幕搜尋，支援即時文字搜尋訊息／待辦／備忘錄，以及 AI 語意搜尋。"
                     OnboardingStep.DONE ->
                         "步驟 ${step.index} / $totalSteps・你學會了！" to
-                            "已掌握四大主分頁（訊息、AI 助手、記事、統計）、批次與待辦管理、標籤與 VIP 規則、背景外觀與保活設定。"
+                            "已掌握四大主分頁（訊息、AI 助手、記事、統計）、全域搜尋槓、批次與待辦管理、標籤與 VIP 規則、背景外觀與保活設定。"
                 }
 
                 Text(

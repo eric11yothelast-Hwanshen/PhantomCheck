@@ -1304,6 +1304,9 @@ private fun PhantomCheckApp(
                     query = searchQuery,
                     placeholder = "搜尋訊息、寄件人或關鍵字",
                     onClick = { showSearchBar = true },
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        targetBounds[OnboardingTargets.SEARCH_PILL] = coords.boundsInRoot()
+                    },
                     trailingActions = {
                         IconButton(
                             onClick = { refreshTrigger++ },
@@ -1639,7 +1642,8 @@ private fun PhantomCheckApp(
                         OnboardingStep.TAGS_AND_RULES -> OnboardingStep.TODO_AND_BATCH
                         OnboardingStep.TODO_AND_BATCH -> OnboardingStep.APPEARANCE_AND_BG
                         OnboardingStep.APPEARANCE_AND_BG -> OnboardingStep.KEEP_ALIVE
-                        OnboardingStep.KEEP_ALIVE -> OnboardingStep.DONE
+                        OnboardingStep.KEEP_ALIVE -> OnboardingStep.SEARCH_PILL
+                        OnboardingStep.SEARCH_PILL -> OnboardingStep.DONE
                         OnboardingStep.DONE -> {
                             PhantomPrefs.setOnboardingCompleted(appCtx, true)
                             onboardingCompleted = true

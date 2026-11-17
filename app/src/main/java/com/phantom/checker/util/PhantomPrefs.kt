@@ -640,12 +640,12 @@ object PhantomPrefs {
         prefs(ctx).edit().putStringSet(KEY_COLLAPSED_CARDS, collapsed).apply()
     }
 
-    /** 新手引導步驟索引（1~10），中斷可續 */
+    /** 新手引導步驟索引（1~15），中斷可續 */
     fun getOnboardingStep(ctx: Context): Int =
-        prefs(ctx).getInt(KEY_ONBOARDING_STEP_V2, 1).coerceIn(1, 14)
+        prefs(ctx).getInt(KEY_ONBOARDING_STEP_V2, 1).coerceIn(1, 15)
 
     fun setOnboardingStep(ctx: Context, stepIndex: Int) {
-        prefs(ctx).edit().putInt(KEY_ONBOARDING_STEP_V2, stepIndex.coerceIn(1, 14)).apply()
+        prefs(ctx).edit().putInt(KEY_ONBOARDING_STEP_V2, stepIndex.coerceIn(1, 15)).apply()
     }
 
     /** OEM 自啟動手動確認（誠實標記：無法程式檢查，由使用者手動確認） */
