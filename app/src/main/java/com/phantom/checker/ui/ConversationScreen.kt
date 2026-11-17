@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,12 +30,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -92,6 +96,8 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+
+private const val MAX_BATCH_SELECT = 100
 
 class ConversationActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -189,6 +195,27 @@ fun ConversationScreen(
     var isAnalyzing by remember { mutableStateOf(false) }
     var hasMoreOlder by remember { mutableStateOf(false) }
     var isLoadingMoreOlder by remember { mutableStateOf(false) }
+
+    var isMultiSelectMode by remember { mutableStateOf(false) }
+    var selectedMessageIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+
+    val toggleSelection: (Long) -> Unit = { id ->
+        if (id in selectedMessageIds) {
+            selectedMessageIds = selectedMessageIds - id
+        } else if (selectedMessageIds.size >= MAX_BATCH_SELECT) {
+            scope.launch {
+                snackbarHostState.showSnackbar("單次最多選取 $MAX_BATCH_SELECT 則訊息")
+            }
+        } else {
+            selectedMessageIds = selectedMessageIds + id
+        }
+    }
+
+    BackHandler(enabled = isMultiSelectMode) {
+        isMultiSelectMode = false
+        selectedMessageIds = emptySet()
+    }
 
     val shouldLoadOlder by remember {
         androidx.compose.runtime.derivedStateOf {
@@ -338,6 +365,58 @@ fun ConversationScreen(
             },
             dismissButton = {
                 TextButton(onClick = { deleteCandidate = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    if (showBatchDeleteConfirm && selectedMessageIds.isNotEmpty()) {
+        val count = selectedMessageIds.size
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteConfirm = false },
+            title = { Text("批次刪除訊息") },
+            text = { Text("確定要永久刪除已選取的 $count 則訊息嗎？詐騙訊息將受保護保留，其餘刪除後無法復原。") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val ids = selectedMessageIds.toList()
+                        scope.launch {
+                            val (deletedCount, protectedCount) = withContext(Dispatchers.IO) {
+                                val db = AppDatabaseHolder.db(appCtx)
+                                db.withTransaction {
+                                    val deletableIds = db.messageDao().nonScamIdsFrom(ids)
+                                    val protected = ids.size - deletableIds.size
+                                    if (deletableIds.isNotEmpty()) {
+                                        db.tagDao().deleteCrossRefsByMessageIds(deletableIds)
+                                        db.messageDao().deleteNonScamByIds(deletableIds)
+                                    }
+                                    deletableIds.size to protected
+                                }
+                            }
+                            StatsForegroundService.startOrRefresh(appCtx)
+                            showBatchDeleteConfirm = false
+                            isMultiSelectMode = false
+                            selectedMessageIds = emptySet()
+                            refreshTrigger++
+                            val msgText = when {
+                                deletedCount > 0 && protectedCount > 0 ->
+                                    "已刪除 $deletedCount 則訊息，另有 $protectedCount 則詐騙訊息受保護保留"
+                                deletedCount == 0 && protectedCount > 0 ->
+                                    "所選 $protectedCount 則皆為詐騙訊息，已受保護保留"
+                                else ->
+                                    "已刪除 $deletedCount 則訊息"
+                            }
+                            snackbarHostState.showSnackbar(msgText)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("確認刪除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteConfirm = false }) {
                     Text("取消")
                 }
             }
@@ -506,62 +585,180 @@ fun ConversationScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                expandedHeight = 52.dp,
-                title = {
-                    Column {
+            if (isMultiSelectMode) {
+                TopAppBar(
+                    expandedHeight = 52.dp,
+                    title = {
                         Text(
-                            text = displayTitle,
+                            text = "已選 ${selectedMessageIds.size}/$MAX_BATCH_SELECT 則",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            fontWeight = FontWeight.SemiBold
                         )
-                        Text(
-                            text = appLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                },
-                actions = {
-                    if (launchIntent != null) {
-                        TextButton(onClick = {
-                            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            ctx.startActivity(launchIntent)
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = {
+                            isMultiSelectMode = false
+                            selectedMessageIds = emptySet()
                         }) {
-                            Text("開啟原 App")
-                        }
-                    }
-                    Box {
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "更多操作")
-                        }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("清除此對話", color = MaterialTheme.colorScheme.error) },
-                                onClick = {
-                                    showMenu = false
-                                    showClearConfirm = true
-                                }
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "取消選取"
                             )
                         }
+                    },
+                    actions = {
+                        TextButton(
+                            enabled = messages.isNotEmpty(),
+                            onClick = {
+                                val loadedIds = messages.map { it.id }
+                                val targetIds = if (loadedIds.size > MAX_BATCH_SELECT) {
+                                    loadedIds.takeLast(MAX_BATCH_SELECT).toSet()
+                                } else {
+                                    loadedIds.toSet()
+                                }
+                                selectedMessageIds = targetIds
+                                scope.launch {
+                                    val msg = if (loadedIds.size > MAX_BATCH_SELECT) {
+                                        "已載入 ${loadedIds.size} 則，單次最多選取 $MAX_BATCH_SELECT 則（已選 ${targetIds.size} 則）"
+                                    } else {
+                                        "已全選目前載入的 ${targetIds.size} 則訊息"
+                                    }
+                                    snackbarHostState.showSnackbar(msg)
+                                }
+                            }
+                        ) {
+                            Text("全選")
+                        }
+                    }
+                )
+            } else {
+                TopAppBar(
+                    expandedHeight = 52.dp,
+                    title = {
+                        Column {
+                            Text(
+                                text = displayTitle,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = appLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "返回"
+                            )
+                        }
+                    },
+                    actions = {
+                        if (launchIntent != null) {
+                            TextButton(onClick = {
+                                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                ctx.startActivity(launchIntent)
+                            }) {
+                                Text("開啟原 App")
+                            }
+                        }
+                        Box {
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "更多操作")
+                            }
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false }
+                            ) {
+                                if (messages.isNotEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("批次選取") },
+                                        onClick = {
+                                            showMenu = false
+                                            revealedMessageId = null
+                                            isMultiSelectMode = true
+                                            selectedMessageIds = emptySet()
+                                        }
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("清除此對話", color = MaterialTheme.colorScheme.error) },
+                                    onClick = {
+                                        showMenu = false
+                                        showClearConfirm = true
+                                    }
+                                )
+                            }
+                        }
+                    }
+                )
+            }
+        },
+        bottomBar = {
+            if (isMultiSelectMode) {
+                Surface(
+                    tonalElevation = 6.dp,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            enabled = selectedMessageIds.isNotEmpty(),
+                            onClick = {
+                                val ids = selectedMessageIds.toList()
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        AppDatabaseHolder.db(appCtx).messageDao().markReadByIds(ids)
+                                    }
+                                    StatsForegroundService.startOrRefresh(appCtx)
+                                    isMultiSelectMode = false
+                                    selectedMessageIds = emptySet()
+                                    refreshTrigger++
+                                    snackbarHostState.showSnackbar("已標記 ${ids.size} 則為已讀")
+                                }
+                            }
+                        ) { Text("已讀") }
+                        TextButton(
+                            enabled = selectedMessageIds.isNotEmpty(),
+                            onClick = {
+                                val ids = selectedMessageIds.toList()
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        AppDatabaseHolder.db(appCtx).messageDao().setStarredByIds(ids, true)
+                                    }
+                                    isMultiSelectMode = false
+                                    selectedMessageIds = emptySet()
+                                    refreshTrigger++
+                                    snackbarHostState.showSnackbar("已將 ${ids.size} 則加入星標")
+                                }
+                            }
+                        ) { Text("星標") }
+                        TextButton(
+                            enabled = selectedMessageIds.isNotEmpty(),
+                            onClick = { showBatchDeleteConfirm = true }
+                        ) { Text("刪除", color = MaterialTheme.colorScheme.error) }
+                        TextButton(
+                            onClick = {
+                                isMultiSelectMode = false
+                                selectedMessageIds = emptySet()
+                            }
+                        ) { Text("取消") }
                     }
                 }
-            )
+            }
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
@@ -649,12 +846,16 @@ fun ConversationScreen(
                                     HorizontalDivider(modifier = Modifier.weight(1f))
                                 }
                             }
+                            val isSelected = msg.id in selectedMessageIds
                             val bubbleContent: @Composable () -> Unit = {
                                 ChatBubbleItem(
                                     message = msg,
                                     glassState = glassState,
                                     tags = msgTagsMap[msg.id].orEmpty(),
                                     showSenderName = msg.sender.isNotBlank() && msg.sender != conversationKey,
+                                    isMultiSelectMode = isMultiSelectMode,
+                                    isSelected = isSelected,
+                                    onToggleSelect = { toggleSelection(msg.id) },
                                     onClick = {
                                         revealedMessageId = null
                                         ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
@@ -662,11 +863,12 @@ fun ConversationScreen(
                                     onLongClick = {
                                         haptic(HapticFeedbackType.LongPress)
                                         revealedMessageId = null
-                                        sheetMessage = msg
+                                        isMultiSelectMode = true
+                                        selectedMessageIds = setOf(msg.id)
                                     }
                                 )
                             }
-                            if (swipeToDeleteEnabled) {
+                            if (swipeToDeleteEnabled && !isMultiSelectMode) {
                                 SwipeToRevealRow(
                                     revealed = revealedMessageId == msg.id,
                                     onReveal = { revealedMessageId = msg.id },
@@ -707,6 +909,9 @@ private fun ChatBubbleItem(
     glassState: HazeState,
     tags: List<MessageTagRow> = emptyList(),
     showSenderName: Boolean = false,
+    isMultiSelectMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelect: () -> Unit = {},
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -724,15 +929,32 @@ private fun ChatBubbleItem(
 
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Start
+        horizontalArrangement = Arrangement.Start,
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        if (isMultiSelectMode) {
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onToggleSelect() }
+            )
+        }
+        val selectionModifier = if (isMultiSelectMode && isSelected) {
+            Modifier.border(
+                width = 1.5.dp,
+                color = MaterialTheme.colorScheme.primary,
+                shape = RoundedCornerShape(16.dp)
+            )
+        } else {
+            Modifier
+        }
         PhantomGlassCard(
             glassState = glassState,
             modifier = Modifier
-                .fillMaxWidth(0.84f)
+                .fillMaxWidth(if (isMultiSelectMode) 1f else 0.84f)
+                .then(selectionModifier)
                 .combinedClickable(
-                    onClick = onClick,
-                    onLongClick = onLongClick
+                    onClick = { if (isMultiSelectMode) onToggleSelect() else onClick() },
+                    onLongClick = { if (isMultiSelectMode) onToggleSelect() else onLongClick() }
                 ),
             cornerRadius = 16.dp,
             contentPadding = if (isCompact) 8.dp else 12.dp
@@ -773,9 +995,13 @@ private fun ChatBubbleItem(
                     shape = RoundedCornerShape(8.dp),
                     color = MaterialTheme.colorScheme.primaryContainer,
                     onClick = {
-                        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        cm.setPrimaryClip(android.content.ClipData.newPlainText("otp_code", otpCode))
-                        android.widget.Toast.makeText(ctx, "已複製驗證碼 $otpCode", android.widget.Toast.LENGTH_SHORT).show()
+                        if (isMultiSelectMode) {
+                            onToggleSelect()
+                        } else {
+                            val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            cm.setPrimaryClip(android.content.ClipData.newPlainText("otp_code", otpCode))
+                            android.widget.Toast.makeText(ctx, "已複製驗證碼 $otpCode", android.widget.Toast.LENGTH_SHORT).show()
+                        }
                     }
                 ) {
                     Text(

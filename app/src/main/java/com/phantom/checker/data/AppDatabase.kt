@@ -469,6 +469,21 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE riskLabel != 'scam' AND id NOT IN (SELECT id FROM messages ORDER BY timestamp DESC LIMIT :keepCount)")
     suspend fun deleteOlderThanCount(keepCount: Int)
+
+    @Query("SELECT id FROM messages WHERE id IN (:ids) AND riskLabel != 'scam'")
+    suspend fun nonScamIdsFrom(ids: List<Long>): List<Long>
+
+    @Query("DELETE FROM messages WHERE id IN (:ids) AND riskLabel != 'scam'")
+    suspend fun deleteNonScamByIds(ids: List<Long>): Int
+
+    @Query("UPDATE messages SET isRead = 1 WHERE packageName = :packageName AND conversationKey IN (:conversationKeys) AND isRead = 0")
+    suspend fun markConversationsRead(packageName: String, conversationKeys: List<String>)
+
+    @Query("SELECT COUNT(*) FROM messages WHERE packageName = :packageName AND conversationKey IN (:conversationKeys) AND riskLabel = 'scam'")
+    suspend fun countScamByConversations(packageName: String, conversationKeys: List<String>): Int
+
+    @Query("DELETE FROM messages WHERE packageName = :packageName AND conversationKey IN (:conversationKeys) AND riskLabel != 'scam'")
+    suspend fun deleteNonScamByConversations(packageName: String, conversationKeys: List<String>): Int
 }
 
 @Dao
@@ -541,6 +556,9 @@ interface TagDao {
 
     @Query("DELETE FROM message_tags WHERE messageId IN (SELECT id FROM messages WHERE packageName = :packageName AND conversationKey = :conversationKey)")
     suspend fun deleteCrossRefsByConversation(packageName: String, conversationKey: String)
+
+    @Query("DELETE FROM message_tags WHERE messageId IN (SELECT id FROM messages WHERE packageName = :packageName AND conversationKey IN (:conversationKeys) AND riskLabel != 'scam')")
+    suspend fun deleteNonScamCrossRefsByConversations(packageName: String, conversationKeys: List<String>)
 
     @Query("DELETE FROM message_tags WHERE messageId IN (SELECT id FROM messages WHERE isRead = 1)")
     suspend fun deleteCrossRefsForReadMessages()
