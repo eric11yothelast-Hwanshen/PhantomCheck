@@ -25,7 +25,7 @@
 - **裸 JSON 動作解析與白名單模糊定位（#128）**：強化 `whitelist` `messageRef` 分詞模糊搜尋 fallback。
 - **Groq 免費方案 TPM 預算控制與 413/429 自動降級（#129）**：新增 token 估算、Provider 預算上限（Groq 6500 / 其他 32000）、Groq 預設 `maxTokens=1800`、多階段 413 降級（RAG → history → maxTokens）、429 `Retry-After` 退避重試，以及分析失敗退還每日額度。
 - **System Prompt 節流與對話歷史壓縮（#130）**：設定清單僅於設定相關查詢條件載入；RAG 依同寄件者相似前綴去重 `(×N)` 與動態字數上限；超過 10 輪歷史壓縮為 `[較早對話摘要]` + 最近 8 則。
-- **效能與 M3 版面一致化（#137, #138）**：`NotificationCollectorService` `aiRuleDao().active()` 導入 30 秒 TTL 快取、`AppIconHelper` 通知圖示條改走 `LruCache`；全專案對齊 M3 8dp 網格、12dp 卡片間距與 48dp 最小觸控目標。
+- **效能與 M3 版面一致化（#137, #138）**：`NotificationCollectorService` `aiRuleDao().active()` 導入 30 秒 TTL 快取、`PhantomPrefs` 同 key 節流／靜音模式查表導入 30 秒執行緒安全 TTL 快取、`AppIconHelper` 統一為 4 MB 位元組上限 `LruCache`、`StatsForegroundService` 停用時釋放靜態圖示條參照並補齊 Compose `LazyColumn` `contentType`／預計算日期分隔；全專案對齊 M3 12dp 卡片間距與 48dp 最小觸控目標。
 - **版號更新**：`versionCode` 17、`versionName` `"2.0.0"`。
 
 ## [1.13.1] - 2026-11-17
