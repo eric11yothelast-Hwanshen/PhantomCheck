@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -282,16 +283,16 @@ fun EmptyStateView(
                 imageVector = icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                modifier = Modifier.size(44.dp)
+                modifier = Modifier.size(48.dp)
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = description,
                 style = MaterialTheme.typography.bodySmall,
@@ -299,10 +300,12 @@ fun EmptyStateView(
                 textAlign = TextAlign.Center
             )
             if (actionLabel != null && onAction != null) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(16.dp))
                 OutlinedButton(
                     onClick = onAction,
-                    modifier = Modifier.pressableScale()
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .pressableScale()
                 ) {
                     Text(actionLabel)
                 }

@@ -791,7 +791,7 @@ fun FilterSettingsScreen(
                     .phantomGlassSource(glassState)
                     .padding(padding)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 OutlinedTextField(
                     value = searchQuery,
@@ -2868,11 +2868,12 @@ private fun CollapsibleSettingsCard(
                 }
             ),
         cornerRadius = 20.dp,
-        contentPadding = 14.dp
+        contentPadding = 16.dp
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 48.dp)
                 .clickable(onClick = onToggle),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
@@ -2903,11 +2904,12 @@ private fun CollapsibleSettingsCard(
             }
             Icon(
                 imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                contentDescription = if (expanded) "收合" else "展開"
+                contentDescription = if (expanded) "收合" else "展開",
+                modifier = Modifier.size(24.dp)
             )
         }
         AnimatedVisibility(visible = expanded) {
-            Column(modifier = Modifier.padding(top = 10.dp)) {
+            Column(modifier = Modifier.padding(top = 12.dp)) {
                 content()
             }
         }
@@ -2922,7 +2924,9 @@ private fun SettingSwitchRow(
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
