@@ -800,6 +800,7 @@ fun MessageDetailScreen(
                                                     packageName = msg.packageName
                                                 )
                                             )
+                                            com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                                             db.messageDao().update(updatedMsg)
                                         }
                                         message = updatedMsg

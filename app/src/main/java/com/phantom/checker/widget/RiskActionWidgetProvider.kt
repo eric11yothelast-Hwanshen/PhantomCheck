@@ -88,6 +88,7 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
                                     sender = sender
                                 )
                             )
+                            com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                         }
                     }
                 }

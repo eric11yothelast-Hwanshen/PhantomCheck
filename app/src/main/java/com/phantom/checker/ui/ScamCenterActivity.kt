@@ -482,6 +482,7 @@ private fun ScamDetailDialog(
                                 packageName = message.packageName
                             )
                         )
+                        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                         db.messageDao().update(
                             message.copy(
                                 riskScore = 10,

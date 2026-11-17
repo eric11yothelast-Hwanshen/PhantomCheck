@@ -1090,6 +1090,7 @@ fun ChatAssistantTab(
                                     createdAt = System.currentTimeMillis()
                                 )
                             )
+                            NotificationCollectorService.invalidateRuleCaches()
                             db.chatDao().insertMessage(
                                 ChatMessageEntity(
                                     sessionId = sid,
@@ -1672,6 +1673,7 @@ fun ChatAssistantTab(
                                                                     packageName = targetMsg.packageName
                                                                 )
                                                             )
+                                                            NotificationCollectorService.invalidateRuleCaches()
                                                             db.messageDao().update(
                                                                 targetMsg.copy(
                                                                     riskScore = 10,
