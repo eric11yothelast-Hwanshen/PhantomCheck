@@ -69,8 +69,10 @@ import androidx.room.withTransaction
 import com.phantom.checker.data.AiRuleEntity
 import com.phantom.checker.data.AppCategoryRuleEntity
 import com.phantom.checker.data.TagEntity
+import com.phantom.checker.data.UserTagRuleEntity
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.ui.components.FluidSwitch
+import com.phantom.checker.util.TagRuleEngine
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -114,6 +116,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
     var tags by remember { mutableStateOf(listOf<TagEntity>()) }
     var appCatRules by remember { mutableStateOf(listOf<AppCategoryRuleEntity>()) }
     var aiRules by remember { mutableStateOf(listOf<AiRuleEntity>()) }
+    var userTagRules by remember { mutableStateOf(listOf<UserTagRuleEntity>()) }
 
     var showEditor by remember { mutableStateOf(false) }
     var editingTag by remember { mutableStateOf<TagEntity?>(null) }
@@ -125,12 +128,16 @@ fun TagManagementScreen(onBack: () -> Unit) {
     var showAddAiRuleDialog by remember { mutableStateOf(false) }
     var deleteAiRuleCandidate by remember { mutableStateOf<AiRuleEntity?>(null) }
 
+    var showTestTagRulesDialog by remember { mutableStateOf(false) }
+    var deleteUserTagRuleCandidate by remember { mutableStateOf<UserTagRuleEntity?>(null) }
+
     suspend fun reloadAll() {
         withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
             tags = db.tagDao().all()
             appCatRules = db.appCategoryRuleDao().all()
             aiRules = db.aiRuleDao().all()
+            userTagRules = db.userTagRuleDao().all()
         }
     }
 
@@ -329,6 +336,44 @@ fun TagManagementScreen(onBack: () -> Unit) {
                     Text("取消")
                 }
             }
+        )
+    }
+
+    deleteUserTagRuleCandidate?.let { rule ->
+        AlertDialog(
+            onDismissRequest = { deleteUserTagRuleCandidate = null },
+            title = { Text("刪除標籤記憶規則") },
+            text = { Text("確定要刪除這條規則嗎？刪除後新訊息將恢復原本的 AI 判斷。\n「${rule.description}」") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                AppDatabaseHolder.db(appCtx).userTagRuleDao().deleteById(rule.id)
+                            }
+                            deleteUserTagRuleCandidate = null
+                            reloadAll()
+                            snackbarHostState.showSnackbar("已刪除標籤記憶規則")
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("確認刪除")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteUserTagRuleCandidate = null }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    if (showTestTagRulesDialog) {
+        TestUserTagRulesDialog(
+            rules = userTagRules,
+            tagById = tagById,
+            onDismiss = { showTestTagRulesDialog = false }
         )
     }
 
@@ -776,6 +821,126 @@ fun TagManagementScreen(onBack: () -> Unit) {
                     }
                 }
 
+                item {
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "使用者標籤記憶規則（確定性・零 Token）",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "優先序高於 AI 自動標籤，可在 AI 助手對話教學建立（如「手機管家歸類為系統通知」）。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        OutlinedButton(onClick = { showTestTagRulesDialog = true }) {
+                            Text("測試命中")
+                        }
+                    }
+                }
+
+                if (userTagRules.isEmpty()) {
+                    item {
+                        PhantomGlassCard(
+                            glassState = glassState,
+                            modifier = Modifier.fillMaxWidth(),
+                            cornerRadius = 18.dp,
+                            contentPadding = 12.dp
+                        ) {
+                            Text(
+                                text = "尚無使用者標籤記憶規則。可至「AI 助手」用自然語言教學建立。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
+                    items(userTagRules, key = { "utagrule_${it.id}" }) { rule ->
+                        val targetTag = tagById[rule.targetTagId]
+                        val sourceLabel = if (rule.source == "chat") "對話教學" else "手動建立"
+                        val condSummary = TagRuleEngine.formatRuleConditions(rule)
+                        PhantomGlassCard(
+                            glassState = glassState,
+                            modifier = Modifier.fillMaxWidth(),
+                            cornerRadius = 18.dp,
+                            contentPadding = 12.dp
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = MaterialTheme.colorScheme.secondaryContainer
+                                        ) {
+                                            Text(
+                                                text = sourceLabel,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer
+                                        ) {
+                                            Text(
+                                                text = "標籤：${targetTag?.name ?: "未知(#${rule.targetTagId})"}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = rule.description,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "條件：$condSummary",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    FluidSwitch(
+                                        checked = rule.isEnabled,
+                                        onCheckedChange = { enabled ->
+                                            scope.launch {
+                                                withContext(Dispatchers.IO) {
+                                                    AppDatabaseHolder.db(appCtx).userTagRuleDao()
+                                                        .setEnabled(rule.id, enabled)
+                                                }
+                                                reloadAll()
+                                            }
+                                        }
+                                    )
+                                    IconButton(onClick = { deleteUserTagRuleCandidate = rule }) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "刪除標籤記憶規則",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 item { Spacer(Modifier.height(64.dp)) }
             }
         }
@@ -1090,3 +1255,96 @@ private fun AddAiRuleDialog(
         }
     )
 }
+
+@Composable
+private fun TestUserTagRulesDialog(
+    rules: List<UserTagRuleEntity>,
+    tagById: Map<Long, TagEntity>,
+    onDismiss: () -> Unit
+) {
+    var sampleAppLabel by remember { mutableStateOf("手機管家") }
+    var samplePackage by remember { mutableStateOf("") }
+    var sampleSender by remember { mutableStateOf("") }
+    var sampleContent by remember { mutableStateOf("") }
+
+    val matched = remember(rules, sampleAppLabel, samplePackage, sampleSender, sampleContent) {
+        TagRuleEngine.evaluateTagRules(
+            rules = rules,
+            packageName = samplePackage.trim(),
+            appLabel = sampleAppLabel.trim(),
+            sender = sampleSender.trim(),
+            content = sampleContent.trim()
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("測試標籤記憶規則命中") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = sampleAppLabel,
+                    onValueChange = { sampleAppLabel = it },
+                    label = { Text("App 名稱（例：手機管家）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = samplePackage,
+                    onValueChange = { samplePackage = it },
+                    label = { Text("套件名稱（選填，例：com.miui.securitycenter）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = sampleSender,
+                    onValueChange = { sampleSender = it },
+                    label = { Text("寄件者（選填）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = sampleContent,
+                    onValueChange = { sampleContent = it },
+                    label = { Text("訊息內容（選填，例：您的驗證碼為 123456）") },
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(4.dp))
+                if (rules.none { it.isEnabled }) {
+                    Text(
+                        text = "目前沒有已啟用的標籤記憶規則。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (matched.isEmpty()) {
+                    Text(
+                        text = "未命中任何標籤記憶規則（將交由 AI／App 分類處理）。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Text(
+                        text = "命中 ${matched.size} 條規則：",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    matched.forEach { r ->
+                        val tName = tagById[r.targetTagId]?.name ?: "未知(#${r.targetTagId})"
+                        Text(
+                            text = "• ${r.description} → [$tName]",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("關閉")
+            }
+        }
+    )
+}
+

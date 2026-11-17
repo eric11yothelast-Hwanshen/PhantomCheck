@@ -78,8 +78,29 @@ data class MessageTagCrossRef(
     companion object {
         const val SOURCE_AUTO = "auto"
         const val SOURCE_MANUAL = "manual"
+        const val SOURCE_USER_RULE = "user_rule"
     }
 }
+
+@Entity(
+    tableName = "user_tag_rules",
+    indices = [Index(value = ["targetTagId"]), Index(value = ["isEnabled"])]
+)
+data class UserTagRuleEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val description: String,
+    val appPackage: String? = null,
+    val appLabel: String? = null,
+    val senderPattern: String? = null,
+    val contentKeyword: String? = null,
+    val contentRegex: String? = null,
+    val semanticCategory: String? = null,
+    val targetTagId: Long,
+    val isEnabled: Boolean = true,
+    val priority: Int = 100,
+    val source: String = "chat",
+    val createdAt: Long = System.currentTimeMillis()
+)
 
 @Entity(
     tableName = "app_category_rules",
@@ -669,6 +690,24 @@ interface IntelDao {
     suspend fun deleteAllResults()
 }
 
+@Dao
+interface UserTagRuleDao {
+    @Query("SELECT * FROM user_tag_rules ORDER BY priority DESC, createdAt DESC")
+    suspend fun all(): List<UserTagRuleEntity>
+
+    @Query("SELECT * FROM user_tag_rules WHERE isEnabled = 1 ORDER BY priority DESC, createdAt DESC")
+    suspend fun active(): List<UserTagRuleEntity>
+
+    @Insert
+    suspend fun insert(rule: UserTagRuleEntity): Long
+
+    @Update
+    suspend fun update(rule: UserTagRuleEntity)
+
+    @Query("DELETE FROM user_tag_rules WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
 @Database(
     entities = [
         MessageEntity::class,
@@ -681,9 +720,10 @@ interface IntelDao {
         ChatSessionEntity::class,
         ChatMessageEntity::class,
         IntelCacheEntity::class,
-        IntelResultEntity::class
+        IntelResultEntity::class,
+        UserTagRuleEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -695,6 +735,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun aiRuleDao(): AiRuleDao
     abstract fun chatDao(): ChatDao
     abstract fun intelDao(): IntelDao
+    abstract fun userTagRuleDao(): UserTagRuleDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -853,6 +894,29 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE ai_rules ADD COLUMN sender TEXT DEFAULT NULL")
                 db.execSQL("ALTER TABLE ai_rules ADD COLUMN packageName TEXT DEFAULT NULL")
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `user_tag_rules` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`description` TEXT NOT NULL, " +
+                        "`appPackage` TEXT DEFAULT NULL, " +
+                        "`appLabel` TEXT DEFAULT NULL, " +
+                        "`senderPattern` TEXT DEFAULT NULL, " +
+                        "`contentKeyword` TEXT DEFAULT NULL, " +
+                        "`contentRegex` TEXT DEFAULT NULL, " +
+                        "`semanticCategory` TEXT DEFAULT NULL, " +
+                        "`targetTagId` INTEGER NOT NULL, " +
+                        "`isEnabled` INTEGER NOT NULL DEFAULT 1, " +
+                        "`priority` INTEGER NOT NULL DEFAULT 100, " +
+                        "`source` TEXT NOT NULL DEFAULT 'chat', " +
+                        "`createdAt` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_tag_rules_targetTagId` ON `user_tag_rules` (`targetTagId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_tag_rules_isEnabled` ON `user_tag_rules` (`isEnabled`)")
             }
         }
     }

@@ -254,17 +254,41 @@ class NotificationCollectorService : NotificationListenerService() {
                 )
             )
 
-            // App 分類標籤（零 token 規則式，insert 後直接打標籤）
-            val appCatRules = cachedAppCategoryRules(db, pkg)
-            if (appCatRules.isNotEmpty()) {
-                val catRefs = appCatRules.map { rule ->
+            // 使用者標籤記憶規則（確定性、零 LLM token，優先序高於 App 分類與 AI 標籤）
+            val userTagRules = try {
+                db.userTagRuleDao().active()
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val matchedUserTagRules = com.phantom.checker.util.TagRuleEngine.evaluateTagRules(
+                rules = userTagRules,
+                packageName = pkg,
+                appLabel = cachedAppLabel(pkg),
+                sender = title,
+                content = text
+            )
+            if (matchedUserTagRules.isNotEmpty()) {
+                val userRefs = matchedUserTagRules.map { it.targetTagId }.distinct().map { tagId ->
                     MessageTagCrossRef(
                         messageId = id,
-                        tagId = rule.tagId,
-                        source = MessageTagCrossRef.SOURCE_AUTO
+                        tagId = tagId,
+                        source = MessageTagCrossRef.SOURCE_USER_RULE
                     )
                 }
-                db.tagDao().addTagsToMessageBatch(catRefs)
+                db.tagDao().addTagsToMessageBatch(userRefs)
+            } else {
+                // App 分類標籤（零 token 規則式，僅在未命中使用者標籤規則時套用）
+                val appCatRules = cachedAppCategoryRules(db, pkg)
+                if (appCatRules.isNotEmpty()) {
+                    val catRefs = appCatRules.map { rule ->
+                        MessageTagCrossRef(
+                            messageId = id,
+                            tagId = rule.tagId,
+                            source = MessageTagCrossRef.SOURCE_AUTO
+                        )
+                    }
+                    db.tagDao().addTagsToMessageBatch(catRefs)
+                }
             }
 
             if (!silentMuted) {
@@ -452,14 +476,21 @@ class NotificationCollectorService : NotificationListenerService() {
                 )
             )
             if (enableAutoTag && result.tagIds.isNotEmpty()) {
-                val refs = result.tagIds.map { tagId ->
-                    MessageTagCrossRef(
-                        messageId = msgId,
-                        tagId = tagId,
-                        source = MessageTagCrossRef.SOURCE_AUTO
-                    )
+                val existingRefs = db.tagDao().crossRefsForMessage(msgId)
+                val hasHigherPriorityTag = existingRefs.any {
+                    it.source == MessageTagCrossRef.SOURCE_MANUAL ||
+                        it.source == MessageTagCrossRef.SOURCE_USER_RULE
                 }
-                db.tagDao().addTagsToMessageBatch(refs)
+                if (!hasHigherPriorityTag) {
+                    val refs = result.tagIds.map { tagId ->
+                        MessageTagCrossRef(
+                            messageId = msgId,
+                            tagId = tagId,
+                            source = MessageTagCrossRef.SOURCE_AUTO
+                        )
+                    }
+                    db.tagDao().addTagsToMessageBatch(refs)
+                }
             }
             if (result.riskLabel == "scam") {
                 hasNewScam = true
@@ -899,7 +930,8 @@ object AppDatabaseHolder {
                 AppDatabase.MIGRATION_5_6,
                 AppDatabase.MIGRATION_6_7,
                 AppDatabase.MIGRATION_7_8,
-                AppDatabase.MIGRATION_8_9
+                AppDatabase.MIGRATION_8_9,
+                AppDatabase.MIGRATION_9_10
             ).addCallback(object : androidx.room.RoomDatabase.Callback() {
                 override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                     super.onOpen(db)

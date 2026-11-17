@@ -179,6 +179,7 @@ fun ChatAssistantTab(
     var hasApiKey by remember { mutableStateOf(activeProfile != null) }
     var showSuggestions by remember { mutableStateOf(PhantomPrefs.isChatSuggestionsEnabled(appCtx)) }
     var pendingRuleQueue by remember { mutableStateOf<List<PendingRuleInsertion>>(emptyList()) }
+    var pendingTagRuleQueue by remember { mutableStateOf<List<PendingTagRuleInsertion>>(emptyList()) }
     var pendingWhitelist by remember { mutableStateOf<PendingWhitelistAction?>(null) }
     var appliedSettingCards by remember { mutableStateOf<List<AppliedSettingCardState>>(emptyList()) }
     var pendingSettingCandidates by remember { mutableStateOf<PendingSettingCandidatesState?>(null) }
@@ -584,8 +585,29 @@ fun ChatAssistantTab(
                 }
                 val finalCandidates = if (usedNumericFallback) null else resolvedCandidates
 
+                val resolvedTagRuleInsertions = if (parsed.tagRuleProposals.isNotEmpty()) {
+                    withContext(Dispatchers.IO) {
+                        val db = AppDatabaseHolder.db(appCtx)
+                        val tags = db.tagDao().all()
+                        parsed.tagRuleProposals.map { tp ->
+                            val matchedTag = tags.firstOrNull { it.name.equals(tp.tagName.trim(), ignoreCase = true) }
+                                ?: tags.firstOrNull { it.name.contains(tp.tagName.trim(), ignoreCase = true) }
+                                ?: tags.firstOrNull()
+                            PendingTagRuleInsertion(
+                                sessionId = sessionId,
+                                proposal = tp,
+                                resolvedTagId = matchedTag?.id,
+                                availableTags = tags
+                            )
+                        }
+                    }
+                } else {
+                    emptyList()
+                }
+
                 val allActionErrors = (parsed.invalidActionErrors + resolutionErrors).distinct()
                 val hasValidAction = parsed.ruleProposals.isNotEmpty() ||
+                    resolvedTagRuleInsertions.isNotEmpty() ||
                     dedupedWhitelistItems.isNotEmpty() ||
                     newAppliedSettings.isNotEmpty() ||
                     !finalCandidates.isNullOrEmpty() ||
@@ -623,6 +645,9 @@ fun ChatAssistantTab(
                 loadMessages(sessionId)
                 if (parsed.ruleProposals.isNotEmpty()) {
                     pendingRuleQueue = parsed.ruleProposals.map { PendingRuleInsertion(sessionId, it) }
+                }
+                if (resolvedTagRuleInsertions.isNotEmpty()) {
+                    pendingTagRuleQueue = resolvedTagRuleInsertions
                 }
                 if (dedupedWhitelistItems.isNotEmpty()) {
                     pendingWhitelist = PendingWhitelistAction(
@@ -858,6 +883,112 @@ fun ChatAssistantTab(
             },
             dismissButton = {
                 TextButton(onClick = { pendingRuleQueue = pendingRuleQueue.drop(1) }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    pendingTagRuleQueue.firstOrNull()?.let { pending ->
+        val p = pending.proposal
+        val remaining = pendingTagRuleQueue.size
+        var selectedTagId by remember(pending) { mutableStateOf(pending.resolvedTagId) }
+        val previewConditions = buildList {
+            p.appLabel?.let { add("App：$it") }
+            p.appPackage?.let { add("套件：$it") }
+            p.senderPattern?.let { add("寄件者含「$it」") }
+            p.contentKeyword?.let { add("關鍵字「$it」") }
+            p.contentRegex?.let { add("正則 /$it/") }
+            com.phantom.checker.util.TagRuleEngine.semanticLabel(p.semanticCategory)?.let { add("語意：$it") }
+        }.joinToString(" ＋ ").ifBlank { p.description }
+        AlertDialog(
+            onDismissRequest = { pendingTagRuleQueue = pendingTagRuleQueue.drop(1) },
+            title = {
+                Text(if (remaining > 1) "確認建立標籤記憶規則（尚有 $remaining 筆）" else "確認建立標籤記憶規則")
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "此規則將採確定性比對（零 token），優先於 App 分類與 AI 自動標籤。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "規則說明：${p.description}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "比對條件：$previewConditions",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "目標標籤：",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        pending.availableTags.forEach { tag ->
+                            FilterChip(
+                                selected = selectedTagId == tag.id,
+                                onClick = { selectedTagId = tag.id },
+                                label = { Text(tag.name) }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = selectedTagId != null,
+                    onClick = {
+                        val sid = pending.sessionId
+                        val tagId = selectedTagId ?: return@Button
+                        val tagName = pending.availableTags.firstOrNull { it.id == tagId }?.name ?: p.tagName
+                        pendingTagRuleQueue = pendingTagRuleQueue.drop(1)
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                val db = AppDatabaseHolder.db(appCtx)
+                                db.userTagRuleDao().insert(
+                                    UserTagRuleEntity(
+                                        description = p.description,
+                                        appPackage = p.appPackage,
+                                        appLabel = p.appLabel,
+                                        senderPattern = p.senderPattern,
+                                        contentKeyword = p.contentKeyword,
+                                        contentRegex = p.contentRegex,
+                                        semanticCategory = p.semanticCategory,
+                                        targetTagId = tagId,
+                                        isEnabled = true,
+                                        priority = 100,
+                                        source = "chat",
+                                        createdAt = System.currentTimeMillis()
+                                    )
+                                )
+                                db.chatDao().insertMessage(
+                                    ChatMessageEntity(
+                                        sessionId = sid,
+                                        role = ChatMessageEntity.ROLE_ASSISTANT,
+                                        content = "已記住標籤規則：「${p.description}」→ 標記為「$tagName」。",
+                                        createdAt = System.currentTimeMillis()
+                                    )
+                                )
+                            }
+                            loadMessages(sid)
+                            onShowMessage("已建立標籤記憶規則（$tagName）")
+                        }
+                    }
+                ) {
+                    Text("確認記住")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingTagRuleQueue = pendingTagRuleQueue.drop(1) }) {
                     Text("取消")
                 }
             }
@@ -1985,6 +2116,7 @@ private suspend fun buildRagSystemPrompt(
         appendLine("動作指令格式：多筆動作請各自獨立放在 ```json ... ``` 區塊，勿合併。")
         appendLine("- 加入白名單：{\"action\":\"whitelist\",\"kind\":\"sender|message\",\"messageRef\":\"<id數字或寄件者>\"}")
         appendLine("- 新增規則：{\"action\":\"add_rule\",\"kind\":\"whitelist|tag\",\"ruleText\":\"規則描述\",\"tagName\":\"目標標籤(僅kind=tag)\"}")
+        appendLine("- 建立標籤記憶規則（當使用者教 AI 把某 App／寄件者／關鍵字／語意類別如 otp、system、bill、marketing、delivery 歸類為特定標籤時使用；必須至少填一項條件）：{\"action\":\"tag_rule\",\"description\":\"規則簡述\",\"appLabel\":\"App名稱(可選)\",\"appPackage\":\"套件名(可選)\",\"senderPattern\":\"寄件者(可選)\",\"contentKeyword\":\"關鍵字(可選)\",\"contentRegex\":\"正則(可選)\",\"semanticCategory\":\"otp|system|bill|marketing|delivery(可選)\",\"tagName\":\"目標標籤\"}")
         if (isSettingRelated) {
             appendLine("- 切換開關（僅限可開關清單）：{\"action\":\"setting_toggle\",\"settingId\":\"<id>\",\"state\":\"on|off\"}")
             appendLine("- 模糊候選（3-5個）：{\"action\":\"setting_candidates\",\"candidates\":[\"id1\",\"id2\"]}")
@@ -2004,6 +2136,26 @@ private suspend fun buildRagSystemPrompt(
         appendLine("- 刪除（禁刪scam）：{\"action\":\"delete_message\",\"messageIds\":[123]} | 標籤：{\"action\":\"tag_message\",\"messageIds\":[123],\"tagName\":\"標籤\",\"operation\":\"add|remove\"}")
         val tagNamesStr = allTags.joinToString("、") { it.name }.ifBlank { "無" }
         appendLine("【目前可用標籤】$tagNamesStr")
+        val isTagRuleQuery = listOf("標籤", "規則", "為什麼", "為何", "歸類", "被標", "分類").any { lowerQ.contains(it) }
+        if (isTagRuleQuery) {
+            val tagNameById = allTags.associate { it.id to it.name }
+            val activeUserRules = runCatching { db.userTagRuleDao().active() }.getOrDefault(emptyList())
+            val activeAiRules = runCatching { db.aiRuleDao().active() }.getOrDefault(emptyList())
+            appendLine("【標籤優先序】手動標籤(manual) > 使用者標籤規則(user_rule) > ai_rules > AI自動標籤(auto) > App分類")
+            if (activeUserRules.isEmpty()) {
+                appendLine("【使用者標籤記憶規則】目前無啟用規則。")
+            } else {
+                appendLine("【使用者標籤記憶規則】")
+                activeUserRules.take(15).forEach { r ->
+                    val tName = tagNameById[r.targetTagId] ?: "未知標籤"
+                    val cond = com.phantom.checker.util.TagRuleEngine.formatRuleConditions(r)
+                    appendLine("- #${r.id} 「${r.description}」條件=$cond → 標籤=$tName (來源=${r.source})")
+                }
+            }
+            if (activeAiRules.isNotEmpty()) {
+                appendLine("【既有 AI 規則】" + activeAiRules.take(10).joinToString("；") { "[${it.kind}] ${it.ruleText}" })
+            }
+        }
         appendLine("【整體統計】總 ${stats.total} 則、今日 ${stats.today} 則、未讀 ${stats.unread} 則、今日詐騙 ${stats.scam} 則。")
         appendLine(
             "【查詢條件】範圍：$rangeLabel" +
@@ -2129,6 +2281,24 @@ private data class PendingRuleInsertion(
     val proposal: PendingRuleProposal
 )
 
+private data class TagRuleProposal(
+    val description: String,
+    val appPackage: String?,
+    val appLabel: String?,
+    val senderPattern: String?,
+    val contentKeyword: String?,
+    val contentRegex: String?,
+    val semanticCategory: String?,
+    val tagName: String
+)
+
+private data class PendingTagRuleInsertion(
+    val sessionId: Long,
+    val proposal: TagRuleProposal,
+    val resolvedTagId: Long?,
+    val availableTags: List<TagEntity>
+)
+
 private data class WhitelistTargetItem(
     val kind: String,
     val message: MessageEntity
@@ -2142,6 +2312,7 @@ private data class PendingWhitelistAction(
 private data class ParsedChatActions(
     val cleanReply: String,
     val ruleProposals: List<PendingRuleProposal> = emptyList(),
+    val tagRuleProposals: List<TagRuleProposal> = emptyList(),
     val whitelistProposals: List<WhitelistActionProposal> = emptyList(),
     val toggleProposals: List<SettingToggleProposal> = emptyList(),
     val candidatesProposals: List<SettingCandidatesProposal> = emptyList(),
@@ -2158,6 +2329,7 @@ private val ACTION_FENCED_BLOCK_REGEX = Regex(
 
 private val KNOWN_CHAT_ACTIONS = setOf(
     "add_rule",
+    "tag_rule",
     "whitelist",
     "setting_toggle",
     "setting_candidates",
@@ -2213,6 +2385,7 @@ private fun splitBalancedJsonObjects(text: String): List<Pair<IntRange, String>>
 private fun parseSingleActionJson(
     jsonStr: String,
     ruleOut: MutableList<PendingRuleProposal>,
+    tagRuleOut: MutableList<TagRuleProposal>,
     whitelistOut: MutableList<WhitelistActionProposal>,
     toggleOut: MutableList<SettingToggleProposal>,
     candidatesOut: MutableList<SettingCandidatesProposal>,
@@ -2247,6 +2420,28 @@ private fun parseSingleActionJson(
                 errorsOut.add("新增規則動作缺少 ruleText 內容。")
             } else {
                 ruleOut.add(PendingRuleProposal(kind, ruleText, tagName))
+            }
+        }
+        "tag_rule" -> {
+            fun optStr(key: String): String? =
+                obj.get(key)?.takeIf { !it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() }
+            val appPkg = optStr("appPackage")
+            val appLbl = optStr("appLabel")
+            val senderPat = optStr("senderPattern")
+            val kw = optStr("contentKeyword")
+            val regex = optStr("contentRegex")
+            val sem = com.phantom.checker.util.TagRuleEngine.normalizeSemanticCategory(optStr("semanticCategory"))
+            val tagName = optStr("tagName").orEmpty()
+            val desc = optStr("description") ?: buildString {
+                listOfNotNull(appLbl, appPkg, senderPat, kw, sem).joinToString(" / ").let { append(it) }
+                if (tagName.isNotEmpty()) append(" → $tagName")
+            }.ifBlank { "自訂標籤記憶規則" }
+            if (tagName.isBlank()) {
+                errorsOut.add("標籤記憶規則缺少目標標籤名稱（tagName）。")
+            } else if (appPkg == null && appLbl == null && senderPat == null && kw == null && regex == null && sem == null) {
+                errorsOut.add("標籤記憶規則至少須指定一項條件（App、寄件者、關鍵字或語意類別）。")
+            } else {
+                tagRuleOut.add(TagRuleProposal(desc, appPkg, appLbl, senderPat, kw, regex, sem, tagName))
             }
         }
         "whitelist" -> {
@@ -2342,6 +2537,7 @@ private fun parseSingleActionJson(
 
 private fun parseAllChatActions(rawReply: String): ParsedChatActions {
     val rules = mutableListOf<PendingRuleProposal>()
+    val tagRules = mutableListOf<TagRuleProposal>()
     val whitelists = mutableListOf<WhitelistActionProposal>()
     val toggles = mutableListOf<SettingToggleProposal>()
     val candidates = mutableListOf<SettingCandidatesProposal>()
@@ -2362,7 +2558,7 @@ private fun parseAllChatActions(rawReply: String): ParsedChatActions {
             errors.add("動作指令格式無法解析，請重新嘗試。")
         } else {
             objs.forEach { (_, jsonStr) ->
-                parseSingleActionJson(jsonStr, rules, whitelists, toggles, candidates, adjusts, openSettings, msgActions, errors)
+                parseSingleActionJson(jsonStr, rules, tagRules, whitelists, toggles, candidates, adjusts, openSettings, msgActions, errors)
             }
         }
     }
@@ -2380,7 +2576,7 @@ private fun parseAllChatActions(rawReply: String): ParsedChatActions {
     val inlineRangesToRemove = mutableListOf<IntRange>()
     splitBalancedJsonObjects(withoutFenced).forEach { (range, jsonStr) ->
         if (jsonStr.contains("\"action\"", ignoreCase = true)) {
-            val handled = parseSingleActionJson(jsonStr, rules, whitelists, toggles, candidates, adjusts, openSettings, msgActions, errors)
+            val handled = parseSingleActionJson(jsonStr, rules, tagRules, whitelists, toggles, candidates, adjusts, openSettings, msgActions, errors)
             if (handled) {
                 inlineRangesToRemove.add(range)
             }
@@ -2410,6 +2606,7 @@ private fun parseAllChatActions(rawReply: String): ParsedChatActions {
     return ParsedChatActions(
         cleanReply = cleanReply,
         ruleProposals = rules.distinct(),
+        tagRuleProposals = tagRules.distinct(),
         whitelistProposals = whitelists.distinct(),
         toggleProposals = toggles.distinct(),
         candidatesProposals = candidates.distinct(),
