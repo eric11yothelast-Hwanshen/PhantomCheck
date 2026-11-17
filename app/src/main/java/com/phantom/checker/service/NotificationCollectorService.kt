@@ -12,6 +12,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.LruCache
 import com.phantom.checker.R
+import com.phantom.checker.data.AiRuleEntity
 import com.phantom.checker.data.AppCategoryRuleEntity
 import com.phantom.checker.data.AppDatabase
 import com.phantom.checker.data.FilterRule

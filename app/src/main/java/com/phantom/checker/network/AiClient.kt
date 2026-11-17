@@ -1295,7 +1295,7 @@ object AiClient {
     suspend fun summarizeDaily(
         prompt: String,
         context: Context? = null
-    ): String? = withContext(Dispatchers.IO) {
+    ): String? = withContext<String?>(Dispatchers.IO) {
         try {
             val profile = getActiveProfile(context) ?: return@withContext null
             val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
