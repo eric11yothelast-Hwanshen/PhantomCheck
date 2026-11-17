@@ -27,11 +27,21 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 - 🚨 **詐騙警示中心、勿擾時段與 SMS 自動回覆**：集中顯示高風險詐騙訊息、情報來源與趨勢比較；支援勿擾時段與 SMS 自動回覆（含 per-sender 4 小時冷卻、單日上限 3 次與範本自回防護）。
 - 📄 **CSV 匯出、保留政策與加密金鑰**：一鍵匯出 CSV 至 `Downloads`；`EncryptedSharedPreferences` 本機加密儲存 AI 與情報源（Safe Browsing／PhishTank／Chainabuse）API Key，支援設定頁直接輸入（`local.properties` 為 fallback）。
 
+- 🎨 **個人化三層背景圖片與視覺微調**：支援全域／AI 聊天／對話頁三層背景圖自訂（逐層 fallback、降採樣儲存防 OOM）、暗色可讀性遮罩（scrim）與液態玻璃卡片強度滑桿。
+- 🔍 **關於卡檢查更新**：支援手動查詢 GitHub Releases 最新版本並透過 `DownloadManager` 與 `FileProvider` 呼出系統 APK 安裝器。
+
 ---
 
 ## 版本紀錄
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
+
+### v2.2.0 更新重點（versionCode 19）
+
+- **關於卡更新檢查與 APK 下載安裝（#157）**：作者更新為「幻神（Hwanshen）」，新增手動「檢查更新」（GitHub REST API，10 秒逾時）與 `DownloadManager` ＋ `FileProvider` ＋ `ACTION_VIEW` 系統安裝器整合（含 `REQUEST_INSTALL_PACKAGES` 與未知來源授權引導）。
+- **個人化多層背景圖與視覺滑桿（#159）**：支援全域／AI 聊天／對話頁三層背景圖（`PickVisualMedia` ＋ JPEG 85 降採樣與單張 `LruCache`）、背景暗色遮罩強度（0–100%，預設日間 35%／夜間 60%）與玻璃卡片強度滑桿。
+- **AI 助手操作能力擴充（#160）**：新增 `search_messages`（內嵌可點擊結果卡）、`todo_list`／`todo_done`／`todo_delete`／`todo_edit`、`vip_pin`、`mute_app`、`mark_read`（保留詐騙紀錄）與 `export_messages`（複用 `MessageExporter` CSV 匯出），mutating 動作一律經確認卡執行。
+- **全域程式碼健檢修正（#158）**：修復跨會話 `pendingTodoQueue` 阻塞、補齊 `user_tag_rules` 30 秒 TTL 快取與全路徑規則寫入即時失效、修正 `tag_rule` 缺失標籤改為誠實跳過、預編譯熱路徑 Regex 並完成多項排程與快取驗證。
 
 ### v2.1.0 更新重點（versionCode 18）
 

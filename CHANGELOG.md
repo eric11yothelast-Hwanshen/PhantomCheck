@@ -2,6 +2,26 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.2.0] - 2026-11-17
+
+### 新增
+- **關於卡檢查更新與從 GitHub 下載 APK（#157）**：
+  - 「關於」卡片作者更新為「作者：幻神（Hwanshen）」，並新增手動觸發「檢查更新」按鈕（`GET https://api.github.com/repos/eric11yothelast-Hwanshen/PhantomCheck/releases/latest`，`User-Agent: PhantomCheck-Android`，逾時 10 秒，與 runtime `versionName` 語意比較；無網路／逾時／API 失敗誠實顯示錯誤並提供「前往 GitHub」替代按鈕）。
+  - 偵測到新版本時支援以 `DownloadManager` 下載 `app-release-X.Y.Z.apk` 至 App 專屬 `Download/` 目錄，透過 `FileProvider`（`file_paths.xml` 新增 `updates` `external-files-path`）＋ `ACTION_VIEW`（`application/vnd.android.package-archive` ＋ `FLAG_GRANT_READ_URI_PERMISSION`）呼出系統安裝器；`AndroidManifest.xml` 宣告 `REQUEST_INSTALL_PACKAGES`，安裝前檢查 `canRequestPackageInstalls()` 並引導至 `ACTION_MANAGE_UNKNOWN_APP_SOURCES`；`SettingsCatalog` `about_section` 擴充「檢查更新／更新／update／下載」別名。
+- **三層背景圖片自訂與視覺微調滑桿（#159）**：
+  - 個人化設定卡新增「背景圖片」三層自訂（全域背景／AI 聊天背景／對話頁背景，未設定時逐層 fallback 至全域背景），透過 `PickVisualMedia` 選圖後以 2 的冪 `inSampleSize` 降採樣至螢幕解析度以下並以 JPEG 85 壓縮儲存至 `filesDir/backgrounds/{global|chat|conversation}.jpg`；`BackgroundImageHelper` 採單張 `LruCache(1)` 並於 `PhantomApplication.onTrimMemory` 釋放。
+  - 於 `ui/Components.kt` 新增頁面層包裝 `PhantomBackgroundBox`（`ui/components/` 零改動），在設定背景圖時於底層繪製 `Image(ContentScale.Crop)` ＋暗色可讀性遮罩（scrim，預設日間 35%／夜間 60%，提供 0–100% 滑桿），未設定背景圖時與 v2.1.0 逐像素一致；新增「玻璃卡片強度」滑桿（0–100%，預設 0%，Android 12 以下降級行為不變），並於 `SettingsCatalog` 新增 `bg_global`、`bg_chat`、`bg_conversation`、`bg_scrim`、`glass_strength` 五項設定搜尋條目。
+- **AI 助手操作能力擴充（#160）**：
+  - 沿用既有 `parseAllChatActions`／`KNOWN_CHAT_ACTIONS`／確認卡佇列／`sanitizeForPrompt` 安全隔離框架新增 9 項動作：唯讀 `search_messages`（`MessageDao.searchFiltered` 預設查詢近 2 天，內嵌最多 5 筆可點擊開啟 `MessageDetailActivity` 的搜尋結果卡）與 `todo_list`（Markdown 表格）；以及一律經確認卡執行的 mutating 動作 `todo_done`、`todo_delete`、`todo_edit`（含模糊比對與 0 筆／多筆候選誠實回報，並重排 `ReminderScheduler` 與刷新小工具）、`vip_pin`（呼叫 `PhantomPrefs.toggleVipSender`）、`mute_app`（靜音清單增刪與候選清單提示）、`mark_read`（`today`/`app`/`all`，嚴格排除 `riskLabel = 'scam'` 並刷新 `StatsForegroundService`）與 `export_messages`（複用 `MessageExporter.exportToDownloads` CSV 匯出與公式注入防護）。
+
+### 變更與修正
+- **全域程式碼健檢與效能修正（#158）**：
+  - 修復 `ChatScreen` `pendingTodoQueue` 先取 `firstOrNull()` 再過濾 `sessionId` 導致跨會話待辦確認卡被舊會話卡住的 bug，改為先過濾 `currentSessionId` 再取首筆並依物件參考移除已處理項目。
+  - `NotificationCollectorService` 新增 `cachedActiveUserTagRules` 30 秒 TTL 快取並於 `invalidateRuleCaches()` 清除，補齊 `ChatScreen`、`TagManagementActivity`、`MessageDetailActivity`、`ScamCenterActivity` 與 `RiskActionWidgetProvider` 寫入／切換／刪除 `ai_rules` 與 `user_tag_rules` 後立即呼叫 `invalidateRuleCaches()`。
+  - `ChatScreen` `tag_rule` 目標標籤不存在時改為誠實跳過並記錄 `Log.w`，不再誤 fallback 至 `tags.firstOrNull()`。
+  - `TagRuleEngine` 與 `NotificationCollectorService` 熱路徑 `Regex` 預先編譯為常數；並完成 `ReminderWidgetProvider` 純待辦點擊 fallback、`HeartbeatPolicy` `UPDATE` 策略、`PhantomPrefs` 節流快取、7 日 SQL 聚合、`AppIconHelper` 共用快取與 `BootReceiver` 同 ID 覆蓋驗證。
+- **版號更新**：`versionCode` 19、`versionName` `"2.2.0"`。
+
 ## [2.1.0] - 2026-11-17
 
 ### 新增
