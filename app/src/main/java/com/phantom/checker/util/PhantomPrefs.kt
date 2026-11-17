@@ -138,12 +138,24 @@ object PhantomPrefs {
     private const val KEY_GLASS_EFFECT_ENABLED = "glass_effect_enabled"
     private const val KEY_CHAT_SUGGESTIONS_ENABLED = "chat_suggestions_enabled"
     private const val KEY_CHAT_RAG_MESSAGE_LIMIT = "chat_rag_message_limit"
+    private const val KEY_DUAL_MODEL_ROUTING_ENABLED = "ai_dual_model_routing_enabled"
+    private const val KEY_DUAL_MODEL_ROUTING_MODEL = "ai_dual_model_routing_model"
+    private const val KEY_CHAT_RAG_CACHE_PREFIX = "chat_rag_cache_v1_"
 
     const val MAX_ALERT_KEYWORDS = 20
     const val DEFAULT_CHAT_RAG_MESSAGE_LIMIT = 400
     const val MIN_CHAT_RAG_MESSAGE_LIMIT = 50
     const val MAX_CHAT_RAG_MESSAGE_LIMIT = 800
     const val TOKEN_SAVER_CHAT_RAG_LIMIT = 100
+    const val DEFAULT_DUAL_MODEL_ROUTING_MODEL = "mistral-small-2603"
+
+    data class ChatRagSessionCache(
+        val sessionId: Long,
+        val summary: String,
+        val lastMsgTimestamp: Long,
+        val ragLimit: Int,
+        val dateKey: Long
+    )
 
     private val gson = Gson()
 
@@ -674,6 +686,42 @@ object PhantomPrefs {
     /** 實際生效的 AI 助手單次閱讀上限（省 token 模式開啟時覆寫為 100，不改動使用者設定值） */
     fun getEffectiveChatRagMessageLimit(ctx: Context): Int =
         if (isTokenSaverEnabled(ctx)) TOKEN_SAVER_CHAT_RAG_LIMIT else getChatRagMessageLimit(ctx)
+
+    /** 雙模型信心路由開關（預設開啟：先以輕量模型判斷，30~70 分才升級主模型重判） */
+    fun isDualModelRoutingEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_DUAL_MODEL_ROUTING_ENABLED, true)
+
+    fun setDualModelRoutingEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_DUAL_MODEL_ROUTING_ENABLED, enabled).apply()
+    }
+
+    /** 雙模型信心路由第一關輕量模型名稱（預設 mistral-small-2603） */
+    fun getDualModelRoutingModel(ctx: Context): String =
+        prefs(ctx).getString(KEY_DUAL_MODEL_ROUTING_MODEL, DEFAULT_DUAL_MODEL_ROUTING_MODEL)
+            ?.trim()
+            ?.ifEmpty { DEFAULT_DUAL_MODEL_ROUTING_MODEL }
+            ?: DEFAULT_DUAL_MODEL_ROUTING_MODEL
+
+    fun setDualModelRoutingModel(ctx: Context, model: String) {
+        val clean = model.trim().ifEmpty { DEFAULT_DUAL_MODEL_ROUTING_MODEL }
+        prefs(ctx).edit().putString(KEY_DUAL_MODEL_ROUTING_MODEL, clean).apply()
+    }
+
+    /** 讀取指定對話 session 的 RAG 增量摘要快取 */
+    fun getChatRagSessionCache(ctx: Context, sessionId: Long): ChatRagSessionCache? {
+        val raw = prefs(ctx).getString("$KEY_CHAT_RAG_CACHE_PREFIX$sessionId", null) ?: return null
+        return runCatching { gson.fromJson(raw, ChatRagSessionCache::class.java) }.getOrNull()
+    }
+
+    fun saveChatRagSessionCache(ctx: Context, cache: ChatRagSessionCache) {
+        prefs(ctx).edit()
+            .putString("$KEY_CHAT_RAG_CACHE_PREFIX${cache.sessionId}", gson.toJson(cache))
+            .apply()
+    }
+
+    fun clearChatRagSessionCache(ctx: Context, sessionId: Long) {
+        prefs(ctx).edit().remove("$KEY_CHAT_RAG_CACHE_PREFIX$sessionId").apply()
+    }
 
     /** 常駐通知顯示 App 圖示條（預設開） */
     fun isPersistentNotifShowIcons(ctx: Context): Boolean =

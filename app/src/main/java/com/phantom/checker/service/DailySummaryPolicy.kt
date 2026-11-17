@@ -7,6 +7,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.phantom.checker.data.AiSummaryEntity
+import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.util.PhantomPrefs
 import java.text.SimpleDateFormat
@@ -102,24 +103,13 @@ object DailySummaryPolicy {
             .sortedByDescending { it.value.size }
             .joinToString("、") { "${it.key} ${it.value.size} 則" }
 
-        val riskyExcerpts = todayMessages
-            .filter { it.riskLabel == "scam" || it.riskLabel == "suspicious" }
-            .take(20)
-            .mapIndexed { idx, msg ->
-                val tag = if (msg.riskLabel == "scam") "詐騙" else "疑似"
-                "${idx + 1}. [$tag][${msg.appLabel}] ${msg.sender}: ${msg.content.take(100)}"
-            }
+        val excerptsBlock = buildSummaryExcerpts(todayMessages)
 
         val prompt = buildString {
             appendLine("請用繁體中文 5 句內摘要今日訊息重點與風險：")
             appendLine("今日總訊息數：${todayMessages.size} 則")
             appendLine("各 App 統計：$appCounts")
-            if (riskyExcerpts.isNotEmpty()) {
-                appendLine("高風險訊息節錄：")
-                riskyExcerpts.forEach { appendLine(it) }
-            } else {
-                appendLine("今日無高風險（scam/suspicious）訊息。")
-            }
+            append(excerptsBlock)
         }
 
         val summaryText = AiClient.summarizeDaily(prompt, appCtx)
@@ -141,6 +131,79 @@ object DailySummaryPolicy {
         }
 
         return Result.success(entity)
+    }
+
+    internal fun buildSummaryExcerpts(
+        messages: List<MessageEntity>,
+        maxChars: Int = 2400
+    ): String {
+        data class DedupBucket(val msg: MessageEntity, var count: Int = 1)
+
+        fun dedup(list: List<MessageEntity>, maxItems: Int): List<DedupBucket> {
+            val map = LinkedHashMap<String, DedupBucket>()
+            for (m in list) {
+                val normPrefix = m.content.replace(Regex("\\s+"), " ").trim().take(40)
+                val key = "${m.packageName}|${m.sender.trim()}|$normPrefix"
+                val existing = map[key]
+                if (existing == null) {
+                    if (map.size >= maxItems) continue
+                    map[key] = DedupBucket(m, 1)
+                } else {
+                    existing.count++
+                }
+            }
+            return map.values.toList()
+        }
+
+        val riskyBuckets = dedup(
+            messages.filter { it.riskLabel == "scam" || it.riskLabel == "suspicious" },
+            maxItems = 20
+        )
+        val unanalyzedBuckets = dedup(
+            messages.filter { it.riskLabel.isBlank() },
+            maxItems = 10
+        )
+
+        return buildString {
+            var remaining = maxChars
+            var truncated = false
+
+            fun appendSection(header: String, buckets: List<DedupBucket>, tagResolver: (MessageEntity) -> String) {
+                if (buckets.isEmpty() || remaining <= header.length + 16) return
+                appendLine(header)
+                remaining -= header.length + 1
+                buckets.forEachIndexed { idx, bucket ->
+                    if (truncated) return@forEachIndexed
+                    val m = bucket.msg
+                    val tag = tagResolver(m)
+                    val repeat = if (bucket.count > 1) " (×${bucket.count})" else ""
+                    val snippet = m.content.replace("\n", " ").trim().take(90)
+                    val line = "${idx + 1}. [$tag][${m.appLabel}] ${m.sender}$repeat: $snippet"
+                    if (line.length + 1 <= remaining) {
+                        appendLine(line)
+                        remaining -= line.length + 1
+                    } else {
+                        truncated = true
+                    }
+                }
+            }
+
+            if (riskyBuckets.isNotEmpty()) {
+                appendSection("高風險訊息節錄（已去重）：", riskyBuckets) {
+                    if (it.riskLabel == "scam") "詐騙" else "疑似"
+                }
+            } else {
+                appendLine("無高風險（scam/suspicious）訊息。")
+            }
+
+            if (unanalyzedBuckets.isNotEmpty() && !truncated) {
+                appendSection("未分析訊息節錄（供參考）：", unanalyzedBuckets) { "未分析" }
+            }
+
+            if (truncated) {
+                appendLine("（部分節錄已依 token 上限截斷）")
+            }
+        }
     }
 
     private fun postSummaryNotification(ctx: Context, summaryText: String = "") {

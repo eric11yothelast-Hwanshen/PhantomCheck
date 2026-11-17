@@ -336,6 +336,8 @@ fun FilterSettingsScreen(
     var aiOfflineRetryEnabled by remember { mutableStateOf(PhantomPrefs.isAiOfflineRetryEnabled(appCtx)) }
     var aiAutoMemoEnabled by remember { mutableStateOf(PhantomPrefs.isAiAutoMemoEnabled(appCtx)) }
     var aiTagFailureNotifEnabled by remember { mutableStateOf(PhantomPrefs.isAiTagFailureNotifEnabled(appCtx)) }
+    var dualModelRoutingEnabled by remember { mutableStateOf(PhantomPrefs.isDualModelRoutingEnabled(appCtx)) }
+    var dualModelRoutingModel by remember { mutableStateOf(PhantomPrefs.getDualModelRoutingModel(appCtx)) }
     var chatSuggestionsEnabled by remember { mutableStateOf(PhantomPrefs.isChatSuggestionsEnabled(appCtx)) }
     var quickCommandDefaultMode by remember { mutableStateOf(PhantomPrefs.getQuickCommandDefaultMode(appCtx)) }
     var quickChatCommands by remember { mutableStateOf(PhantomPrefs.getQuickChatCommands(appCtx)) }
@@ -1470,6 +1472,31 @@ fun FilterSettingsScreen(
                             PhantomPrefs.setAiTagFailureNotifEnabled(appCtx, checked)
                         }
                     )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                    SettingSwitchRow(
+                        title = "雙模型信心路由（省 token）",
+                        subtitle = "訊息分析先打輕量模型，僅 30~70 分模糊帶升級主模型重判（不重複扣額度）",
+                        checked = dualModelRoutingEnabled,
+                        onCheckedChange = { checked ->
+                            dualModelRoutingEnabled = checked
+                            PhantomPrefs.setDualModelRoutingEnabled(appCtx, checked)
+                        }
+                    )
+                    if (dualModelRoutingEnabled) {
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedTextField(
+                            value = dualModelRoutingModel,
+                            onValueChange = { next ->
+                                dualModelRoutingModel = next
+                                PhantomPrefs.setDualModelRoutingModel(appCtx, next)
+                            },
+                            label = { Text("第一關輕量路由模型") },
+                            placeholder = { Text(PhantomPrefs.DEFAULT_DUAL_MODEL_ROUTING_MODEL) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(

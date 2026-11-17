@@ -141,13 +141,7 @@ object WeeklySummaryPolicy {
             .take(5)
             .joinToString("、") { "${it.key} ${it.value.size} 則" }
 
-        val riskyExcerpts = weekMessages
-            .filter { it.riskLabel == "scam" || it.riskLabel == "suspicious" }
-            .take(20)
-            .mapIndexed { idx, msg ->
-                val tag = if (msg.riskLabel == "scam") "詐騙" else "疑似"
-                "${idx + 1}. [$tag][${msg.appLabel}] ${msg.sender}: ${msg.content.take(100)}"
-            }
+        val excerptsBlock = DailySummaryPolicy.buildSummaryExcerpts(weekMessages)
 
         val scamDelta = scamCount - prevWeekScam
         val trendText = when {
@@ -161,12 +155,7 @@ object WeeklySummaryPolicy {
             appendLine("本週總訊息數：${weekMessages.size} 則（未讀 $unreadCount 則）")
             appendLine("風險分布：安全 $safeCount 則、疑似 $suspiciousCount 則、詐騙 $scamCount 則（$trendText）")
             appendLine("最活躍 App：$topApps")
-            if (riskyExcerpts.isNotEmpty()) {
-                appendLine("高風險訊息節錄：")
-                riskyExcerpts.forEach { appendLine(it) }
-            } else {
-                appendLine("本週尚無高風險（scam/suspicious）訊息。")
-            }
+            append(excerptsBlock)
         }
 
         val summaryResult = AiClient.summarizeWeekly(prompt, appCtx)
