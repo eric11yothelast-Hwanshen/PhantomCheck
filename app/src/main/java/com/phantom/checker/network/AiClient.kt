@@ -569,32 +569,59 @@ object AiClient {
 
         try {
             val profile = getActiveProfile(context) ?: return@withContext null
-            enforceRateLimit()
             val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
             val systemPrompt = buildSystemPrompt(activeTags, activeRules, enableAutoTag)
             val safeSender = sanitizeForPrompt(sender)
             val safeContent = sanitizeForPrompt(content)
-            val res = getApi(profile.baseUrl).chat(
-                url = fullUrl,
-                auth = "Bearer ${profile.apiKey.trim()}",
-                body = ChatRequest(
-                    model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
-                    messages = listOf(
-                        ChatMessage("system", systemPrompt),
-                        ChatMessage(
-                            "user",
-                            "<message_sender>$safeSender</message_sender>\n<message_content>$safeContent</message_content>"
+
+            suspend fun callOnce(targetContent: String, maxTok: Int): AiAnalysisResult? {
+                var rateLimitRetries = 0
+                while (true) {
+                    try {
+                        enforceRateLimit()
+                        val res = getApi(profile.baseUrl).chat(
+                            url = fullUrl,
+                            auth = "Bearer ${profile.apiKey.trim()}",
+                            body = ChatRequest(
+                                model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
+                                messages = listOf(
+                                    ChatMessage("system", systemPrompt),
+                                    ChatMessage(
+                                        "user",
+                                        "<message_sender>$safeSender</message_sender>\n<message_content>$targetContent</message_content>"
+                                    )
+                                ),
+                                maxTokens = maxTok
+                            )
                         )
-                    ),
-                    maxTokens = 260
-                )
-            )
-            val text = res.choices.firstOrNull()?.message?.content ?: return@withContext null
-            val result = parseAnalysisJson(text, activeTags) ?: return@withContext null
+                        val text = res.choices.firstOrNull()?.message?.content ?: return null
+                        return parseAnalysisJson(text, activeTags)
+                    } catch (e: HttpException) {
+                        if (e.code() == 429 && rateLimitRetries < 2) {
+                            rateLimitRetries++
+                            delay(parseRetryAfterMs(e, rateLimitRetries))
+                            continue
+                        }
+                        throw e
+                    }
+                }
+            }
+
+            val result = try {
+                callOnce(safeContent, 260)
+            } catch (e: HttpException) {
+                if (isRequestTooLargeError(e)) {
+                    callOnce(safeContent.take((safeContent.length / 2).coerceIn(120, 400)), 200)
+                } else {
+                    throw e
+                }
+            } ?: return@withContext null
             synchronized(riskCache) {
                 riskCache.put(cacheKey, CachedRisk(result, now))
             }
             result
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             null
         }
@@ -627,7 +654,6 @@ object AiClient {
         val batchItems = items.take(5)
         try {
             val profile = getActiveProfile(context) ?: return@withContext emptyMap()
-            enforceRateLimit()
             val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
             val singlePrompt = buildSystemPrompt(activeTags, activeRules, enableAutoTag)
             val batchSystemPrompt = buildString {
@@ -636,28 +662,63 @@ object AiClient {
                 appendLine("本次為批次分析多則訊息（各則以 <msg id=\"數字\"> 包裹）。")
                 append("請只輸出 JSON 陣列，每則包含 id 與上述欄位：[{\"id\": 123, \"risk_score\": 0-100, \"risk_label\": \"safe|suspicious|scam\", \"risk_reason\": \"...\", \"tags\": [...]}]")
             }
-            val userContent = buildString {
-                batchItems.forEach { item ->
-                    appendLine("<msg id=\"${item.messageId}\">")
-                    appendLine("<message_sender>${sanitizeForPrompt(item.sender)}</message_sender>")
-                    appendLine("<message_content>${sanitizeForPrompt(item.content)}</message_content>")
-                    appendLine("</msg>")
+            val baseMaxTokens = if (isGroqProvider(profile)) {
+                (220 * batchItems.size).coerceAtMost(1024)
+            } else {
+                260 * batchItems.size
+            }
+
+            suspend fun callBatchOnce(maxCharsPerItem: Int?, maxTok: Int): Map<Long, AiAnalysisResult> {
+                val userContent = buildString {
+                    batchItems.forEach { item ->
+                        val sanitized = sanitizeForPrompt(item.content)
+                        val bodyText = if (maxCharsPerItem != null) sanitized.take(maxCharsPerItem) else sanitized
+                        appendLine("<msg id=\"${item.messageId}\">")
+                        appendLine("<message_sender>${sanitizeForPrompt(item.sender)}</message_sender>")
+                        appendLine("<message_content>$bodyText</message_content>")
+                        appendLine("</msg>")
+                    }
+                }
+                var rateLimitRetries = 0
+                while (true) {
+                    try {
+                        enforceRateLimit()
+                        val res = getApi(profile.baseUrl).chat(
+                            url = fullUrl,
+                            auth = "Bearer ${profile.apiKey.trim()}",
+                            body = ChatRequest(
+                                model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
+                                messages = listOf(
+                                    ChatMessage("system", batchSystemPrompt),
+                                    ChatMessage("user", userContent)
+                                ),
+                                maxTokens = maxTok
+                            )
+                        )
+                        val text = res.choices.firstOrNull()?.message?.content ?: return emptyMap()
+                        return parseBatchAnalysisJson(text, activeTags, batchItems.map { it.messageId }.toSet())
+                    } catch (e: HttpException) {
+                        if (e.code() == 429 && rateLimitRetries < 2) {
+                            rateLimitRetries++
+                            delay(parseRetryAfterMs(e, rateLimitRetries))
+                            continue
+                        }
+                        throw e
+                    }
                 }
             }
-            val res = getApi(profile.baseUrl).chat(
-                url = fullUrl,
-                auth = "Bearer ${profile.apiKey.trim()}",
-                body = ChatRequest(
-                    model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
-                    messages = listOf(
-                        ChatMessage("system", batchSystemPrompt),
-                        ChatMessage("user", userContent)
-                    ),
-                    maxTokens = 260 * batchItems.size
-                )
-            )
-            val text = res.choices.firstOrNull()?.message?.content ?: return@withContext emptyMap()
-            parseBatchAnalysisJson(text, activeTags, batchItems.map { it.messageId }.toSet())
+
+            try {
+                callBatchOnce(null, baseMaxTokens)
+            } catch (e: HttpException) {
+                if (isRequestTooLargeError(e)) {
+                    callBatchOnce(220, (180 * batchItems.size).coerceAtMost(900))
+                } else {
+                    emptyMap()
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             emptyMap()
         }
@@ -846,6 +907,24 @@ object AiClient {
             profile.id.contains("groq", ignoreCase = true) ||
             profile.name.contains("groq", ignoreCase = true)
 
+    fun isGroqActive(context: Context?): Boolean =
+        getActiveProfile(context)?.let { isGroqProvider(it) } == true
+
+    private fun logTokenEstimate(
+        tag: String,
+        profile: AiProviderProfile,
+        messages: List<ChatMessage>,
+        maxTokens: Int
+    ) {
+        val estInput = estimateMessagesTokens(messages)
+        runCatching {
+            android.util.Log.d(
+                "PhantomAiToken",
+                "[$tag] provider=${profile.name} model=${profile.model} estInputTokens=$estInput maxTokens=$maxTokens totalBudget=${estInput + maxTokens}"
+            )
+        }
+    }
+
     /** Provider 單次請求總預算（prompt + 宣告 max_tokens）；Groq 免費方案部分模型僅 8,000 TPM */
     private fun getProviderTotalTokenBudget(profile: AiProviderProfile): Int =
         if (isGroqProvider(profile)) 6500 else 32000
@@ -932,9 +1011,20 @@ object AiClient {
 
         fun buildBody(sysPrompt: String, histLimit: Int, maxTok: Int): ChatRequest {
             val recentHistory = history.takeLast(histLimit)
+            val compressedHistory = if (recentHistory.size > 10) {
+                val older = recentHistory.dropLast(8)
+                val tail = recentHistory.takeLast(8)
+                val summaryLines = older.joinToString(" | ") { msg ->
+                    val roleTag = if (msg.role == "user") "U" else "A"
+                    "$roleTag:${msg.content.replace("\n", " ").take(60)}"
+                }
+                listOf(ChatMessage("system", "[較早對話摘要] $summaryLines")) + tail
+            } else {
+                recentHistory
+            }
             val msgs = buildList {
                 add(ChatMessage("system", sysPrompt))
-                addAll(recentHistory)
+                addAll(compressedHistory)
                 add(ChatMessage("user", userMessage))
             }
             return ChatRequest(
@@ -980,6 +1070,7 @@ object AiClient {
         while (true) {
             try {
                 enforceRateLimit()
+                logTokenEstimate("chatAssistant", profile, currentBody.messages, currentBody.maxTokens)
                 val res = getChatApi(profile.baseUrl).chat(
                     url = fullUrl,
                     auth = auth,
