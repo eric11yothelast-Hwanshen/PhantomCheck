@@ -91,22 +91,20 @@ object AppUpdateHelper {
 
                 val assets = json.optJSONArray("assets")
                 var releaseApkUrl: String? = null
-                var fallbackApkUrl: String? = null
                 if (assets != null) {
                     for (i in 0 until assets.length()) {
                         val asset = assets.optJSONObject(i) ?: continue
                         val name = asset.optString("name", "")
                         val url = asset.optString("browser_download_url", "").takeIf { it.isNotBlank() } ?: continue
-                        if (name.endsWith(".apk", ignoreCase = true)) {
-                            if (!name.contains("debug", ignoreCase = true) && releaseApkUrl == null) {
-                                releaseApkUrl = url
-                            } else if (fallbackApkUrl == null) {
-                                fallbackApkUrl = url
-                            }
+                        if (name.endsWith(".apk", ignoreCase = true) &&
+                            !name.contains("debug", ignoreCase = true) &&
+                            releaseApkUrl == null
+                        ) {
+                            releaseApkUrl = url
                         }
                     }
                 }
-                val apkUrl = releaseApkUrl ?: fallbackApkUrl
+                val apkUrl = releaseApkUrl
                 UpdateCheckResult.UpdateAvailable(
                     latestVersion = cleanRemote,
                     publishedDate = publishedDate,
