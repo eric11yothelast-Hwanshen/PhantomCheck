@@ -2,6 +2,36 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [1.13.0] - 2026-11-16
+
+### 新增與強化
+- **PhantomMarkdownText 語法補全（#114）**：
+  - 新增支援 GFM 表格（含對齊行 `:-` / `:-:` / `-:` 解析、欄位依內容比例寬度與寬表橫向捲動）、斜體（`*text*` / `_text_`）、刪除線（`~~text~~`）、可點擊超連結（`[text](url)` 含 `LinkAnnotation.Url` 安全開啟）、引用區塊（`> quote`）、水平分隔線（`---`）、任務清單（`- [ ]` / `- [x]`）與一層巢狀清單縮排。
+  - `stripMarkdown()` 同步剝除上述新語法（表格轉為 `cell / cell`），`buildRagSystemPrompt` 同步鼓勵表格與豐富格式排版。
+- **AI 預設模型清單更新（#115）**：
+  - 更新 `AiClient.DEFAULT_PROVIDER_PRESETS`（既有使用者已儲存之 profile 不受影響，僅影響新建設定）：
+    - **Mistral**：`mistral-small-2603`（預設）、`mistral-large-4`（原 `mistral-small-latest` / `mistral-large-latest`）
+    - **OpenAI**：`gpt-6.1-terra`（預設）、`gpt-6.1-sol`（原 `gpt-4o-mini` / `gpt-4o`）
+    - **Groq**：`openai/gpt-oss-120b`（預設）、`openai/gpt-oss-20b`、`qwen/qwen3.8-27b`（原 `llama-3.3-70b-versatile` 等）
+    - **Gemini**：`gemini-4-hydrogen`（預設）、`gemini-4-carbon`、`gemini-4-argon`、`gemini-3.8-flash`（原 `gemini-2.5-flash` 等）
+    - **DeepSeek / OpenRouter**：維持不變。
+- **AI 助手單次閱讀訊息數設定（#116）**：
+  - `PhantomPrefs` 新增 `chatRagMessageLimit`（預設 `400`，範圍 `50–800`），省 token 模式啟用時透過 `getEffectiveChatRagMessageLimit()` 自動降為 `100`（不覆寫使用者原設定值）。
+  - 設定頁 AI 卡新增滑桿（步進 50）與 token 消耗提醒，並加入設定搜尋 `ai_chat_rag_limit`。
+- **結構化白名單機制（#117）**：
+  - `AppDatabase` 升版至 v9（非破壞性遷移 `MIGRATION_8_9` 註冊於 `AppDatabaseHolder`），`AiRuleEntity` 新增 nullable `sender` 與 `packageName`。
+  - `ScamCenterActivity` 與 `MessageDetailActivity` 新增「加入白名單」雙選項流程（此寄件者全部訊息／僅此則訊息）；`TagManagementActivity` 顯示白名單寄件者／App 中繼資料。
+  - AI 助手支援 `{"action":"whitelist",...}`，先渲染訊息確認卡、使用者確認後才寫入資料庫；命中白名單後自動標記安全（`riskScore = 10`、`riskLabel = "safe"`）並跳過後續 AI 分析、詐騙警示與防詐情報預查。
+- **AI 對話直接調整設定（#118）**：
+  - 新增共用單一來源 `SettingsCatalog`（`SettingsActivity` 搜尋與 `ChatScreen` 對話調整共用）。
+  - AI 助手支援 `setting_toggle`（僅限 boolean 開關白名單，套用與設定頁完全相同之 setter 與前景服務/排程副作用，並顯示「變更前 → 變更後」與「前往設定頁」卡片）與 `setting_candidates`（模糊描述列候選開關卡；非 boolean 設定引導至設定頁）。
+- **AI 訊息查找強化與對話執行操作（#119）**：
+  - RAG 時間範圍預設改為「今天＋昨天」，新增「前天」與依寄件者名稱過濾（`MessageDao.recentSenders()`），節錄附帶 `[id=...]`。
+  - 新增 `reply_message`（透過 `NotificationCollectorService` `activeNotifications` 匹配並以 `RemoteInput` 快速回覆，找不到時誠實回報）、`open_app`、`delete_message`（強制保護 `scam` 詐騙紀錄不予刪除）與 `tag_message`（`SOURCE_MANUAL`），全部先渲染確認卡、確認後執行並於對話回報結果。
+- **設定搜尋全面稽核（#120）**：
+  - 逐卡核對 `SettingsActivity` 實際 UI 與 `SettingsCatalog.ITEMS` / `TOGGLEABLE_IDS`，修正 `ai_daily_summary` 歸屬至 `quick` 卡、補齊 `ai_daily_summary_notif`（每日摘要排程時間與完成推播）與 `appearance_glass_effect`（液態玻璃模糊效果）搜尋與 boolean 切換支援，並驗證本地關鍵字與 AI 語意搜尋雙路徑。
+- **版號更新**：`versionCode` 15、`versionName` `"1.13.0"`。
+
 ## [1.12.1] - 2026-11-16
 
 ### 變更與修正
