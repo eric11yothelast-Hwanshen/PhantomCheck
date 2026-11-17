@@ -2,6 +2,32 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.0.0] - 2026-11-17
+
+### 新增
+- **AI 標籤記憶規則與優先序（#131）**：
+  - `AppDatabase` 升版至 v10（非破壞性遷移 `MIGRATION_9_10`），新增 `user_tag_rules` 表與 `MessageTagCrossRef.SOURCE_USER_RULE = "user_rule"`；建立確定性零 token `TagRuleEngine`（支援 App package／label、寄件者、關鍵字、正則與語意類別 `otp`/`system`/`bill`/`marketing`/`delivery`）。
+  - 標籤套用嚴格遵守 `manual > user_rule > ai_rules > auto > App 分類`，`processBatchAnalysis` 不覆寫手動與使用者規則標籤；支援透過 AI 對話 `tag_rule` 確認卡建立規則與查詢命中鏈，並於 `TagManagementActivity` 提供規則管理與測試。
+- **AI 標籤失敗降級通知與分發測試（#132）**：
+  - 自動標籤因網路或 HTTP 失敗時自動降回 `app_category_rules`，不中斷訊息入庫與風險流程；新增 `NotifIds.AI_TAG_FAILURE`，首次失敗靜默、連續失敗第 2 次起低優先通知（6 小時冷卻防重複）。
+  - 設定頁 AI 卡新增「AI 標籤分發測試」按鈕（計入每日額度並顯示剩餘額度）與 `SettingsCatalog` 搜尋項目 `ai_tag_dispatch_test`。
+- **AI 助手雙功能輸入選單：常用指令＋圖片視覺檢視（#133）**：
+  - 移除頂部建議問題橫列，於輸入列左側新增單一 48dp `+` 收合選單（「常用指令」支援直接執行／預輸入雙模式，可於設定頁管理或由對話 `quick_command_add` 新增；「上傳圖片讓 AI 檢視」支援 `PickVisualMedia` 縮圖至長邊 1024px 並以 OpenAI 相容 `image_url` 格式送出，對不支援視覺的模型誠實阻擋與提示 token 消耗）。
+- **AI 助手版面精簡（#134）**：
+  - 切換至 AI 助手分頁時以 `AnimatedVisibility` 平滑隱藏頂部「幻訊 PhantomCheck」標題列，將搜尋／重新整理／設定入口整合至模型切換列旁；縮小對話輸入框（`maxLines = 3`）與精簡送出鈕尺寸。
+- **底部分頁欄顯示模式自訂（#135）**：
+  - 外觀設定卡與 `SettingsCatalog` 新增三選一模式：「標準」（預設）、「縮小」（80% 高度與圖示）與「自動隱藏」（向下捲動隱藏、向上捲動浮現，保留 `LiquidGlassTabBar` 既有跟手拖曳手勢）。
+- **三款非統計桌面小工具（#136）**：
+  - 新增 `AiSummaryWidgetProvider`（2x2 最新 AI 摘要）、`RiskActionWidgetProvider`（2x2 高風險一鍵標記詐騙／加入白名單，`goAsync` 執行）與 `ReminderWidgetProvider`（2x1 待辦提醒），均採標準 `RemoteViews`、`updatePeriodMillis="0"`、差異更新與 base + `xml-v31` `previewLayout` 配置。
+
+### 變更與修正
+- **AI 數值設定對話執行鏈與生命週期修復（#127）**：補齊 `ai_chat_rag_limit`、`ai_daily_limit`、`notif_throttle` 口語別名與 `resolveNumericIntentFallback` 用戶端確定性 fallback；修復 `appliedSettingCards` 合併追加生命週期。
+- **裸 JSON 動作解析與白名單模糊定位（#128）**：強化 `whitelist` `messageRef` 分詞模糊搜尋 fallback。
+- **Groq 免費方案 TPM 預算控制與 413/429 自動降級（#129）**：新增 token 估算、Provider 預算上限（Groq 6500 / 其他 32000）、Groq 預設 `maxTokens=1800`、多階段 413 降級（RAG → history → maxTokens）、429 `Retry-After` 退避重試，以及分析失敗退還每日額度。
+- **System Prompt 節流與對話歷史壓縮（#130）**：設定清單僅於設定相關查詢條件載入；RAG 依同寄件者相似前綴去重 `(×N)` 與動態字數上限；超過 10 輪歷史壓縮為 `[較早對話摘要]` + 最近 8 則。
+- **效能與 M3 版面一致化（#137, #138）**：`NotificationCollectorService` `aiRuleDao().active()` 導入 30 秒 TTL 快取、`AppIconHelper` 通知圖示條改走 `LruCache`；全專案對齊 M3 8dp 網格、12dp 卡片間距與 48dp 最小觸控目標。
+- **版號更新**：`versionCode` 17、`versionName` `"2.0.0"`。
+
 ## [1.13.1] - 2026-11-17
 
 ### 變更與修正
