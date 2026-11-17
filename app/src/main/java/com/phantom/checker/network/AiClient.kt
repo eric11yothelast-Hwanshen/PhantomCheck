@@ -1295,7 +1295,8 @@ object AiClient {
     suspend fun summarizeDaily(
         prompt: String,
         context: Context? = null
-    ): String? = withContext<String?>(Dispatchers.IO) {
+    ): String? = withContext(Dispatchers.IO) {
+        var result: String? = null
         try {
             val profile = getActiveProfile(context) ?: return@withContext null
             val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
@@ -1323,7 +1324,8 @@ object AiClient {
                             temperature = 0.3
                         )
                     )
-                    return@withContext res.choices.firstOrNull()?.message?.content?.trim()?.takeIf { it.isNotEmpty() }
+                    result = res.choices.firstOrNull()?.message?.content?.trim()?.takeIf { it.isNotEmpty() }
+                    break
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: HttpException) {
@@ -1338,16 +1340,15 @@ object AiClient {
                         maxTok = 700
                         continue
                     }
-                    return@withContext null
+                    break
                 }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            return@withContext null
+            result = null
         }
-        @Suppress("UNREACHABLE_CODE")
-        null
+        result
     }
 
     /** 每週 AI 摘要生成（含 413 降載與 429 Retry-After 重試，回傳 Result 供誠實顯示失敗原因） */
