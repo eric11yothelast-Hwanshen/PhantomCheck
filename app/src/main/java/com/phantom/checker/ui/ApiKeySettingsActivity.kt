@@ -253,7 +253,7 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(profiles, key = { it.id }) { profile ->
                         val isActive = profile.id == activeId ||

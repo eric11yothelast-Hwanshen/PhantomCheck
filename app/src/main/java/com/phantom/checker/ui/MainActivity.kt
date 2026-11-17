@@ -1704,7 +1704,10 @@ private fun SearchResultsSection(
                         Text(if (isMultiSelectMode) "完成" else "選取")
                     }
                 }
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     items(results, key = { it.id }) { m ->
                         val matchedKeywords = if (m.isFiltered) {
                             activeFilterKeywords.filter { kw ->
@@ -2366,7 +2369,10 @@ private fun ScamsTab(
                 )
             }
             else -> {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     items(scamMessages, key = { it.id }) { m ->
                         MessageCard(
                             message = m,

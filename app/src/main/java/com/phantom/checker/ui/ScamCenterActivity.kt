@@ -280,7 +280,10 @@ fun ScamCenterScreen(onBack: () -> Unit) {
 
                     Spacer(Modifier.height(8.dp))
 
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         items(scamMessages, key = { it.id }) { msg ->
                             ScamMessageCard(
                                 message = msg,

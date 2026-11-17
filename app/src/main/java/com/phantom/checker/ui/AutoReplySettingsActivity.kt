@@ -195,7 +195,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
             ) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
                         text = "自動回覆時段",
@@ -268,7 +268,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
             ) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
                         text = "SMS 回覆範本",
