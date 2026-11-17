@@ -2,6 +2,22 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.3.1] - 2026-11-17
+
+### 變更與修正
+- **AI 標籤分發解析容錯與失敗通知改進（#169）**：
+  - `AiClient.parseAnalysisJson` 與 `parseBatchAnalysisJson` 強化容錯：依序剝除 Markdown 圍欄、以字串／跳脫安全之平衡括號掃描擷取候選片段（多物件取首個含 `risk_score`/`risk` 者）、嚴格 Gson 解析失敗後才套用寬容預處理（字串外部全形冒號／逗號轉半形、移除 trailing comma），並保留既有正則降級與新增 `PhantomAiParse` logcat 診斷（僅記原因與長度，不記訊息原文）。
+  - `buildSystemPrompt` 加強「只輸出一個 JSON 物件、不得使用圍欄與附加說明」規範；支援 `json_object` 之 OpenAI 相容端點（OpenAI／Mistral／Groq／DeepSeek／Gemini）於單則分析帶上 `response_format`；`analyzeMessageOrThrow` 與 `testAutoTagDispatch` 解析失敗時附 corrective 訊息自動重試一次（不重扣每日額度），測試畫面失敗時顯示模型原始回應前 200 字輔助診斷。
+  - `NotificationCollectorService` 分發失敗通知改採 24 小時滑動時間窗計數（累積 5 次觸發一次 `IMPORTANCE_LOW`＋`setOnlyAlertOnce` 通知，保留 6 小時冷卻、單次成功不重置計數並尊重勿擾時段）；新增 `ai_tag_failure_notif_enabled` 開關（`PhantomPrefs` 預設開、設定頁 AI 卡可切換、`SettingsCatalog` 註冊搜尋與對話開關）。
+- **訊息背景頁黑底修復與選圖可靠度提升（#170）**：
+  - `SettingsActivity` 背景圖層選擇狀態 `pickingLayer`（存 `layer.name`）與 `bgStatusMsg` 改用 `rememberSaveable` 保存，防止選圖期間旋轉或行程重建遺失目標圖層；`uri` 非空但圖層遺失時顯示明確提示而非靜默丟棄。
+  - `PhantomBackgroundBox` 於 `bgFile == null`、bitmap 載入中或解碼失敗時明確繪製 `MaterialTheme.colorScheme.background`（不再透空露黑），`BackgroundImageHelper.loadBackgroundBitmap` 解碼失敗補齊 `PhantomBackground` logcat 紀錄。
+  - Photo Picker 失敗（非使用者取消）或無法開啟時，提供 `ActivityResultContracts.OpenDocument("image/*")` 檔案選擇器備援按鈕並同樣降採樣複製進內部儲存。
+- **新手教學擴充與健檢（#171）**：
+  - 主頁新手教學 `OnboardingStep` 由 10 步擴充為 14 步（新增「記事與自動備忘錄」、「統計、摘要與離線佇列」、「待辦提醒與批次管理」、「背景圖片、外觀與分用途模型」），同步更新 `PhantomPrefs.KEY_ONBOARDING_STEP_V2` 上限（`1..14`）、`OnboardingTargets`（納入 `NOTES_TAB`、`STATS_TAB`）與目標缺失自動跳過防護（含防重入與版面穩定延遲）；修正設定頁「重新播放新手教學」同步重置步驟索引為 1；已完成教學的舊用戶不被重新打擾。
+  - 全面校對 4 Tab（「訊息 / AI 助手 / 記事 / 統計」）教學文案，並更新設定頁 6 步導覽（`AI`、`NOTIF`、`APPEARANCE`）納入 v2.3 新功能。
+- **版號更新**：`versionCode` 21、`versionName` `"2.3.1"`。
+
 ## [2.3.0] - 2026-11-17
 
 ### 新增
