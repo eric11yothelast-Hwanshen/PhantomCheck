@@ -38,8 +38,8 @@ class ReminderWidgetProvider : AppWidgetProvider() {
                 val now = System.currentTimeMillis()
                 val items = AppDatabaseHolder.db(appCtx).messageDao()
                     .pendingReminders(now)
-                    .filter { (it.reminderAt ?: 0L) >= now }
-                    .sortedBy { it.reminderAt ?: Long.MAX_VALUE }
+                    .filter { (it.remindAt ?: 0L) >= now }
+                    .sortedBy { it.remindAt ?: Long.MAX_VALUE }
                     .take(2)
                 val firstId = items.firstOrNull()?.id
                 val lines = formatLines(items)
@@ -72,10 +72,11 @@ class ReminderWidgetProvider : AppWidgetProvider() {
             if (items.isEmpty()) return "目前無待辦提醒" to ""
             val fmt = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
             fun lineFor(m: com.phantom.checker.data.MessageEntity): String {
-                val timeStr = m.reminderAt?.let { fmt.format(Date(it)) } ?: ""
-                val title = m.reminderNote?.takeIf { it.isNotBlank() }
-                    ?: m.sender.ifBlank { m.appLabel }
-                return if (timeStr.isNotEmpty()) "$timeStr · $title" else title
+                val timeStr = m.remindAt?.let { fmt.format(Date(it)) } ?: ""
+                val title = m.sender.ifBlank { m.appLabel }
+                val snippet = m.content.replace("\n", " ").trim().take(20)
+                val summary = if (snippet.isNotEmpty()) "$title：$snippet" else title
+                return if (timeStr.isNotEmpty()) "$timeStr · $summary" else summary
             }
             val l1 = lineFor(items[0])
             val l2 = items.getOrNull(1)?.let { lineFor(it) } ?: ""
@@ -101,8 +102,8 @@ class ReminderWidgetProvider : AppWidgetProvider() {
             val now = System.currentTimeMillis()
             val items = AppDatabaseHolder.db(appCtx).messageDao()
                 .pendingReminders(now)
-                .filter { (it.reminderAt ?: 0L) >= now }
-                .sortedBy { it.reminderAt ?: Long.MAX_VALUE }
+                .filter { (it.remindAt ?: 0L) >= now }
+                .sortedBy { it.remindAt ?: Long.MAX_VALUE }
                 .take(2)
             val firstId = items.firstOrNull()?.id
             val lines = formatLines(items)

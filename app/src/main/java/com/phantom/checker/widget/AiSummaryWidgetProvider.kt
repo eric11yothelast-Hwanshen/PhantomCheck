@@ -33,11 +33,11 @@ class AiSummaryWidgetProvider : AppWidgetProvider() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val latest = AppDatabaseHolder.db(appCtx).aiSummaryDao().latest()
-                val dateText = latest?.dateKey.orEmpty()
-                val bodyText = if (latest == null || latest.summaryText.isBlank()) {
+                val dateText = latest?.date?.toString().orEmpty()
+                val bodyText = if (latest == null || latest.summary.isBlank()) {
                     "尚無 AI 摘要，請先至統計頁生成或確認網路連線。"
                 } else {
-                    stripMarkdown(latest.summaryText)
+                    stripMarkdown(latest.summary)
                         .replace(Regex("\\s+"), " ")
                         .trim()
                         .take(140)
@@ -84,11 +84,11 @@ class AiSummaryWidgetProvider : AppWidgetProvider() {
                 return
             }
             val latest = AppDatabaseHolder.db(appCtx).aiSummaryDao().latest()
-            val dateText = latest?.dateKey.orEmpty()
-            val bodyText = if (latest == null || latest.summaryText.isBlank()) {
+            val dateText = latest?.date?.toString().orEmpty()
+            val bodyText = if (latest == null || latest.summary.isBlank()) {
                 "尚無 AI 摘要，請先至統計頁生成或確認網路連線。"
             } else {
-                stripMarkdown(latest.summaryText)
+                stripMarkdown(latest.summary)
                     .replace(Regex("\\s+"), " ")
                     .trim()
                     .take(140)

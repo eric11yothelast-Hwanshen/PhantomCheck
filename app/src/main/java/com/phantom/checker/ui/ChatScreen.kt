@@ -105,6 +105,8 @@ import com.phantom.checker.data.ChatMessageEntity
 import com.phantom.checker.data.ChatSessionEntity
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.data.MessageTagCrossRef
+import com.phantom.checker.data.TagEntity
+import com.phantom.checker.data.UserTagRuleEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.network.AiProviderProfile
 import com.phantom.checker.network.ChatMessage
@@ -496,7 +498,7 @@ fun ChatAssistantTab(
                                     val prefixMatch = prefixCandidates.firstOrNull {
                                         it.sender.contains(prefix20, ignoreCase = true) ||
                                             it.content.contains(prefix20, ignoreCase = true) ||
-                                            it.title.contains(prefix20, ignoreCase = true)
+                                            it.appLabel.contains(prefix20, ignoreCase = true)
                                     } ?: prefixCandidates.firstOrNull()
                                     if (prefixMatch != null) {
                                         prefixMatch

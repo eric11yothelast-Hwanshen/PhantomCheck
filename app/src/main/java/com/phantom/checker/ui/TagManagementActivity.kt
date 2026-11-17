@@ -922,7 +922,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                             scope.launch {
                                                 withContext(Dispatchers.IO) {
                                                     AppDatabaseHolder.db(appCtx).userTagRuleDao()
-                                                        .setEnabled(rule.id, enabled)
+                                                        .update(rule.copy(isEnabled = enabled))
                                                 }
                                                 reloadAll()
                                             }
