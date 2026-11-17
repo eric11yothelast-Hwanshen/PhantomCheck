@@ -610,6 +610,9 @@ object PhantomPrefs {
     fun getVipSenders(ctx: Context, packageName: String): Set<String> =
         getVipSendersMap(ctx)[packageName]?.toSet() ?: emptySet()
 
+    fun getAllVipSenders(ctx: Context): Map<String, List<String>> =
+        getVipSendersMap(ctx).toMap()
+
     fun toggleVipSender(ctx: Context, packageName: String, sender: String): Boolean {
         val map = getVipSendersMap(ctx)
         val list = map[packageName]?.toMutableList() ?: mutableListOf()

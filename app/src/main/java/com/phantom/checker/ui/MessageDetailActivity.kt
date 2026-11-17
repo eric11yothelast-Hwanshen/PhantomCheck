@@ -583,11 +583,29 @@ fun MessageDetailScreen(
                                                         "已查證公開情報，無命中紀錄"
                                                     }
                                                 }
+                                                val senderHistorySummary = withContext(Dispatchers.IO) {
+                                                    val senderKey = msg.sender.trim()
+                                                    if (senderKey.isEmpty()) return@withContext null
+                                                    val past = AppDatabaseHolder.db(appCtx).messageDao().search(senderKey)
+                                                        .filter { it.id != msg.id && it.sender.equals(senderKey, ignoreCase = true) }
+                                                        .sortedByDescending { it.timestamp }
+                                                    if (past.isEmpty()) {
+                                                        "此寄件者過去無其他紀錄"
+                                                    } else {
+                                                        val highRiskCount = past.count { it.riskScore >= 70 }
+                                                        val fmt = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
+                                                        val recentLines = past.take(3).joinToString("；") { m ->
+                                                            "${fmt.format(Date(m.timestamp))} 風險${m.riskScore}分「${m.content.replace("\n", " ").take(40)}」"
+                                                        }
+                                                        "過去共 ${past.size} 則（高風險 $highRiskCount 則），近期：$recentLines"
+                                                    }
+                                                }
                                                 val result = AiClient.deepAnalyzeMessage(
                                                     sender = msg.sender,
                                                     content = msg.content,
                                                     appLabel = msg.appLabel,
                                                     intelSummary = intelSummary,
+                                                    senderHistorySummary = senderHistorySummary,
                                                     context = appCtx
                                                 )
                                                 result.onSuccess { md ->

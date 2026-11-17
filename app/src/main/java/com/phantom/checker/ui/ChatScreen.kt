@@ -1442,14 +1442,14 @@ fun ChatAssistantTab(
                     val sid = pending.sessionId
                     pendingRuleQueue = pendingRuleQueue.drop(1)
                     scope.launch {
-                        withContext(Dispatchers.IO) {
+                        val verifiedOk = withContext(Dispatchers.IO) {
                             val db = AppDatabaseHolder.db(appCtx)
                             val targetTagId = if (proposal.kind == AiRuleEntity.KIND_TAG && !proposal.tagName.isNullOrBlank()) {
                                 db.tagDao().all().firstOrNull { it.name.equals(proposal.tagName.trim(), ignoreCase = true) }?.id
                             } else {
                                 null
                             }
-                            db.aiRuleDao().insert(
+                            val insertedId = db.aiRuleDao().insert(
                                 AiRuleEntity(
                                     ruleText = proposal.ruleText,
                                     targetTagId = targetTagId,
@@ -1458,18 +1458,25 @@ fun ChatAssistantTab(
                                     createdAt = System.currentTimeMillis()
                                 )
                             )
+                            val verified = db.aiRuleDao().byId(insertedId)
                             NotificationCollectorService.invalidateRuleCaches()
+                            val ok = insertedId > 0L && verified != null
                             db.chatDao().insertMessage(
                                 ChatMessageEntity(
                                     sessionId = sid,
                                     role = ChatMessageEntity.ROLE_ASSISTANT,
-                                    content = "已新增規則：${proposal.ruleText}",
+                                    content = if (ok) {
+                                        "✓ 已新增規則 #${verified!!.id}：${proposal.ruleText}（已寫入並驗證）"
+                                    } else {
+                                        "✗ 新增規則失敗：${proposal.ruleText}（DB 寫入驗證失敗）"
+                                    },
                                     createdAt = System.currentTimeMillis()
                                 )
                             )
+                            ok
                         }
                         loadMessages(sid)
-                        onShowMessage("已新增 AI 規則")
+                        onShowMessage(if (verifiedOk) "已新增 AI 規則" else "新增 AI 規則失敗")
                     }
                 }) {
                     Text("確認新增")
@@ -1546,9 +1553,9 @@ fun ChatAssistantTab(
                         val tagName = pending.availableTags.firstOrNull { it.id == tagId }?.name ?: p.tagName
                         pendingTagRuleQueue = pendingTagRuleQueue.drop(1)
                         scope.launch {
-                            withContext(Dispatchers.IO) {
+                            val verifiedOk = withContext(Dispatchers.IO) {
                                 val db = AppDatabaseHolder.db(appCtx)
-                                db.userTagRuleDao().insert(
+                                val insertedId = db.userTagRuleDao().insert(
                                     UserTagRuleEntity(
                                         description = p.description,
                                         appPackage = p.appPackage,
@@ -1564,18 +1571,25 @@ fun ChatAssistantTab(
                                         createdAt = System.currentTimeMillis()
                                     )
                                 )
+                                val verified = db.userTagRuleDao().active().any { it.id == insertedId }
                                 NotificationCollectorService.invalidateRuleCaches()
+                                val ok = insertedId > 0L && verified
                                 db.chatDao().insertMessage(
                                     ChatMessageEntity(
                                         sessionId = sid,
                                         role = ChatMessageEntity.ROLE_ASSISTANT,
-                                        content = "已記住標籤規則：「${p.description}」→ 標記為「$tagName」。",
+                                        content = if (ok) {
+                                            "✓ 已記住標籤規則 #$insertedId：「${p.description}」→ 標記為「$tagName」（已寫入並驗證）。"
+                                        } else {
+                                            "✗ 標籤規則寫入驗證失敗：「${p.description}」。"
+                                        },
                                         createdAt = System.currentTimeMillis()
                                     )
                                 )
+                                ok
                             }
                             loadMessages(sid)
-                            onShowMessage("已建立標籤記憶規則（$tagName）")
+                            onShowMessage(if (verifiedOk) "已建立標籤記憶規則（$tagName）" else "標籤記憶規則寫入失敗")
                         }
                     }
                 ) {
@@ -2806,7 +2820,7 @@ fun ChatAssistantTab(
                                             val sid = pendingTodo.sessionId
                                             pendingTodoQueue = pendingTodoQueue.filterNot { it === pendingTodo }
                                             scope.launch {
-                                                withContext(Dispatchers.IO) {
+                                                val verifiedOk = withContext(Dispatchers.IO) {
                                                     val db = AppDatabaseHolder.db(appCtx)
                                                     val todoId = db.todoDao().insert(
                                                         TodoEntity(
@@ -2818,20 +2832,29 @@ fun ChatAssistantTab(
                                                             repeatRule = pendingTodo.repeatRule
                                                         )
                                                     )
-                                                    ReminderScheduler.scheduleTodo(appCtx, todoId, pendingTodo.dueAt)
-                                                    ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                                                    val verified = db.todoDao().byId(todoId)
+                                                    val ok = todoId > 0L && verified != null
+                                                    if (ok) {
+                                                        ReminderScheduler.scheduleTodo(appCtx, todoId, pendingTodo.dueAt)
+                                                        ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                                                    }
                                                     db.chatDao().insertMessage(
                                                         ChatMessageEntity(
                                                             sessionId = sid,
                                                             role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                            content = "已建立待辦提醒：「${pendingTodo.title}」（$dueFormatted）。",
+                                                            content = if (ok) {
+                                                                "✓ 已建立待辦提醒 #$todoId：「${pendingTodo.title}」（$dueFormatted，已寫入並驗證）。"
+                                                            } else {
+                                                                "✗ 建立待辦提醒失敗：「${pendingTodo.title}」（DB 寫入驗證失敗）。"
+                                                            },
                                                             createdAt = System.currentTimeMillis()
                                                         )
                                                     )
+                                                    ok
                                                 }
                                                 loadTodos()
                                                 loadMessages(sid)
-                                                onShowMessage("已排程待辦提醒：$dueFormatted")
+                                                onShowMessage(if (verifiedOk) "已排程待辦提醒：$dueFormatted" else "待辦寫入失敗")
                                             }
                                         }
                                     ) {
@@ -2994,17 +3017,25 @@ fun ChatAssistantTab(
                                                     when (ext) {
                                                         is PendingExtendedAction.TodoDone -> {
                                                             val spawned = ReminderScheduler.completeTodoWithRecurrence(appCtx, ext.todo, true)
-                                                            if (spawned != null) {
-                                                                "已完成待辦「${ext.todo.title}」，並已自動排程下一次重複待辦。"
+                                                            val verified = db.todoDao().byId(ext.todo.id)
+                                                            if (verified?.isDone != true) {
+                                                                "✗ 標記待辦完成失敗：「${ext.todo.title}」（DB 狀態未更新）。"
+                                                            } else if (spawned != null) {
+                                                                "✓ 已完成待辦「${ext.todo.title}」（已驗證），並已自動排程下一次重複待辦。"
                                                             } else {
-                                                                "已完成待辦「${ext.todo.title}」。"
+                                                                "✓ 已完成待辦「${ext.todo.title}」（已驗證）。"
                                                             }
                                                         }
                                                         is PendingExtendedAction.TodoDelete -> {
                                                             db.todoDao().deleteById(ext.todo.id)
-                                                            ReminderScheduler.cancelTodo(appCtx, ext.todo.id)
-                                                            ReminderWidgetProvider.updateAllIfChanged(appCtx)
-                                                            "已刪除待辦「${ext.todo.title}」。"
+                                                            val stillExists = db.todoDao().byId(ext.todo.id) != null
+                                                            if (!stillExists) {
+                                                                ReminderScheduler.cancelTodo(appCtx, ext.todo.id)
+                                                                ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                                                                "✓ 已刪除待辦「${ext.todo.title}」（已驗證刪除）。"
+                                                            } else {
+                                                                "✗ 刪除待辦失敗：「${ext.todo.title}」（DB 仍存在）。"
+                                                            }
                                                         }
                                                         is PendingExtendedAction.TodoEdit -> {
                                                             val updated = ext.original.copy(
@@ -3012,13 +3043,18 @@ fun ChatAssistantTab(
                                                                 dueAt = ext.newDueAt
                                                             )
                                                             db.todoDao().update(updated)
-                                                            ReminderScheduler.cancelTodo(appCtx, updated.id)
-                                                            if (!updated.isDone && updated.dueAt > System.currentTimeMillis()) {
-                                                                ReminderScheduler.scheduleTodo(appCtx, updated.id, updated.dueAt)
+                                                            val verified = db.todoDao().byId(updated.id)
+                                                            if (verified?.title == ext.newTitle && verified.dueAt == ext.newDueAt) {
+                                                                ReminderScheduler.cancelTodo(appCtx, updated.id)
+                                                                if (!updated.isDone && updated.dueAt > System.currentTimeMillis()) {
+                                                                    ReminderScheduler.scheduleTodo(appCtx, updated.id, updated.dueAt)
+                                                                }
+                                                                ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                                                                val newTimeStr = PhantomPrefs.formatMessageTime(appCtx, updated.dueAt, includeDate = true)
+                                                                "✓ 已更新待辦：「${updated.title}」（$newTimeStr，已驗證）。"
+                                                            } else {
+                                                                "✗ 更新待辦失敗：「${ext.original.title}」（DB 驗證不符）。"
                                                             }
-                                                            ReminderWidgetProvider.updateAllIfChanged(appCtx)
-                                                            val newTimeStr = PhantomPrefs.formatMessageTime(appCtx, updated.dueAt, includeDate = true)
-                                                            "已更新待辦：「${updated.title}」（$newTimeStr）。"
                                                         }
                                                         is PendingExtendedAction.VipPin -> {
                                                             val isCurrentlyVip = ext.sender in PhantomPrefs.getVipSenders(appCtx, ext.packageName)
@@ -3488,6 +3524,12 @@ private suspend fun buildRagSystemPrompt(
     val activeUserRules = runCatching { db.userTagRuleDao().active() }.getOrDefault(emptyList()).sortedBy { it.id }
     val activeAiRules = runCatching { db.aiRuleDao().active() }.getOrDefault(emptyList()).sortedBy { it.id }
     val activeWhitelistRules = runCatching { db.aiRuleDao().activeByKind(AiRuleEntity.KIND_WHITELIST) }.getOrDefault(emptyList())
+    val allTodos = runCatching { db.todoDao().all() }.getOrDefault(emptyList())
+    val allNotes = runCatching { db.noteDao().all() }.getOrDefault(emptyList())
+    val vipSendersMap = PhantomPrefs.getAllVipSenders(ctx)
+    val mutedAppsSet = PhantomPrefs.getMutedApps(ctx)
+    val muteModeMap = PhantomPrefs.getAppMuteModeMap(ctx)
+    val alertKeywordsList = PhantomPrefs.getAlertKeywords(ctx)
     val stats = dao.statsOverview(startOfToday)
     val timeFmt = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
 
@@ -3567,6 +3609,53 @@ private suspend fun buildRagSystemPrompt(
             }
         } else {
             appendLine("【目前白名單清單】無")
+        }
+        val pendingTodos = com.phantom.checker.service.ReminderScheduler.sortTodosSmart(allTodos.filter { !it.isDone }, now)
+        val overdueCount = pendingTodos.count { it.dueAt < now }
+        val doneTodosCount = allTodos.count { it.isDone }
+        appendLine("【待辦事項摘要】待辦 ${pendingTodos.size} 筆（逾期 $overdueCount 筆）、已完成 $doneTodosCount 筆")
+        if (pendingTodos.isNotEmpty()) {
+            pendingTodos.take(10).forEach { t ->
+                val pri = when (t.priority) {
+                    TodoEntity.PRIORITY_HIGH -> "高"
+                    TodoEntity.PRIORITY_LOW -> "低"
+                    else -> "中"
+                }
+                val overdueTag = if (t.dueAt < now) "[逾期]" else ""
+                val repTag = when (t.repeatRule) {
+                    TodoEntity.REPEAT_DAILY -> "[每日]"
+                    TodoEntity.REPEAT_WEEKLY -> "[每週]"
+                    else -> ""
+                }
+                appendLine("- #${t.id} $overdueTag$repTag[${pri}優先] ${t.title}（${timeFmt.format(Date(t.dueAt))}）")
+            }
+        }
+        if (allNotes.isNotEmpty()) {
+            appendLine("【備忘錄摘要（共 ${allNotes.size} 筆）】")
+            allNotes.take(8).forEach { n ->
+                val pinTag = if (n.pinned) "[釘選]" else ""
+                val titlePart = n.title.ifBlank { "無標題" }
+                val preview = n.content.replace("\n", " ").trim().take(50)
+                appendLine("- $pinTag$titlePart：$preview")
+            }
+        }
+        if (vipSendersMap.isNotEmpty()) {
+            val vipStr = vipSendersMap.entries.sortedBy { it.key }.joinToString("；") { (pkg, senders) ->
+                val appDisp = appLabelByPkg[pkg] ?: pkg
+                "$appDisp: ${senders.joinToString("、")}"
+            }
+            appendLine("【VIP 寄件者】$vipStr")
+        }
+        if (mutedAppsSet.isNotEmpty()) {
+            val mutedStr = mutedAppsSet.sorted().joinToString("、") { pkg ->
+                val appDisp = appLabelByPkg[pkg] ?: pkg
+                val mode = muteModeMap[pkg] ?: "silent"
+                "$appDisp($mode)"
+            }
+            appendLine("【已靜音 App】$mutedStr")
+        }
+        if (alertKeywordsList.isNotEmpty()) {
+            appendLine("【提醒關鍵字】${alertKeywordsList.joinToString("、")}")
         }
 
         // ===== 2. RAG 訊息區（舊→新固定順序，或「情境摘要＋增量新訊息」） =====

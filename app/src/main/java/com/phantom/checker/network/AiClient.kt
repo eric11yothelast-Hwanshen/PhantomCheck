@@ -1939,6 +1939,7 @@ object AiClient {
         content: String,
         appLabel: String,
         intelSummary: String? = null,
+        senderHistorySummary: String? = null,
         context: Context? = null
     ): Result<String> = withContext(Dispatchers.IO) {
         val profile = getProfileForPurpose(context, AiPurpose.DEEP_ANALYSIS)
@@ -1966,6 +1967,9 @@ object AiClient {
                 appendLine("來源 App：$appLabel")
                 if (!intelSummary.isNullOrBlank()) {
                     appendLine("公開防詐情報比對結果：$intelSummary")
+                }
+                if (!senderHistorySummary.isNullOrBlank()) {
+                    appendLine("寄件者歷史紀錄摘要：$senderHistorySummary")
                 }
                 appendLine("<message_sender>${sanitizeForPrompt(sender)}</message_sender>")
                 append("<message_content>$currentContent</message_content>")
