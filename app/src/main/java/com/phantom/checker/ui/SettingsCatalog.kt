@@ -28,8 +28,8 @@ object SettingsCatalog {
         SettingSearchItem("ai_auto_tag", "quick", "每則訊息 AI 智慧掃描", "AI 分析時自動指派「必看／行銷／垃圾通知」等標籤", listOf("標籤", "自動分類", "智慧掃描", "tag")),
         SettingSearchItem("ai_providers", "ai", "多 Provider AI 設定", "管理 OpenAI / Gemini / Groq / 自訂端點與 API Key", listOf("key", "apikey", "模型", "openai", "gemini", "provider", "金鑰"), page = "ApiKeySettingsActivity"),
         SettingSearchItem("ai_chat_suggestions", "ai", "AI 助手建議問題", "在 AI 助手分頁顯示快速提問與昨日簡報建議", listOf("建議問題", "快速提問", "昨日簡報", "助手")),
-        SettingSearchItem("ai_daily_limit", "ai", "每日 AI 額度上限", "限制每日 AI 呼叫次數", listOf("額度", "上限", "次數", "quota", "limit")),
-        SettingSearchItem("ai_chat_rag_limit", "ai", "AI 助手單次閱讀訊息數", "調整 AI 助手每次讀取的歷史訊息上限（50–800 則；省 token 模式降為 100）", listOf("閱讀", "筆數", "訊息數", "rag", "context", "上下文", "400", "上限")),
+        SettingSearchItem("ai_daily_limit", "ai", "每日 AI 額度上限", "限制每日 AI 呼叫次數", listOf("額度", "上限", "次數", "quota", "limit", "每日額度", "每日ai額度", "每日上限")),
+        SettingSearchItem("ai_chat_rag_limit", "ai", "AI 助手單次閱讀訊息數", "調整 AI 助手每次讀取的歷史訊息上限（50–800 則；省 token 模式降為 100）", listOf("閱讀", "筆數", "訊息數", "rag", "context", "上下文", "400", "上限", "單次閱讀訊息數", "單次載入訊息數", "載入筆數", "閱讀訊息數", "載入訊息數")),
         SettingSearchItem("ai_daily_summary", "quick", "每日 AI 摘要", "排程每日自動生成訊息摘要", listOf("摘要", "日報", "每日", "summary")),
         SettingSearchItem("ai_daily_summary_notif", "ai", "每日摘要排程時間與完成推播", "調整每日摘要排程時間與生成後低干擾通知", listOf("摘要", "推播", "排程", "時間", "每日摘要")),
         SettingSearchItem("ai_auto_reply", "ai", "SMS 自動回覆設定", "開啟 SMS 自動回覆設定頁：啟用開關、回覆時段與回覆範本", listOf("自動回覆", "sms", "簡訊", "回覆", "時段", "reply"), page = "AutoReplySettingsActivity"),
@@ -42,7 +42,7 @@ object SettingsCatalog {
         SettingSearchItem("notif_filter_rules", "notif", "過濾關鍵字規則與命中動作", "新增過濾關鍵字並選擇命中後標記已過濾、不記錄或詐騙警示", listOf("過濾", "關鍵字", "黑名單", "filter")),
         SettingSearchItem("notif_interaction", "notif", "通知點擊行為", "調整點擊通知開啟幻訊或原 App", listOf("點擊", "開啟", "通知行為")),
         SettingSearchItem("notif_swipe_delete", "notif", "對話頁滑動刪除", "在對話訊息氣泡向左滑動快速刪除", listOf("左滑", "滑動刪除", "swipe")),
-        SettingSearchItem("notif_throttle", "notif", "同 key 重複節流與個別 App 覆寫", "相同通知節流秒數與個別 App 節流覆寫", listOf("節流", "同 key", "重複通知", "漏訊", "覆寫")),
+        SettingSearchItem("notif_throttle", "notif", "同 key 重複節流與個別 App 覆寫", "相同通知節流秒數與個別 App 節流覆寫", listOf("節流", "同 key", "重複通知", "漏訊", "覆寫", "節流秒數", "重複節流")),
         SettingSearchItem("notif_digit_variance", "notif", "數字微變視為同一則更新", "對監控類通知將僅數字變動視為同 key 更新並節流", listOf("數字微變", "節流", "電量", "流量")),
         SettingSearchItem("data_retention", "data", "訊息保留與清理", "訊息保留天數與最大保留則數上限", listOf("保留", "天數", "上限", "清理")),
         SettingSearchItem("data_muted_apps", "data", "App 靜音清單", "設定特定 App 完全不記錄或靜默記錄", listOf("靜音", "封鎖", "app", "略過")),
@@ -297,5 +297,57 @@ object SettingsCatalog {
         }.sortedByDescending { it.second }
             .take(limit)
             .map { it.first }
+    }
+
+    /**
+     * 用戶端確定性數值設定意圖解析（當模型未產出 setting_adjust 時作為 fallback）。
+     * 必須同時命中「數字」與「數值設定關鍵詞」，避免一般訊息查詢誤觸。
+     */
+    fun resolveNumericIntentFallback(userText: String): Pair<NumericSettingSpec, Int>? {
+        val text = userText.trim()
+        if (text.isEmpty()) return null
+        val lower = text.lowercase()
+
+        val adjustNumMatch = Regex("(?:調成|調到|調整為|調整成|改成|改為|改到|設為|設成|設到|設定為|限制為|上限為?)\\s*(\\d+)")
+            .find(lower)
+        val allNumbers = Regex("\\d+").findAll(text).mapNotNull { it.value.toIntOrNull() }.toList()
+        val targetValue = adjustNumMatch?.groupValues?.getOrNull(1)?.toIntOrNull()
+            ?: allNumbers.lastOrNull()
+            ?: return null
+
+        val hasNumericIntentKeyword = listOf(
+            "載入", "閱讀", "筆數", "訊息數", "額度", "節流", "上限", "秒數",
+            "單次", "rag", "limit", "quota", "throttle", "調", "改", "設"
+        ).any { lower.contains(it) }
+        if (!hasNumericIntentKeyword) return null
+
+        val explicitRules: List<Pair<String, List<String>>> = listOf(
+            "ai_chat_rag_limit" to listOf(
+                "單次閱讀", "閱讀訊息", "單次載入", "載入訊息", "載入筆數",
+                "閱讀筆數", "訊息數", "上下文", "chat_rag", "rag"
+            ),
+            "ai_daily_limit" to listOf(
+                "每日額度", "每日 ai 額度", "每日ai額度", "每日上限",
+                "ai 額度", "ai額度", "額度上限", "daily_limit", "quota"
+            ),
+            "notif_throttle" to listOf(
+                "節流", "同 key", "同key", "重複通知", "throttle"
+            )
+        )
+        for ((specId, phrases) in explicitRules) {
+            if (phrases.any { lower.contains(it) }) {
+                val spec = findNumericSpec(specId) ?: continue
+                return spec to targetValue
+            }
+        }
+
+        val numericIds = NUMERIC_SPECS.map { it.id }.toSet()
+        val matchedFromCatalog = keywordSearch(text, limit = 5)
+            .firstOrNull { it.id in numericIds }
+            ?.let { findNumericSpec(it.id) }
+        if (matchedFromCatalog != null) {
+            return matchedFromCatalog to targetValue
+        }
+        return null
     }
 }

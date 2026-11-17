@@ -486,7 +486,7 @@ fun ChatAssistantTab(
                     .take(6)
                     .takeIf { it.isNotEmpty() }
 
-                // 解析數值調整提案（setting_adjust）
+                // 解析數值調整提案（setting_adjust），若模型未產出則以用戶端確定性關鍵詞+數字 fallback
                 val resolvedAdjustStates = mutableListOf<PendingSettingAdjustState>()
                 parsed.adjustProposals.forEach { ap ->
                     val spec = SettingsCatalog.findNumericSpec(ap.settingId)
@@ -517,12 +517,34 @@ fun ChatAssistantTab(
                         resolutionErrors.add("找不到名為「${ap.settingId}」的可調整數值設定。")
                     }
                 }
+                var usedNumericFallback = false
+                if (resolvedAdjustStates.isEmpty()) {
+                    SettingsCatalog.resolveNumericIntentFallback(query)?.let { (spec, rawVal) ->
+                        val item = SettingsCatalog.findById(spec.id)
+                        if (item != null) {
+                            val currentVal = SettingsCatalog.getNumericValue(appCtx, spec.id) ?: spec.min
+                            val (snappedVal, wasClamped) = spec.clampAndSnap(rawVal)
+                            resolvedAdjustStates.add(
+                                PendingSettingAdjustState(
+                                    sessionId = sessionId,
+                                    item = item,
+                                    spec = spec,
+                                    currentValue = currentVal,
+                                    proposedValue = snappedVal,
+                                    wasClamped = wasClamped
+                                )
+                            )
+                            usedNumericFallback = true
+                        }
+                    }
+                }
+                val finalCandidates = if (usedNumericFallback) null else resolvedCandidates
 
                 val allActionErrors = (parsed.invalidActionErrors + resolutionErrors).distinct()
                 val hasValidAction = parsed.ruleProposals.isNotEmpty() ||
                     dedupedWhitelistItems.isNotEmpty() ||
                     newAppliedSettings.isNotEmpty() ||
-                    !resolvedCandidates.isNullOrEmpty() ||
+                    !finalCandidates.isNullOrEmpty() ||
                     resolvedAdjustStates.isNotEmpty() ||
                     resolvedMsgActions.isNotEmpty()
 
@@ -571,13 +593,16 @@ fun ChatAssistantTab(
                     pendingMsgActionQueue = resolvedMsgActions
                 }
                 if (newAppliedSettings.isNotEmpty()) {
-                    appliedSettingCards = newAppliedSettings
-                    pendingSettingCandidates = null
-                } else if (!resolvedCandidates.isNullOrEmpty()) {
+                    val updatedKeys = newAppliedSettings.map { it.sessionId to it.item.id }.toSet()
+                    appliedSettingCards = appliedSettingCards.filterNot { (it.sessionId to it.item.id) in updatedKeys } + newAppliedSettings
+                }
+                if (!finalCandidates.isNullOrEmpty()) {
                     pendingSettingCandidates = PendingSettingCandidatesState(
                         sessionId = sessionId,
-                        candidates = resolvedCandidates
+                        candidates = finalCandidates
                     )
+                } else if (newAppliedSettings.isNotEmpty() || usedNumericFallback) {
+                    pendingSettingCandidates = null
                 }
                 pendingOpenSettingItem?.let { targetItem ->
                     ctx.startActivity(
@@ -1923,7 +1948,11 @@ private suspend fun buildRagSystemPrompt(
         appendLine("```json")
         appendLine("{\"action\":\"setting_candidates\",\"candidates\":[\"id1\",\"id2\"]}")
         appendLine("```")
-        appendLine("注意：僅【可開關設定清單】內的項目可使用 setting_toggle；若要調整【可調整數值設定清單】內的數值（如單次閱讀訊息數、每日 AI 額度、同 key 節流秒數），請輸出：")
+        appendLine("注意：僅【可開關設定清單】內的項目可使用 setting_toggle；若要調整【可調整數值設定清單】內的數值，禁止以純文字建議使用者自行前往設定頁，必須直接輸出 setting_adjust：")
+        appendLine("常用口語對應：")
+        appendLine("- 「單次閱讀訊息數／單次載入訊息數／載入筆數／閱讀筆數／上下文訊息數」→ ai_chat_rag_limit")
+        appendLine("- 「每日 AI 額度／每日上限／每日呼叫上限」→ ai_daily_limit")
+        appendLine("- 「同 key 節流秒數／重複通知節流／節流秒數」→ notif_throttle")
         appendLine("```json")
         appendLine("{\"action\":\"setting_adjust\",\"settingId\":\"<可調整數值設定id>\",\"value\":350}")
         appendLine("```")
