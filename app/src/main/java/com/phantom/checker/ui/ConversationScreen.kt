@@ -99,13 +99,18 @@ class ConversationActivity : ComponentActivity() {
         AiClient.init(applicationContext)
         val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME).orEmpty()
         val appLabel = intent.getStringExtra(EXTRA_APP_LABEL).orEmpty().ifBlank { packageName }
-        val sender = intent.getStringExtra(EXTRA_SENDER).orEmpty()
+        val conversationKey = intent.getStringExtra(EXTRA_CONVERSATION_KEY)
+            ?: intent.getStringExtra(EXTRA_SENDER).orEmpty()
+        val displayTitle = intent.getStringExtra(EXTRA_DISPLAY_TITLE)
+            ?.takeIf { it.isNotBlank() }
+            ?: conversationKey
         setContent {
             PhantomCheckTheme {
                 ConversationScreen(
                     packageName = packageName,
                     appLabel = appLabel,
-                    sender = sender,
+                    conversationKey = conversationKey,
+                    displayTitle = displayTitle,
                     onBack = { finish() }
                 )
             }
@@ -116,17 +121,22 @@ class ConversationActivity : ComponentActivity() {
         private const val EXTRA_PACKAGE_NAME = "extra_package_name"
         private const val EXTRA_APP_LABEL = "extra_app_label"
         private const val EXTRA_SENDER = "extra_sender"
+        private const val EXTRA_CONVERSATION_KEY = "extra_conversation_key"
+        private const val EXTRA_DISPLAY_TITLE = "extra_display_title"
 
         fun createIntent(
             ctx: Context,
             packageName: String,
             appLabel: String,
-            sender: String
+            conversationKey: String,
+            displayTitle: String = conversationKey
         ): Intent {
             return Intent(ctx, ConversationActivity::class.java).apply {
                 putExtra(EXTRA_PACKAGE_NAME, packageName)
                 putExtra(EXTRA_APP_LABEL, appLabel)
-                putExtra(EXTRA_SENDER, sender)
+                putExtra(EXTRA_CONVERSATION_KEY, conversationKey)
+                putExtra(EXTRA_DISPLAY_TITLE, displayTitle)
+                putExtra(EXTRA_SENDER, conversationKey)
             }
         }
     }
@@ -151,7 +161,8 @@ private fun formatDateDivider(ts: Long): String {
 fun ConversationScreen(
     packageName: String,
     appLabel: String,
-    sender: String,
+    conversationKey: String,
+    displayTitle: String = conversationKey,
     onBack: () -> Unit
 ) {
     val ctx = LocalContext.current
@@ -207,16 +218,16 @@ fun ConversationScreen(
         }
     }
 
-    LaunchedEffect(packageName, sender, refreshTrigger) {
+    LaunchedEffect(packageName, conversationKey, refreshTrigger) {
         isLoading = true
         val pageSize = 200
         val loaded = withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
             val dao = db.messageDao()
-            dao.markConversationRead(packageName, sender)
+            dao.markConversationRead(packageName, conversationKey)
             StatsForegroundService.startOrRefresh(appCtx)
             allTags = db.tagDao().all()
-            val msgs = dao.byConversationKeyset(packageName, sender, null, pageSize).asReversed()
+            val msgs = dao.byConversationKeyset(packageName, conversationKey, null, pageSize).asReversed()
             val ids = msgs.map { it.id }
             val tagRows = if (ids.isEmpty()) emptyList() else db.tagDao().tagsForMessages(ids)
             msgTagsMap = tagRows.groupBy { it.messageId }
@@ -240,7 +251,7 @@ fun ConversationScreen(
         val (older, olderTagRows) = withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
             val olderMsgs = db.messageDao()
-                .byConversationKeyset(packageName, sender, oldestTs, pageSize)
+                .byConversationKeyset(packageName, conversationKey, oldestTs, pageSize)
                 .asReversed()
             val olderIds = olderMsgs.map { it.id }
             val tagRows = if (olderIds.isEmpty()) emptyList() else db.tagDao().tagsForMessages(olderIds)
@@ -269,13 +280,17 @@ fun ConversationScreen(
         AlertDialog(
             onDismissRequest = { showClearConfirm = false },
             title = { Text("清除此對話") },
-            text = { Text("確定要永久刪除與「$sender」的所有對話訊息嗎？") },
+            text = { Text("確定要永久刪除與「$displayTitle」的所有對話訊息嗎？") },
             confirmButton = {
                 Button(
                     onClick = {
                         scope.launch {
                             withContext(Dispatchers.IO) {
-                                AppDatabaseHolder.db(appCtx).messageDao().deleteByConversation(packageName, sender)
+                                val db = AppDatabaseHolder.db(appCtx)
+                                db.withTransaction {
+                                    db.tagDao().deleteCrossRefsByConversation(packageName, conversationKey)
+                                    db.messageDao().deleteByConversation(packageName, conversationKey)
+                                }
                                 StatsForegroundService.startOrRefresh(appCtx)
                             }
                             showClearConfirm = false
@@ -496,7 +511,7 @@ fun ConversationScreen(
                 title = {
                     Column {
                         Text(
-                            text = sender,
+                            text = displayTitle,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
@@ -592,7 +607,7 @@ fun ConversationScreen(
                     EmptyStateView(
                         icon = Icons.Default.Email,
                         title = "尚無對話訊息",
-                        description = "與 $sender 的通知訊息將顯示於此處。"
+                        description = "與 $displayTitle 的通知訊息將顯示於此處。"
                     )
                 }
                 else -> {
@@ -639,6 +654,7 @@ fun ConversationScreen(
                                     message = msg,
                                     glassState = glassState,
                                     tags = msgTagsMap[msg.id].orEmpty(),
+                                    showSenderName = msg.sender.isNotBlank() && msg.sender != conversationKey,
                                     onClick = {
                                         revealedMessageId = null
                                         ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
@@ -690,6 +706,7 @@ private fun ChatBubbleItem(
     message: MessageEntity,
     glassState: HazeState,
     tags: List<MessageTagRow> = emptyList(),
+    showSenderName: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -720,6 +737,17 @@ private fun ChatBubbleItem(
             cornerRadius = 16.dp,
             contentPadding = if (isCompact) 8.dp else 12.dp
         ) {
+            if (showSenderName) {
+                Text(
+                    text = message.sender,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+            }
             Text(
                 text = message.content,
                 style = MaterialTheme.typography.bodyMedium

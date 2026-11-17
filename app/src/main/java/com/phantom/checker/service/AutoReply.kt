@@ -107,7 +107,7 @@ class SmsAutoReplyReceiver : BroadcastReceiver() {
             db.messageDao().insert(
                 com.phantom.checker.data.MessageEntity(
                     packageName = "sms", appLabel = "簡訊",
-                    sender = sender, content = body,
+                    sender = sender, conversationKey = sender, content = body,
                     timestamp = System.currentTimeMillis()
                 )
             )

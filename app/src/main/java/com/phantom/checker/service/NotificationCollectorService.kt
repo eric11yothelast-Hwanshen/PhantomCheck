@@ -11,6 +11,7 @@ import android.os.Build
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.LruCache
+import androidx.core.app.NotificationCompat
 import com.phantom.checker.R
 import com.phantom.checker.data.AiRuleEntity
 import com.phantom.checker.data.AppCategoryRuleEntity
@@ -151,14 +152,41 @@ class NotificationCollectorService : NotificationListenerService() {
             extras.getBoolean("android.isGroupSummary", false)
         if (isGroupSummary) return
 
+        val messagingStyle = try {
+            NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(notification)
+        } catch (_: Exception) {
+            null
+        }
+        val lastStyleMessage = messagingStyle?.messages?.lastOrNull()
+
         val rawText = (
             extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim()
                 ?.takeIf { it.isNotEmpty() }
                 ?: extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim()
                     ?.takeIf { it.isNotEmpty() }
+                ?: lastStyleMessage?.text?.toString()?.trim()
+                    ?.takeIf { it.isNotEmpty() }
             ) ?: return
 
-        val title = resolveNotificationTitle(extras, rawText, pkg)
+        val rawConversationTitle = (
+            messagingStyle?.conversationTitle?.toString()
+                ?: extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)?.toString()
+            )?.trim()?.takeIf { it.isNotEmpty() }
+        val normalizedConversationTitle = rawConversationTitle
+            ?.replace(Regex("\\s+"), " ")
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+
+        @Suppress("DEPRECATION")
+        val styleSender = (
+            lastStyleMessage?.person?.name?.toString()
+                ?: lastStyleMessage?.sender?.toString()
+            )?.trim()?.takeIf { it.isNotEmpty() }
+            ?: extractLastSenderFromExtraMessages(extras)
+
+        val fallbackTitle = resolveNotificationTitle(extras, rawText, pkg)
+        val title = styleSender ?: fallbackTitle
+        val conversationKey = normalizedConversationTitle ?: title
         val isMessagingNotif = notification.category == Notification.CATEGORY_MESSAGE ||
             extras.containsKey(Notification.EXTRA_MESSAGES) ||
             extras.getString(Notification.EXTRA_TEMPLATE) == Notification.MessagingStyle::class.java.name
@@ -245,6 +273,7 @@ class NotificationCollectorService : NotificationListenerService() {
                     packageName = pkg,
                     appLabel = cachedAppLabel(pkg),
                     sender = title,
+                    conversationKey = conversationKey,
                     content = text,
                     timestamp = sbn.postTime,
                     riskScore = if (isRuleScam) 95 else 0,
@@ -525,6 +554,19 @@ class NotificationCollectorService : NotificationListenerService() {
         if (hasNewScam) {
             StatsForegroundService.startOrRefresh(applicationContext, force = true)
         }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun extractLastSenderFromExtraMessages(extras: android.os.Bundle): String? {
+        val parcelables = extras.getParcelableArray(Notification.EXTRA_MESSAGES) ?: return null
+        val msgs = Notification.MessagingStyle.Message.getMessagesFromBundleArray(parcelables)
+        val last = msgs.lastOrNull() ?: return null
+        val name = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            last.senderPerson?.name?.toString() ?: last.sender?.toString()
+        } else {
+            last.sender?.toString()
+        }
+        return name?.trim()?.takeIf { it.isNotEmpty() }
     }
 
     private fun resolveNotificationTitle(
@@ -1025,7 +1067,8 @@ object AppDatabaseHolder {
                 AppDatabase.MIGRATION_6_7,
                 AppDatabase.MIGRATION_7_8,
                 AppDatabase.MIGRATION_8_9,
-                AppDatabase.MIGRATION_9_10
+                AppDatabase.MIGRATION_9_10,
+                AppDatabase.MIGRATION_10_11
             ).addCallback(object : androidx.room.RoomDatabase.Callback() {
                 override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                     super.onOpen(db)

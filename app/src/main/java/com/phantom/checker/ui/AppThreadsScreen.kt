@@ -74,7 +74,8 @@ import java.util.Date
 import java.util.Locale
 
 data class SenderThreadUi(
-    val sender: String,
+    val conversationKey: String,
+    val displayTitle: String,
     val count: Int,
     val unreadCount: Int,
     val lastTs: Long,
@@ -149,25 +150,33 @@ fun AppThreadsScreen(
             val db = AppDatabaseHolder.db(appCtx)
             val dao = db.messageDao()
             val vipSenders = PhantomPrefs.getVipSenders(appCtx, packageName)
-            val groups: List<SenderGroupRow> = dao.groupBySender(packageName)
+            val groups: List<SenderGroupRow> = dao.groupByConversation(packageName)
             val allAppMsgs = dao.byApp(packageName)
-            val latestBySender = allAppMsgs.groupBy { it.sender }
+            val latestByConv = allAppMsgs.groupBy { it.conversationKey.ifBlank { it.sender } }
                 .mapValues { (_, list) -> list.maxByOrNull { it.timestamp } }
-            val latestIds = latestBySender.values.mapNotNull { it?.id }.distinct()
+            val latestIds = latestByConv.values.mapNotNull { it?.id }.distinct()
             val tagsMap = if (latestIds.isEmpty()) {
                 emptyMap()
             } else {
                 db.tagDao().tagsForMessages(latestIds).groupBy { it.messageId }
             }
             groups.map { g ->
-                val latestMsg = latestBySender[g.sender]
+                val convKey = g.conversationKey
+                val latestMsg = latestByConv[convKey]
+                val displayTitle = convKey.ifBlank { latestMsg?.sender.orEmpty() }
+                val preview = if (latestMsg != null && latestMsg.sender.isNotBlank() && latestMsg.sender != convKey) {
+                    "${latestMsg.sender}: ${latestMsg.content}"
+                } else {
+                    latestMsg?.content.orEmpty()
+                }
                 SenderThreadUi(
-                    sender = g.sender,
+                    conversationKey = convKey,
+                    displayTitle = displayTitle,
                     count = g.cnt,
                     unreadCount = g.unreadCnt,
                     lastTs = g.lastTs,
-                    lastPreview = latestMsg?.content.orEmpty(),
-                    isPinned = g.sender in vipSenders,
+                    lastPreview = preview,
+                    isPinned = convKey in vipSenders || (latestMsg != null && latestMsg.sender in vipSenders),
                     latestTags = latestMsg?.let { tagsMap[it.id] }.orEmpty()
                 )
             }.sortedWith(compareByDescending<SenderThreadUi> { it.isPinned }.thenByDescending { it.lastTs })
@@ -178,12 +187,12 @@ fun AppThreadsScreen(
     actionThread?.let { target ->
         AlertDialog(
             onDismissRequest = { actionThread = null },
-            title = { Text(target.sender, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            title = { Text(target.displayTitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
-                            PhantomPrefs.toggleVipSender(appCtx, packageName, target.sender)
+                            PhantomPrefs.toggleVipSender(appCtx, packageName, target.conversationKey)
                             actionThread = null
                             refreshTrigger++
                         },
@@ -214,7 +223,7 @@ fun AppThreadsScreen(
         AlertDialog(
             onDismissRequest = { deleteThreadConfirm = null },
             title = { Text("刪除此對話") },
-            text = { Text("確定要永久刪除與「${target.sender}」的所有對話訊息嗎？此操作無法復原。") },
+            text = { Text("確定要永久刪除與「${target.displayTitle}」的所有對話訊息嗎？此操作無法復原。") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -222,8 +231,8 @@ fun AppThreadsScreen(
                             withContext(Dispatchers.IO) {
                                 val db = AppDatabaseHolder.db(appCtx)
                                 db.withTransaction {
-                                    db.tagDao().deleteCrossRefsByConversation(packageName, target.sender)
-                                    db.messageDao().deleteByConversation(packageName, target.sender)
+                                    db.tagDao().deleteCrossRefsByConversation(packageName, target.conversationKey)
+                                    db.messageDao().deleteByConversation(packageName, target.conversationKey)
                                 }
                                 StatsForegroundService.startOrRefresh(appCtx)
                             }
@@ -361,7 +370,7 @@ fun AppThreadsScreen(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(threads, key = { it.sender }) { thread ->
+                        items(threads, key = { it.conversationKey }) { thread ->
                             SenderThreadCard(
                                 thread = thread,
                                 glassState = glassState,
@@ -371,7 +380,8 @@ fun AppThreadsScreen(
                                             ctx = ctx,
                                             packageName = packageName,
                                             appLabel = appLabel,
-                                            sender = thread.sender
+                                            conversationKey = thread.conversationKey,
+                                            displayTitle = thread.displayTitle
                                         )
                                     )
                                 },
@@ -435,7 +445,7 @@ private fun SenderThreadCard(
                     Spacer(Modifier.width(6.dp))
                 }
                 Text(
-                    text = thread.sender,
+                    text = thread.displayTitle,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,

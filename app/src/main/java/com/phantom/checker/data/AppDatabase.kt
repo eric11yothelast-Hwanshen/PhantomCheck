@@ -8,7 +8,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     tableName = "messages",
     indices = [
         Index(value = ["packageName"]),
-        Index(value = ["timestamp"])
+        Index(value = ["timestamp"]),
+        Index(value = ["packageName", "conversationKey"])
     ]
 )
 data class MessageEntity(
@@ -16,6 +17,7 @@ data class MessageEntity(
     val packageName: String,       // 來源 App（LINE / IG / 簡訊…）
     val appLabel: String,
     val sender: String,
+    val conversationKey: String = "", // 對話鍵（群組為正規化 conversationTitle，1:1/非通訊類為 sender）
     val content: String,
     val timestamp: Long,
     val riskScore: Int = 0,       // AI 分析結果 0-100
@@ -189,7 +191,7 @@ data class AppGroupRow(
 )
 
 data class SenderGroupRow(
-    val sender: String,
+    val conversationKey: String,
     val cnt: Int,
     val unreadCnt: Int,
     val lastTs: Long
@@ -391,17 +393,17 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE packageName = :packageName ORDER BY timestamp DESC")
     suspend fun byApp(packageName: String): List<MessageEntity>
 
-    @Query("SELECT sender, COUNT(*) as cnt, SUM(CASE WHEN isRead = 0 THEN 1 ELSE 0 END) as unreadCnt, MAX(timestamp) as lastTs FROM messages WHERE packageName = :packageName GROUP BY sender ORDER BY lastTs DESC")
-    suspend fun groupBySender(packageName: String): List<SenderGroupRow>
+    @Query("SELECT conversationKey, COUNT(*) as cnt, SUM(CASE WHEN isRead = 0 THEN 1 ELSE 0 END) as unreadCnt, MAX(timestamp) as lastTs FROM messages WHERE packageName = :packageName GROUP BY conversationKey ORDER BY lastTs DESC")
+    suspend fun groupByConversation(packageName: String): List<SenderGroupRow>
 
-    @Query("SELECT * FROM messages WHERE packageName = :packageName AND sender = :sender ORDER BY timestamp ASC")
-    suspend fun byConversation(packageName: String, sender: String): List<MessageEntity>
+    @Query("SELECT * FROM messages WHERE packageName = :packageName AND conversationKey = :conversationKey ORDER BY timestamp ASC")
+    suspend fun byConversation(packageName: String, conversationKey: String): List<MessageEntity>
 
-    @Query("SELECT * FROM messages WHERE packageName = :packageName AND sender = :sender AND (:beforeTs IS NULL OR timestamp < :beforeTs) ORDER BY timestamp DESC LIMIT :limit")
-    suspend fun byConversationKeyset(packageName: String, sender: String, beforeTs: Long?, limit: Int): List<MessageEntity>
+    @Query("SELECT * FROM messages WHERE packageName = :packageName AND conversationKey = :conversationKey AND (:beforeTs IS NULL OR timestamp < :beforeTs) ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun byConversationKeyset(packageName: String, conversationKey: String, beforeTs: Long?, limit: Int): List<MessageEntity>
 
-    @Query("UPDATE messages SET isRead = 1 WHERE packageName = :packageName AND sender = :sender AND isRead = 0")
-    suspend fun markConversationRead(packageName: String, sender: String)
+    @Query("UPDATE messages SET isRead = 1 WHERE packageName = :packageName AND conversationKey = :conversationKey AND isRead = 0")
+    suspend fun markConversationRead(packageName: String, conversationKey: String)
 
     @Query("SELECT * FROM messages WHERE timestamp >= :sinceTs ORDER BY timestamp DESC")
     suspend fun since(sinceTs: Long): List<MessageEntity>
@@ -436,8 +438,8 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE isRead = 1")
     suspend fun deleteReadMessages()
 
-    @Query("DELETE FROM messages WHERE packageName = :packageName AND sender = :sender")
-    suspend fun deleteByConversation(packageName: String, sender: String)
+    @Query("DELETE FROM messages WHERE packageName = :packageName AND conversationKey = :conversationKey")
+    suspend fun deleteByConversation(packageName: String, conversationKey: String)
 
     @Query("DELETE FROM messages WHERE packageName = :packageName")
     suspend fun deleteByApp(packageName: String)
@@ -520,8 +522,8 @@ interface TagDao {
     @Query("DELETE FROM message_tags WHERE messageId IN (SELECT id FROM messages WHERE packageName = :packageName)")
     suspend fun deleteCrossRefsByApp(packageName: String)
 
-    @Query("DELETE FROM message_tags WHERE messageId IN (SELECT id FROM messages WHERE packageName = :packageName AND sender = :sender)")
-    suspend fun deleteCrossRefsByConversation(packageName: String, sender: String)
+    @Query("DELETE FROM message_tags WHERE messageId IN (SELECT id FROM messages WHERE packageName = :packageName AND conversationKey = :conversationKey)")
+    suspend fun deleteCrossRefsByConversation(packageName: String, conversationKey: String)
 
     @Query("DELETE FROM message_tags WHERE messageId IN (SELECT id FROM messages WHERE isRead = 1)")
     suspend fun deleteCrossRefsForReadMessages()
@@ -723,7 +725,7 @@ interface UserTagRuleDao {
         IntelResultEntity::class,
         UserTagRuleEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -917,6 +919,14 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_tag_rules_targetTagId` ON `user_tag_rules` (`targetTagId`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_user_tag_rules_isEnabled` ON `user_tag_rules` (`isEnabled`)")
+            }
+        }
+
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE messages ADD COLUMN conversationKey TEXT NOT NULL DEFAULT ''")
+                db.execSQL("UPDATE messages SET conversationKey = sender WHERE conversationKey = ''")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_messages_packageName_conversationKey` ON `messages` (`packageName`, `conversationKey`)")
             }
         }
     }
