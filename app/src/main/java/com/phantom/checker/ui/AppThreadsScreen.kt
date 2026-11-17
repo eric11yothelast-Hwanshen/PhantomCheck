@@ -601,7 +601,7 @@ fun AppThreadsScreen(
                 if (tq.isEmpty()) emptyList()
                 else threads.filter {
                     it.displayTitle.contains(tq, ignoreCase = true) ||
-                        it.lastMessage.contains(tq, ignoreCase = true)
+                        it.lastPreview.contains(tq, ignoreCase = true)
                 }
             }
             PhantomFullScreenSearchOverlay(

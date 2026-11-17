@@ -93,12 +93,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -1305,7 +1307,7 @@ private fun PhantomCheckApp(
                     placeholder = "搜尋訊息、寄件人或關鍵字",
                     onClick = { showSearchBar = true },
                     modifier = Modifier.onGloballyPositioned { coords ->
-                        targetBounds[OnboardingTargets.SEARCH_PILL] = coords.boundsInRoot()
+                        targetBounds = targetBounds + (OnboardingTargets.SEARCH_PILL to coords.boundsInRoot())
                     },
                     trailingActions = {
                         IconButton(
@@ -1571,22 +1573,26 @@ private fun PhantomCheckApp(
                     }
                 } else {
                     items(overlayResults, key = { it.id }) { msg ->
-                        MessageBubbleCard(
+                        MessageCard(
                             message = msg,
                             glassState = glassState,
+                            highlightAsScam = msg.riskLabel == "scam",
                             highlightQuery = searchQuery.trim(),
                             matchedKeywords = activeFilterKeywords.filter { kw ->
                                 msg.content.contains(kw, ignoreCase = true) || msg.sender.contains(kw, ignoreCase = true)
                             },
-                            tags = messageTagsMap[msg.id].orEmpty(),
-                            onClick = {
-                                showSearchBar = false
-                                ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
-                            },
-                            onLongClick = {
-                                haptic(HapticFeedbackType.LongPress)
-                                messageSheetTarget = msg
-                            }
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    onClick = {
+                                        showSearchBar = false
+                                        ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
+                                    },
+                                    onLongClick = {
+                                        haptic(HapticFeedbackType.LongPress)
+                                        messageSheetTarget = msg
+                                    }
+                                )
                         )
                     }
                 }
@@ -2964,7 +2970,7 @@ private fun NotesTab(
     val matchedNotes = remember(notes, nq) {
         if (nq.isEmpty()) emptyList()
         else notes.filter {
-            it.title.contains(nq, ignoreCase = true) || it.content.contains(nq, ignoreCase = true)
+            (it.relatedAppLabel?.contains(nq, ignoreCase = true) == true) || it.content.contains(nq, ignoreCase = true)
         }
     }
     PhantomFullScreenSearchOverlay(
@@ -3059,9 +3065,10 @@ private fun NotesTab(
                             cornerRadius = 14.dp,
                             contentPadding = 12.dp
                         ) {
-                            if (note.title.isNotBlank()) {
+                            val appLabel = note.relatedAppLabel
+                            if (!appLabel.isNullOrBlank()) {
                                 Text(
-                                    text = note.title,
+                                    text = appLabel,
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold
                                 )

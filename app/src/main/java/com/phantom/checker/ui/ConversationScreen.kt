@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -949,7 +950,7 @@ fun ConversationScreen(
                         ChatBubbleItem(
                             message = msg,
                             glassState = glassState,
-                            tags = messageTagsMap[msg.id].orEmpty(),
+                            tags = msgTagsMap[msg.id].orEmpty(),
                             onClick = {
                                 showConvSearch = false
                                 ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))

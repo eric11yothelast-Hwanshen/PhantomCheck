@@ -64,6 +64,7 @@ import com.phantom.checker.util.BackgroundLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -1090,7 +1091,11 @@ fun PhantomSearchBarPill(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .phantomGlassSurface(glassState = glassState, cornerRadius = 24.dp)
+            .phantomGlassSurface(
+                state = glassState,
+                fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                cornerRadius = 24.dp
+            )
             .clip(shape)
             .clickable(onClick = onClick)
             .semantics { contentDescription = "開啟搜尋：$placeholder" }

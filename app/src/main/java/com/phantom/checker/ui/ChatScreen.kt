@@ -3634,7 +3634,8 @@ private suspend fun buildRagSystemPrompt(
             appendLine("【備忘錄摘要（共 ${allNotes.size} 筆）】")
             allNotes.take(8).forEach { n ->
                 val pinTag = if (n.pinned) "[釘選]" else ""
-                val titlePart = n.title.ifBlank { "無標題" }
+                val titlePart = n.relatedAppLabel?.takeIf { it.isNotBlank() }
+                    ?: if (n.source == NoteEntity.SOURCE_AUTO) "自動備忘" else "記事"
                 val preview = n.content.replace("\n", " ").trim().take(50)
                 appendLine("- $pinTag$titlePart：$preview")
             }
