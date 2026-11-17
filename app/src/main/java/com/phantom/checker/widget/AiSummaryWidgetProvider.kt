@@ -1,0 +1,128 @@
+package com.phantom.checker.widget
+
+import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.widget.RemoteViews
+import com.phantom.checker.R
+import com.phantom.checker.service.AppDatabaseHolder
+import com.phantom.checker.service.DailySummaryPolicy
+import com.phantom.checker.ui.MainActivity
+import com.phantom.checker.ui.stripMarkdown
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
+/**
+ * 桌面 2x2「最新 AI 摘要」小工具：
+ * 顯示最近一則每日／每週 AI 摘要節錄，點擊開啟統計頁摘要卡。
+ */
+class AiSummaryWidgetProvider : AppWidgetProvider() {
+
+    override fun onUpdate(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetIds: IntArray
+    ) {
+        if (appWidgetIds.isEmpty()) return
+        val appCtx = context.applicationContext
+        val pendingResult = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val latest = AppDatabaseHolder.db(appCtx).aiSummaryDao().latest()
+                val dateText = latest?.dateKey.orEmpty()
+                val bodyText = if (latest == null || latest.summaryText.isBlank()) {
+                    "尚無 AI 摘要，請先至統計頁生成或確認網路連線。"
+                } else {
+                    stripMarkdown(latest.summaryText)
+                        .replace(Regex("\\s+"), " ")
+                        .trim()
+                        .take(140)
+                }
+                lastSnapshot = dateText to bodyText
+                val views = buildRemoteViews(appCtx, dateText, bodyText)
+                appWidgetManager.updateAppWidget(appWidgetIds, views)
+            } catch (_: Exception) {
+            } finally {
+                pendingResult.finish()
+            }
+        }
+    }
+
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        super.onDeleted(context, appWidgetIds)
+        val mgr = AppWidgetManager.getInstance(context)
+        val remaining = mgr.getAppWidgetIds(ComponentName(context, AiSummaryWidgetProvider::class.java))
+        if (remaining.isEmpty()) {
+            lastSnapshot = null
+        }
+    }
+
+    companion object {
+        private const val WIDGET_CLICK_REQUEST_CODE = 2004
+
+        @Volatile
+        private var lastSnapshot: Pair<String, String>? = null
+
+        suspend fun updateAllIfChanged(context: Context) {
+            val appCtx = context.applicationContext
+            val mgr = try {
+                AppWidgetManager.getInstance(appCtx)
+            } catch (_: Exception) {
+                return
+            }
+            val ids = try {
+                mgr.getAppWidgetIds(ComponentName(appCtx, AiSummaryWidgetProvider::class.java))
+            } catch (_: Exception) {
+                return
+            }
+            if (ids.isEmpty()) {
+                lastSnapshot = null
+                return
+            }
+            val latest = AppDatabaseHolder.db(appCtx).aiSummaryDao().latest()
+            val dateText = latest?.dateKey.orEmpty()
+            val bodyText = if (latest == null || latest.summaryText.isBlank()) {
+                "尚無 AI 摘要，請先至統計頁生成或確認網路連線。"
+            } else {
+                stripMarkdown(latest.summaryText)
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+                    .take(140)
+            }
+            val snapshot = dateText to bodyText
+            if (lastSnapshot == snapshot) return
+            lastSnapshot = snapshot
+            val views = buildRemoteViews(appCtx, dateText, bodyText)
+            try {
+                mgr.updateAppWidget(ids, views)
+            } catch (_: Exception) {
+            }
+        }
+
+        private fun buildRemoteViews(
+            context: Context,
+            dateText: String,
+            bodyText: String
+        ): RemoteViews {
+            val launchIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(DailySummaryPolicy.EXTRA_OPEN_TAB, "stats")
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                context,
+                WIDGET_CLICK_REQUEST_CODE,
+                launchIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            return RemoteViews(context.packageName, R.layout.widget_ai_summary).apply {
+                setTextViewText(R.id.widget_summary_date, dateText)
+                setTextViewText(R.id.widget_summary_body, bodyText)
+                setOnClickPendingIntent(R.id.widget_root, pendingIntent)
+            }
+        }
+    }
+}

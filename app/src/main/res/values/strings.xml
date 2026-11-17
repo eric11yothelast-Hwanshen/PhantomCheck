@@ -3,4 +3,10 @@
     <string name="stats_widget_description">即時顯示今日訊息數、未讀數與詐騙警示數，點擊開啟幻訊。</string>
     <string name="stats_mini_widget_description">精簡顯示今日訊息數與詐騙警示數，點擊開啟幻訊。</string>
     <string name="stats_detail_widget_description">顯示今日統計、近 7 日訊息趨勢條與最近來源 App，點擊開啟幻訊。</string>
+    <string name="ai_summary_widget_description">顯示最新每日或每週 AI 摘要重點，點擊開啟統計摘要頁。</string>
+    <string name="risk_action_widget_description">顯示最新高風險訊息，可一鍵標記詐騙或加入白名單。</string>
+    <string name="reminder_widget_description">顯示最近待辦提醒事項，點擊開啟幻訊檢視。</string>
+    <string name="daily_summary_widget_description">顯示最新每日 AI 摘要節錄，點擊開啟統計頁。</string>
+    <string name="high_risk_widget_description">顯示最新高風險訊息，可一鍵標記詐騙或加入白名單。</string>
+    <string name="todo_reminder_widget_description">顯示最近 2–3 則未觸發待辦提醒事項，點擊開啟幻訊。</string>
 </resources>

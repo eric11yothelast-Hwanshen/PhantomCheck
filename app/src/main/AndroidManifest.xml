@@ -120,6 +120,42 @@
                 android:resource="@xml/stats_detail_widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".widget.AiSummaryWidgetProvider"
+            android:label="幻訊最新 AI 摘要 (2x2)"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/ai_summary_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.RiskActionWidgetProvider"
+            android:label="幻訊高風險處置 (2x2)"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/risk_action_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.ReminderWidgetProvider"
+            android:label="幻訊待辦提醒 (2x1)"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/reminder_widget_info" />
+        </receiver>
+
         <receiver android:name=".service.ReminderReceiver" android:exported="false" />
 
         <provider
