@@ -1232,11 +1232,17 @@ private fun PhantomCheckApp(
                                         MainTab.NOTES -> Icons.Default.Edit
                                         MainTab.STATS -> Icons.Default.Info
                                     }
-                                    val itemModifier = if (tab == MainTab.ASSISTANT) {
+                                    val targetKey = when (tab) {
+                                        MainTab.ASSISTANT -> OnboardingTargets.AI_ASSISTANT_TAB
+                                        MainTab.NOTES -> OnboardingTargets.NOTES_TAB
+                                        MainTab.STATS -> OnboardingTargets.STATS_TAB
+                                        MainTab.MESSAGES -> null
+                                    }
+                                    val itemModifier = if (targetKey != null) {
                                         Modifier
                                             .weight(1f)
                                             .onGloballyPositioned { coords ->
-                                                targetBounds = targetBounds + (OnboardingTargets.AI_ASSISTANT_TAB to coords.boundsInRoot())
+                                                targetBounds = targetBounds + (targetKey to coords.boundsInRoot())
                                             }
                                     } else {
                                         Modifier.weight(1f)
@@ -1618,8 +1624,12 @@ private fun PhantomCheckApp(
                         OnboardingStep.SWIPE_DELETE -> OnboardingStep.MULTI_SELECT
                         OnboardingStep.MULTI_SELECT -> OnboardingStep.FILTER_CHIPS
                         OnboardingStep.FILTER_CHIPS -> OnboardingStep.AI_ASSISTANT
-                        OnboardingStep.AI_ASSISTANT -> OnboardingStep.TAGS_AND_RULES
-                        OnboardingStep.TAGS_AND_RULES -> OnboardingStep.KEEP_ALIVE
+                        OnboardingStep.AI_ASSISTANT -> OnboardingStep.NOTES_TAB
+                        OnboardingStep.NOTES_TAB -> OnboardingStep.STATS_AND_SUMMARY
+                        OnboardingStep.STATS_AND_SUMMARY -> OnboardingStep.TAGS_AND_RULES
+                        OnboardingStep.TAGS_AND_RULES -> OnboardingStep.TODO_AND_BATCH
+                        OnboardingStep.TODO_AND_BATCH -> OnboardingStep.APPEARANCE_AND_BG
+                        OnboardingStep.APPEARANCE_AND_BG -> OnboardingStep.KEEP_ALIVE
                         OnboardingStep.KEEP_ALIVE -> OnboardingStep.DONE
                         OnboardingStep.DONE -> {
                             PhantomPrefs.setOnboardingCompleted(appCtx, true)

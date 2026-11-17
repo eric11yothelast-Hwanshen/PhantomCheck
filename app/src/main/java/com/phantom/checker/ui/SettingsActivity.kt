@@ -2415,6 +2415,7 @@ fun FilterSettingsScreen(
 
                     OutlinedButton(
                         onClick = {
+                            PhantomPrefs.setOnboardingStep(appCtx, 1)
                             PhantomPrefs.setOnboardingCompleted(appCtx, false)
                             onBack()
                         },
@@ -3889,25 +3890,25 @@ private enum class SettingsTourStep(
         index = 2,
         cardKey = "ai",
         title = "AI 與分析",
-        description = "管理多 Provider API Key、每日分析額度、自然語言白名單規則、AI 自動標記與每日 AI 摘要排程。"
+        description = "管理多 Provider API Key 與分用途模型、每日分析額度、AI 觸發字數門檻、離線補佇列、自動備忘錄、AI 標籤分發測試／失敗通知，以及每日摘要排程。"
     ),
     NOTIF(
         index = 3,
         cardKey = "notif",
         title = "訊息與通知",
-        description = "設定勿擾時段、即時關鍵字提醒、重複通知節流秒數，以及滑動刪除與點擊開啟行為。"
+        description = "設定勿擾時段、即時關鍵字提醒、重複通知節流秒數、滑動刪除與點擊開啟行為，並可使用已遷入此卡的「清除已讀訊息」。"
     ),
     DATA(
         index = 4,
         cardKey = "data",
         title = "資料管理",
-        description = "管理 App 靜音清單、自訂標籤、訊息保留天數與則數上限、CSV 匯出，也可隨時重播新手或設定教學。"
+        description = "管理 App 靜音清單、自訂標籤與白名單規則、訊息保留天數與則數上限、CSV 匯出，也可隨時重播新手或設定教學。"
     ),
     APPEARANCE(
         index = 5,
         cardKey = "appearance",
         title = "外觀與保活",
-        description = "切換主題、動態取色、液態玻璃效果、觸覺震動回饋，並檢查系統電池最佳化與前景服務運作狀態。"
+        description = "切換主題、動態取色、三層背景圖片（全域／AI 聊天／對話頁）與暗色遮罩強度滑桿、液態玻璃與分頁欄模式，並檢查電池最佳化與前景保活狀態。"
     ),
     SHIZUKU(
         index = 6,
