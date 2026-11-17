@@ -99,7 +99,9 @@ data class AiRuleEntity(
     val targetTagId: Long? = null,
     val kind: String = KIND_TAG,
     val isEnabled: Boolean = true,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val sender: String? = null,
+    val packageName: String? = null
 ) {
     companion object {
         const val KIND_TAG = "tag"
@@ -678,7 +680,7 @@ interface IntelDao {
         IntelCacheEntity::class,
         IntelResultEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -841,6 +843,13 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE messages ADD COLUMN remindAt INTEGER DEFAULT NULL")
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE ai_rules ADD COLUMN sender TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE ai_rules ADD COLUMN packageName TEXT DEFAULT NULL")
             }
         }
     }

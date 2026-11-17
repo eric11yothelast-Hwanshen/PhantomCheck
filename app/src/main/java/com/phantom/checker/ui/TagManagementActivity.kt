@@ -738,6 +738,17 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                         text = rule.ruleText,
                                         style = MaterialTheme.typography.bodyMedium
                                     )
+                                    if (!rule.sender.isNullOrBlank() || !rule.packageName.isNullOrBlank()) {
+                                        val meta = listOfNotNull(
+                                            rule.sender?.takeIf { it.isNotBlank() }?.let { "寄件者：$it" },
+                                            rule.packageName?.takeIf { it.isNotBlank() }?.let { "App：$it" }
+                                        ).joinToString(" · ")
+                                        Text(
+                                            text = meta,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     FluidSwitch(

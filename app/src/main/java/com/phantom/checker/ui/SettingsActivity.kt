@@ -174,7 +174,7 @@ private val SETTINGS_SEARCH_CATALOG = listOf(
     SettingSearchItem("notif_throttle", "notif", "同 key 重複節流與個別 App 覆寫", "相同通知節流秒數、數字微變視為同一則更新與個別 App 節流覆寫", listOf("節流", "同 key", "重複通知", "漏訊", "流量", "數字微變", "覆寫")),
     SettingSearchItem("data_retention", "data", "訊息保留與清理", "訊息保留天數與最大保留則數上限", listOf("保留", "天數", "上限", "清理")),
     SettingSearchItem("data_muted_apps", "data", "靜音 App 管理", "設定特定 App 完全不記錄或靜音記錄", listOf("靜音", "封鎖", "app", "略過")),
-    SettingSearchItem("ai_rules", "data", "自訂標籤管理", "管理自訂標籤與 App 分類規則", listOf("標籤", "規則", "分類", "標籤管理"), page = "TagManagementActivity"),
+    SettingSearchItem("ai_rules", "data", "自訂標籤與白名單規則管理", "管理自訂標籤、App 分類與寄件者/訊息白名單規則", listOf("標籤", "規則", "分類", "標籤管理", "白名單", "whitelist"), page = "TagManagementActivity"),
     SettingSearchItem("data_export_clear", "data", "匯出資料與清除紀錄", "匯出 CSV / JSON 或清除已讀/全部訊息", listOf("匯出", "備份", "csv", "json", "清除", "刪除全部")),
     SettingSearchItem("appearance_widget_tour", "data", "教學重播與桌面小工具", "重播新手或設定頁教學；統計小工具請在桌面長按 → 小工具加入", listOf("小工具", "widget", "桌面", "導覽", "教學")),
     SettingSearchItem("appearance_theme", "appearance", "動態取色、字體大小與液態玻璃", "Material You 動態取色、字體縮放、液態玻璃特效與推薦問題", listOf("外觀", "主題", "字體", "大小", "玻璃", "動態取色", "深色", "淺色")),

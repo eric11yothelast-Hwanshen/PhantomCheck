@@ -63,6 +63,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.room.withTransaction
+import com.phantom.checker.data.AiRuleEntity
 import com.phantom.checker.data.IntelResultEntity
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.data.MessageTagCrossRef
@@ -766,10 +767,58 @@ fun MessageDetailScreen(
                             }
                         }
 
+                        var showWhitelistFlow by remember { mutableStateOf(false) }
+                        if (showWhitelistFlow) {
+                            WhitelistAddDialogFlow(
+                                sender = msg.sender,
+                                appLabel = msg.appLabel,
+                                packageName = msg.packageName,
+                                content = msg.content,
+                                onDismiss = { showWhitelistFlow = false },
+                                onConfirm = { isSenderScope ->
+                                    scope.launch {
+                                        val updatedMsg = msg.copy(
+                                            riskScore = 10,
+                                            riskLabel = "safe",
+                                            riskReason = "使用者手動加入白名單"
+                                        )
+                                        withContext(Dispatchers.IO) {
+                                            val db = AppDatabaseHolder.db(appCtx)
+                                            val ruleText = if (isSenderScope) {
+                                                "白名單寄件者：${msg.sender}（${msg.appLabel}）"
+                                            } else {
+                                                msg.content.trim().take(120).ifBlank { "白名單訊息（${msg.sender}）" }
+                                            }
+                                            db.aiRuleDao().insert(
+                                                AiRuleEntity(
+                                                    ruleText = ruleText,
+                                                    kind = AiRuleEntity.KIND_WHITELIST,
+                                                    sender = if (isSenderScope) msg.sender.trim() else null,
+                                                    packageName = msg.packageName
+                                                )
+                                            )
+                                            db.messageDao().update(updatedMsg)
+                                        }
+                                        message = updatedMsg
+                                        showWhitelistFlow = false
+                                        snackbarHostState.showSnackbar("已加入白名單")
+                                    }
+                                }
+                            )
+                        }
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            OutlinedButton(
+                                onClick = { showWhitelistFlow = true },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .pressableScale()
+                            ) {
+                                Text("加入白名單")
+                            }
                             OutlinedButton(
                                 onClick = { showReminderPicker = true },
                                 modifier = Modifier

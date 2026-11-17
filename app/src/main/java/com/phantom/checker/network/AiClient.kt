@@ -492,7 +492,14 @@ object AiClient {
         if (whitelistRules.isNotEmpty()) {
             base.appendLine("【白名單規則（優先於風險判斷）】符合以下任一白名單規則的訊息，risk_score 應 < 30 且 risk_label 應為 \"safe\"：")
             whitelistRules.forEach { r ->
-                base.appendLine("- ${r.ruleText}")
+                val senderPart = r.sender?.takeIf { it.isNotBlank() }?.let { "寄件者=$it" }
+                val pkgPart = r.packageName?.takeIf { it.isNotBlank() }?.let { "App=$it" }
+                val meta = listOfNotNull(senderPart, pkgPart).joinToString(", ")
+                if (meta.isNotEmpty()) {
+                    base.appendLine("- [$meta] ${r.ruleText}")
+                } else {
+                    base.appendLine("- ${r.ruleText}")
+                }
             }
         }
 

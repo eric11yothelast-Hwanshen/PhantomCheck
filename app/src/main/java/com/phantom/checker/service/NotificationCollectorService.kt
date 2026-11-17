@@ -289,53 +289,70 @@ class NotificationCollectorService : NotificationListenerService() {
                 return@launch
             }
 
+            val activeAiRules = try {
+                db.aiRuleDao().active()
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val indicators = IndicatorExtractor.extract(text)
+            if (IntelClient.isMessageWhitelisted(
+                    sender = title,
+                    packageName = pkg,
+                    appLabel = appLabel,
+                    content = text,
+                    aiRules = activeAiRules,
+                    indicators = indicators
+                )
+            ) {
+                db.messageDao().byId(id)?.let { currentMsg ->
+                    db.messageDao().update(
+                        currentMsg.copy(
+                            riskScore = 10,
+                            riskLabel = "safe",
+                            riskReason = "命中白名單規則"
+                        )
+                    )
+                }
+                return@launch
+            }
+
             // 雲端防詐情報預查（零 LLM token，僅送 URL / crypto 地址；ai_rules 白名單優先跳過）
-            if (PhantomPrefs.isIntelEnabled(applicationContext)) {
-                val indicators = IndicatorExtractor.extract(text)
-                if (indicators.isNotEmpty()) {
-                    val activeAiRules = try {
-                        db.aiRuleDao().active()
+            if (PhantomPrefs.isIntelEnabled(applicationContext) && indicators.isNotEmpty()) {
+                val intelResult = try {
+                    IntelClient.checkIndicators(applicationContext, db, indicators)
+                } catch (_: Exception) {
+                    null
+                }
+                if (intelResult != null) {
+                    try {
+                        db.intelDao().putResult(
+                            IntelResultEntity(
+                                messageId = id,
+                                indicatorsSummary = indicators.summaryText(),
+                                isHit = intelResult.isHit,
+                                sourceLabel = intelResult.sourceLabel,
+                                detail = intelResult.detail,
+                                checkedAt = intelResult.checkedAt
+                            )
+                        )
                     } catch (_: Exception) {
-                        emptyList()
                     }
-                    if (!IntelClient.isWhitelisted(indicators, text, activeAiRules)) {
-                        val intelResult = try {
-                            IntelClient.checkIndicators(applicationContext, db, indicators)
-                        } catch (_: Exception) {
-                            null
-                        }
-                        if (intelResult != null) {
-                            try {
-                                db.intelDao().putResult(
-                                    IntelResultEntity(
-                                        messageId = id,
-                                        indicatorsSummary = indicators.summaryText(),
-                                        isHit = intelResult.isHit,
-                                        sourceLabel = intelResult.sourceLabel,
-                                        detail = intelResult.detail,
-                                        checkedAt = intelResult.checkedAt
-                                    )
+                    if (intelResult.isHit) {
+                        val hitReason = "【防詐情報命中：${intelResult.sourceLabel}】${intelResult.detail}"
+                        db.messageDao().byId(id)?.let { currentMsg ->
+                            db.messageDao().update(
+                                currentMsg.copy(
+                                    riskScore = 95,
+                                    riskLabel = "scam",
+                                    riskReason = hitReason
                                 )
-                            } catch (_: Exception) {
-                            }
-                            if (intelResult.isHit) {
-                                val hitReason = "【防詐情報命中：${intelResult.sourceLabel}】${intelResult.detail}"
-                                db.messageDao().byId(id)?.let { currentMsg ->
-                                    db.messageDao().update(
-                                        currentMsg.copy(
-                                            riskScore = 95,
-                                            riskLabel = "scam",
-                                            riskReason = hitReason
-                                        )
-                                    )
-                                }
-                                if (!silentMuted) {
-                                    alertScam(applicationContext, id, pkg, title, hitReason)
-                                    StatsForegroundService.startOrRefresh(applicationContext, force = true)
-                                }
-                                return@launch
-                            }
+                            )
                         }
+                        if (!silentMuted) {
+                            alertScam(applicationContext, id, pkg, title, hitReason)
+                            StatsForegroundService.startOrRefresh(applicationContext, force = true)
+                        }
+                        return@launch
                     }
                 }
             }
@@ -782,7 +799,8 @@ object AppDatabaseHolder {
                 AppDatabase.MIGRATION_4_5,
                 AppDatabase.MIGRATION_5_6,
                 AppDatabase.MIGRATION_6_7,
-                AppDatabase.MIGRATION_7_8
+                AppDatabase.MIGRATION_7_8,
+                AppDatabase.MIGRATION_8_9
             ).addCallback(object : androidx.room.RoomDatabase.Callback() {
                 override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                     super.onOpen(db)

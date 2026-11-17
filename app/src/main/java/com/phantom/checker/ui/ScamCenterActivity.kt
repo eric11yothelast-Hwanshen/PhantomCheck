@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import com.phantom.checker.data.AiRuleEntity
 import com.phantom.checker.data.IntelResultEntity
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.service.AppDatabaseHolder
@@ -297,7 +298,11 @@ fun ScamCenterScreen(onBack: () -> Unit) {
         ScamDetailDialog(
             message = msg,
             intelResult = intelResults[msg.id],
-            onDismiss = { selectedMessage = null }
+            onDismiss = { selectedMessage = null },
+            onWhitelistAdded = {
+                selectedMessage = null
+                refreshTrigger++
+            }
         )
     }
 }
@@ -433,7 +438,8 @@ private fun ScamMessageCard(
 private fun ScamDetailDialog(
     message: MessageEntity,
     intelResult: IntelResultEntity?,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onWhitelistAdded: () -> Unit
 ) {
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
@@ -442,9 +448,50 @@ private fun ScamDetailDialog(
         SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault()).format(Date(message.timestamp))
     }
     var showSuspendConfirm by remember { mutableStateOf(false) }
+    var showWhitelistFlow by remember { mutableStateOf(false) }
     val shizukuReady = remember {
         ShizukuManager.init(appCtx)
         ShizukuManager.state.value.isReady && message.packageName != appCtx.packageName
+    }
+
+    if (showWhitelistFlow) {
+        WhitelistAddDialogFlow(
+            sender = message.sender,
+            appLabel = message.appLabel,
+            packageName = message.packageName,
+            content = message.content,
+            onDismiss = { showWhitelistFlow = false },
+            onConfirm = { isSenderScope ->
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        val db = AppDatabaseHolder.db(appCtx)
+                        val ruleText = if (isSenderScope) {
+                            "白名單寄件者：${message.sender}（${message.appLabel}）"
+                        } else {
+                            message.content.trim().take(120).ifBlank { "白名單訊息（${message.sender}）" }
+                        }
+                        db.aiRuleDao().insert(
+                            AiRuleEntity(
+                                ruleText = ruleText,
+                                kind = AiRuleEntity.KIND_WHITELIST,
+                                sender = if (isSenderScope) message.sender.trim() else null,
+                                packageName = message.packageName
+                            )
+                        )
+                        db.messageDao().update(
+                            message.copy(
+                                riskScore = 10,
+                                riskLabel = "safe",
+                                riskReason = "使用者手動加入白名單"
+                            )
+                        )
+                    }
+                    showWhitelistFlow = false
+                    Toast.makeText(ctx, "已加入白名單", Toast.LENGTH_SHORT).show()
+                    onWhitelistAdded()
+                }
+            }
+        )
     }
 
     if (showSuspendConfirm) {
@@ -571,6 +618,13 @@ private fun ScamDetailDialog(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
+                }
+
+                OutlinedButton(
+                    onClick = { showWhitelistFlow = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("加入白名單（這不是詐騙）")
                 }
 
                 if (shizukuReady) {

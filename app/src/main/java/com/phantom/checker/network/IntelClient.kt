@@ -154,39 +154,89 @@ object IntelClient {
 
     fun isChainabuseKeyConfigured(context: Context): Boolean = getChainabuseApiKey(context) != null
 
-    fun isWhitelisted(
-        indicators: IndicatorExtractor.ExtractedIndicators,
+    fun matchesWhitelistRule(
+        rule: AiRuleEntity,
+        sender: String,
+        packageName: String,
+        appLabel: String,
         content: String,
-        aiRules: List<AiRuleEntity>
+        indicators: IndicatorExtractor.ExtractedIndicators? = null
     ): Boolean {
-        val activeWhitelist = aiRules.filter { it.isEnabled && it.kind == AiRuleEntity.KIND_WHITELIST }
-        if (activeWhitelist.isEmpty()) return false
+        if (!rule.isEnabled || rule.kind != AiRuleEntity.KIND_WHITELIST) return false
 
-        val hosts = indicators.urls.mapNotNull { rawUrl ->
+        // 1. 結構化寄件者精確比對（packageName+sender 或 appLabel+sender）
+        val ruleSender = rule.sender?.trim().orEmpty()
+        if (ruleSender.isNotEmpty()) {
+            val senderMatch = sender.trim().equals(ruleSender, ignoreCase = true)
+            if (!senderMatch) return false
+            val rulePkg = rule.packageName?.trim().orEmpty()
+            if (rulePkg.isEmpty()) return true
+            return packageName.equals(rulePkg, ignoreCase = true) ||
+                appLabel.equals(rulePkg, ignoreCase = true)
+        }
+
+        // 2. 既有自然語言 / 內容 / 網域比對
+        val ruleText = rule.ruleText.trim()
+        if (ruleText.isEmpty()) return false
+        val rulePkg = rule.packageName?.trim().orEmpty()
+        if (rulePkg.isNotEmpty() &&
+            !packageName.equals(rulePkg, ignoreCase = true) &&
+            !appLabel.equals(rulePkg, ignoreCase = true)
+        ) {
+            return false
+        }
+        if (content.contains(ruleText, ignoreCase = true)) return true
+
+        val hosts = indicators?.urls?.mapNotNull { rawUrl ->
             try {
                 Uri.parse(rawUrl).host?.lowercase()?.removePrefix("www.")
             } catch (_: Exception) {
                 null
             }
-        }
+        }.orEmpty()
 
-        return activeWhitelist.any { rule ->
-            val ruleText = rule.ruleText.trim()
-            if (ruleText.isEmpty()) return@any false
-            if (content.contains(ruleText, ignoreCase = true)) return@any true
-
-            val ruleDomains = domainTokenRegex.findAll(ruleText)
-                .map { it.groupValues[1].lowercase().removePrefix("www.") }
-                .toList()
-            if (ruleDomains.isNotEmpty() && hosts.any { host ->
-                    ruleDomains.any { rd -> host == rd || host.endsWith(".$rd") }
-                }
-            ) {
-                return@any true
+        val ruleDomains = domainTokenRegex.findAll(ruleText)
+            .map { it.groupValues[1].lowercase().removePrefix("www.") }
+            .toList()
+        if (ruleDomains.isNotEmpty() && hosts.any { host ->
+                ruleDomains.any { rd -> host == rd || host.endsWith(".$rd") }
             }
-            false
+        ) {
+            return true
+        }
+        return false
+    }
+
+    fun isMessageWhitelisted(
+        sender: String,
+        packageName: String,
+        appLabel: String,
+        content: String,
+        aiRules: List<AiRuleEntity>,
+        indicators: IndicatorExtractor.ExtractedIndicators? = null
+    ): Boolean {
+        val activeWhitelist = aiRules.filter { it.isEnabled && it.kind == AiRuleEntity.KIND_WHITELIST }
+        if (activeWhitelist.isEmpty()) return false
+        return activeWhitelist.any { rule ->
+            matchesWhitelistRule(rule, sender, packageName, appLabel, content, indicators)
         }
     }
+
+    fun isWhitelisted(
+        indicators: IndicatorExtractor.ExtractedIndicators,
+        content: String,
+        aiRules: List<AiRuleEntity>,
+        sender: String = "",
+        packageName: String = "",
+        appLabel: String = ""
+    ): Boolean = isMessageWhitelisted(
+        sender = sender,
+        packageName = packageName,
+        appLabel = appLabel,
+        content = content,
+        aiRules = aiRules,
+        indicators = indicators
+    )
 
     suspend fun checkIndicators(
         context: Context,

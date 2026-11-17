@@ -819,3 +819,89 @@ fun ReminderPickerDialog(
         }
     )
 }
+
+/**
+ * 兩段式加入白名單對話框：
+ * 1. 選擇「此寄件者全部訊息」或「僅此則訊息」
+ * 2. 顯示即將加入的規則內容（寄件者＋App＋內容摘錄）並確認寫入
+ */
+@Composable
+fun WhitelistAddDialogFlow(
+    sender: String,
+    appLabel: String,
+    packageName: String,
+    content: String,
+    onDismiss: () -> Unit,
+    onConfirm: (isSenderScope: Boolean) -> Unit
+) {
+    var selectedScopeIsSender by remember { mutableStateOf<Boolean?>(null) }
+
+    if (selectedScopeIsSender == null) {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("加入白名單") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "請選擇要加入白名單的範圍：",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    OutlinedButton(
+                        onClick = { selectedScopeIsSender = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("此寄件者全部訊息（${sender.ifBlank { "未知寄件者" }}）")
+                    }
+                    OutlinedButton(
+                        onClick = { selectedScopeIsSender = false },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("僅此則訊息")
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = onDismiss) {
+                    Text("取消")
+                }
+            }
+        )
+    } else {
+        val isSender = selectedScopeIsSender == true
+        val excerpt = content.replace("\n", " ").trim().take(80)
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            title = { Text("確認加入白名單") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = if (isSender) {
+                            "規則類型：此寄件者全部訊息（後續同 App 同寄件者訊息將視為安全並跳過情報預查與警示）"
+                        } else {
+                            "規則類型：僅此則訊息（標記此則為安全並加入內容比對白名單）"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text("寄件者：${sender.ifBlank { "未知" }}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text("來源 App：$appLabel ($packageName)", style = MaterialTheme.typography.bodySmall)
+                    if (excerpt.isNotBlank()) {
+                        Text("內容摘錄：$excerpt", style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { onConfirm(isSender) }) {
+                    Text("確認加入")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedScopeIsSender = null }) {
+                    Text("返回")
+                }
+            }
+        )
+    }
+}
+
