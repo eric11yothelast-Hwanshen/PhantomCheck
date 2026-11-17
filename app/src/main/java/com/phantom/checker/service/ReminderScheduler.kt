@@ -64,6 +64,69 @@ object ReminderScheduler {
         pi.cancel()
     }
 
+    /**
+     * 切換待辦完成狀態：
+     * - 寫入 isDone 與 completedAt（取消勾選時清空）
+     * - 若勾選完成且設為每日/每週重複提醒，自動派生下一筆待辦並排程提醒
+     * - 同步刷新桌面小工具
+     */
+    suspend fun completeTodoWithRecurrence(
+        ctx: Context,
+        todo: com.phantom.checker.data.TodoEntity,
+        done: Boolean
+    ): com.phantom.checker.data.TodoEntity? {
+        val appCtx = ctx.applicationContext
+        val db = AppDatabaseHolder.db(appCtx)
+        val now = System.currentTimeMillis()
+        db.todoDao().setDone(todo.id, done, if (done) now else null)
+        var spawned: com.phantom.checker.data.TodoEntity? = null
+        if (done) {
+            cancelTodo(appCtx, todo.id)
+            val stepMs = when (todo.repeatRule) {
+                com.phantom.checker.data.TodoEntity.REPEAT_DAILY -> 24L * 60L * 60L * 1000L
+                com.phantom.checker.data.TodoEntity.REPEAT_WEEKLY -> 7L * 24L * 60L * 60L * 1000L
+                else -> 0L
+            }
+            if (stepMs > 0L) {
+                var nextDue = todo.dueAt + stepMs
+                while (nextDue <= now) {
+                    nextDue += stepMs
+                }
+                val nextTodo = com.phantom.checker.data.TodoEntity(
+                    title = todo.title,
+                    dueAt = nextDue,
+                    isDone = false,
+                    createdAt = now,
+                    relatedMessageId = todo.relatedMessageId,
+                    sourceSessionId = todo.sourceSessionId,
+                    priority = todo.priority,
+                    notes = todo.notes,
+                    repeatRule = todo.repeatRule
+                )
+                val newId = db.todoDao().insert(nextTodo)
+                spawned = nextTodo.copy(id = newId)
+                scheduleTodo(appCtx, newId, nextDue)
+            }
+        } else if (todo.dueAt > now) {
+            scheduleTodo(appCtx, todo.id, todo.dueAt)
+        }
+        ReminderWidgetProvider.updateAllIfChanged(appCtx)
+        return spawned
+    }
+
+    /** 智慧排序：未完成優先（逾期 > 到期日早→晚 > 優先級高→低），已完成依完成時間新→舊 */
+    fun sortTodosSmart(
+        list: List<com.phantom.checker.data.TodoEntity>,
+        now: Long = System.currentTimeMillis()
+    ): List<com.phantom.checker.data.TodoEntity> = list.sortedWith(
+        compareBy<com.phantom.checker.data.TodoEntity> { it.isDone }
+            .thenByDescending { !it.isDone && it.dueAt < now }
+            .thenBy { if (!it.isDone) it.dueAt else Long.MAX_VALUE }
+            .thenByDescending { if (!it.isDone) it.priority else 0 }
+            .thenByDescending { it.completedAt ?: 0L }
+            .thenByDescending { it.id }
+    )
+
     private fun buildPendingIntent(ctx: Context, messageId: Long): PendingIntent {
         val intent = Intent(ctx, ReminderReceiver::class.java).apply {
             putExtra(EXTRA_MESSAGE_ID, messageId)

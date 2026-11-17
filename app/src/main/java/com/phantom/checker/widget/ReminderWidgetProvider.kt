@@ -87,18 +87,23 @@ class ReminderWidgetProvider : AppWidgetProvider() {
                         messageId = m.id
                     )
                 }
-            val todoItems = db.todoDao().pendingTodos()
-                .filter { !it.isDone && it.dueAt >= now }
-                .map { t ->
-                    UpcomingReminderItem(
-                        snapshotKey = "t:${t.id}:${t.dueAt}",
-                        dueAt = t.dueAt,
-                        summary = t.title.replace("\n", " ").trim().take(28),
-                        messageId = t.relatedMessageId
-                    )
-                }
-            return (msgItems + todoItems)
-                .sortedBy { it.dueAt }
+            val todoItems = com.phantom.checker.service.ReminderScheduler.sortTodosSmart(
+                db.todoDao().pendingTodos().filter { !it.isDone },
+                now
+            ).map { t ->
+                val overdueTag = if (t.dueAt < now) "[逾期] " else ""
+                UpcomingReminderItem(
+                    snapshotKey = "t:${t.id}:${t.dueAt}:${t.priority}",
+                    dueAt = t.dueAt,
+                    summary = "$overdueTag${t.title.replace("\n", " ").trim().take(24)}",
+                    messageId = t.relatedMessageId
+                )
+            }
+            return (todoItems + msgItems)
+                .sortedWith(
+                    compareBy<UpcomingReminderItem> { if (it.dueAt < now) 0 else 1 }
+                        .thenBy { it.dueAt }
+                )
                 .take(2)
         }
 

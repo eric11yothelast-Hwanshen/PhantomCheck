@@ -119,8 +119,22 @@ data class TodoEntity(
     val isDone: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val relatedMessageId: Long? = null,
-    val sourceSessionId: Long? = null
-)
+    val sourceSessionId: Long? = null,
+    val completedAt: Long? = null,
+    val priority: Int = PRIORITY_MEDIUM,
+    val notes: String = "",
+    val repeatRule: String = REPEAT_NONE
+) {
+    companion object {
+        const val PRIORITY_LOW = 0
+        const val PRIORITY_MEDIUM = 1
+        const val PRIORITY_HIGH = 2
+
+        const val REPEAT_NONE = ""
+        const val REPEAT_DAILY = "daily"
+        const val REPEAT_WEEKLY = "weekly"
+    }
+}
 
 @Entity(
     tableName = "app_category_rules",
@@ -806,8 +820,8 @@ interface TodoDao {
     @Update
     suspend fun update(todo: TodoEntity)
 
-    @Query("UPDATE todos SET isDone = :done WHERE id = :id")
-    suspend fun setDone(id: Long, done: Boolean)
+    @Query("UPDATE todos SET isDone = :done, completedAt = :completedAt WHERE id = :id")
+    suspend fun setDone(id: Long, done: Boolean, completedAt: Long? = if (done) System.currentTimeMillis() else null)
 
     @Query("DELETE FROM todos WHERE id = :id")
     suspend fun deleteById(id: Long)
@@ -916,7 +930,7 @@ interface NoteDao {
         PendingAiAnalysisEntity::class,
         NoteEntity::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1173,6 +1187,15 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_notes_pinned_updatedAt` ON `notes` (`pinned`, `updatedAt`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_notes_relatedMessageId_source` ON `notes` (`relatedMessageId`, `source`)")
+            }
+        }
+
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE todos ADD COLUMN completedAt INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE todos ADD COLUMN priority INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE todos ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE todos ADD COLUMN repeatRule TEXT NOT NULL DEFAULT ''")
             }
         }
     }

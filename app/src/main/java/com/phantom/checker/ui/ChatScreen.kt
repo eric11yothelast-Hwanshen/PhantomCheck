@@ -746,8 +746,11 @@ fun ChatAssistantTab(
                 if (parsed.reminderProposals.isNotEmpty()) {
                     parsed.reminderProposals.forEach { rp ->
                         val title = rp.title.trim().ifBlank { extractTodoTitleFromQuery(query) }
-                        if (isRecurringReminderExpression(rp.time.orEmpty()) || isRecurringReminderExpression(query)) {
-                            resolutionErrors.add("目前僅支援單次待辦提醒，暫不支援「每天／每週」等重複提醒。")
+                        val resolvedRepeat = rp.repeatRule.ifBlank {
+                            detectRepeatRuleFromText(rp.time.orEmpty()).ifBlank { detectRepeatRuleFromText(query) }
+                        }
+                        if (resolvedRepeat.isBlank() && (isUnsupportedRecurringExpression(rp.time.orEmpty()) || isUnsupportedRecurringExpression(query))) {
+                            resolutionErrors.add("重複提醒目前僅支援「每日」與「每週」，暫不支援每月或每年。")
                         } else {
                             when (val timeRes = parseNaturalReminderTime(rp.time, query, nowMs)) {
                                 is NaturalTimeParseResult.Success -> {
@@ -755,7 +758,10 @@ fun ChatAssistantTab(
                                         PendingTodoInsertion(
                                             sessionId = sessionId,
                                             title = title,
-                                            dueAt = timeRes.epochMillis
+                                            dueAt = timeRes.epochMillis,
+                                            priority = rp.priority,
+                                            notes = rp.notes,
+                                            repeatRule = resolvedRepeat
                                         )
                                     )
                                 }
@@ -770,8 +776,9 @@ fun ChatAssistantTab(
                         }
                     }
                 } else if (isNaturalReminderIntent(query) && resolvedAdjustStates.isEmpty() && newAppliedSettings.isEmpty()) {
-                    if (isRecurringReminderExpression(query)) {
-                        resolutionErrors.add("目前僅支援單次待辦提醒，暫不支援「每天／每週」等重複提醒。")
+                    val resolvedRepeat = detectRepeatRuleFromText(query)
+                    if (resolvedRepeat.isBlank() && isUnsupportedRecurringExpression(query)) {
+                        resolutionErrors.add("重複提醒目前僅支援「每日」與「每週」，暫不支援每月或每年。")
                     } else {
                         val title = extractTodoTitleFromQuery(query)
                         when (val timeRes = parseNaturalReminderTime(null, query, nowMs)) {
@@ -780,7 +787,8 @@ fun ChatAssistantTab(
                                     PendingTodoInsertion(
                                         sessionId = sessionId,
                                         title = title,
-                                        dueAt = timeRes.epochMillis
+                                        dueAt = timeRes.epochMillis,
+                                        repeatRule = resolvedRepeat
                                     )
                                 )
                             }
@@ -1611,13 +1619,7 @@ fun ChatAssistantTab(
                                         onCheckedChange = { checked ->
                                             scope.launch {
                                                 withContext(Dispatchers.IO) {
-                                                    AppDatabaseHolder.db(appCtx).todoDao().setDone(todo.id, checked)
-                                                    if (checked) {
-                                                        ReminderScheduler.cancelTodo(appCtx, todo.id)
-                                                    } else if (todo.dueAt > System.currentTimeMillis()) {
-                                                        ReminderScheduler.scheduleTodo(appCtx, todo.id, todo.dueAt)
-                                                    }
-                                                    ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                                                    ReminderScheduler.completeTodoWithRecurrence(appCtx, todo, checked)
                                                 }
                                                 loadTodos()
                                             }
@@ -2762,7 +2764,10 @@ fun ChatAssistantTab(
                                                         TodoEntity(
                                                             title = pendingTodo.title,
                                                             dueAt = pendingTodo.dueAt,
-                                                            sourceSessionId = sid
+                                                            sourceSessionId = sid,
+                                                            priority = pendingTodo.priority,
+                                                            notes = pendingTodo.notes,
+                                                            repeatRule = pendingTodo.repeatRule
                                                         )
                                                     )
                                                     ReminderScheduler.scheduleTodo(appCtx, todoId, pendingTodo.dueAt)
@@ -2938,10 +2943,12 @@ fun ChatAssistantTab(
                                                     val db = AppDatabaseHolder.db(appCtx)
                                                     when (ext) {
                                                         is PendingExtendedAction.TodoDone -> {
-                                                            db.todoDao().setDone(ext.todo.id, true)
-                                                            ReminderScheduler.cancelTodo(appCtx, ext.todo.id)
-                                                            ReminderWidgetProvider.updateAllIfChanged(appCtx)
-                                                            "已完成待辦「${ext.todo.title}」。"
+                                                            val spawned = ReminderScheduler.completeTodoWithRecurrence(appCtx, ext.todo, true)
+                                                            if (spawned != null) {
+                                                                "已完成待辦「${ext.todo.title}」，並已自動排程下一次重複待辦。"
+                                                            } else {
+                                                                "已完成待辦「${ext.todo.title}」。"
+                                                            }
                                                         }
                                                         is PendingExtendedAction.TodoDelete -> {
                                                             db.todoDao().deleteById(ext.todo.id)
@@ -3442,7 +3449,7 @@ private suspend fun buildRagSystemPrompt(
         appendLine("- 新增規則：{\"action\":\"add_rule\",\"kind\":\"whitelist|tag\",\"ruleText\":\"規則描述\",\"tagName\":\"目標標籤(僅kind=tag)\"}")
         appendLine("- 建立標籤記憶規則（當使用者教 AI 把某 App／寄件者／關鍵字／語意類別如 otp、system、bill、marketing、delivery 歸類為特定標籤時使用；必須至少填一項條件）：{\"action\":\"tag_rule\",\"description\":\"規則簡述\",\"appLabel\":\"App名稱(可選)\",\"appPackage\":\"套件名(可選)\",\"senderPattern\":\"寄件者(可選)\",\"contentKeyword\":\"關鍵字(可選)\",\"contentRegex\":\"正則(可選)\",\"semanticCategory\":\"otp|system|bill|marketing|delivery(可選)\",\"tagName\":\"目標標籤\"}")
         appendLine("- 加入常用指令（當使用者說「加入常用指令：…」時使用）：{\"action\":\"quick_command_add\",\"label\":\"指令簡稱\",\"prompt\":\"實際送出或預填的提問內容\",\"mode\":\"direct|prefill(可選)\"}")
-        appendLine("- 新增待辦提醒（當使用者要求提醒、建立待辦或日程時使用；time 必須為 yyyy-MM-dd HH:mm 或 ISO-8601）：{\"action\":\"reminder_add\",\"title\":\"待辦內容\",\"time\":\"yyyy-MM-dd HH:mm\"}")
+        appendLine("- 新增待辦提醒（當使用者要求提醒、建立待辦或日程時使用；time 必須為 yyyy-MM-dd HH:mm 或 ISO-8601；priority 0=低/1=中/2=高，repeatRule 為 daily/weekly/空字串）：{\"action\":\"reminder_add\",\"title\":\"待辦內容\",\"time\":\"yyyy-MM-dd HH:mm\",\"priority\":1,\"repeatRule\":\"\",\"notes\":\"可選備註\"}")
         appendLine("- 切換開關（僅限可開關清單）：{\"action\":\"setting_toggle\",\"settingId\":\"<id>\",\"state\":\"on|off\"}")
         appendLine("- 模糊候選（3-5個）：{\"action\":\"setting_candidates\",\"candidates\":[\"id1\",\"id2\"]}")
         appendLine("- 調整數值（禁止純文字建議手動調整，必須輸出此動作；單次閱讀/載入訊息數→ai_chat_rag_limit、每日AI額度→ai_daily_limit、同key節流秒數→notif_throttle）：{\"action\":\"setting_adjust\",\"settingId\":\"<id>\",\"value\":350}")
@@ -3682,13 +3689,19 @@ private data class PendingQuickCommandAddition(
 
 private data class TodoProposal(
     val title: String,
-    val time: String?
+    val time: String?,
+    val priority: Int = TodoEntity.PRIORITY_MEDIUM,
+    val notes: String = "",
+    val repeatRule: String = TodoEntity.REPEAT_NONE
 )
 
 private data class PendingTodoInsertion(
     val sessionId: Long,
     val title: String,
-    val dueAt: Long
+    val dueAt: Long,
+    val priority: Int = TodoEntity.PRIORITY_MEDIUM,
+    val notes: String = "",
+    val repeatRule: String = TodoEntity.REPEAT_NONE
 )
 
 private sealed class NaturalTimeParseResult {
@@ -3957,10 +3970,23 @@ private fun parseSingleActionJson(
         "reminder_add" -> {
             val title = obj.get("title")?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
             val time = obj.get("time")?.takeIf { !it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() }
+            val rawPriority = obj.get("priority")?.takeIf { !it.isJsonNull }?.asString?.trim()?.lowercase().orEmpty()
+            val priority = when (rawPriority) {
+                "high", "高", "2" -> TodoEntity.PRIORITY_HIGH
+                "low", "低", "0" -> TodoEntity.PRIORITY_LOW
+                else -> TodoEntity.PRIORITY_MEDIUM
+            }
+            val rawRepeat = obj.get("repeatRule")?.takeIf { !it.isJsonNull }?.asString?.trim()?.lowercase().orEmpty()
+            val repeatRule = when {
+                rawRepeat == "daily" || rawRepeat == "每日" || rawRepeat == "每天" -> TodoEntity.REPEAT_DAILY
+                rawRepeat == "weekly" || rawRepeat == "每週" || rawRepeat == "每周" -> TodoEntity.REPEAT_WEEKLY
+                else -> TodoEntity.REPEAT_NONE
+            }
+            val notes = obj.get("notes")?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
             if (title.isBlank() && time == null) {
                 errorsOut.add("新增待辦提醒缺少待辦內容（title）與時間（time）。")
             } else {
-                reminderOut.add(TodoProposal(title = title, time = time))
+                reminderOut.add(TodoProposal(title = title, time = time, priority = priority, notes = notes, repeatRule = repeatRule))
             }
         }
         "whitelist" -> {
@@ -4215,10 +4241,18 @@ private fun isNaturalReminderIntent(query: String): Boolean {
         .any { q.contains(it) }
 }
 
-private fun isRecurringReminderExpression(text: String): Boolean {
+private fun detectRepeatRuleFromText(text: String): String {
     val lower = text.lowercase()
-    return listOf("每天", "每日", "每週", "每周", "每月", "每年", "每個星期", "每個禮拜", "every day", "every week")
-        .any { lower.contains(it) }
+    return when {
+        listOf("每天", "每日", "every day", "daily").any { lower.contains(it) } -> TodoEntity.REPEAT_DAILY
+        listOf("每週", "每周", "每個星期", "每個禮拜", "every week", "weekly").any { lower.contains(it) } -> TodoEntity.REPEAT_WEEKLY
+        else -> TodoEntity.REPEAT_NONE
+    }
+}
+
+private fun isUnsupportedRecurringExpression(text: String): Boolean {
+    val lower = text.lowercase()
+    return listOf("每月", "每年", "monthly", "yearly").any { lower.contains(it) }
 }
 
 private fun extractTodoTitleFromQuery(query: String): String {
