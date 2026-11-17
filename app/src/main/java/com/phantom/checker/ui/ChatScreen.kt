@@ -411,11 +411,31 @@ fun ChatAssistantTab(
                                     } else {
                                         emptyList()
                                     }
-                                    prefixCandidates.firstOrNull {
+                                    val prefixMatch = prefixCandidates.firstOrNull {
                                         it.sender.contains(prefix20, ignoreCase = true) ||
                                             it.content.contains(prefix20, ignoreCase = true) ||
                                             it.title.contains(prefix20, ignoreCase = true)
                                     } ?: prefixCandidates.firstOrNull()
+                                    if (prefixMatch != null) {
+                                        prefixMatch
+                                    } else {
+                                        val tokens = ref.split(Regex("[\\s:：,，、/|]+"))
+                                            .map { it.trim() }
+                                            .filter { it.length >= 2 }
+                                            .sortedByDescending { it.length }
+                                        var tokenHit: MessageEntity? = null
+                                        for (tok in tokens.take(3)) {
+                                            val tokCandidates = db.messageDao().search(tok)
+                                            if (tokCandidates.isNotEmpty()) {
+                                                tokenHit = tokCandidates.firstOrNull {
+                                                    it.sender.equals(tok, ignoreCase = true) ||
+                                                        it.sender.contains(tok, ignoreCase = true)
+                                                } ?: tokCandidates.firstOrNull()
+                                                break
+                                            }
+                                        }
+                                        tokenHit
+                                    }
                                 }
                             } else {
                                 null
