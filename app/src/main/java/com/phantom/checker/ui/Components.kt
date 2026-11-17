@@ -6,6 +6,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -14,30 +15,39 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -60,6 +70,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -1060,4 +1072,171 @@ fun WhitelistAddDialogFlow(
         )
     }
 }
+
+/**
+ * #180 統一頂部玻璃搜尋槓：圓角膠囊＋放大鏡＋小字＋頁面動作（觸控目標 ≥ 48dp）。
+ */
+@Composable
+fun PhantomSearchBarPill(
+    glassState: HazeState,
+    query: String,
+    placeholder: String = "搜尋",
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    trailingActions: (@Composable androidx.compose.foundation.layout.RowScope.() -> Unit)? = null
+) {
+    val shape = remember { RoundedCornerShape(24.dp) }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .phantomGlassSurface(glassState = glassState, cornerRadius = 24.dp)
+            .clip(shape)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "開啟搜尋：$placeholder" }
+            .padding(start = 14.dp, end = if (trailingActions != null) 4.dp else 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.Search,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp)
+        )
+        Text(
+            text = query.ifBlank { placeholder },
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (query.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        if (trailingActions != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                content = trailingActions
+            )
+        }
+    }
+}
+
+/**
+ * #180 統一全螢幕下拉搜尋覆蓋層：fade+slide、自動聚焦、IME inset、LazyColumn 效能、AI 語意搜尋入口、返回手勢關閉。
+ */
+@Composable
+fun PhantomFullScreenSearchOverlay(
+    visible: Boolean,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    placeholder: String = "搜尋訊息、寄件者或關鍵字…",
+    onAiSemanticSearch: (() -> Unit)? = null,
+    aiQuotaHint: String = "AI 語意搜尋（消耗 1 次額度）",
+    isAiSearching: Boolean = false,
+    filterRow: (@Composable () -> Unit)? = null,
+    resultsContent: androidx.compose.foundation.lazy.LazyListScope.() -> Unit
+) {
+    androidx.activity.compose.BackHandler(enabled = visible) {
+        onDismiss()
+    }
+    androidx.compose.animation.AnimatedVisibility(
+        visible = visible,
+        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { -it / 8 },
+        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { -it / 8 }
+    ) {
+        val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+        LaunchedEffect(visible) {
+            if (visible) {
+                kotlinx.coroutines.delay(60)
+                runCatching { focusRequester.requestFocus() }
+            }
+        }
+        Surface(
+            color = MaterialTheme.colorScheme.background.copy(alpha = 0.97f),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .imePadding()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "關閉搜尋"
+                        )
+                    }
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = onQueryChange,
+                        modifier = Modifier
+                            .weight(1f)
+                            .focusRequester(focusRequester),
+                        singleLine = true,
+                        shape = RoundedCornerShape(24.dp),
+                        placeholder = { Text(placeholder, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        leadingIcon = {
+                            Icon(Icons.Default.Search, contentDescription = null)
+                        },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { onQueryChange("") },
+                                    modifier = Modifier.size(48.dp)
+                                ) {
+                                    Icon(Icons.Default.Clear, contentDescription = "清除搜尋")
+                                }
+                            }
+                        }
+                    )
+                }
+                if (filterRow != null) {
+                    Spacer(Modifier.height(8.dp))
+                    filterRow()
+                }
+                if (onAiSemanticSearch != null && query.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = onAiSemanticSearch,
+                        enabled = !isAiSearching,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                    ) {
+                        if (isAiSearching) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text("AI 語意搜尋中…")
+                        } else {
+                            Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(aiQuotaHint)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                androidx.compose.foundation.lazy.LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(vertical = 6.dp),
+                    content = resultsContent
+                )
+            }
+        }
+    }
+}
+
 

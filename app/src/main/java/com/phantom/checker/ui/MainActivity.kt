@@ -1299,87 +1299,34 @@ private fun PhantomCheckApp(
                 enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
                 exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 2.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "幻訊 PhantomCheck",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = {
-                            showSearchBar = !showSearchBar
-                            if (!showSearchBar) {
-                                searchQuery = ""
-                                searchRiskFilter = SearchRiskFilter.ALL
-                            }
-                        }) {
-                            Icon(
-                                imageVector = if (showSearchBar) Icons.Default.Clear else Icons.Default.Search,
-                                contentDescription = "搜尋"
-                            )
-                        }
-                        IconButton(onClick = { refreshTrigger++ }) {
+                PhantomSearchBarPill(
+                    glassState = glassState,
+                    query = searchQuery,
+                    placeholder = "搜尋訊息、寄件人或關鍵字",
+                    onClick = { showSearchBar = true },
+                    trailingActions = {
+                        IconButton(
+                            onClick = { refreshTrigger++ },
+                            modifier = Modifier.size(48.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = "重新整理"
                             )
                         }
-                        IconButton(onClick = {
-                            ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
-                        }) {
+                        IconButton(
+                            onClick = {
+                                ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
+                            },
+                            modifier = Modifier.size(48.dp)
+                        ) {
                             Icon(
                                 imageVector = Icons.Default.Settings,
                                 contentDescription = "設定"
                             )
                         }
                     }
-                }
-            }
-
-            if (showSearchBar || searchQuery.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    placeholder = { Text("搜尋寄件人或訊息內容…") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = "搜尋"
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    imageVector = Icons.Default.Clear,
-                                    contentDescription = "清除搜尋"
-                                )
-                            }
-                        }
-                    }
                 )
-                Spacer(Modifier.height(6.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(SearchRiskFilter.entries, key = { it.name }) { filter ->
-                        FilterChip(
-                            selected = searchRiskFilter == filter,
-                            onClick = { searchRiskFilter = filter },
-                            label = { Text(filter.label) }
-                        )
-                    }
-                }
             }
 
             if (isLoading) {
@@ -1421,38 +1368,6 @@ private fun PhantomCheckApp(
                 }
             }
 
-            if (searchQuery.trim().isNotEmpty()) {
-                val displayResults = remember(searchResults, searchRiskFilter) {
-                    when (searchRiskFilter) {
-                        SearchRiskFilter.ALL -> searchResults
-                        SearchRiskFilter.SCAM -> searchResults.filter { it.riskLabel == "scam" }
-                        SearchRiskFilter.SUSPICIOUS -> searchResults.filter { it.riskLabel == "suspicious" }
-                        SearchRiskFilter.STARRED -> searchResults.filter { it.isStarred }
-                    }
-                }
-                SearchResultsSection(
-                    query = searchQuery.trim(),
-                    isLoading = isLoading,
-                    results = displayResults,
-                    activeFilterKeywords = activeFilterKeywords,
-                    messageTagsMap = messageTagsMap,
-                    glassState = glassState,
-                    isMultiSelectMode = isMultiSelectMode,
-                    selectedIds = selectedMessageIds,
-                    onToggleMultiSelect = {
-                        isMultiSelectMode = !isMultiSelectMode
-                        if (!isMultiSelectMode) selectedMessageIds = emptySet()
-                    },
-                    onToggleSelect = toggleSelection,
-                    onOpenDetail = { msg ->
-                        ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
-                    },
-                    onLongPressMessage = { msg ->
-                        haptic(HapticFeedbackType.LongPress)
-                        messageSheetTarget = msg
-                    }
-                )
-            } else {
                 when (selectedTab) {
                     MainTab.MESSAGES -> MessagesHomeTab(
                         todayCount = todayCount,
@@ -1592,8 +1507,88 @@ private fun PhantomCheckApp(
                 }
             }
         }
-        }
     }
+
+        val overlayResults = remember(searchResults, searchRiskFilter) {
+            when (searchRiskFilter) {
+                SearchRiskFilter.ALL -> searchResults
+                SearchRiskFilter.SCAM -> searchResults.filter { it.riskLabel == "scam" }
+                SearchRiskFilter.SUSPICIOUS -> searchResults.filter { it.riskLabel == "suspicious" }
+                SearchRiskFilter.STARRED -> searchResults.filter { it.isStarred }
+            }
+        }
+        PhantomFullScreenSearchOverlay(
+            visible = showSearchBar,
+            query = searchQuery,
+            onQueryChange = { searchQuery = it },
+            onDismiss = { showSearchBar = false },
+            placeholder = "搜尋寄件人、App 或訊息內容…",
+            onAiSemanticSearch = {
+                val q = searchQuery.trim()
+                showSearchBar = false
+                selectedTab = MainTab.ASSISTANT
+                if (q.isNotEmpty()) {
+                    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("ai_search_query", q))
+                    scope.launch {
+                        snackbarHostState.showSnackbar("已切換至 AI 助手並複製「$q」，可直接貼上進行語意搜尋（消耗 1 次額度）")
+                    }
+                }
+            },
+            aiQuotaHint = "AI 語意搜尋（跳轉 AI 助手，消耗 1 次額度）",
+            filterRow = {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(SearchRiskFilter.entries, key = { it.name }) { filter ->
+                        FilterChip(
+                            selected = searchRiskFilter == filter,
+                            onClick = { searchRiskFilter = filter },
+                            label = { Text(filter.label) }
+                        )
+                    }
+                }
+            },
+            resultsContent = {
+                if (searchQuery.trim().isEmpty()) {
+                    item(key = "search_hint") {
+                        Text(
+                            text = "輸入關鍵字即時搜尋訊息，或使用上方 AI 語意搜尋。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                } else if (overlayResults.isEmpty()) {
+                    item(key = "search_empty") {
+                        Text(
+                            text = if (isLoading) "搜尋中…" else "找不到符合「${searchQuery.trim()}」的訊息。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                } else {
+                    items(overlayResults, key = { it.id }) { msg ->
+                        MessageBubbleCard(
+                            message = msg,
+                            glassState = glassState,
+                            highlightQuery = searchQuery.trim(),
+                            matchedKeywords = activeFilterKeywords.filter { kw ->
+                                msg.content.contains(kw, ignoreCase = true) || msg.sender.contains(kw, ignoreCase = true)
+                            },
+                            tags = messageTagsMap[msg.id].orEmpty(),
+                            onClick = {
+                                showSearchBar = false
+                                ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
+                            },
+                            onLongClick = {
+                                haptic(HapticFeedbackType.LongPress)
+                                messageSheetTarget = msg
+                            }
+                        )
+                    }
+                }
+            }
+        )
 
         if (tabBarDisplayMode == TabBarDisplayMode.AUTO_HIDE && !tabBarVisible && !isMultiSelectMode) {
             Box(
@@ -2563,10 +2558,22 @@ private fun NotesTab(
         }
     }
 
+    var showNotesSearch by remember { mutableStateOf(false) }
+    var notesSearchQuery by remember { mutableStateOf("") }
+
+    Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        item(key = "notes_search_pill") {
+            PhantomSearchBarPill(
+                glassState = glassState,
+                query = notesSearchQuery,
+                placeholder = "搜尋待辦或備忘錄…",
+                onClick = { showNotesSearch = true }
+            )
+        }
         // 1. 待辦事項區（與 AI 助手、桌面小工具同步）
         item(key = "notes_todos_section") {
             val pendingCount = todos.count { !it.isDone }
@@ -2941,6 +2948,132 @@ private fun NotesTab(
                 }
             }
         }
+    }
+
+    val nq = notesSearchQuery.trim()
+    val matchedTodos = remember(todos, nq) {
+        if (nq.isEmpty()) emptyList()
+        else todos.filter {
+            it.title.contains(nq, ignoreCase = true) || it.notes.contains(nq, ignoreCase = true)
+        }
+    }
+    val matchedNotes = remember(notes, nq) {
+        if (nq.isEmpty()) emptyList()
+        else notes.filter {
+            it.title.contains(nq, ignoreCase = true) || it.content.contains(nq, ignoreCase = true)
+        }
+    }
+    PhantomFullScreenSearchOverlay(
+        visible = showNotesSearch,
+        query = notesSearchQuery,
+        onQueryChange = { notesSearchQuery = it },
+        onDismiss = { showNotesSearch = false },
+        placeholder = "搜尋待辦事項或備忘錄…",
+        resultsContent = {
+            if (nq.isEmpty()) {
+                item(key = "notes_search_hint") {
+                    Text(
+                        text = "輸入關鍵字即時搜尋待辦事項與備忘錄。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            } else if (matchedTodos.isEmpty() && matchedNotes.isEmpty()) {
+                item(key = "notes_search_empty") {
+                    Text(
+                        text = "找不到符合「$nq」的待辦或記事。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            } else {
+                if (matchedTodos.isNotEmpty()) {
+                    item(key = "notes_search_todos_hdr") {
+                        Text(
+                            text = "待辦事項（${matchedTodos.size}）",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    items(matchedTodos, key = { "todo_${it.id}" }) { todo ->
+                        PhantomGlassCard(
+                            glassState = glassState,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showNotesSearch = false
+                                    editingTodo = todo
+                                    showTodoEditor = true
+                                },
+                            cornerRadius = 14.dp,
+                            contentPadding = 12.dp
+                        ) {
+                            Text(
+                                text = todo.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                textDecoration = if (todo.isDone) TextDecoration.LineThrough else TextDecoration.None
+                            )
+                            Text(
+                                text = PhantomPrefs.formatMessageTime(appCtx, todo.dueAt, includeDate = true),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (todo.notes.isNotBlank()) {
+                                Text(
+                                    text = todo.notes,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+                if (matchedNotes.isNotEmpty()) {
+                    item(key = "notes_search_notes_hdr") {
+                        Text(
+                            text = "備忘錄（${matchedNotes.size}）",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    items(matchedNotes, key = { "note_${it.id}" }) { note ->
+                        PhantomGlassCard(
+                            glassState = glassState,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showNotesSearch = false
+                                    editingNote = note
+                                    showEditor = true
+                                },
+                            cornerRadius = 14.dp,
+                            contentPadding = 12.dp
+                        ) {
+                            if (note.title.isNotBlank()) {
+                                Text(
+                                    text = note.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Text(
+                                text = note.content,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    )
     }
 }
 
