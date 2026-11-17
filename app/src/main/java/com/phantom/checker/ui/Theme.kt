@@ -36,6 +36,9 @@ object ThemePreferences {
     private val _dynamicColor = mutableStateOf<Boolean?>(null)
     private val _fontScaleMode = mutableStateOf<FontScaleMode?>(null)
     private val _glassEffectEnabled = mutableStateOf<Boolean?>(null)
+    private val _backgroundVersion = mutableStateOf(0)
+    private val _backgroundScrimPercent = mutableStateOf<Int?>(null)
+    private val _glassStrengthPercent = mutableStateOf<Int?>(null)
 
     fun getThemeMode(context: Context): ThemeMode {
         val cached = _themeMode.value
@@ -91,6 +94,38 @@ object ThemePreferences {
     fun setGlassEffectEnabled(context: Context, enabled: Boolean) {
         PhantomPrefs.setGlassEffectEnabled(context, enabled)
         _glassEffectEnabled.value = enabled
+    }
+
+    fun getBackgroundVersion(): Int = _backgroundVersion.value
+
+    fun bumpBackgroundVersion() {
+        _backgroundVersion.value = _backgroundVersion.value + 1
+    }
+
+    fun getBackgroundScrimPercent(context: Context): Int {
+        val cached = _backgroundScrimPercent.value
+        if (cached != null) return cached
+        val loaded = PhantomPrefs.getBackgroundScrimPercent(context)
+        _backgroundScrimPercent.value = loaded
+        return loaded
+    }
+
+    fun setBackgroundScrimPercent(context: Context, percent: Int) {
+        PhantomPrefs.setBackgroundScrimPercent(context, percent)
+        _backgroundScrimPercent.value = PhantomPrefs.getBackgroundScrimPercent(context)
+    }
+
+    fun getGlassStrengthPercent(context: Context): Int {
+        val cached = _glassStrengthPercent.value
+        if (cached != null) return cached
+        val loaded = PhantomPrefs.getGlassStrengthPercent(context)
+        _glassStrengthPercent.value = loaded
+        return loaded
+    }
+
+    fun setGlassStrengthPercent(context: Context, percent: Int) {
+        PhantomPrefs.setGlassStrengthPercent(context, percent)
+        _glassStrengthPercent.value = PhantomPrefs.getGlassStrengthPercent(context)
     }
 }
 

@@ -764,10 +764,14 @@ fun ConversationScreen(
     ) { padding ->
         val glassState = remember { HazeState() }
 
+        PhantomBackgroundBox(
+            layer = com.phantom.checker.util.BackgroundLayer.CONVERSATION,
+            glassState = glassState,
+            modifier = Modifier.fillMaxSize()
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .phantomGlassSource(glassState)
                 .padding(padding)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
@@ -897,6 +901,7 @@ fun ConversationScreen(
                     }
                 }
             }
+        }
         }
     }
 }

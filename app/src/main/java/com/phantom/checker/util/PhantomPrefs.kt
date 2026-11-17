@@ -951,4 +951,28 @@ object PhantomPrefs {
         }
         return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(timestamp))
     }
+
+    fun hasBackgroundImage(ctx: Context, layer: BackgroundLayer): Boolean =
+        prefs(ctx).getBoolean("bg_enabled_${layer.name.lowercase()}", false)
+
+    fun setHasBackgroundImage(ctx: Context, layer: BackgroundLayer, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("bg_enabled_${layer.name.lowercase()}", enabled).apply()
+    }
+
+    /** 背景暗色遮罩強度（-1 = 預設：日間 35%、夜間 60%；0..100 = 自訂百分比） */
+    fun getBackgroundScrimPercent(ctx: Context): Int =
+        prefs(ctx).getInt("bg_scrim_percent", -1).let { if (it < 0) -1 else it.coerceIn(0, 100) }
+
+    fun setBackgroundScrimPercent(ctx: Context, percent: Int) {
+        val v = if (percent < 0) -1 else percent.coerceIn(0, 100)
+        prefs(ctx).edit().putInt("bg_scrim_percent", v).apply()
+    }
+
+    /** 玻璃卡片強度（0..100，預設 0 = 原版薄霧玻璃） */
+    fun getGlassStrengthPercent(ctx: Context): Int =
+        prefs(ctx).getInt("glass_strength_percent", 0).coerceIn(0, 100)
+
+    fun setGlassStrengthPercent(ctx: Context, percent: Int) {
+        prefs(ctx).edit().putInt("glass_strength_percent", percent.coerceIn(0, 100)).apply()
+    }
 }

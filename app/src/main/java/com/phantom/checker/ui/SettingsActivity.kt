@@ -14,9 +14,17 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.core.content.ContextCompat
 import com.phantom.checker.util.AppUpdateHelper
+import com.phantom.checker.util.BackgroundImageHelper
+import com.phantom.checker.util.BackgroundLayer
 import com.phantom.checker.util.UpdateCheckResult
 import java.io.File
 import androidx.compose.animation.AnimatedVisibility
@@ -1128,6 +1136,175 @@ fun FilterSettingsScreen(
                                 label = { Text("12 小時制（下午 02:30）") }
                             )
                         }
+
+                        HorizontalDivider(Modifier.padding(vertical = 12.dp))
+                        Text("背景圖片", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "未設定專屬背景時會自動沿用全域背景，選圖後將降採樣並儲存至本機私有空間。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+
+                        var pickingLayer by remember { mutableStateOf<BackgroundLayer?>(null) }
+                        var bgUiVersion by remember { mutableIntStateOf(ThemePreferences.getBackgroundVersion()) }
+                        var bgStatusMsg by remember { mutableStateOf<String?>(null) }
+                        val bgPickerLauncher = rememberLauncherForActivityResult(
+                            contract = ActivityResultContracts.PickVisualMedia()
+                        ) { uri ->
+                            val targetLayer = pickingLayer
+                            pickingLayer = null
+                            if (uri != null && targetLayer != null) {
+                                scope.launch {
+                                    val res = BackgroundImageHelper.saveBackgroundFromUri(appCtx, targetLayer, uri)
+                                    res.onSuccess {
+                                        ThemePreferences.bumpBackgroundVersion()
+                                        bgUiVersion = ThemePreferences.getBackgroundVersion()
+                                        bgStatusMsg = "已設定「${targetLayer.label}」"
+                                    }.onFailure { err ->
+                                        bgStatusMsg = err.message ?: "圖片處理失敗"
+                                    }
+                                }
+                            }
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            BackgroundLayer.entries.forEach { layer ->
+                                val hasBg = remember(bgUiVersion, layer) {
+                                    PhantomPrefs.hasBackgroundImage(appCtx, layer) &&
+                                        BackgroundImageHelper.backgroundFile(appCtx, layer).exists()
+                                }
+                                var thumb by remember(bgUiVersion, layer, hasBg) {
+                                    mutableStateOf<ImageBitmap?>(null)
+                                }
+                                LaunchedEffect(bgUiVersion, layer, hasBg) {
+                                    thumb = if (hasBg) {
+                                        BackgroundImageHelper.loadPreviewThumbnail(
+                                            BackgroundImageHelper.backgroundFile(appCtx, layer)
+                                        )
+                                    } else {
+                                        null
+                                    }
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    if (thumb != null) {
+                                        Image(
+                                            bitmap = thumb!!,
+                                            contentDescription = layer.label,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = layer.label,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = if (hasBg) "已自訂" else if (layer == BackgroundLayer.GLOBAL) "預設純色" else "沿用全域背景",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    OutlinedButton(
+                                        onClick = {
+                                            pickingLayer = layer
+                                            bgPickerLauncher.launch(
+                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                            )
+                                        }
+                                    ) {
+                                        Text("選擇圖片")
+                                    }
+                                    if (hasBg) {
+                                        TextButton(
+                                            onClick = {
+                                                BackgroundImageHelper.removeBackground(appCtx, layer)
+                                                ThemePreferences.bumpBackgroundVersion()
+                                                bgUiVersion = ThemePreferences.getBackgroundVersion()
+                                                bgStatusMsg = "已移除「${layer.label}」"
+                                            }
+                                        ) {
+                                            Text("移除")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        bgStatusMsg?.let { msg ->
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                text = msg,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        val anyBgSet = remember(bgUiVersion) {
+                            BackgroundImageHelper.hasAnyBackground(appCtx)
+                        }
+                        if (anyBgSet) {
+                            Spacer(Modifier.height(12.dp))
+                            var scrimPref by remember { mutableIntStateOf(ThemePreferences.getBackgroundScrimPercent(appCtx)) }
+                            val isDarkNow = MaterialTheme.colorScheme.background.luminance() < 0.5f
+                            val effectiveScrim = if (scrimPref < 0) (if (isDarkNow) 60 else 35) else scrimPref
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (scrimPref < 0) "背景暗色遮罩強度（預設 $effectiveScrim%）" else "背景暗色遮罩強度（$effectiveScrim%）",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                if (scrimPref >= 0) {
+                                    TextButton(
+                                        onClick = {
+                                            scrimPref = -1
+                                            ThemePreferences.setBackgroundScrimPercent(appCtx, -1)
+                                        }
+                                    ) {
+                                        Text("重設預設")
+                                    }
+                                }
+                            }
+                            Slider(
+                                value = effectiveScrim.toFloat(),
+                                onValueChange = { v ->
+                                    val pct = v.roundToInt().coerceIn(0, 100)
+                                    scrimPref = pct
+                                    ThemePreferences.setBackgroundScrimPercent(appCtx, pct)
+                                },
+                                valueRange = 0f..100f
+                            )
+                        }
+
+                        Spacer(Modifier.height(12.dp))
+                        var glassStrength by remember { mutableIntStateOf(ThemePreferences.getGlassStrengthPercent(appCtx)) }
+                        Text(
+                            text = if (glassStrength == 0) "玻璃卡片強度（預設）" else "玻璃卡片強度（+$glassStrength%）",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Slider(
+                            value = glassStrength.toFloat(),
+                            onValueChange = { v ->
+                                val pct = v.roundToInt().coerceIn(0, 100)
+                                glassStrength = pct
+                                ThemePreferences.setGlassStrengthPercent(appCtx, pct)
+                            },
+                            valueRange = 0f..100f
+                        )
                     }
                 }
             }

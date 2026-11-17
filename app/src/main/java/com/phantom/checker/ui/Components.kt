@@ -3,10 +3,13 @@ package com.phantom.checker.ui
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -39,10 +42,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import com.phantom.checker.util.BackgroundImageHelper
+import com.phantom.checker.util.BackgroundLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -108,13 +116,19 @@ fun Modifier.phantomGlassSurface(
             false
         }
     }
+    val glassStrength = ThemePreferences.getGlassStrengthPercent(ctx)
     return if (ThemePreferences.isGlassEffectEnabled(ctx) && !isPowerSave) {
-        this.glassSurface(
+        val base = this.glassSurface(
             state = state,
             fallbackColor = fallbackColor,
             outlineColor = outlineColor,
             cornerRadius = cornerRadius
         )
+        if (glassStrength > 0 && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            base.background(MaterialTheme.colorScheme.surface.copy(alpha = (glassStrength / 100f) * 0.45f))
+        } else {
+            base
+        }
     } else {
         val shape = RoundedCornerShape(cornerRadius)
         val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
@@ -147,10 +161,18 @@ fun PhantomGlassCard(
             false
         }
     }
+    val glassStrength = ThemePreferences.getGlassStrengthPercent(ctx)
     if (ThemePreferences.isGlassEffectEnabled(ctx) && !isPowerSave) {
+        val extraMod = if (glassStrength > 0 && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            modifier
+                .clip(RoundedCornerShape(cornerRadius))
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = (glassStrength / 100f) * 0.45f))
+        } else {
+            modifier
+        }
         GlassCard(
             glassState = glassState,
-            modifier = modifier,
+            modifier = extraMod,
             cornerRadius = cornerRadius,
             contentPadding = contentPadding,
             content = content
@@ -174,6 +196,61 @@ fun PhantomGlassCard(
                 content = content
             )
         }
+    }
+}
+
+/**
+ * 頁面層背景圖片包裝：未設定任何背景圖時直接渲染 content（與 v2.1.0 逐像素一致）。
+ * 已設定時於底層繪製降採樣裁切背景圖＋暗色可讀性遮罩（scrim），純裝飾、零觸控攔截。
+ */
+@Composable
+fun PhantomBackgroundBox(
+    layer: BackgroundLayer,
+    glassState: HazeState,
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit
+) {
+    val ctx = LocalContext.current
+    val bgVersion = ThemePreferences.getBackgroundVersion()
+    val bgFile = remember(ctx, layer, bgVersion) {
+        BackgroundImageHelper.resolveBackgroundFile(ctx, layer)
+    }
+    if (bgFile == null) {
+        Box(modifier = modifier.phantomGlassSource(glassState), content = content)
+        return
+    }
+
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val scrimPref = ThemePreferences.getBackgroundScrimPercent(ctx)
+    val scrimAlpha = if (scrimPref < 0) {
+        if (isDark) 0.60f else 0.35f
+    } else {
+        (scrimPref / 100f).coerceIn(0f, 1f)
+    }
+
+    BoxWithConstraints(modifier = modifier.phantomGlassSource(glassState)) {
+        val targetW = constraints.maxWidth
+        val targetH = constraints.maxHeight
+        var bitmap by remember(bgFile.absolutePath, bgFile.lastModified(), targetW, targetH, bgVersion) {
+            mutableStateOf<ImageBitmap?>(null)
+        }
+        LaunchedEffect(bgFile.absolutePath, bgFile.lastModified(), targetW, targetH, bgVersion) {
+            bitmap = BackgroundImageHelper.loadBackgroundBitmap(ctx, bgFile, targetW, targetH)
+        }
+        bitmap?.let { bmp ->
+            Image(
+                bitmap = bmp,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize()
+            )
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(Color.Black.copy(alpha = scrimAlpha))
+            )
+        }
+        content()
     }
 }
 

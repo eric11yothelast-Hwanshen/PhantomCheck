@@ -1293,10 +1293,18 @@ private fun PhantomCheckApp(
             },
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
+        PhantomBackgroundBox(
+            layer = if (selectedTab == MainTab.ASSISTANT) {
+                com.phantom.checker.util.BackgroundLayer.CHAT
+            } else {
+                com.phantom.checker.util.BackgroundLayer.GLOBAL
+            },
+            glassState = glassState,
+            modifier = Modifier.fillMaxSize()
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .phantomGlassSource(glassState)
                 .padding(padding)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
@@ -1599,6 +1607,7 @@ private fun PhantomCheckApp(
                     )
                 }
             }
+        }
         }
     }
 
