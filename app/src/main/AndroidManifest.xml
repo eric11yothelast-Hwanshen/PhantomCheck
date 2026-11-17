@@ -151,6 +151,8 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.phantom.checker.widget.ACTION_REMINDER_COMPLETE" />
+                <action android:name="com.phantom.checker.widget.ACTION_REMINDER_DELETE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

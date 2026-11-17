@@ -173,6 +173,7 @@ private const val MAX_BATCH_SELECT = 100
 
 class MainActivity : ComponentActivity() {
     private val requestedTabState = mutableStateOf<MainTab?>(null)
+    private val requestedEditTodoIdState = mutableStateOf<Long?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -187,7 +188,9 @@ class MainActivity : ComponentActivity() {
             PhantomCheckTheme {
                 PhantomCheckApp(
                     requestedTab = requestedTabState.value,
-                    onConsumedRequestedTab = { requestedTabState.value = null }
+                    onConsumedRequestedTab = { requestedTabState.value = null },
+                    requestedEditTodoId = requestedEditTodoIdState.value,
+                    onConsumedEditTodoId = { requestedEditTodoIdState.value = null }
                 )
             }
         }
@@ -202,6 +205,12 @@ class MainActivity : ComponentActivity() {
     private fun parseIntentTab(intent: Intent?) {
         when (intent?.getStringExtra(DailySummaryPolicy.EXTRA_OPEN_TAB)) {
             DailySummaryPolicy.TAB_STATS -> requestedTabState.value = MainTab.STATS
+            com.phantom.checker.widget.ReminderWidgetProvider.TAB_NOTES -> requestedTabState.value = MainTab.NOTES
+        }
+        val todoId = intent?.getLongExtra(com.phantom.checker.widget.ReminderWidgetProvider.EXTRA_EDIT_TODO_ID, -1L) ?: -1L
+        if (todoId > 0L) {
+            requestedTabState.value = MainTab.NOTES
+            requestedEditTodoIdState.value = todoId
         }
     }
 }
@@ -281,7 +290,9 @@ private data class StatsUiState(
 @Composable
 private fun PhantomCheckApp(
     requestedTab: MainTab? = null,
-    onConsumedRequestedTab: () -> Unit = {}
+    onConsumedRequestedTab: () -> Unit = {},
+    requestedEditTodoId: Long? = null,
+    onConsumedEditTodoId: () -> Unit = {}
 ) {
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
@@ -1561,6 +1572,8 @@ private fun PhantomCheckApp(
                     }
                     MainTab.NOTES -> NotesTab(
                         glassState = glassState,
+                        initialEditTodoId = requestedEditTodoId,
+                        onConsumedEditTodoId = onConsumedEditTodoId,
                         onOpenMessageDetail = { messageId ->
                             ctx.startActivity(MessageDetailActivity.createIntent(ctx, messageId))
                         },

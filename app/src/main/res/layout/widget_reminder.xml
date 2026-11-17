@@ -6,7 +6,7 @@
     android:background="@drawable/widget_stats_bg"
     android:orientation="vertical"
     android:paddingHorizontal="10dp"
-    android:paddingVertical="8dp">
+    android:paddingVertical="6dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -15,8 +15,8 @@
         android:orientation="horizontal">
 
         <ImageView
-            android:layout_width="14dp"
-            android:layout_height="14dp"
+            android:layout_width="13dp"
+            android:layout_height="13dp"
             android:layout_marginEnd="5dp"
             android:contentDescription="待辦提醒"
             android:src="@drawable/ic_stat_phantom"
@@ -35,7 +35,7 @@
     </LinearLayout>
 
     <TextView
-        android:id="@+id/widget_reminder_line1"
+        android:id="@+id/widget_reminder_empty"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
@@ -43,16 +43,121 @@
         android:maxLines="1"
         android:text="目前無待辦提醒"
         android:textColor="@color/widget_text_primary"
-        android:textSize="11sp" />
+        android:textSize="11sp"
+        android:visibility="gone" />
 
-    <TextView
-        android:id="@+id/widget_reminder_line2"
+    <LinearLayout
+        android:id="@+id/widget_reminder_row1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/widget_reminder_line1"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="目前無待辦提醒"
+            android:textColor="@color/widget_text_primary"
+            android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/widget_reminder_row1_done"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="完成待辦"
+            android:paddingHorizontal="5dp"
+            android:paddingVertical="2dp"
+            android:text="✓"
+            android:textColor="@color/widget_accent"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/widget_reminder_row1_edit"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="編輯待辦"
+            android:paddingHorizontal="5dp"
+            android:paddingVertical="2dp"
+            android:text="✎"
+            android:textColor="@color/widget_text_secondary"
+            android:textSize="11sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/widget_reminder_row1_delete"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="刪除提醒"
+            android:paddingHorizontal="5dp"
+            android:paddingVertical="2dp"
+            android:text="✕"
+            android:textColor="@color/widget_text_secondary"
+            android:textSize="11sp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/widget_reminder_row2"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="2dp"
-        android:ellipsize="end"
-        android:maxLines="1"
-        android:text=""
-        android:textColor="@color/widget_text_secondary"
-        android:textSize="10sp" />
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/widget_reminder_line2"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text=""
+            android:textColor="@color/widget_text_secondary"
+            android:textSize="10sp" />
+
+        <TextView
+            android:id="@+id/widget_reminder_row2_done"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="完成待辦"
+            android:paddingHorizontal="5dp"
+            android:paddingVertical="2dp"
+            android:text="✓"
+            android:textColor="@color/widget_accent"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/widget_reminder_row2_edit"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="編輯待辦"
+            android:paddingHorizontal="5dp"
+            android:paddingVertical="2dp"
+            android:text="✎"
+            android:textColor="@color/widget_text_secondary"
+            android:textSize="10sp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/widget_reminder_row2_delete"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:contentDescription="刪除提醒"
+            android:paddingHorizontal="5dp"
+            android:paddingVertical="2dp"
+            android:text="✕"
+            android:textColor="@color/widget_text_secondary"
+            android:textSize="10sp"
+            android:visibility="gone" />
+    </LinearLayout>
 </LinearLayout>
