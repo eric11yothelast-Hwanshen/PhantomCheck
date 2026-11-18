@@ -99,6 +99,7 @@ object PhantomPrefs {
     private const val KEY_PERSISTENT_STATS = "persistent_stats_notification"
     private const val KEY_FAVORITE_APPS = "favorite_apps"
     private const val KEY_MUTED_APPS = "muted_apps"
+    private const val KEY_WHITELIST_COLLAPSED_GROUPS = "whitelist_collapsed_groups"
     private const val KEY_MUTE_MODES = "muted_app_modes"
     private const val KEY_SCAM_ALERT_NOTIF = "scam_alert_notif_enabled"
     private const val KEY_AI_RISK_ENABLED = "ai_risk_enabled"
@@ -233,6 +234,15 @@ object PhantomPrefs {
         if (muted && mode != null) {
             setAppMuteMode(ctx, packageName, mode)
         }
+    }
+
+    /** 白名單管理分組收合狀態（已收合的 packageName 集合，空字串代表全域規則） */
+    fun getWhitelistCollapsedGroups(ctx: Context): MutableSet<String> =
+        prefs(ctx).getStringSet(KEY_WHITELIST_COLLAPSED_GROUPS, emptySet())?.toMutableSet()
+            ?: mutableSetOf()
+
+    fun setWhitelistCollapsedGroups(ctx: Context, groups: Set<String>) {
+        prefs(ctx).edit().putStringSet(KEY_WHITELIST_COLLAPSED_GROUPS, HashSet(groups)).apply()
     }
 
     private const val PREF_MAP_CACHE_TTL_MS = 30_000L

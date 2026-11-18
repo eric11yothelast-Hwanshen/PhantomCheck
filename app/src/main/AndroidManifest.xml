@@ -43,6 +43,7 @@
         <activity android:name=".ui.ConversationActivity" android:exported="false" />
         <activity android:name=".ui.MessageDetailActivity" android:exported="false" />
         <activity android:name=".ui.TagManagementActivity" android:exported="false" />
+        <activity android:name=".ui.WhitelistManagementActivity" android:exported="false" />
 
         <service
             android:name=".service.StatsForegroundService"
