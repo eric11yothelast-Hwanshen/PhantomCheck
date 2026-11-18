@@ -39,10 +39,17 @@ object ReminderScheduler {
 
     fun cancel(ctx: Context, messageId: Long) {
         val appCtx = ctx.applicationContext
-        val am = appCtx.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-        val pi = buildPendingIntent(appCtx, messageId)
-        am.cancel(pi)
-        pi.cancel()
+        val am = appCtx.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+        if (am != null) {
+            val pi = buildPendingIntent(appCtx, messageId)
+            am.cancel(pi)
+            pi.cancel()
+        }
+        try {
+            appCtx.getSystemService(NotificationManager::class.java)
+                ?.cancel(NotifIds.reminder(messageId))
+        } catch (_: Exception) {
+        }
     }
 
     fun scheduleTodo(ctx: Context, todoId: Long, triggerAtMillis: Long) {
@@ -58,10 +65,17 @@ object ReminderScheduler {
 
     fun cancelTodo(ctx: Context, todoId: Long) {
         val appCtx = ctx.applicationContext
-        val am = appCtx.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-        val pi = buildTodoPendingIntent(appCtx, todoId)
-        am.cancel(pi)
-        pi.cancel()
+        val am = appCtx.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+        if (am != null) {
+            val pi = buildTodoPendingIntent(appCtx, todoId)
+            am.cancel(pi)
+            pi.cancel()
+        }
+        try {
+            appCtx.getSystemService(NotificationManager::class.java)
+                ?.cancel(NotifIds.todoReminder(todoId))
+        } catch (_: Exception) {
+        }
     }
 
     /**

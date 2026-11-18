@@ -58,6 +58,7 @@ class ReminderWidgetProvider : AppWidgetProvider() {
                             if (msg != null) {
                                 db.messageDao().update(msg.copy(remindAt = null))
                             }
+                            ReminderScheduler.cancel(appCtx, itemId)
                         }
                     }
                 }
