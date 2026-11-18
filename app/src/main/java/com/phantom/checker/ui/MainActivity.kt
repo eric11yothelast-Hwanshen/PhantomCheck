@@ -2848,9 +2848,9 @@ private fun NotesTab(
                     glassState = glassState,
                     query = notesSearchQuery,
                     placeholder = "搜尋待辦或備忘錄…",
-                    onClick = { showNotesSearch = true },
-                    modifier = Modifier.weight(1f)
+                    onClick = { showNotesSearch = true }
                 )
+                Spacer(modifier = Modifier.weight(1f))
                 Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                     IconButton(
                         onClick = { showMemoRulesPanel = !showMemoRulesPanel },
