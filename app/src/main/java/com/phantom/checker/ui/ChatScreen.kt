@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Base64
 import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,12 +16,22 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.AnchoredDraggableState
+import androidx.compose.foundation.gestures.DraggableAnchors
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.anchoredDraggable
+import androidx.compose.foundation.gestures.animateTo
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.settle
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -31,12 +42,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -79,6 +92,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -94,11 +108,13 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -1322,112 +1338,6 @@ fun ChatAssistantTab(
         )
     }
 
-    if (showSessionDrawer) {
-        ModalBottomSheet(onDismissRequest = { showSessionDrawer = false }) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "歷史對話",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (sessions.isNotEmpty()) {
-                            TextButton(onClick = {
-                                if (isSending) {
-                                    onShowMessage("AI 正在回覆中，請稍候再清除對話")
-                                } else {
-                                    showClearAllSessionsConfirm = true
-                                }
-                            }) {
-                                Text("清除全部對話", color = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                        TextButton(onClick = {
-                            currentSessionId = null
-                            messages = emptyList()
-                            lastError = null
-                            showSessionDrawer = false
-                        }) {
-                            Text("+ 新對話")
-                        }
-                    }
-                }
-                if (sessions.isEmpty()) {
-                    Text(
-                        text = "尚無歷史對話紀錄",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 12.dp)
-                    )
-                } else {
-                    sessions.forEach { session ->
-                        val isSelected = session.id == currentSessionId
-                        val dateStr = remember(session.createdAt) {
-                            SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(session.createdAt))
-                        }
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isSelected) {
-                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    currentSessionId = session.id
-                                    lastError = null
-                                    showSessionDrawer = false
-                                    scope.launch { loadMessages(session.id) }
-                                }
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = session.title,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = dateStr,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                IconButton(onClick = { deleteSessionConfirm = session }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "刪除會話",
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-                Spacer(Modifier.height(16.dp))
-            }
-        }
-    }
-
     pendingRuleQueue.firstOrNull()?.let { pending ->
         val proposal = pending.proposal
         val remainingCount = pendingRuleQueue.size
@@ -1797,7 +1707,97 @@ fun ChatAssistantTab(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val density = LocalDensity.current
+        val drawerWidth = minOf(320.dp, maxWidth * 0.82f)
+        val drawerWidthPx = with(density) { drawerWidth.toPx() }
+        val openSwipeThresholdPx = with(density) { 24.dp.toPx() }
+        val decaySpec = rememberSplineBasedDecay<Float>()
+        val drawerState = remember {
+            AnchoredDraggableState(
+                initialValue = 0f,
+                positionalThreshold = { distance: Float -> distance * 0.5f },
+                velocityThreshold = { with(density) { 800.dp.toPx() } },
+                snapAnimationSpec = spring(stiffness = 380f, dampingRatio = 0.85f),
+                decayAnimationSpec = decaySpec
+            )
+        }
+
+        SideEffect {
+            if (drawerWidthPx > 0f) {
+                drawerState.updateAnchors(
+                    DraggableAnchors {
+                        0f at -drawerWidthPx
+                        1f at 0f
+                    }
+                )
+            }
+        }
+
+        LaunchedEffect(showSessionDrawer) {
+            val target = if (showSessionDrawer) 1f else 0f
+            if (drawerState.targetValue != target) {
+                drawerState.animateTo(target)
+            }
+        }
+
+        LaunchedEffect(drawerState.currentValue, drawerState.isAnimationRunning) {
+            if (!drawerState.isAnimationRunning) {
+                if (drawerState.currentValue == 0f && showSessionDrawer) {
+                    showSessionDrawer = false
+                } else if (drawerState.currentValue == 1f && !showSessionDrawer) {
+                    showSessionDrawer = true
+                }
+            }
+        }
+
+        BackHandler(enabled = showSessionDrawer) {
+            showSessionDrawer = false
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(drawerWidthPx, showSessionDrawer) {
+                    if (!showSessionDrawer && drawerWidthPx > 0f) {
+                        var dragAccum = 0f
+                        var triggered = false
+                        detectHorizontalDragGestures(
+                            onDragStart = {
+                                dragAccum = 0f
+                                triggered = false
+                            },
+                            onHorizontalDrag = { _, dragAmount ->
+                                if (dragAmount > 0f || triggered) {
+                                    dragAccum += dragAmount
+                                    if (!triggered && dragAccum > openSwipeThresholdPx) {
+                                        triggered = true
+                                    }
+                                    if (triggered) {
+                                        drawerState.dispatchRawDelta(dragAmount)
+                                    }
+                                } else {
+                                    dragAccum = 0f
+                                }
+                            },
+                            onDragEnd = {
+                                if (triggered) {
+                                    scope.launch { drawerState.settle(0f) }
+                                }
+                                dragAccum = 0f
+                                triggered = false
+                            },
+                            onDragCancel = {
+                                if (triggered) {
+                                    scope.launch { drawerState.settle(0f) }
+                                }
+                                dragAccum = 0f
+                                triggered = false
+                            }
+                        )
+                    }
+                }
+        ) {
         // 頂部操作列
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -3416,6 +3416,147 @@ fun ChatAssistantTab(
                 modifier = Modifier.size(44.dp)
             ) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "送出", modifier = Modifier.size(20.dp))
+            }
+        }
+        }
+
+        val offsetX = if (drawerState.offset.isNaN()) -drawerWidthPx else drawerState.offset
+        val drawerProgress = if (drawerWidthPx > 0f) {
+            ((offsetX + drawerWidthPx) / drawerWidthPx).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+        if (showSessionDrawer || drawerProgress > 0.005f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.4f * drawerProgress))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { showSessionDrawer = false }
+                    )
+            )
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .width(drawerWidth)
+                    .fillMaxHeight()
+                    .offset { IntOffset(offsetX.roundToInt(), 0) }
+                    .anchoredDraggable(drawerState, Orientation.Horizontal)
+            ) {
+                PhantomGlassCard(
+                    glassState = glassState,
+                    modifier = Modifier.fillMaxSize(),
+                    cornerRadius = 20.dp,
+                    contentPadding = 14.dp
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "歷史對話",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (sessions.isNotEmpty()) {
+                                    TextButton(onClick = {
+                                        if (isSending) {
+                                            onShowMessage("AI 正在回覆中，請稍候再清除對話")
+                                        } else {
+                                            showClearAllSessionsConfirm = true
+                                        }
+                                    }) {
+                                        Text("清除全部對話", color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                                TextButton(onClick = {
+                                    currentSessionId = null
+                                    messages = emptyList()
+                                    lastError = null
+                                    showSessionDrawer = false
+                                }) {
+                                    Text("+ 新對話")
+                                }
+                            }
+                        }
+                        if (sessions.isEmpty()) {
+                            Text(
+                                text = "尚無歷史對話紀錄",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 12.dp)
+                            )
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(sessions, key = { it.id }) { session ->
+                                    val isSelected = session.id == currentSessionId
+                                    val dateStr = remember(session.createdAt) {
+                                        SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(session.createdAt))
+                                    }
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (isSelected) {
+                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                currentSessionId = session.id
+                                                lastError = null
+                                                showSessionDrawer = false
+                                                scope.launch { loadMessages(session.id) }
+                                            }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = session.title,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = dateStr,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                            IconButton(onClick = { deleteSessionConfirm = session }) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Delete,
+                                                    contentDescription = "刪除會話",
+                                                    tint = MaterialTheme.colorScheme.error
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
