@@ -616,6 +616,7 @@ object AiClient {
             val activeMemoRules = memoRules.filter { it.isEnabled && MemoRuleEngine.isValid(it) }.sortedBy { it.id }.take(10)
             if (activeMemoRules.isNotEmpty()) {
                 base.appendLine("【記事/待辦規則】")
+                base.appendLine("含「關鍵字」的定義＝語意上屬於同類訊息即視為命中（同寄件者場景、同類內容如驗證碼／OTP／帳單通知、同主題的相似說法），無須字面完全包含；命中「永不記事」規則時 memo 必須留空字串 \"\"；「一律記事」或「一律待辦」規則亦同理以語意命中。")
                 activeMemoRules.forEach { r ->
                     val cond = MemoRuleEngine.formatConditionSummary(r)
                     val act = when (r.action) {
@@ -705,7 +706,7 @@ object AiClient {
         } else {
             ""
         }
-        val cacheKey = sha256("$content|autoTag=$enableAutoTag|autoMemo=$autoMemo|memoV2=${if (autoMemo) 1 else 0}|$tagSig|$ruleSig|$memoRuleSig")
+        val cacheKey = sha256("$content|autoTag=$enableAutoTag|autoMemo=$autoMemo|memoV3=${if (autoMemo) 1 else 0}|$tagSig|$ruleSig|$memoRuleSig")
         val now = System.currentTimeMillis()
         if (!bypassCache) {
             synchronized(riskCache) {

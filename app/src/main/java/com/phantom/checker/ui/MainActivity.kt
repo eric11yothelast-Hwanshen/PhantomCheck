@@ -10,13 +10,18 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -26,8 +31,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -37,6 +44,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -116,8 +124,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -2533,7 +2544,68 @@ private enum class TodoFilterMode(val label: String) {
     OVERDUE("逾期")
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+private val TuneIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "Tune",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(3f, 17f)
+            verticalLineToRelative(2f)
+            horizontalLineToRelative(6f)
+            verticalLineToRelative(-2f)
+            horizontalLineTo(3f)
+            close()
+            moveTo(3f, 5f)
+            verticalLineToRelative(2f)
+            horizontalLineToRelative(10f)
+            verticalLineTo(5f)
+            horizontalLineTo(3f)
+            close()
+            moveTo(13f, 21f)
+            verticalLineToRelative(-2f)
+            horizontalLineToRelative(8f)
+            verticalLineToRelative(-2f)
+            horizontalLineToRelative(-8f)
+            verticalLineToRelative(-2f)
+            horizontalLineToRelative(-2f)
+            verticalLineToRelative(6f)
+            horizontalLineToRelative(2f)
+            close()
+            moveTo(7f, 9f)
+            verticalLineToRelative(2f)
+            horizontalLineTo(3f)
+            verticalLineToRelative(2f)
+            horizontalLineToRelative(4f)
+            verticalLineToRelative(2f)
+            horizontalLineToRelative(2f)
+            verticalLineTo(9f)
+            horizontalLineTo(7f)
+            close()
+            moveTo(21f, 13f)
+            verticalLineToRelative(-2f)
+            horizontalLineTo(11f)
+            verticalLineToRelative(2f)
+            horizontalLineToRelative(10f)
+            close()
+            moveTo(15f, 9f)
+            horizontalLineToRelative(2f)
+            verticalLineTo(7f)
+            horizontalLineToRelative(4f)
+            verticalLineTo(5f)
+            horizontalLineToRelative(-4f)
+            verticalLineTo(3f)
+            horizontalLineToRelative(-2f)
+            verticalLineToRelative(6f)
+            close()
+        }
+    }.build()
+}
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun NotesTab(
     glassState: HazeState,
@@ -2556,6 +2628,7 @@ private fun NotesTab(
     var editingNote by remember { mutableStateOf<NoteEntity?>(null) }
     var showTodoEditor by remember { mutableStateOf(false) }
     var editingTodo by remember { mutableStateOf<TodoEntity?>(null) }
+    var showMemoRulesPanel by remember { mutableStateOf(false) }
     var showManualMemoRuleDialog by remember { mutableStateOf(false) }
     var nlMemoRuleInput by remember { mutableStateOf("") }
     var isParsingMemoRule by remember { mutableStateOf(false) }
@@ -2683,18 +2756,53 @@ private fun NotesTab(
     var showNotesSearch by remember { mutableStateOf(false) }
     var notesSearchQuery by remember { mutableStateOf("") }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item(key = "notes_search_pill") {
-            PhantomSearchBarPill(
-                glassState = glassState,
-                query = notesSearchQuery,
-                placeholder = "搜尋待辦或備忘錄…",
-                onClick = { showNotesSearch = true }
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                PhantomSearchBarPill(
+                    glassState = glassState,
+                    query = notesSearchQuery,
+                    placeholder = "搜尋待辦或備忘錄…",
+                    onClick = { showNotesSearch = true },
+                    modifier = Modifier.weight(1f)
+                )
+                Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                    IconButton(
+                        onClick = { showMemoRulesPanel = !showMemoRulesPanel },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = TuneIcon,
+                            contentDescription = "自動記事規則",
+                            tint = if (showMemoRulesPanel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (memoRules.isNotEmpty()) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(top = 4.dp, end = 4.dp)
+                        ) {
+                            Text(
+                                text = if (memoRules.size > 99) "99+" else "${memoRules.size}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
         // 1. 待辦事項區（與 AI 助手、桌面小工具同步）
         item(key = "notes_todos_section") {
@@ -3105,36 +3213,82 @@ private fun NotesTab(
             }
         }
 
-        // ===== 自動記事規則區（#203） =====
-        item(key = "memo_rules_header") {
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "自動記事規則 (${memoRules.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                OutlinedButton(
-                    onClick = { showManualMemoRuleDialog = true },
-                    modifier = Modifier.pressableScale()
-                ) {
-                    Text("手動新增")
-                }
-            }
-        }
+    }
 
-        item(key = "memo_rules_nl_input") {
-            PhantomGlassCard(
-                glassState = glassState,
+    BackHandler(enabled = showMemoRulesPanel) {
+        showMemoRulesPanel = false
+    }
+
+    if (showMemoRulesPanel) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.25f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { showMemoRulesPanel = false }
+                )
+        )
+    }
+
+    val panelWidth = minOf(340.dp, maxWidth * 0.9f)
+    val panelMaxHeight = maxHeight * 0.6f
+    AnimatedVisibility(
+        visible = showMemoRulesPanel,
+        enter = expandHorizontally(
+            expandFrom = Alignment.End,
+            animationSpec = spring(stiffness = 380f, dampingRatio = 0.85f)
+        ) + expandVertically(
+            expandFrom = Alignment.Top,
+            animationSpec = spring(stiffness = 380f, dampingRatio = 0.85f)
+        ) + fadeIn(animationSpec = tween(250)),
+        exit = shrinkHorizontally(
+            shrinkTowards = Alignment.End,
+            animationSpec = tween(200)
+        ) + shrinkVertically(
+            shrinkTowards = Alignment.Top,
+            animationSpec = tween(200)
+        ) + fadeOut(animationSpec = tween(200)),
+        modifier = Modifier
+            .align(Alignment.TopEnd)
+            .padding(top = 52.dp)
+    ) {
+        PhantomGlassCard(
+            glassState = glassState,
+            modifier = Modifier
+                .width(panelWidth)
+                .heightIn(max = panelMaxHeight),
+            cornerRadius = 20.dp,
+            contentPadding = 14.dp
+        ) {
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                cornerRadius = 18.dp,
-                contentPadding = 12.dp
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "自動記事規則 (${memoRules.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedButton(
+                        onClick = { showManualMemoRuleDialog = true },
+                        modifier = Modifier.pressableScale()
+                    ) {
+                        Text("手動新增")
+                    }
+                }
+                Text(
+                    text = "AI 啟用時以語意判斷相似訊息，未啟用時僅字面匹配",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         text = "自然語言新增規則",
                         style = MaterialTheme.typography.labelLarge,
@@ -3184,103 +3338,104 @@ private fun NotesTab(
                         }
                     }
                 }
-            }
-        }
-
-        if (memoRules.isEmpty()) {
-            item(key = "memo_rules_empty") {
-                PhantomGlassCard(
-                    glassState = glassState,
-                    modifier = Modifier.fillMaxWidth(),
-                    cornerRadius = 18.dp,
-                    contentPadding = 14.dp
-                ) {
+                if (memoRules.isEmpty()) {
                     Text(
                         text = "尚無自動記事規則。可於上方用自然語言或「手動新增」設定哪些 App、寄件者或關鍵字要一律記事、一律待辦或永不加入。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                }
-            }
-        } else {
-            items(memoRules, key = { "memo_rule_${it.id}" }) { rule ->
-                val (badgeContainer, badgeContent, badgeText) = when (rule.action) {
-                    com.phantom.checker.data.MemoRuleEntity.ACTION_NOTE -> Triple(
-                        MaterialTheme.colorScheme.tertiaryContainer,
-                        MaterialTheme.colorScheme.onTertiaryContainer,
-                        "一律記事"
-                    )
-                    com.phantom.checker.data.MemoRuleEntity.ACTION_TODO -> Triple(
-                        MaterialTheme.colorScheme.primaryContainer,
-                        MaterialTheme.colorScheme.onPrimaryContainer,
-                        "一律待辦"
-                    )
-                    else -> Triple(
-                        MaterialTheme.colorScheme.errorContainer,
-                        MaterialTheme.colorScheme.onErrorContainer,
-                        "永不加入"
-                    )
-                }
-                PhantomGlassCard(
-                    glassState = glassState,
-                    modifier = Modifier.fillMaxWidth(),
-                    cornerRadius = 16.dp,
-                    contentPadding = 12.dp
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Surface(color = badgeContainer, shape = RoundedCornerShape(6.dp)) {
-                                    Text(
-                                        text = badgeText,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = badgeContent,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                                Text(
-                                    text = com.phantom.checker.util.MemoRuleEngine.formatConditionSummary(rule),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
+                        items(memoRules, key = { "memo_rule_${it.id}" }) { rule ->
+                            val (badgeContainer, badgeContent, badgeText) = when (rule.action) {
+                                com.phantom.checker.data.MemoRuleEntity.ACTION_NOTE -> Triple(
+                                    MaterialTheme.colorScheme.tertiaryContainer,
+                                    MaterialTheme.colorScheme.onTertiaryContainer,
+                                    "一律記事"
+                                )
+                                com.phantom.checker.data.MemoRuleEntity.ACTION_TODO -> Triple(
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                    MaterialTheme.colorScheme.onPrimaryContainer,
+                                    "一律待辦"
+                                )
+                                else -> Triple(
+                                    MaterialTheme.colorScheme.errorContainer,
+                                    MaterialTheme.colorScheme.onErrorContainer,
+                                    "永不加入"
                                 )
                             }
-                        }
-                        Switch(
-                            checked = rule.isEnabled,
-                            onCheckedChange = { enabled ->
-                                scope.launch {
-                                    withContext(Dispatchers.IO) {
-                                        db.memoRuleDao().update(rule.copy(isEnabled = enabled))
-                                        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Surface(color = badgeContainer, shape = RoundedCornerShape(6.dp)) {
+                                                Text(
+                                                    text = badgeText,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = badgeContent,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                            Text(
+                                                text = com.phantom.checker.util.MemoRuleEngine.formatConditionSummary(rule),
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
+                                    Switch(
+                                        checked = rule.isEnabled,
+                                        onCheckedChange = { enabled ->
+                                            scope.launch {
+                                                withContext(Dispatchers.IO) {
+                                                    db.memoRuleDao().update(rule.copy(isEnabled = enabled))
+                                                    com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                                }
+                                            }
+                                        }
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            scope.launch {
+                                                withContext(Dispatchers.IO) {
+                                                    db.memoRuleDao().deleteById(rule.id)
+                                                    com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                                }
+                                                onShowMessage("已刪除自動記事規則")
+                                            }
+                                        },
+                                        modifier = Modifier.size(40.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "刪除規則",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
                                     }
                                 }
                             }
-                        )
-                        IconButton(
-                            onClick = {
-                                scope.launch {
-                                    withContext(Dispatchers.IO) {
-                                        db.memoRuleDao().deleteById(rule.id)
-                                        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
-                                    }
-                                    onShowMessage("已刪除自動記事規則")
-                                }
-                            },
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "刪除規則",
-                                tint = MaterialTheme.colorScheme.error
-                            )
                         }
                     }
                 }

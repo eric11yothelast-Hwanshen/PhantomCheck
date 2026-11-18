@@ -1464,7 +1464,7 @@ fun NeverAutoMemoConfirmDialog(
                         onClick = { selectedScope = 2 }
                     )
                     Text(
-                        text = "含此關鍵字",
+                        text = "含此關鍵字（AI 語意比對相似訊息）",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
