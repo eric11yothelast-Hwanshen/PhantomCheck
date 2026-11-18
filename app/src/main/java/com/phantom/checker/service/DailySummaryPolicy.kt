@@ -2,8 +2,8 @@ package com.phantom.checker.service
 
 import android.content.Context
 import androidx.work.CoroutineWorker
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.phantom.checker.data.AiSummaryEntity
@@ -25,8 +25,13 @@ class DailySummaryWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
-        if (PhantomPrefs.isEffectiveDailySummaryEnabled(applicationContext)) {
-            DailySummaryPolicy.generateTodaySummary(applicationContext)
+        try {
+            if (PhantomPrefs.isEffectiveDailySummaryEnabled(applicationContext)) {
+                DailySummaryPolicy.generateTodaySummary(applicationContext)
+            }
+        } finally {
+            // #246 OneTimeWork 自我重新排程：無論成敗都錨定下一次精確時刻，避免排程漂移
+            DailySummaryPolicy.schedule(applicationContext)
         }
         return Result.success()
     }
@@ -43,9 +48,25 @@ object DailySummaryPolicy {
             return
         }
 
+        val initialDelayMs = delayMillisUntilNext(appCtx)
+
+        // #242 PeriodicWorkRequest 會因冤置時間累積漂移且 UPDATE 不會重新錨定，
+        // 改用 OneTimeWorkRequest 指向下一個精確 HH:mm，執行後由 Worker 自行排下一次
+        val request = OneTimeWorkRequestBuilder<DailySummaryWorker>()
+            .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
+            .build()
+
+        workManager.enqueueUniqueWork(
+            UNIQUE_WORK_NAME,
+            ExistingWorkPolicy.REPLACE,
+            request
+        )
+    }
+
+    /** 計算距離下一個排程時刻（今日 HH:mm，已過則明日同時刻）的毫秒數 */
+    fun delayMillisUntilNext(appCtx: Context): Long {
         val hour = PhantomPrefs.getDailySummaryHour(appCtx)
         val minute = PhantomPrefs.getDailySummaryMinute(appCtx)
-
         val now = Calendar.getInstance()
         val target = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, hour)
@@ -56,17 +77,7 @@ object DailySummaryPolicy {
                 add(Calendar.DAY_OF_YEAR, 1)
             }
         }
-        val initialDelayMs = (target.timeInMillis - now.timeInMillis).coerceAtLeast(0L)
-
-        val request = PeriodicWorkRequestBuilder<DailySummaryWorker>(1, TimeUnit.DAYS)
-            .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
-            .build()
-
-        workManager.enqueueUniquePeriodicWork(
-            UNIQUE_WORK_NAME,
-            ExistingPeriodicWorkPolicy.UPDATE,
-            request
-        )
+        return (target.timeInMillis - now.timeInMillis).coerceAtLeast(60_000L)
     }
 
     fun todayDateKey(): Long {

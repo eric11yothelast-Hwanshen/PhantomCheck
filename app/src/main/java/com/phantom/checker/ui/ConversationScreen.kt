@@ -458,7 +458,15 @@ fun ConversationScreen(
 
     sheetMessage?.let { msg ->
         val currentTags = msgTagIdsMap[msg.id] ?: emptySet()
-        ModalBottomSheet(onDismissRequest = { sheetMessage = null }) {
+        ModalBottomSheet(
+            onDismissRequest = { sheetMessage = null },
+            containerColor = Color.Transparent
+        ) {
+            PhantomFloatingSurface(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp,
+                contentPadding = 0.dp
+            ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -594,6 +602,7 @@ fun ConversationScreen(
                     }
                 }
                 Spacer(Modifier.height(12.dp))
+            }
             }
         }
     }

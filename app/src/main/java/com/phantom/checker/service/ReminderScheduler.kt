@@ -128,15 +128,19 @@ object ReminderScheduler {
         return spawned
     }
 
-    /** 智慧排序：未完成優先（逾期 > 到期日早→晚 > 優先級高→低），已完成依完成時間新→舊 */
+    /**
+     * 智慧排序（#241）：
+     * 第一順位：未完成且未逾期，依到期時間由近到遠（最快到期的最上面）；
+     * 第二順位：已逾期但未完成，往下移至所有尚未逾期之後，依到期時間升冪（最早逾期的最前）；
+     * 第三順位：已完成，最後面（依完成時間新→舊）。
+     */
     fun sortTodosSmart(
         list: List<com.phantom.checker.data.TodoEntity>,
         now: Long = System.currentTimeMillis()
     ): List<com.phantom.checker.data.TodoEntity> = list.sortedWith(
         compareBy<com.phantom.checker.data.TodoEntity> { it.isDone }
-            .thenByDescending { !it.isDone && it.dueAt < now }
+            .thenBy { if (!it.isDone && it.dueAt < now) 1 else 0 }
             .thenBy { if (!it.isDone) it.dueAt else Long.MAX_VALUE }
-            .thenByDescending { if (!it.isDone) it.priority else 0 }
             .thenByDescending { it.completedAt ?: 0L }
             .thenByDescending { it.id }
     )

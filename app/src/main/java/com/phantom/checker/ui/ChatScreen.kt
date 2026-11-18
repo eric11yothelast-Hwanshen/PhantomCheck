@@ -1615,7 +1615,15 @@ fun ChatAssistantTab(
     }
 
     if (showTodoListSheet) {
-        ModalBottomSheet(onDismissRequest = { showTodoListSheet = false }) {
+        ModalBottomSheet(
+            onDismissRequest = { showTodoListSheet = false },
+            containerColor = Color.Transparent
+        ) {
+            PhantomFloatingSurface(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp,
+                contentPadding = 0.dp
+            ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1721,6 +1729,7 @@ fun ChatAssistantTab(
                     }
                 }
                 Spacer(Modifier.height(12.dp))
+            }
             }
         }
     }

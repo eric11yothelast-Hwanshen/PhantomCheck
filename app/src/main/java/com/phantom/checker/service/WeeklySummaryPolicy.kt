@@ -7,8 +7,8 @@ import android.content.Context
 import android.content.Intent
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.phantom.checker.R
@@ -33,8 +33,13 @@ class WeeklySummaryWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
-        if (AiClient.getActiveProfile(applicationContext) != null) {
-            WeeklySummaryPolicy.generateWeeklySummary(applicationContext, fromSchedule = true)
+        try {
+            if (AiClient.getActiveProfile(applicationContext) != null) {
+                WeeklySummaryPolicy.generateWeeklySummary(applicationContext, fromSchedule = true)
+            }
+        } finally {
+            // #246 OneTimeWork 自我重新排程：錨定下一個週日 22:00，避免排程漂移
+            WeeklySummaryPolicy.schedule(applicationContext)
         }
         return Result.success()
     }
@@ -61,20 +66,21 @@ object WeeklySummaryPolicy {
                 add(Calendar.WEEK_OF_YEAR, 1)
             }
         }
-        val initialDelayMs = (target.timeInMillis - now.timeInMillis).coerceAtLeast(0L)
+        val initialDelayMs = (target.timeInMillis - now.timeInMillis).coerceAtLeast(60_000L)
 
         val constraints = Constraints.Builder()
             .setRequiresBatteryNotLow(true)
             .build()
 
-        val request = PeriodicWorkRequestBuilder<WeeklySummaryWorker>(7, TimeUnit.DAYS)
+        // OneTimeWorkRequest 指向下一個週日 22:00，執行後由 Worker 自行排下一次
+        val request = OneTimeWorkRequestBuilder<WeeklySummaryWorker>()
             .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
             .setConstraints(constraints)
             .build()
 
-        workManager.enqueueUniquePeriodicWork(
+        workManager.enqueueUniqueWork(
             UNIQUE_WORK_NAME,
-            ExistingPeriodicWorkPolicy.UPDATE,
+            ExistingWorkPolicy.REPLACE,
             request
         )
     }
