@@ -1218,4 +1218,12 @@ object PhantomPrefs {
 
     fun isAiChatTabContinue(ctx: Context): Boolean =
         getAiChatTabBehavior(ctx) == AI_CHAT_TAB_CONTINUE
+
+    /** 訊息分頁 App 卡片堆疊效果開關（預設開） */
+    fun isCardStackEffectEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("card_stack_effect_enabled", true)
+
+    fun setCardStackEffectEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("card_stack_effect_enabled", enabled).apply()
+    }
 }

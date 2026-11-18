@@ -2,7 +2,9 @@ package com.phantom.checker.ui
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -37,6 +39,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -1500,6 +1503,91 @@ fun NeverAutoMemoConfirmDialog(
         }
     )
 }
+
+/**
+ * #212 訊息分頁 App 卡片堆疊包裝層：在主卡後方依訊息總數繪製 0~2 層裝飾卡片，
+ * 支援滑動視差（讀 listState 於 graphicsLayer lambda 內，不引起重組）與點擊收合動畫。
+ */
+@Composable
+fun StackedAppCard(
+    totalCount: Int,
+    enabled: Boolean,
+    isCompact: Boolean,
+    isMuted: Boolean = false,
+    listState: LazyListState? = null,
+    isCollapsed: Boolean = false,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val layerCount = when {
+        !enabled || totalCount <= 1 -> 0
+        totalCount <= 10 -> 1
+        else -> 2
+    }
+    if (layerCount == 0) {
+        Box(modifier = modifier) {
+            content()
+        }
+        return
+    }
+    val collapseFactor by animateFloatAsState(
+        targetValue = if (isCollapsed) 0f else 1f,
+        animationSpec = tween(durationMillis = 140),
+        label = "stack_collapse"
+    )
+    val baseAlphaScale = if (isMuted) 0.5f else 1f
+    val stepY = if (isCompact) 3.dp else 6.dp
+    val bottomSpace = stepY * layerCount
+    val layerColor = MaterialTheme.colorScheme.surfaceVariant
+    val layerShape = RoundedCornerShape(20.dp)
+
+    Box(modifier = modifier.padding(bottom = bottomSpace)) {
+        if (layerCount >= 2) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        val parallaxPx = if (listState != null) {
+                            val raw = ((listState.firstVisibleItemIndex * 2f) +
+                                (listState.firstVisibleItemScrollOffset * 0.02f)) % 4f - 2f
+                            (raw * 0.5f).dp.toPx()
+                        } else {
+                            0f
+                        }
+                        val scale = 1f - 0.06f * collapseFactor
+                        scaleX = scale
+                        scaleY = scale
+                        alpha = 0.18f * baseAlphaScale * collapseFactor
+                        translationY = (stepY * 2).toPx() * collapseFactor + parallaxPx * collapseFactor
+                    }
+                    .clip(layerShape)
+                    .background(layerColor)
+            )
+        }
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .graphicsLayer {
+                    val parallaxPx = if (listState != null) {
+                        val raw = ((listState.firstVisibleItemIndex * 2f) +
+                            (listState.firstVisibleItemScrollOffset * 0.02f)) % 4f - 2f
+                        (raw * 0.35f).dp.toPx()
+                    } else {
+                        0f
+                    }
+                    val scale = 1f - 0.03f * collapseFactor
+                    scaleX = scale
+                    scaleY = scale
+                    alpha = 0.35f * baseAlphaScale * collapseFactor
+                    translationY = stepY.toPx() * collapseFactor + parallaxPx * collapseFactor
+                }
+                .clip(layerShape)
+                .background(layerColor)
+        )
+        content()
+    }
+}
+
 
 
 

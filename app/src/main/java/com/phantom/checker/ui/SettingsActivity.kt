@@ -383,6 +383,7 @@ fun FilterSettingsScreen(
     var homeSortOrder by remember { mutableStateOf(PhantomPrefs.getHomeSortOrder(appCtx)) }
     var visibleHomeFilters by remember { mutableStateOf(PhantomPrefs.getVisibleHomeFilters(appCtx)) }
     var summaryDefaultCollapsed by remember { mutableStateOf(PhantomPrefs.isSummaryDefaultCollapsed(appCtx)) }
+    var cardStackEffectEnabled by remember { mutableStateOf(PhantomPrefs.isCardStackEffectEnabled(appCtx)) }
     var use24HourFormat by remember { mutableStateOf(PhantomPrefs.is24HourFormat(appCtx)) }
 
     // 設定頁搜尋狀態（本地即時過濾 + AI 語意導覽）
@@ -490,6 +491,7 @@ fun FilterSettingsScreen(
                 dailySummaryEnabled = PhantomPrefs.isDailySummaryEnabled(appCtx)
                 dailySummaryNotifEnabled = PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
                 summaryDefaultCollapsed = PhantomPrefs.isSummaryDefaultCollapsed(appCtx)
+                cardStackEffectEnabled = PhantomPrefs.isCardStackEffectEnabled(appCtx)
                 hapticEnabled = PhantomPrefs.isHapticFeedbackEnabled(appCtx)
                 ShizukuManager.refreshState(appCtx)
             }
@@ -1143,6 +1145,18 @@ fun FilterSettingsScreen(
                             onCheckedChange = { checked ->
                                 summaryDefaultCollapsed = checked
                                 PhantomPrefs.setSummaryDefaultCollapsed(appCtx, checked)
+                            }
+                        )
+
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                        SettingSwitchRow(
+                            title = "訊息卡片堆疊效果",
+                            subtitle = "同一 App 有多則訊息時於卡片後方顯示層疊邊緣",
+                            checked = cardStackEffectEnabled,
+                            onCheckedChange = { checked ->
+                                cardStackEffectEnabled = checked
+                                PhantomPrefs.setCardStackEffectEnabled(appCtx, checked)
                             }
                         )
 

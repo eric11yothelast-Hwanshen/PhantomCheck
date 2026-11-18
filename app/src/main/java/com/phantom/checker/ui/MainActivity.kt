@@ -2288,6 +2288,8 @@ private fun MessagesHomeTab(
                     itemsIndexed(appGroups, key = { _, app -> app.packageName }) { idx, app ->
                         val isMuted = app.packageName in mutedPackages
                         val isCompact = PhantomPrefs.getCardDensity(ctx) == com.phantom.checker.util.CardDensity.COMPACT
+                        val stackEnabled = PhantomPrefs.isCardStackEffectEnabled(ctx)
+                        var isCardCollapsed by remember(app.packageName) { mutableStateOf(false) }
                         val is24h = PhantomPrefs.is24HourFormat(ctx)
                         val timeText = remember(app.lastTs, is24h) {
                             PhantomPrefs.formatMessageTime(ctx, app.lastTs, includeDate = true)
@@ -2306,9 +2308,21 @@ private fun MessagesHomeTab(
                             .alpha(if (isMuted) 0.5f else 1f)
                             .pressableScale()
                             .combinedClickable(
-                                onClick = { onOpenApp(app.packageName, app.appLabel) },
+                                onClick = {
+                                    isCardCollapsed = true
+                                    onOpenApp(app.packageName, app.appLabel)
+                                },
                                 onLongClick = { onLongPressApp(app) }
                             )
+                        StackedAppCard(
+                            totalCount = app.totalCount,
+                            enabled = stackEnabled,
+                            isCompact = isCompact,
+                            isMuted = isMuted,
+                            listState = listState,
+                            isCollapsed = isCardCollapsed,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                         PhantomGlassCard(
                             glassState = glassState,
                             modifier = rowModifier,
@@ -2416,6 +2430,7 @@ private fun MessagesHomeTab(
                                     }
                                 }
                             }
+                        }
                         }
                     }
                 }

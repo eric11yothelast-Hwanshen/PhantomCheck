@@ -81,6 +81,7 @@ object SettingsCatalog {
         SettingSearchItem("personal_sort", "personalization", "首頁 App 排序", "切換首頁 App 清單依時間新→舊、未讀多→少或風險高→低排序", listOf("個人化", "排序", "未讀", "風險", "時間", "sort")),
         SettingSearchItem("personal_filters", "personalization", "首頁篩選欄顯示項目", "自訂首頁篩選欄是否顯示星標、詐騙、已過濾與標籤按鈕", listOf("個人化", "篩選", "filter", "星標", "標籤", "隱藏")),
         SettingSearchItem("personal_summary_collapse", "personalization", "摘要卡預設收合", "控制每日與本週 AI 摘要卡是否預設收合為單行預覽", listOf("個人化", "摘要", "收合", "展開", "折疊")),
+        SettingSearchItem("card_stack_effect_enabled", "personalization", "訊息卡片堆疊效果", "同一 App 有多則訊息時於卡片後方顯示層疊邊緣", listOf("堆疊", "卡片堆疊", "層疊", "stack", "視差", "個人化")),
         SettingSearchItem("personal_time_format", "personalization", "時間顯示格式（12 / 24 小時制）", "切換訊息與對話的時間顯示格式", listOf("個人化", "時間", "12小時", "24小時", "am", "pm")),
         SettingSearchItem("bg_global", "personalization", "全域背景圖片", "設定套用於訊息中心、統計、AI 助手與對話頁的全域底圖", listOf("個人化", "背景", "桌布", "wallpaper", "圖片", "全域")),
         SettingSearchItem("bg_chat", "personalization", "AI 聊天背景圖片", "自訂 AI 助手分頁背景圖片（未設定時沿用全域背景）", listOf("個人化", "背景", "桌布", "wallpaper", "AI", "聊天")),
@@ -117,6 +118,7 @@ object SettingsCatalog {
         "appearance_haptic",
         "intel_enabled",
         "personal_summary_collapse",
+        "card_stack_effect_enabled",
         "update_auto_check"
     )
 
@@ -150,6 +152,7 @@ object SettingsCatalog {
             "appearance_haptic" -> PhantomPrefs.isHapticFeedbackEnabled(appCtx)
             "intel_enabled" -> PhantomPrefs.isIntelEnabled(appCtx)
             "personal_summary_collapse" -> PhantomPrefs.isSummaryDefaultCollapsed(appCtx)
+            "card_stack_effect_enabled" -> PhantomPrefs.isCardStackEffectEnabled(appCtx)
             "update_auto_check" -> PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)
             else -> null
         }
@@ -214,6 +217,7 @@ object SettingsCatalog {
             "appearance_haptic" -> PhantomPrefs.setHapticFeedbackEnabled(appCtx, enabled)
             "intel_enabled" -> PhantomPrefs.setIntelEnabled(appCtx, enabled)
             "personal_summary_collapse" -> PhantomPrefs.setSummaryDefaultCollapsed(appCtx, enabled)
+            "card_stack_effect_enabled" -> PhantomPrefs.setCardStackEffectEnabled(appCtx, enabled)
             "update_auto_check" -> PhantomPrefs.setUpdateAutoCheckEnabled(appCtx, enabled)
             else -> return null
         }
