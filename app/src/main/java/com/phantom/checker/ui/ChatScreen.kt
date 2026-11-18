@@ -76,6 +76,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -265,7 +266,12 @@ fun ChatAssistantTab(
     var searchResultCard by remember { mutableStateOf<SearchResultCardState?>(null) }
     var pendingExtendedActionQueue by remember { mutableStateOf<List<PendingExtendedAction>>(emptyList()) }
     var showTodoListSheet by remember { mutableStateOf(false) }
-    var todoListItems by remember { mutableStateOf<List<TodoEntity>>(emptyList()) }
+    val rawTodoListItems by remember(appCtx) {
+        AppDatabaseHolder.db(appCtx).todoDao().observeAll()
+    }.collectAsState(initial = emptyList())
+    val todoListItems = remember(rawTodoListItems) {
+        ReminderScheduler.sortTodosSmart(rawTodoListItems)
+    }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -309,13 +315,6 @@ fun ChatAssistantTab(
             profiles = loadedProfiles
             activeProfile = loadedActive
             hasApiKey = loadedActive != null
-            todoListItems = db.todoDao().all()
-        }
-    }
-
-    suspend fun loadTodos() {
-        todoListItems = withContext(Dispatchers.IO) {
-            AppDatabaseHolder.db(appCtx).todoDao().all()
         }
     }
 
@@ -1682,7 +1681,6 @@ fun ChatAssistantTab(
                                                 withContext(Dispatchers.IO) {
                                                     ReminderScheduler.completeTodoWithRecurrence(appCtx, todo, checked)
                                                 }
-                                                loadTodos()
                                             }
                                         }
                                     )
@@ -1713,7 +1711,6 @@ fun ChatAssistantTab(
                                                     AppDatabaseHolder.db(appCtx).todoDao().deleteById(todo.id)
                                                     ReminderWidgetProvider.updateAllIfChanged(appCtx)
                                                 }
-                                                loadTodos()
                                             }
                                         }
                                     ) {
@@ -1754,7 +1751,6 @@ fun ChatAssistantTab(
                 val pendingTodoCount = todoListItems.count { !it.isDone }
                 TextButton(
                     onClick = {
-                        scope.launch { loadTodos() }
                         showTodoListSheet = true
                     }
                 ) {
@@ -2890,7 +2886,6 @@ fun ChatAssistantTab(
                                                     )
                                                     ok
                                                 }
-                                                loadTodos()
                                                 loadMessages(sid)
                                                 onShowMessage(if (verifiedOk) "已排程待辦提醒：$dueFormatted" else "待辦寫入失敗")
                                             }
@@ -3161,7 +3156,6 @@ fun ChatAssistantTab(
                                                         )
                                                     )
                                                 }
-                                                loadTodos()
                                                 loadMessages(sid)
                                                 onRefresh()
                                                 onShowMessage(resultMsg)

@@ -50,8 +50,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -62,6 +64,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.room.withTransaction
 import com.phantom.checker.data.AiRuleEntity
 import com.phantom.checker.data.IntelResultEntity
@@ -139,8 +144,22 @@ fun MessageDetailScreen(
     var activeProfile by remember { mutableStateOf(AiClient.getActiveProfile(appCtx)) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showReminderPicker by remember { mutableStateOf(false) }
+    var resumeRefreshTrigger by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(messageId) {
+    val lifecycleOwner = ctx as? LifecycleOwner
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                resumeRefreshTrigger++
+            }
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose {
+            lifecycleOwner?.lifecycle?.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(messageId, resumeRefreshTrigger) {
         isLoading = true
         withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)

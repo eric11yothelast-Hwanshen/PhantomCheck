@@ -2472,19 +2472,13 @@ private fun NotesTab(
     val db = remember(appCtx) { AppDatabaseHolder.db(appCtx) }
 
     val notes by remember(db) { db.noteDao().observeAll() }.collectAsState(initial = emptyList())
-    var todos by remember { mutableStateOf<List<TodoEntity>>(emptyList()) }
-    var todoRefresh by remember { mutableIntStateOf(0) }
+    val rawTodos by remember(db) { db.todoDao().observeAll() }.collectAsState(initial = emptyList())
+    val todos = remember(rawTodos) { ReminderScheduler.sortTodosSmart(rawTodos) }
     var todoFilter by remember { mutableStateOf(TodoFilterMode.ALL) }
     var showEditor by remember { mutableStateOf(false) }
     var editingNote by remember { mutableStateOf<NoteEntity?>(null) }
     var showTodoEditor by remember { mutableStateOf(false) }
     var editingTodo by remember { mutableStateOf<TodoEntity?>(null) }
-
-    LaunchedEffect(todoRefresh) {
-        todos = withContext(Dispatchers.IO) {
-            ReminderScheduler.sortTodosSmart(db.todoDao().all())
-        }
-    }
 
     LaunchedEffect(initialEditTodoId, todos) {
         val targetId = initialEditTodoId ?: return@LaunchedEffect
@@ -2543,7 +2537,6 @@ private fun NotesTab(
                         }
                     }
                     com.phantom.checker.widget.ReminderWidgetProvider.updateAllIfChanged(appCtx)
-                    todoRefresh++
                     onShowMessage(if (target == null) "已新增待辦事項" else "已更新待辦事項")
                 }
             }
@@ -2727,8 +2720,7 @@ private fun NotesTab(
                                         val spawned = withContext(Dispatchers.IO) {
                                             ReminderScheduler.completeTodoWithRecurrence(appCtx, todo, checked)
                                         }
-                                        todoRefresh++
-                                        if (spawned != null) {
+                                                            if (spawned != null) {
                                             onShowMessage("已完成並自動建立下一次重複待辦")
                                         }
                                     }
@@ -2809,8 +2801,7 @@ private fun NotesTab(
                                             db.todoDao().deleteById(todo.id)
                                         }
                                         com.phantom.checker.widget.ReminderWidgetProvider.updateAllIfChanged(appCtx)
-                                        todoRefresh++
-                                        onShowMessage("已刪除待辦事項")
+                                                            onShowMessage("已刪除待辦事項")
                                     }
                                 }
                             ) {

@@ -814,6 +814,9 @@ interface TodoDao {
     @Query("SELECT * FROM todos ORDER BY isDone ASC, dueAt ASC, id DESC")
     suspend fun all(): List<TodoEntity>
 
+    @Query("SELECT * FROM todos ORDER BY dueAt ASC")
+    fun observeAll(): Flow<List<TodoEntity>>
+
     @Query("SELECT * FROM todos WHERE id = :id LIMIT 1")
     suspend fun byId(id: Long): TodoEntity?
 
