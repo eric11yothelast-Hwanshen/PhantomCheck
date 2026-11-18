@@ -192,6 +192,8 @@ class NotificationCollectorService : NotificationListenerService() {
                 ?: lastStyleMessage?.sender?.toString()
             )?.trim()?.takeIf { it.isNotEmpty() }
             ?: extractLastSenderFromExtraMessages(extras)
+        val senderPersonIcon = extractLastSenderIconFromExtraMessages(extras)
+            ?: lastStyleMessage?.person?.icon?.toIcon(applicationContext)
 
         val fallbackTitle = resolveNotificationTitle(extras, rawText, pkg)
         val title = styleSender ?: fallbackTitle
@@ -330,6 +332,9 @@ class NotificationCollectorService : NotificationListenerService() {
             )
             if (isOwnSender) {
                 return@launch
+            }
+            if (senderPersonIcon != null && title.isNotBlank()) {
+                saveSenderAvatar(db, pkg, title, senderPersonIcon, nowMs)
             }
 
             // 使用者標籤記憶規則（確定性、零 LLM token，優先序高於 App 分類與 AI 標籤）
@@ -659,6 +664,72 @@ class NotificationCollectorService : NotificationListenerService() {
             last.sender?.toString()
         }
         return name?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun extractLastSenderIconFromExtraMessages(extras: android.os.Bundle): android.graphics.drawable.Icon? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+        return try {
+            val parcelables = extras.getParcelableArray(Notification.EXTRA_MESSAGES) ?: return null
+            val msgs = Notification.MessagingStyle.Message.getMessagesFromBundleArray(parcelables)
+            msgs.lastOrNull()?.senderPerson?.icon
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private suspend fun saveSenderAvatar(
+        db: AppDatabase,
+        packageName: String,
+        sender: String,
+        icon: android.graphics.drawable.Icon,
+        nowMs: Long
+    ) {
+        try {
+            val drawable = icon.loadDrawable(applicationContext) ?: return
+            val srcW = drawable.intrinsicWidth.takeIf { it > 0 } ?: 96
+            val srcH = drawable.intrinsicHeight.takeIf { it > 0 } ?: 96
+            val maxDim = maxOf(srcW, srcH)
+            val scale = if (maxDim > 96) 96f / maxDim.toFloat() else 1f
+            val targetW = (srcW * scale).toInt().coerceIn(1, 96)
+            val targetH = (srcH * scale).toInt().coerceIn(1, 96)
+            val bmp = android.graphics.Bitmap.createBitmap(
+                targetW,
+                targetH,
+                android.graphics.Bitmap.Config.ARGB_8888
+            )
+            val canvas = android.graphics.Canvas(bmp)
+            drawable.setBounds(0, 0, targetW, targetH)
+            drawable.draw(canvas)
+
+            val baos = java.io.ByteArrayOutputStream()
+            bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, baos)
+            var bytes = baos.toByteArray()
+            if (bytes.size > 16 * 1024) {
+                for (q in listOf(85, 70, 50)) {
+                    baos.reset()
+                    bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, q, baos)
+                    bytes = baos.toByteArray()
+                    if (bytes.size <= 16 * 1024) break
+                }
+            }
+            bmp.recycle()
+            if (bytes.isEmpty() || bytes.size > 16 * 1024) return
+
+            val avatarDao = db.senderAvatarDao()
+            avatarDao.upsert(
+                com.phantom.checker.data.SenderAvatarEntity(
+                    packageName = packageName,
+                    sender = sender.trim(),
+                    icon = bytes,
+                    updatedAt = nowMs
+                )
+            )
+            if (nowMs % 20L == 0L) {
+                avatarDao.deleteOlderThan(nowMs - 30L * 24L * 60L * 60L * 1000L)
+            }
+        } catch (_: Exception) {
+        }
     }
 
     private fun resolveNotificationTitle(

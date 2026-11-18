@@ -260,3 +260,98 @@ fun AppIconImage(
         }
     }
 }
+
+private val senderAvatarCache = object : android.util.LruCache<String, ImageBitmap>(128) {}
+
+private val AVATAR_FALLBACK_COLORS = listOf(
+    androidx.compose.ui.graphics.Color(0xFF1E88E5),
+    androidx.compose.ui.graphics.Color(0xFF43A047),
+    androidx.compose.ui.graphics.Color(0xFF8E24AA),
+    androidx.compose.ui.graphics.Color(0xFFE53935),
+    androidx.compose.ui.graphics.Color(0xFFFB8C00),
+    androidx.compose.ui.graphics.Color(0xFF00897B),
+    androidx.compose.ui.graphics.Color(0xFF3949AB),
+    androidx.compose.ui.graphics.Color(0xFFD81B60)
+)
+
+fun decodeSenderAvatarBitmap(
+    packageName: String,
+    sender: String,
+    bytes: ByteArray?
+): ImageBitmap? {
+    if (bytes == null || bytes.isEmpty()) return null
+    val key = "$packageName|$sender"
+    synchronized(senderAvatarCache) {
+        senderAvatarCache.get(key)?.let { return it }
+    }
+    return try {
+        val bmp = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+        val img = bmp.asImageBitmap()
+        synchronized(senderAvatarCache) {
+            senderAvatarCache.put(key, img)
+        }
+        img
+    } catch (_: Exception) {
+        null
+    }
+}
+
+@Composable
+fun SenderAvatarImage(
+    packageName: String,
+    sender: String,
+    avatarBytes: ByteArray?,
+    size: Dp = 40.dp,
+    modifier: Modifier = Modifier
+) {
+    val ctx = LocalContext.current
+    val avatarBitmap = remember(packageName, sender, avatarBytes) {
+        decodeSenderAvatarBitmap(packageName, sender, avatarBytes)
+    }
+    if (avatarBitmap != null) {
+        Image(
+            bitmap = avatarBitmap,
+            contentDescription = sender,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = modifier
+                .size(size)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+        )
+        return
+    }
+    val appBitmap = remember(packageName) {
+        loadAppIconBitmap(ctx, packageName)
+    }
+    if (appBitmap != null) {
+        Image(
+            bitmap = appBitmap,
+            contentDescription = sender,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = modifier
+                .size(size)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+        )
+        return
+    }
+    val initial = remember(sender) {
+        sender.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+    }
+    val bgColor = remember(sender) {
+        val idx = (sender.hashCode() and 0x7FFFFFFF) % AVATAR_FALLBACK_COLORS.size
+        AVATAR_FALLBACK_COLORS[idx]
+    }
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(androidx.compose.foundation.shape.CircleShape)
+            .background(bgColor),
+        contentAlignment = Alignment.Center
+    ) {
+        androidx.compose.material3.Text(
+            text = initial,
+            color = androidx.compose.ui.graphics.Color.White,
+            style = if (size >= 36.dp) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelMedium,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
+        )
+    }
+}

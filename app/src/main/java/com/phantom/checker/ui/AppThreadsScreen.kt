@@ -136,6 +136,7 @@ fun AppThreadsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val haptic = rememberPhantomHaptic()
     var threads by remember { mutableStateOf(listOf<SenderThreadUi>()) }
+    var avatarMap by remember { mutableStateOf<Map<String, ByteArray>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(true) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     var showMenu by remember { mutableStateOf(false) }
@@ -179,7 +180,7 @@ fun AppThreadsScreen(
 
     LaunchedEffect(packageName, refreshTrigger) {
         isLoading = true
-        threads = withContext(Dispatchers.IO) {
+        val (loadedThreads, loadedAvatars) = withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
             val dao = db.messageDao()
             val vipSenders = PhantomPrefs.getVipSenders(appCtx, packageName)
@@ -193,7 +194,8 @@ fun AppThreadsScreen(
             } else {
                 db.tagDao().tagsForMessages(latestIds).groupBy { it.messageId }
             }
-            groups.map { g ->
+            val avatars = db.senderAvatarDao().byPackage(packageName).associate { it.sender to it.icon }
+            val threadList = groups.map { g ->
                 val convKey = g.conversationKey
                 val latestMsg = latestByConv[convKey]
                 val displayTitle = convKey.ifBlank { latestMsg?.sender.orEmpty() }
@@ -213,7 +215,10 @@ fun AppThreadsScreen(
                     latestTags = latestMsg?.let { tagsMap[it.id] }.orEmpty()
                 )
             }.sortedWith(compareByDescending<SenderThreadUi> { it.isPinned }.thenByDescending { it.lastTs })
+            threadList to avatars
         }
+        threads = loadedThreads
+        avatarMap = loadedAvatars
         isLoading = false
     }
 
@@ -569,7 +574,9 @@ fun AppThreadsScreen(
                         items(threads, key = { it.conversationKey }) { thread ->
                             val isSelected = thread.conversationKey in selectedConversationKeys
                             SenderThreadCard(
+                                packageName = packageName,
                                 thread = thread,
+                                avatarBytes = avatarMap[thread.displayTitle] ?: avatarMap[thread.conversationKey],
                                 glassState = glassState,
                                 isMultiSelectMode = isMultiSelectMode,
                                 isSelected = isSelected,
@@ -635,7 +642,9 @@ fun AppThreadsScreen(
             } else {
                 items(matchedThreads, key = { "sr_${it.conversationKey}" }) { thread ->
                     SenderThreadCard(
+                        packageName = packageName,
                         thread = thread,
+                        avatarBytes = avatarMap[thread.displayTitle] ?: avatarMap[thread.conversationKey],
                         glassState = glassState,
                         onClick = {
                             showThreadSearch = false
@@ -661,7 +670,9 @@ fun AppThreadsScreen(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SenderThreadCard(
+    packageName: String,
     thread: SenderThreadUi,
+    avatarBytes: ByteArray? = null,
     glassState: HazeState,
     isMultiSelectMode: Boolean = false,
     isSelected: Boolean = false,
@@ -710,92 +721,106 @@ private fun SenderThreadCard(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (thread.isPinned) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.tertiaryContainer
-                        ) {
-                            Text(
-                                text = "置頂",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                        Spacer(Modifier.width(6.dp))
-                    }
-                    Text(
-                        text = thread.displayTitle,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer
-                    ) {
-                        Text(
-                            text = "${thread.count} 則",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                    if (thread.unreadCount > 0) {
-                        Spacer(Modifier.width(6.dp))
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.primary
-                        ) {
-                            Text(
-                                text = "未讀 ${thread.unreadCount}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = timeText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                SenderAvatarImage(
+                    packageName = packageName,
+                    sender = thread.displayTitle,
+                    avatarBytes = avatarBytes,
+                    size = 40.dp
                 )
-                if (!isMultiSelectMode) {
-                    IconButton(
-                        onClick = onOpenActions,
-                        modifier = Modifier.size(28.dp)
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "對話選項",
-                            modifier = Modifier.size(16.dp)
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (thread.isPinned) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.tertiaryContainer
+                                ) {
+                                    Text(
+                                        text = "置頂",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            Text(
+                                text = thread.displayTitle,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Text(
+                                    text = "${thread.count} 則",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                            if (thread.unreadCount > 0) {
+                                Spacer(Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.primary
+                                ) {
+                                    Text(
+                                        text = "未讀 ${thread.unreadCount}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = timeText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (!isMultiSelectMode) {
+                            IconButton(
+                                onClick = onOpenActions,
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "對話選項",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = thread.lastPreview,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (thread.latestTags.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        MessageTagChipRow(tags = thread.latestTags)
                     }
                 }
-            }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = thread.lastPreview,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (thread.latestTags.isNotEmpty()) {
-                Spacer(Modifier.height(6.dp))
-                MessageTagChipRow(tags = thread.latestTags)
             }
         }
     }

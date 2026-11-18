@@ -190,6 +190,7 @@ fun ConversationScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     var messages by remember { mutableStateOf(listOf<MessageEntity>()) }
+    var avatarMap by remember { mutableStateOf<Map<String, ByteArray>>(emptyMap()) }
     var allTags by remember { mutableStateOf(listOf<TagEntity>()) }
     var msgTagIdsMap by remember { mutableStateOf<Map<Long, Set<Long>>>(emptyMap()) }
     var msgTagsMap by remember { mutableStateOf<Map<Long, List<MessageTagRow>>>(emptyMap()) }
@@ -277,7 +278,7 @@ fun ConversationScreen(
     LaunchedEffect(packageName, conversationKey, refreshTrigger) {
         isLoading = true
         val pageSize = 200
-        val loaded = withContext(Dispatchers.IO) {
+        val (loaded, loadedAvatars) = withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
             val dao = db.messageDao()
             dao.markConversationRead(packageName, conversationKey)
@@ -289,9 +290,11 @@ fun ConversationScreen(
             msgTagsMap = tagRows.groupBy { it.messageId }
             msgTagIdsMap = tagRows.groupBy { it.messageId }
                 .mapValues { (_, list) -> list.map { it.tagId }.toSet() }
-            msgs
+            val avatars = db.senderAvatarDao().byPackage(packageName).associate { it.sender to it.icon }
+            msgs to avatars
         }
         messages = loaded
+        avatarMap = loadedAvatars
         hasMoreOlder = loaded.size >= pageSize
         isLoading = false
         if (loaded.isNotEmpty() && (refreshTrigger <= 1 || scrollToBottomPending)) {
@@ -1062,6 +1065,7 @@ fun ConversationScreen(
                                 ChatBubbleItem(
                                     message = msg,
                                     glassState = glassState,
+                                    avatarBytes = if (!msg.isOwn) avatarMap[msg.sender] else null,
                                     tags = msgTagsMap[msg.id].orEmpty(),
                                     showSenderName = msg.sender.isNotBlank() && msg.sender != conversationKey,
                                     isMultiSelectMode = isMultiSelectMode,
@@ -1149,6 +1153,7 @@ fun ConversationScreen(
                     ChatBubbleItem(
                         message = msg,
                         glassState = glassState,
+                        avatarBytes = if (!msg.isOwn) avatarMap[msg.sender] else null,
                         tags = msgTagsMap[msg.id].orEmpty(),
                         onClick = {
                             showConvSearch = false
@@ -1168,6 +1173,7 @@ fun ConversationScreen(
 private fun ChatBubbleItem(
     message: MessageEntity,
     glassState: HazeState,
+    avatarBytes: ByteArray? = null,
     tags: List<MessageTagRow> = emptyList(),
     showSenderName: Boolean = false,
     isOwn: Boolean = message.isOwn,
@@ -1192,13 +1198,22 @@ private fun ChatBubbleItem(
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isOwn) Arrangement.End else Arrangement.Start,
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = if (isOwn) Alignment.CenterVertically else Alignment.Top
     ) {
         if (isMultiSelectMode) {
             Checkbox(
                 checked = isSelected,
                 onCheckedChange = { onToggleSelect() }
             )
+        }
+        if (!isOwn) {
+            SenderAvatarImage(
+                packageName = message.packageName,
+                sender = message.sender,
+                avatarBytes = avatarBytes,
+                size = 28.dp
+            )
+            Spacer(Modifier.width(8.dp))
         }
         val selectionModifier = if (isMultiSelectMode && isSelected) {
             Modifier.border(
@@ -1209,10 +1224,14 @@ private fun ChatBubbleItem(
         } else {
             Modifier
         }
+        val widthModifier = if (isMultiSelectMode) {
+            Modifier.weight(1f)
+        } else {
+            Modifier.fillMaxWidth(if (isOwn) 0.78f else 0.84f)
+        }
         PhantomGlassCard(
             glassState = glassState,
-            modifier = Modifier
-                .fillMaxWidth(if (isMultiSelectMode) 1f else if (isOwn) 0.78f else 0.84f)
+            modifier = widthModifier
                 .then(selectionModifier)
                 .combinedClickable(
                     onClick = { if (isMultiSelectMode) onToggleSelect() else onClick() },
