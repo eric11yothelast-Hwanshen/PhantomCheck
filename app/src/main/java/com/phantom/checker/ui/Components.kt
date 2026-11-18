@@ -83,6 +83,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -1573,7 +1574,12 @@ fun StackedAppCard(
     val baseAlphaScale = if (isMuted) 0.5f else 1f
     val stepY = if (isCompact) 3.dp else 6.dp
     val bottomSpace = stepY * layerCount
-    val layerColor = MaterialTheme.colorScheme.surfaceVariant
+    val layerColor = lerp(
+        MaterialTheme.colorScheme.surfaceVariant,
+        MaterialTheme.colorScheme.onSurface,
+        0.25f
+    )
+    val layerOutline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
     val layerShape = RoundedCornerShape(20.dp)
 
     Box(modifier = modifier.padding(bottom = bottomSpace)) {
@@ -1589,10 +1595,10 @@ fun StackedAppCard(
                         } else {
                             0f
                         }
-                        val scale = 1f - 0.06f * collapseFactor
+                        val scale = 1f - 0.08f * collapseFactor
                         scaleX = scale
                         scaleY = scale
-                        alpha = 0.18f * baseAlphaScale * collapseFactor
+                        alpha = 0.35f * baseAlphaScale * collapseFactor
                         translationY = (stepY * 2).toPx() * collapseFactor + parallaxPx * collapseFactor
                     }
                     .clip(layerShape)
@@ -1610,14 +1616,15 @@ fun StackedAppCard(
                     } else {
                         0f
                     }
-                    val scale = 1f - 0.03f * collapseFactor
+                    val scale = 1f - 0.04f * collapseFactor
                     scaleX = scale
                     scaleY = scale
-                    alpha = 0.35f * baseAlphaScale * collapseFactor
+                    alpha = 0.55f * baseAlphaScale * collapseFactor
                     translationY = stepY.toPx() * collapseFactor + parallaxPx * collapseFactor
                 }
                 .clip(layerShape)
                 .background(layerColor)
+                .border(width = 1.dp, color = layerOutline, shape = layerShape)
         )
         content()
     }
