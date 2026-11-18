@@ -28,13 +28,23 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 - 📄 **CSV 匯出、保留政策與加密金鑰**：一鍵匯出 CSV 至 `Downloads`；`EncryptedSharedPreferences` 本機加密儲存 AI 與情報源（Safe Browsing／PhishTank／Chainabuse）API Key，支援設定頁直接輸入（`local.properties` 為 fallback）。
 
 - 🎨 **個人化三層背景圖片與卡片底色模式**：支援全域／AI 聊天／對話頁三層背景圖自訂（逐層 fallback、降採樣儲存防 OOM）、暗色可讀性遮罩（scrim）、液態玻璃卡片強度滑桿與卡片底色三模式（跟隨玻璃／透明滑桿／深色底）。
-- 🔍 **關於卡檢查更新**：支援手動查詢 GitHub Releases 最新版本並透過 `DownloadManager` 與 `FileProvider` 呼出系統 APK 安裝器。
+- 🔍 **自動與手動檢查更新**：支援開啟 App 每日一次背景靜默檢查 GitHub Releases 最新版本（每日每版本一次通知＋彈窗提醒，可於設定頁關於卡關閉），並保留手動檢查與 `DownloadManager` ＋ `FileProvider` APK 安裝流程。
+- 💬 **通知欄連續快速回覆**：透過 AI 助手回覆後可於通知欄保留 `MessagingStyle` 代理對話通知，直接連續輸入多則回覆並顯示歷史與誠實失敗狀態，支援滑掉、關閉與閒置自動收起。
 
 ---
 
 ## 版本紀錄
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
+
+### v2.5.0 更新重點（versionCode 23）
+
+- **通知欄連續快速回覆（#183）**：新增 `ReplyProxyManager`／`ReplyProxyReceiver`（`exported="false"`）與 `NotifIds` `120000..129999` 區段，`ChatScreen` 回覆成功後啟動 `MessagingStyle` 代理通知（歷史上限 8 則、Session LRU 上限 8 組、支援 SMS fallback 與 `AlarmManager` 閒置逾時 15/30/60/關閉），設定頁與 `SettingsCatalog` 同步新增開關與逾時選項。
+- **對話頁玻璃黑底修復（#184）**：修正 `Components.kt` `PhantomGlassCard` 與 `phantomGlassSurface` 裁切順序，統一於 `glassSurface(...)` 之後執行 `.clip(shape)`（維持 `ui/components/` 零改動）。
+- **AI 送出前重複通知折疊（#185）**：新增純函式 `NotificationFoldUtil`（24h 鏈式窗、Dice ≥ 0.85、高風險與關鍵數字/URL 不合併），套用至 Chat RAG、每日摘要、每週摘要與深度分析歷史。
+- **每日自動檢查更新（#186）**：`MainActivity` `ON_RESUME` 每日一次靜默檢查，`UpdateAvailable` 發送每版本每日一次通知（`NotifIds.UPDATE_AVAILABLE = 1007`）＋彈窗提醒，關於卡新增 `update_auto_check_enabled` 開關並進 `SettingsCatalog`。
+- **自動記事去重與待辦智慧分流（#187, #188）**：同 App 7 天內相似自動記事（Dice ≥ 0.9）改為更新且不覆蓋 `pinned`；`AiClient` 擴充 `memo_type`（`note|todo`）與 `todo_due`，`todo` 經去重後建立 `TodoEntity` 並排程提醒＋刷新小工具，並抽出共用 `ClientTimeParser`。
+- **桌面小工具通知同步與按鈕放大（#189）**：完成或刪除待辦／訊息提醒時同步清除已發出通知，`widget_reminder.xml` 按鈕放大至 `16sp` bold＋`minHeight="32dp"`＋ripple 回饋，`reminder_widget_info` `minHeight` 提升至 `72dp`。
 
 ### v2.4.0 更新重點（versionCode 22）
 

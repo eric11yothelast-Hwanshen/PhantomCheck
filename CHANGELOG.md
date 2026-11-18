@@ -2,6 +2,34 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.5.0] - 2026-11-18
+
+### 新增
+- **通知欄連續快速回覆（#183）**：
+  - 新增 `ReplyProxyManager` 與 `ReplyProxyReceiver`（`android:exported="false"`），建立通知頻道 `phantom_reply_proxy`（`IMPORTANCE_DEFAULT`，名稱「快速回覆對話」）與 `NotifIds` 專屬區段 `120000..129999`（`120000 + Math.floorMod(sessionHash, 10000)`）。
+  - `ChatScreen` `reply_message` 送出成功後啟動／更新 `MessagingStyle` 代理通知（保留原始訊息＋「我」回覆紀錄，上限 8 則；Session 採 in-memory LRU 上限 8 組），提供「回覆」（`RemoteInput` resultKey `proxy_reply`）與「關閉」按鈕，支援滑掉（`deleteIntent`）與 `AlarmManager` 閒置逾時自動收起（15 / 30 / 60 分鐘或不自動收起，預設 30 分鐘）。
+  - `ReplyProxyReceiver` 送出失敗時（含簡訊 `sms` / `^09\d{8}$` `SmsManager` fallback 失敗）誠實將錯誤訊息附加至對話紀錄串，不假裝成功；設定頁「訊息與通知」卡新增 `reply_proxy_enabled` 開關（預設開）與逾時選項，並註冊 `notif_reply_proxy` 與 `notif_reply_proxy_timeout` 至 `SettingsCatalog`。
+- **AI 送出前重複通知折疊（#185）**：
+  - 新增純函式 `NotificationFoldUtil`（不修改資料庫與既有 UI 清單），依同 `packageName`、`sender`、`conversationKey`、`riskLabel`、24 小時鏈式時間窗與 `normalized` 相同或 Dice bigram ≥ 0.85 折疊高頻重複通知為 `[AppLabel] 標題（HH:mm–HH:mm 共重複 N 次）`（`N = 1` 維持原格式）。
+  - 保護條款：`scam`／`suspicious` 高風險訊息逐則保留不折疊；內含網址或數字序列（訂單編號／金額／OTP／電話）不一致者不折疊。套用至 `ChatScreen` RAG 訊息區、`DailySummaryPolicy.buildSummaryExcerpts`、`WeeklySummaryPolicy` 節錄與 `MessageDetailActivity` `senderHistorySummary`。
+- **開啟 App 自動檢查更新（#186）**：
+  - `MainActivity` `ON_RESUME` 每日最多一次背景靜默檢查 GitHub 最新版本（`update_last_check_day`，無網路或失敗靜默）；有新版本時於頻道 `app_updates`（`IMPORTANCE_DEFAULT`，`NotifIds.UPDATE_AVAILABLE = 1007`）發送每版本每日一次通知，並於前景顯示 `AlertDialog`（「前往下載」導向設定頁關於卡＋「稍後再說」，內文含「不想再收到更新提醒？可至 設定 → 關於 關閉自動檢查更新。」）。
+  - 設定頁關於卡新增 `update_auto_check_enabled` 開關（預設開），並註冊 `update_auto_check` 至 `SettingsCatalog`（別名含「檢查更新」「更新」「版本」）；手動檢查與下載安裝流程維持不變。
+- **自動記事／待辦智慧分流（#188）**：
+  - `AiClient` 單則與批次分析 schema 擴充 `memo_type`（`"note" | "todo"`，缺漏寬容 fallback `"note"`）與 `todo_due`（`"yyyy-MM-dd HH:mm"` 或空字串），`riskCache` key 加入 `memoV2` 旗標。
+  - `NotificationCollectorService.saveAutoMemoIfPresent` 依 `memo_type` 分流：`todo` 建立 `TodoEntity`（`priority = 1`、`dueAt` 解析 `todo_due` 或 fallback `msg.timestamp + 2h`），insert 前以 `TodoDao` 新增 `@Query`（Room 版本維持 14 無 migration）進行 `relatedMessageId` 與 7 天內未完成同標題去重，並呼叫 `ReminderScheduler.scheduleTodo` 與 `ReminderWidgetProvider.updateAllIfChanged`。
+  - 抽出 `ClientTimeParser`（含 `NaturalTimeParseResult`）供 `ChatScreen` 與自動待辦共用。
+
+### 變更與修正
+- **對話頁訊息卡片黑底溢出修復（#184）**：
+  - 修正 `ui/Components.kt` `PhantomGlassCard` 玻璃分支 `.clip(shape)` 順序，改為 `.glassSurface(...)` 之後 `.clip(shape)` 再繪製 `overlayColor`；同步補齊 `phantomGlassSurface` 全分支（含 `overlayColor == null` 與 API < S）於 `glassSurface` 之後使用單一 `remember(cornerRadius)` `RoundedCornerShape` 裁切（`ui/components/` 維持零改動）。
+- **自動記事重複記錄去重（#187）**：
+  - `NoteDao` 新增 7 天視窗查詢 `@Query`（Room 版本不變），`saveAutoMemoIfPresent` 於寫入前比對同 `relatedAppLabel` 7 天內自動記事（正規化相同或 Dice bigram ≥ 0.9）改為更新既有記事，並嚴格保護 `pinned` 記事不被覆蓋，手動記事不受影響。
+- **桌面小工具通知同步清除與按鈕放大（#189）**：
+  - `ReminderScheduler.cancel`／`cancelTodo` 同步呼叫 `NotificationManager.cancel` 清除已發出之 `NotifIds.reminder`／`NotifIds.todoReminder`，並於 `ReminderWidgetProvider` 刪除 `TYPE_MSG` 提醒時補齊呼叫 `ReminderScheduler.cancel`；取消勾選（`done = false`）行為維持不變。
+  - `widget_reminder.xml` 動作按鈕放大至 `16sp` bold＋`paddingHorizontal="8dp"`＋`paddingVertical="6dp"`＋`minWidth="28dp"`／`minHeight="32dp"` 與 `?android:attr/selectableItemBackground` 點擊回饋，`reminder_widget_info.xml`（含 `xml-v31`）`minHeight` 調整為 `72dp`。
+- **版號更新**：`versionCode` 23、`versionName` `"2.5.0"`。
+
 ## [2.4.0] - 2026-11-17
 
 ### 新增
