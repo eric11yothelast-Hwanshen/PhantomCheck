@@ -1337,21 +1337,27 @@ private fun PhantomCheckApp(
                 .padding(padding)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            // 頂部標題列：搜尋＋重新整理＋設定齒輪（切到 AI 助手分頁時平滑隱藏，改由分頁內提供入口）
+            // 頂部標題列：迷你搜尋膠囊＋下方右側重新整理與設定齒輪（切到 AI 助手分頁時平滑隱藏）
             AnimatedVisibility(
                 visible = selectedTab != MainTab.ASSISTANT,
                 enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
                 exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
             ) {
-                PhantomSearchBarPill(
-                    glassState = glassState,
-                    query = searchQuery,
-                    placeholder = "搜尋訊息、寄件人或關鍵字",
-                    onClick = { showSearchBar = true },
-                    modifier = Modifier.onGloballyPositioned { coords ->
-                        targetBounds = targetBounds + (OnboardingTargets.SEARCH_PILL to coords.boundsInRoot())
-                    },
-                    trailingActions = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    PhantomSearchBarPill(
+                        glassState = glassState,
+                        query = searchQuery,
+                        placeholder = "搜尋訊息、寄件人或關鍵字",
+                        onClick = { showSearchBar = true },
+                        modifier = Modifier.onGloballyPositioned { coords ->
+                            targetBounds = targetBounds + (OnboardingTargets.SEARCH_PILL to coords.boundsInRoot())
+                        }
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         IconButton(
                             onClick = { refreshTrigger++ },
                             modifier = Modifier.size(48.dp)
@@ -1373,7 +1379,7 @@ private fun PhantomCheckApp(
                             )
                         }
                     }
-                )
+                }
             }
 
             if (isLoading) {

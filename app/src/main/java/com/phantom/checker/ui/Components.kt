@@ -7,6 +7,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -27,6 +28,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -1070,7 +1073,7 @@ fun WhitelistAddDialogFlow(
 }
 
 /**
- * #180 統一頂部玻璃搜尋槓：圓角膠囊＋放大鏡＋小字＋頁面動作（觸控目標 ≥ 48dp）。
+ * #194 統一頂部迷你玻璃搜尋膠囊：36dp 高、wrap-content 寬、放大鏡＋「搜尋」（觸控目標 ≥ 48dp）。
  */
 @Composable
 fun PhantomSearchBarPill(
@@ -1081,37 +1084,54 @@ fun PhantomSearchBarPill(
     modifier: Modifier = Modifier,
     trailingActions: (@Composable androidx.compose.foundation.layout.RowScope.() -> Unit)? = null
 ) {
-    val shape = remember { RoundedCornerShape(24.dp) }
+    val shape = remember { RoundedCornerShape(18.dp) }
+    val labelText = if (query.isNotBlank()) query else "搜尋"
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .phantomGlassSurface(
-                state = glassState,
-                fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
-                cornerRadius = 24.dp
-            )
-            .clip(shape)
-            .clickable(onClick = onClick)
-            .semantics { contentDescription = "開啟搜尋：$placeholder" }
-            .padding(start = 14.dp, end = if (trailingActions != null) 4.dp else 14.dp),
+        modifier = modifier.wrapContentWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Icon(
-            imageVector = Icons.Default.Search,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp)
-        )
-        Text(
-            text = query.ifBlank { placeholder },
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (query.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
+        Box(
+            modifier = Modifier
+                .wrapContentWidth()
+                .heightIn(min = 48.dp)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onClick
+                )
+                .semantics { contentDescription = "開啟搜尋：$placeholder" },
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Row(
+                modifier = Modifier
+                    .height(36.dp)
+                    .widthIn(min = 92.dp, max = 160.dp)
+                    .phantomGlassSurface(
+                        state = glassState,
+                        fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                        cornerRadius = 18.dp
+                    )
+                    .clip(shape)
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = labelText,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (query.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
         if (trailingActions != null) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
