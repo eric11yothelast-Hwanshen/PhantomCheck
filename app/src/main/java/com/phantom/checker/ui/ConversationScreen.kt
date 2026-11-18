@@ -3,6 +3,8 @@ package com.phantom.checker.ui
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.telephony.SmsManager
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -17,9 +19,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,6 +37,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.MoreVert
@@ -51,6 +58,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -66,6 +74,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,6 +95,8 @@ import com.phantom.checker.data.MessageTagRow
 import com.phantom.checker.data.TagEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.service.AppDatabaseHolder
+import com.phantom.checker.service.NotificationCollectorService
+import com.phantom.checker.service.ReplyProxyManager
 import com.phantom.checker.service.StatsForegroundService
 import com.phantom.checker.ui.components.SwipeToRevealRow
 import com.phantom.checker.util.PhantomPrefs
@@ -99,6 +110,7 @@ import java.util.Date
 import java.util.Locale
 
 private const val MAX_BATCH_SELECT = 100
+private val TW_PHONE_REGEX = Regex("^09\\d{8}$")
 
 class ConversationActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -200,6 +212,15 @@ fun ConversationScreen(
     var isMultiSelectMode by remember { mutableStateOf(false) }
     var selectedMessageIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+    var replyText by rememberSaveable { mutableStateOf("") }
+    var isSendingReply by remember { mutableStateOf(false) }
+
+    val isImeVisible = WindowInsets.isImeVisible
+    LaunchedEffect(isImeVisible) {
+        if (isImeVisible && messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.lastIndex)
+        }
+    }
 
     val toggleSelection: (Long) -> Unit = { id ->
         if (id in selectedMessageIds) {
@@ -762,6 +783,129 @@ fun ConversationScreen(
                                 selectedMessageIds = emptySet()
                             }
                         ) { Text("取消") }
+                    }
+                }
+            } else {
+                Surface(
+                    tonalElevation = 3.dp,
+                    shadowElevation = 6.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .imePadding()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = replyText,
+                            onValueChange = { replyText = it },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text("回覆 $displayTitle…") },
+                            maxLines = 3,
+                            enabled = !isSendingReply,
+                            shape = RoundedCornerShape(22.dp)
+                        )
+                        IconButton(
+                            enabled = replyText.isNotBlank() && !isSendingReply,
+                            onClick = {
+                                val textToSend = replyText.trim()
+                                if (textToSend.isEmpty() || isSendingReply) return@IconButton
+                                isSendingReply = true
+                                val lastMsg = messages.lastOrNull()
+                                val targetSender = lastMsg?.sender?.ifBlank { displayTitle } ?: displayTitle
+                                val targetSnippet = lastMsg?.content.orEmpty()
+                                scope.launch {
+                                    try {
+                                        val res = withContext(Dispatchers.IO) {
+                                            NotificationCollectorService.sendReplyToNotification(
+                                                context = appCtx,
+                                                packageName = packageName,
+                                                sender = targetSender,
+                                                contentSnippet = targetSnippet,
+                                                replyText = textToSend,
+                                                conversationKey = conversationKey
+                                            )
+                                        }
+                                        when (res) {
+                                            is NotificationCollectorService.Companion.ReplySendResult.Success -> {
+                                                ReplyProxyManager.startOrRefreshSession(
+                                                    ctx = appCtx,
+                                                    packageName = packageName,
+                                                    appLabel = appLabel,
+                                                    sender = targetSender,
+                                                    originalSnippet = targetSnippet,
+                                                    initialReplyText = textToSend
+                                                )
+                                                replyText = ""
+                                                snackbarHostState.showSnackbar("已送出")
+                                            }
+                                            is NotificationCollectorService.Companion.ReplySendResult.Unavailable -> {
+                                                val isSmsFallback = packageName == "sms" ||
+                                                    TW_PHONE_REGEX.matches(targetSender.trim()) ||
+                                                    TW_PHONE_REGEX.matches(conversationKey.trim())
+                                                if (isSmsFallback) {
+                                                    val phone = when {
+                                                        TW_PHONE_REGEX.matches(targetSender.trim()) -> targetSender.trim()
+                                                        TW_PHONE_REGEX.matches(conversationKey.trim()) -> conversationKey.trim()
+                                                        else -> targetSender.trim()
+                                                    }
+                                                    try {
+                                                        withContext(Dispatchers.IO) {
+                                                            @Suppress("DEPRECATION")
+                                                            SmsManager.getDefault().sendTextMessage(
+                                                                phone,
+                                                                null,
+                                                                textToSend,
+                                                                null,
+                                                                null
+                                                            )
+                                                        }
+                                                        ReplyProxyManager.startOrRefreshSession(
+                                                            ctx = appCtx,
+                                                            packageName = packageName,
+                                                            appLabel = appLabel,
+                                                            sender = targetSender,
+                                                            originalSnippet = targetSnippet,
+                                                            initialReplyText = textToSend
+                                                        )
+                                                        replyText = ""
+                                                        snackbarHostState.showSnackbar("已透過簡訊送出")
+                                                    } catch (e: Exception) {
+                                                        Log.e("PhantomReply", "ConversationScreen SMS fallback failed pkg=$packageName phone=$phone", e)
+                                                        snackbarHostState.showSnackbar("無法送出簡訊：${e.message ?: "發送失敗"}，建議開啟原 App 回覆")
+                                                    }
+                                                } else {
+                                                    Log.w("PhantomReply", "ConversationScreen reply unavailable pkg=$packageName reason=${res.reason}")
+                                                    snackbarHostState.showSnackbar(res.reason)
+                                                }
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e("PhantomReply", "ConversationScreen reply failed pkg=$packageName convKey=$conversationKey", e)
+                                        snackbarHostState.showSnackbar("回覆失敗：${e.message ?: "未知錯誤"}，建議開啟原 App 回覆")
+                                    } finally {
+                                        isSendingReply = false
+                                    }
+                                }
+                            }
+                        ) {
+                            if (isSendingReply) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "送出回覆"
+                                )
+                            }
+                        }
                     }
                 }
             }
