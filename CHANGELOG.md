@@ -2,6 +2,35 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.6.0] - 2026-11-18
+
+### 新增
+- **對話詳情頁底部快速回覆輸入列（#197）**：
+  - `ConversationScreen` 底部新增常駐回覆輸入框（`OutlinedTextField`＋發送按鈕，含 `navigationBarsPadding().imePadding()`、鍵盤彈出自動捲動至最新訊息、多選模式下自動隱藏）。
+  - `NotificationCollectorService.sendReplyToNotification` 新增可選 `conversationKey` 參數，優先以 `MessagingStyle` `EXTRA_CONVERSATION_TITLE` 精準定位對話（其次 `EXTRA_TITLE`、再同套件 fallback）；送出成功後呼叫 `ReplyProxyManager.startOrRefreshSession` 維持通知欄連續回覆；SMS 類 App fallback 走 `SmsManager` 既有簡訊回覆路徑，全程具備 `try/catch`＋`PhantomReply` logcat 保護。
+- **獨立白名單管理頁面與收合持久化（#199）**：
+  - 新增 `WhitelistManagementActivity`（`android:exported="false"`，採 `PhantomCheckTheme`＋`PhantomBackgroundBox` 與頂欄返回鍵），將分組白名單管理 UI 移入獨立頁面；`SettingsActivity` 資料管理區精簡為「白名單管理（N 筆）」入口按鈕。
+  - `PhantomPrefs` 新增 `whitelist_collapsed_groups` `StringSet` 持久化各 App 分組收合狀態（跨進出與重啟保留，首次無記錄時預設全部展開）；`SettingsCatalog` `whitelist_management` 同步指向新 Activity。
+
+### 變更與修正
+- **全域依賴、編譯工具鏈與目標 SDK 升級（#200）**：
+  - 升級 Gradle Wrapper 至 `9.9.1`、AGP 至 `9.5.1`（啟用 AGP 9 內建 Kotlin，移除 `org.jetbrains.kotlin.android` 與 `kotlinOptions`）、Kotlin Compose plugin 至 `2.4.21`、`compileSdk`／`targetSdk` 升至 `36`（Android 16）。
+  - 導入 Jetpack Compose BOM `2026.09.00`（Material 3 `1.4.0`），升級 `core-ktx` `1.19.1`、`activity-compose` `1.13.0`、`lifecycle-runtime-ktx` `2.11.0`、`work-runtime-ktx` `2.12.0`、`Retrofit` `3.0.0`、`Room` `2.8.5`（完成 `kapt` → `KSP 2.3.12` 遷移）。
+  - 升級 `Haze` 至 `2.1.0`（`haze`＋`haze-blur`），重寫 `Glass.kt` 遷移至 `Modifier.hazeBlur`＋`HazeInput.Sources`＋自建 `HazeBlurStyle`（取代已停產的 `haze-materials`），完整保留三種卡片底色模式、省電降級與 API < S fallback。
+  - `AGENTS.md` 發佈檢查清單新增第 6 項常態規則：每次發佈須檢查並升級依賴至最新穩定版。
+- **全螢幕搜尋覆蓋層層級修正（#193）**：
+  - 將 `ConversationScreen` 與 `AppThreadsScreen` 之 `PhantomFullScreenSearchOverlay` 移出 `Scaffold` 改由外層 `Box` 包住整個 `Scaffold`（比照 `MainActivity` 寫法），修正搜尋覆蓋層被頂欄遮擋的問題。
+- **迷你玻璃搜尋膠囊與工具列排版統一（#194）**：
+  - `PhantomSearchBarPill` 改為 36dp 視覺高度膠囊（左放大鏡圖標＋「搜尋」文字，外層保留 ≥48dp 無障礙觸控目標），`MainActivity` 重新整理與設定齒輪按鈕移至搜尋膠囊下方右側對齊，四個頁面搜尋入口視覺風格統一。
+- **左滑刪除列背景透明化（#195）**：
+  - 移除 `SwipeToRevealRow` 內容層的全寬不透明底色，外層容器改為完全透明並依滑動位移進度控制右側動作按鈕 `alpha`，讓自訂背景圖在訊息氣泡後方完整可見。
+- **回覆鏈與 AI 助手動作全面防崩（#196）**：
+  - `ReplyProxyManager` 回覆用 `PendingIntent` 改為 `FLAG_MUTABLE`（符合 Android `RemoteInput` 官方規範；關閉／逾時等動作維持 `FLAG_IMMUTABLE`），`ensureChannel`／通知建立／排程全部加上 `try/catch`＋`PhantomReply` logcat。
+  - `ReplyProxyReceiver` 廣播與 `goAsync()` 協程補齊 `try/catch`；`ChatScreen` 動作協程加上 `try/catch`＋`PhantomChatAction` logcat，並將 `messages.first()` 改為 `firstOrNull()` 空集合防禦。
+- **待辦事項 Flow 即時同步稽核（#198）**：
+  - `TodoDao` 新增 `observeAll(): Flow<List<TodoEntity>>`，`MainActivity` 記事分頁與 `ChatScreen` 待辦選單改採 `collectAsState`＋智慧排序即時觀測，桌面小工具刪除／完成／新增後 App 內立即同步；`MessageDetailActivity` 補齊 `ON_RESUME` 刷新 `remindAt` 顯示。
+- **版號更新**：`versionCode` 24、`versionName` `"2.6.0"`。
+
 ## [2.5.0] - 2026-11-18
 
 ### 新增

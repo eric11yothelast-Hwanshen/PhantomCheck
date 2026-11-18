@@ -44,4 +44,5 @@
 3. **README.md 同步**：確認功能總覽、系統需求、版本重點與安裝說明已對齊最新版本。
 4. **Tag release notes 含變更說明**：建立 GitHub Release / tag 時，release notes 須附上完整變更說明（說明書）。
 5. **Release 資產驗證**：確認 CI（`gitleaks` + `build`）全綠燈，並驗證產出之 APK 資產完整可下載。
+6. **依賴版本更新**：依賴版本須檢查並升級至當下最新穩定版（Google Maven / Maven Central 為準）。
 
