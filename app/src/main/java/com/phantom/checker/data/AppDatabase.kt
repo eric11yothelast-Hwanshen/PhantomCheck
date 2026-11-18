@@ -883,6 +883,16 @@ interface TodoDao {
     @Query("SELECT * FROM todos WHERE isDone = 0 AND createdAt >= :since ORDER BY createdAt DESC")
     suspend fun findRecentPendingSince(since: Long): List<TodoEntity>
 
+    @Query("""
+        SELECT t.* FROM todos t
+        INNER JOIN messages m ON t.relatedMessageId = m.id
+        WHERE t.isDone = 0
+          AND t.createdAt >= :since
+          AND (CASE WHEN m.appLabel != '' THEN m.appLabel ELSE m.packageName END) = :appLabel
+        ORDER BY t.createdAt DESC
+    """)
+    suspend fun findRecentPendingByAppLabel(appLabel: String, since: Long): List<TodoEntity>
+
     @Insert
     suspend fun insert(todo: TodoEntity): Long
 

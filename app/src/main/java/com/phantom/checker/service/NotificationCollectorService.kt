@@ -1119,7 +1119,12 @@ class NotificationCollectorService : NotificationListenerService() {
         private const val AUTO_MEMO_DEDUP_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L
 
         internal fun normalizeForSimilarity(text: String): String =
-            text.trim().replace(Regex("\\s+"), " ")
+            java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC)
+                .trim()
+                .lowercase(java.util.Locale.ROOT)
+                .replace(Regex("[\\p{Punct}\\p{IsPunctuation}]+"), " ")
+                .replace(Regex("\\s+"), " ")
+                .trim()
 
         internal fun diceBigramSimilarity(a: String, b: String): Double {
             if (a == b) return 1.0
@@ -1177,14 +1182,36 @@ class NotificationCollectorService : NotificationListenerService() {
 
             val now = System.currentTimeMillis()
             val normClean = normalizeForSimilarity(clean)
+            val appLabel = msg.appLabel.ifBlank { msg.packageName }
 
             if (effectiveMemoType == AiClient.MEMO_TYPE_TODO) {
                 if (db.todoDao().findByRelatedMessageId(msg.id) != null) return
                 val since = now - AUTO_MEMO_DEDUP_WINDOW_MS
-                val recentPending = db.todoDao().findRecentPendingSince(since)
-                if (recentPending.any { normalizeForSimilarity(it.title) == normClean }) return
-
+                val recentPending = db.todoDao().findRecentPendingByAppLabel(appLabel, since)
+                val duplicateTodo = recentPending.firstOrNull { cand ->
+                    val normCand = normalizeForSimilarity(cand.title)
+                    normCand == normClean || diceBigramSimilarity(normCand, normClean) >= 0.9
+                }
                 val parsedDue = ClientTimeParser.parseStructuredDueAt(todoDue)
+                if (duplicateTodo != null) {
+                    val updatedDue = parsedDue ?: duplicateTodo.dueAt
+                    db.todoDao().update(
+                        duplicateTodo.copy(
+                            title = clean,
+                            dueAt = updatedDue,
+                            relatedMessageId = msg.id
+                        )
+                    )
+                    val appCtx = ctx?.applicationContext
+                    if (appCtx != null) {
+                        if (parsedDue != null && parsedDue > now && parsedDue != duplicateTodo.dueAt) {
+                            ReminderScheduler.scheduleTodo(appCtx, duplicateTodo.id, parsedDue)
+                        }
+                        ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                    }
+                    return
+                }
+
                 val dueAt = parsedDue ?: (msg.timestamp + 2L * 60L * 60L * 1000L)
                 val newId = db.todoDao().insert(
                     TodoEntity(
@@ -1206,8 +1233,6 @@ class NotificationCollectorService : NotificationListenerService() {
                 }
                 return
             }
-
-            val appLabel = msg.appLabel.ifBlank { msg.packageName }
 
             val existing = db.noteDao().findAutoByMessageId(msg.id)
             if (existing != null) {
