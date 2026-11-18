@@ -5,6 +5,7 @@ import com.phantom.checker.service.DailySummaryPolicy
 import com.phantom.checker.service.HeartbeatPolicy
 import com.phantom.checker.service.StatsForegroundService
 import com.phantom.checker.util.PhantomPrefs
+import com.phantom.checker.util.PhantomSettingsBus
 import kotlinx.coroutines.launch
 
 data class SettingSearchItem(
@@ -270,6 +271,7 @@ object SettingsCatalog {
             "update_auto_check" -> PhantomPrefs.setUpdateAutoCheckEnabled(appCtx, enabled)
             else -> return null
         }
+        PhantomSettingsBus.notifyChanged()
         return before to enabled
     }
 
@@ -378,6 +380,7 @@ object SettingsCatalog {
             "ai_min_trigger_length" -> PhantomPrefs.setAiMinTriggerLength(appCtx, target)
             else -> return null
         }
+        PhantomSettingsBus.notifyChanged()
         return Triple(before, target, wasClamped)
     }
 

@@ -144,6 +144,7 @@ import com.phantom.checker.util.NaturalTimeParseResult
 import com.phantom.checker.util.NotificationFoldUtil
 import com.phantom.checker.util.OtpDetector
 import com.phantom.checker.util.PhantomPrefs
+import com.phantom.checker.util.PhantomSettingsBus
 import com.phantom.checker.widget.ReminderWidgetProvider
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
@@ -271,6 +272,12 @@ fun ChatAssistantTab(
     var activeProfile by remember { mutableStateOf(AiClient.getProfileForPurpose(appCtx, com.phantom.checker.util.AiPurpose.CHAT)) }
     var hasApiKey by remember { mutableStateOf(activeProfile != null) }
     var showSuggestions by remember { mutableStateOf(PhantomPrefs.isChatSuggestionsEnabled(appCtx)) }
+    val settingsVersion by PhantomSettingsBus.version.collectAsState()
+    LaunchedEffect(settingsVersion) {
+        if (settingsVersion > 0L) {
+            showSuggestions = PhantomPrefs.isChatSuggestionsEnabled(appCtx)
+        }
+    }
     var quickCommands by remember { mutableStateOf(PhantomPrefs.getQuickChatCommands(appCtx)) }
     var showInputToolsMenu by remember { mutableStateOf(false) }
     var showQuickCommandsDialog by remember { mutableStateOf(false) }

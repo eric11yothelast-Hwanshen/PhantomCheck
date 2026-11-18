@@ -173,6 +173,7 @@ import com.phantom.checker.util.AppUpdateHelper
 import com.phantom.checker.util.MessageExporter
 import com.phantom.checker.util.MuteMode
 import com.phantom.checker.util.PhantomPrefs
+import com.phantom.checker.util.PhantomSettingsBus
 import com.phantom.checker.util.ShareCardReportData
 import com.phantom.checker.util.StatsShareCardGenerator
 import com.phantom.checker.util.TabBarDisplayMode
@@ -449,6 +450,15 @@ private fun PhantomCheckApp(
 
     var tabBarDisplayMode by remember { mutableStateOf(PhantomPrefs.getTabBarDisplayMode(appCtx)) }
     var visibleStatsCards by remember { mutableStateOf(PhantomPrefs.getVisibleStatsCards(appCtx)) }
+    val settingsVersion by PhantomSettingsBus.version.collectAsState()
+    LaunchedEffect(settingsVersion) {
+        if (settingsVersion > 0L) {
+            favoritePackages = PhantomPrefs.getFavoriteApps(appCtx)
+            mutedPackages = PhantomPrefs.getMutedApps(appCtx)
+            tabBarDisplayMode = PhantomPrefs.getTabBarDisplayMode(appCtx)
+            visibleStatsCards = PhantomPrefs.getVisibleStatsCards(appCtx)
+        }
+    }
     var tabBarVisible by remember { mutableStateOf(true) }
     var pendingUpdateDialog by remember { mutableStateOf<UpdateCheckResult.UpdateAvailable?>(null) }
     LaunchedEffect(selectedTab, tabBarDisplayMode) {
@@ -4079,7 +4089,8 @@ private fun StatsTab(
         )
     }
 
-    val tokenSaverOn = remember { PhantomPrefs.isTokenSaverEnabled(appCtx) }
+    val settingsVersion by PhantomSettingsBus.version.collectAsState()
+    val tokenSaverOn = remember(settingsVersion) { PhantomPrefs.isTokenSaverEnabled(appCtx) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),

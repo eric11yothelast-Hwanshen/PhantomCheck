@@ -158,6 +158,7 @@ import com.phantom.checker.util.MuteMode
 import com.phantom.checker.util.NotifClickBehavior
 import com.phantom.checker.util.PersistentNotifStyle
 import com.phantom.checker.util.PhantomPrefs
+import com.phantom.checker.util.PhantomSettingsBus
 import com.phantom.checker.util.PresetKeywords
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
@@ -455,6 +456,59 @@ fun FilterSettingsScreen(
         whitelistCount = withContext(Dispatchers.IO) {
             AppDatabaseHolder.db(appCtx).aiRuleDao().all()
                 .count { it.kind == com.phantom.checker.data.AiRuleEntity.KIND_WHITELIST }
+        }
+    }
+
+    val settingsVersion by PhantomSettingsBus.version.collectAsState()
+    LaunchedEffect(settingsVersion) {
+        if (settingsVersion > 0L) {
+            mutedApps = PhantomPrefs.getMutedApps(appCtx).sorted()
+            muteModes = PhantomPrefs.getAppMuteModeMap(appCtx)
+            tokenSaverEnabled = PhantomPrefs.isTokenSaverEnabled(appCtx)
+            persistentStats = PhantomPrefs.isPersistentStatsEnabled(appCtx)
+            persistentShowIcons = PhantomPrefs.isPersistentNotifShowIcons(appCtx)
+            persistentNotifStyle = PhantomPrefs.getPersistentNotifStyle(appCtx)
+            swipeToDeleteEnabled = PhantomPrefs.isSwipeToDeleteEnabled(appCtx)
+            scamAlertNotif = PhantomPrefs.isScamAlertNotifEnabled(appCtx)
+            recordOngoing = PhantomPrefs.isRecordOngoingEnabled(appCtx)
+            clickBehavior = PhantomPrefs.getNotifClickBehavior(appCtx)
+            throttleSec = PhantomPrefs.getSameKeyThrottleSeconds(appCtx).toFloat()
+            digitVarianceThrottle = PhantomPrefs.isSameKeyDigitVarianceThrottleEnabled(appCtx)
+            appThrottleMap = PhantomPrefs.getAppSameKeyThrottleMap(appCtx)
+            alertKeywords = PhantomPrefs.getAlertKeywords(appCtx)
+            quietHoursEnabled = PhantomPrefs.isQuietHoursEnabled(appCtx)
+            quietStartMinute = PhantomPrefs.getQuietHoursStartMinute(appCtx)
+            quietEndMinute = PhantomPrefs.getQuietHoursEndMinute(appCtx)
+            aiRiskEnabled = PhantomPrefs.isAiRiskEnabled(appCtx)
+            aiAutoTagEnabled = PhantomPrefs.isAiAutoTagEnabled(appCtx)
+            aiOfflineRetryEnabled = PhantomPrefs.isAiOfflineRetryEnabled(appCtx)
+            aiAutoMemoEnabled = PhantomPrefs.isAiAutoMemoEnabled(appCtx)
+            aiTagFailureNotifEnabled = PhantomPrefs.isAiTagFailureNotifEnabled(appCtx)
+            dualModelRoutingEnabled = PhantomPrefs.isDualModelRoutingEnabled(appCtx)
+            dualModelRoutingModel = PhantomPrefs.getDualModelRoutingModel(appCtx)
+            chatSuggestionsEnabled = PhantomPrefs.isChatSuggestionsEnabled(appCtx)
+            aiChatTabContinue = PhantomPrefs.isAiChatTabContinue(appCtx)
+            quickCommandDefaultMode = PhantomPrefs.getQuickCommandDefaultMode(appCtx)
+            quickChatCommands = PhantomPrefs.getQuickChatCommands(appCtx)
+            dailyAiLimit = PhantomPrefs.getDailyAiLimit(appCtx)
+            chatRagLimit = PhantomPrefs.getChatRagMessageLimit(appCtx)
+            aiMinTriggerLength = PhantomPrefs.getAiMinTriggerLength(appCtx)
+            todayAiUsage = PhantomPrefs.getTodayAiUsage(appCtx)
+            dailySummaryEnabled = PhantomPrefs.isDailySummaryEnabled(appCtx)
+            dailySummaryNotifEnabled = PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
+            summaryHour = PhantomPrefs.getDailySummaryHour(appCtx)
+            summaryMinute = PhantomPrefs.getDailySummaryMinute(appCtx)
+            retentionDays = RetentionConfig.getRetentionDays(appCtx)
+            retentionMaxCount = PhantomPrefs.getRetentionMaxCount(appCtx)
+            cardDensity = PhantomPrefs.getCardDensity(appCtx)
+            homeSortOrder = PhantomPrefs.getHomeSortOrder(appCtx)
+            visibleHomeFilters = PhantomPrefs.getVisibleHomeFilters(appCtx)
+            summaryDefaultCollapsed = PhantomPrefs.isSummaryDefaultCollapsed(appCtx)
+            cardStackEffectEnabled = PhantomPrefs.isCardStackEffectEnabled(appCtx)
+            use24HourFormat = PhantomPrefs.is24HourFormat(appCtx)
+            visibleStatsCards = PhantomPrefs.getVisibleStatsCards(appCtx)
+            hapticEnabled = PhantomPrefs.isHapticFeedbackEnabled(appCtx)
+            tabBarDisplayMode = PhantomPrefs.getTabBarDisplayMode(appCtx)
         }
     }
 
@@ -2426,6 +2480,13 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     var replyProxyEnabled by remember { mutableStateOf(PhantomPrefs.isReplyProxyEnabled(appCtx)) }
                     var replyProxyTimeout by remember { mutableStateOf(PhantomPrefs.getReplyProxyTimeoutMinutes(appCtx)) }
+                    val replyProxyBusVer by PhantomSettingsBus.version.collectAsState()
+                    LaunchedEffect(replyProxyBusVer) {
+                        if (replyProxyBusVer > 0L) {
+                            replyProxyEnabled = PhantomPrefs.isReplyProxyEnabled(appCtx)
+                            replyProxyTimeout = PhantomPrefs.getReplyProxyTimeoutMinutes(appCtx)
+                        }
+                    }
                     SettingSwitchRow(
                         title = "通知欄連續快速回覆",
                         subtitle = "透過 AI 助手回覆後於通知欄保留對話輸入框，可連續回覆多則",
@@ -2955,6 +3016,12 @@ private fun FraudIntelCard(
     val scope = rememberCoroutineScope()
 
     var intelEnabled by remember { mutableStateOf(PhantomPrefs.isIntelEnabled(appCtx)) }
+    val intelBusVer by PhantomSettingsBus.version.collectAsState()
+    LaunchedEffect(intelBusVer) {
+        if (intelBusVer > 0L) {
+            intelEnabled = PhantomPrefs.isIntelEnabled(appCtx)
+        }
+    }
     var fraudTwEnabled by remember { mutableStateOf(PhantomPrefs.isIntelFraudTwEnabled(appCtx)) }
     var safeBrowsingEnabled by remember { mutableStateOf(PhantomPrefs.isIntelSafeBrowsingEnabled(appCtx)) }
     var phishTankEnabled by remember { mutableStateOf(PhantomPrefs.isIntelPhishTankEnabled(appCtx)) }
@@ -3592,6 +3659,12 @@ private fun AboutSettingsCard(
         )
         Spacer(Modifier.height(8.dp))
         var updateAutoCheck by remember { mutableStateOf(PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)) }
+        val updateBusVer by PhantomSettingsBus.version.collectAsState()
+        LaunchedEffect(updateBusVer) {
+            if (updateBusVer > 0L) {
+                updateAutoCheck = PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)
+            }
+        }
         SettingSwitchRow(
             title = "自動檢查更新",
             subtitle = "開啟 App 時自動檢查 GitHub 最新版本，每天最多提示一次",
