@@ -172,7 +172,14 @@ class PendingAiAnalysisWorker(
                 }
             }
             if (PhantomPrefs.isAiAutoMemoEnabled(appCtx) && result.memo.isNotBlank()) {
-                NotificationCollectorService.saveAutoMemoIfPresent(db, msg, result.memo)
+                NotificationCollectorService.saveAutoMemoIfPresent(
+                    db = db,
+                    msg = msg,
+                    rawMemo = result.memo,
+                    memoType = result.memoType,
+                    todoDue = result.todoDue,
+                    ctx = appCtx
+                )
             }
             if (result.riskLabel == "scam") {
                 hasNewScam = true

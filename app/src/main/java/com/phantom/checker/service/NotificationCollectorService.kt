@@ -23,6 +23,7 @@ import com.phantom.checker.data.MessageTagCrossRef
 import com.phantom.checker.data.NoteEntity
 import com.phantom.checker.data.PendingAiAnalysisEntity
 import com.phantom.checker.data.TagEntity
+import com.phantom.checker.data.TodoEntity
 import com.phantom.checker.data.UserTagRuleEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.network.IndicatorExtractor
@@ -31,9 +32,11 @@ import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.ui.MessageDetailActivity
 import com.phantom.checker.ui.ScamCenterActivity
 import com.phantom.checker.util.AiPurpose
+import com.phantom.checker.util.ClientTimeParser
 import com.phantom.checker.util.MuteMode
 import com.phantom.checker.util.NotifClickBehavior
 import com.phantom.checker.util.PhantomPrefs
+import com.phantom.checker.widget.ReminderWidgetProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -584,7 +587,14 @@ class NotificationCollectorService : NotificationListenerService() {
                 }
             }
             if (PhantomPrefs.isAiAutoMemoEnabled(applicationContext) && result.memo.isNotBlank()) {
-                saveAutoMemoIfPresent(db, msg, result.memo)
+                saveAutoMemoIfPresent(
+                    db = db,
+                    msg = msg,
+                    rawMemo = result.memo,
+                    memoType = result.memoType,
+                    todoDue = result.todoDue,
+                    ctx = applicationContext
+                )
             }
             if (result.riskLabel == "scam") {
                 hasNewScam = true
@@ -1077,11 +1087,45 @@ class NotificationCollectorService : NotificationListenerService() {
         suspend fun saveAutoMemoIfPresent(
             db: AppDatabase,
             msg: MessageEntity,
-            rawMemo: String
+            rawMemo: String,
+            memoType: String = AiClient.MEMO_TYPE_NOTE,
+            todoDue: String = "",
+            ctx: Context? = null
         ) {
             val clean = rawMemo.trim().take(40)
             if (clean.isEmpty()) return
             val now = System.currentTimeMillis()
+            val normClean = normalizeForSimilarity(clean)
+
+            if (memoType == AiClient.MEMO_TYPE_TODO) {
+                if (db.todoDao().findByRelatedMessageId(msg.id) != null) return
+                val since = now - AUTO_MEMO_DEDUP_WINDOW_MS
+                val recentPending = db.todoDao().findRecentPendingSince(since)
+                if (recentPending.any { normalizeForSimilarity(it.title) == normClean }) return
+
+                val parsedDue = ClientTimeParser.parseStructuredDueAt(todoDue)
+                val dueAt = parsedDue ?: (msg.timestamp + 2L * 60L * 60L * 1000L)
+                val newId = db.todoDao().insert(
+                    TodoEntity(
+                        title = clean,
+                        dueAt = dueAt,
+                        isDone = false,
+                        createdAt = now,
+                        relatedMessageId = msg.id,
+                        sourceSessionId = null,
+                        priority = 1
+                    )
+                )
+                val appCtx = ctx?.applicationContext
+                if (appCtx != null) {
+                    if (dueAt > now) {
+                        ReminderScheduler.scheduleTodo(appCtx, newId, dueAt)
+                    }
+                    ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                }
+                return
+            }
+
             val appLabel = msg.appLabel.ifBlank { msg.packageName }
 
             val existing = db.noteDao().findAutoByMessageId(msg.id)
@@ -1093,7 +1137,6 @@ class NotificationCollectorService : NotificationListenerService() {
 
             val since = now - AUTO_MEMO_DEDUP_WINDOW_MS
             val recent = db.noteDao().findRecentAutoByAppLabel(appLabel, since)
-            val normClean = normalizeForSimilarity(clean)
             val duplicate = recent.firstOrNull { cand ->
                 val normCand = normalizeForSimilarity(cand.content)
                 normCand == normClean || diceBigramSimilarity(normCand, normClean) >= 0.9

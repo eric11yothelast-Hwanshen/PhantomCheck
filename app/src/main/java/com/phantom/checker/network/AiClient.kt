@@ -214,12 +214,17 @@ object AiClient {
     private val chatApiCache = object : LruCache<String, ChatApi>(16) {}
     private val lastCallTimeMs = AtomicLong(0L)
 
+    const val MEMO_TYPE_NOTE = "note"
+    const val MEMO_TYPE_TODO = "todo"
+
     data class AiAnalysisResult(
         val riskScore: Int,
         val riskLabel: String,
         val riskReason: String,
         val tagIds: List<Long> = emptyList(),
-        val memo: String = ""
+        val memo: String = "",
+        val memoType: String = MEMO_TYPE_NOTE,
+        val todoDue: String = ""
     )
 
     private data class CachedRisk(
@@ -604,11 +609,11 @@ object AiClient {
         }
 
         if (includeAutoMemo) {
-            base.appendLine("若訊息含值得備忘的資訊（約定時間/日期、繳費或付款期限、取貨編號、會議、回訪約定、待回覆事項等），輸出 memo 欄位（繁體中文、40 字內、不含訊息原文照抄）；無則 memo 為空字串 \"\"。")
+            base.appendLine("若訊息含值得備忘的資訊，請輸出 memo（繁體中文、40 字內、不含訊息原文照抄）、memo_type（\"todo\" 表示含明確行動或期限如繳費期限/取貨/會議/回診/待回覆事項；\"note\" 表示純資訊性備忘）與 todo_due（僅 memo_type=\"todo\" 且有明確時間時填 \"yyyy-MM-dd HH:mm\"，無法確定時間或 memo_type=\"note\" 時留空字串 \"\"）；無須備忘則 memo=\"\"、memo_type=\"note\"、todo_due=\"\"。")
         }
 
         base.appendLine("只輸出一個 JSON 物件，不得使用 markdown 圍欄，不得附加任何說明文字或註解。")
-        val memoSchemaPart = if (includeAutoMemo) ", \"memo\": \"\"" else ""
+        val memoSchemaPart = if (includeAutoMemo) ", \"memo\": \"\", \"memo_type\": \"note|todo\", \"todo_due\": \"\"" else ""
         if (activeTags.isNotEmpty()) {
             base.append("只輸出 JSON：{\"risk_score\": 0-100, \"risk_label\": \"safe|suspicious|scam\", \"risk_reason\": \"一句話說明\", \"tags\": [1]$memoSchemaPart}")
         } else {
@@ -675,7 +680,7 @@ object AiClient {
         val tagSig = activeTags.joinToString(",") { "${it.id}:${it.name}:${it.aiHint}" }
         val ruleSig = activeRules.joinToString(",") { "${it.id}:${it.kind}:${it.targetTagId}:${it.ruleText}" }
         val autoMemo = context != null && PhantomPrefs.isAiAutoMemoEnabled(context)
-        val cacheKey = sha256("$content|autoTag=$enableAutoTag|autoMemo=$autoMemo|$tagSig|$ruleSig")
+        val cacheKey = sha256("$content|autoTag=$enableAutoTag|autoMemo=$autoMemo|memoV2=${if (autoMemo) 1 else 0}|$tagSig|$ruleSig")
         val now = System.currentTimeMillis()
         if (!bypassCache) {
             synchronized(riskCache) {
@@ -955,7 +960,7 @@ object AiClient {
             val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
             val autoMemo = context != null && PhantomPrefs.isAiAutoMemoEnabled(context)
             val singlePrompt = buildSystemPrompt(activeTags, activeRules, enableAutoTag, includeAutoMemo = autoMemo)
-            val memoSchemaPart = if (autoMemo) ", \"memo\": \"\"" else ""
+            val memoSchemaPart = if (autoMemo) ", \"memo\": \"\", \"memo_type\": \"note|todo\", \"todo_due\": \"\"" else ""
             val batchSystemPrompt = buildString {
                 appendLine(singlePrompt)
                 appendLine()
@@ -1107,12 +1112,39 @@ object AiClient {
         } catch (_: Exception) {
             ""
         }
+        val rawMemoType = try {
+            val el = obj.get("memo_type")
+            if (el != null && !el.isJsonNull && el.isJsonPrimitive) {
+                el.asString.trim().lowercase()
+            } else {
+                ""
+            }
+        } catch (_: Exception) {
+            ""
+        }
+        val memoType = if (rawMemoType == MEMO_TYPE_TODO) MEMO_TYPE_TODO else MEMO_TYPE_NOTE
+        val todoDue = if (memoType == MEMO_TYPE_TODO) {
+            try {
+                val el = obj.get("todo_due")
+                if (el != null && !el.isJsonNull && el.isJsonPrimitive) {
+                    el.asString.trim().take(32)
+                } else {
+                    ""
+                }
+            } catch (_: Exception) {
+                ""
+            }
+        } else {
+            ""
+        }
         return AiAnalysisResult(
             riskScore = score,
             riskLabel = label,
             riskReason = reason,
             tagIds = tagIds,
-            memo = memo
+            memo = memo,
+            memoType = memoType,
+            todoDue = todoDue
         )
     }
 
