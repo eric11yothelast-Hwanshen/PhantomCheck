@@ -93,15 +93,18 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
@@ -1747,14 +1750,17 @@ fun ChatAssistantTab(
             }
         }
 
-        LaunchedEffect(drawerState.currentValue, drawerState.isAnimationRunning) {
-            if (!drawerState.isAnimationRunning) {
-                if (drawerState.currentValue == 0f && showSessionDrawer) {
-                    showSessionDrawer = false
-                } else if (drawerState.currentValue == 1f && !showSessionDrawer) {
-                    showSessionDrawer = true
+        LaunchedEffect(drawerState) {
+            snapshotFlow { drawerState.currentValue to drawerState.isAnimationRunning }
+                .collect { (currentValue, isRunning) ->
+                    if (!isRunning) {
+                        if (currentValue == 0f && showSessionDrawer) {
+                            showSessionDrawer = false
+                        } else if (currentValue == 1f && !showSessionDrawer) {
+                            showSessionDrawer = true
+                        }
+                    }
                 }
-            }
         }
 
         BackHandler(enabled = showSessionDrawer) {
@@ -3440,17 +3446,31 @@ fun ChatAssistantTab(
         }
         }
 
-        val offsetX = if (drawerState.offset.isNaN()) -drawerWidthPx else drawerState.offset
-        val drawerProgress = if (drawerWidthPx > 0f) {
-            ((offsetX + drawerWidthPx) / drawerWidthPx).coerceIn(0f, 1f)
-        } else {
-            0f
+        val isDrawerVisible by remember(drawerWidthPx) {
+            derivedStateOf {
+                val raw = drawerState.offset
+                val progress = if (!raw.isNaN() && drawerWidthPx > 0f) {
+                    ((raw + drawerWidthPx) / drawerWidthPx).coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
+                showSessionDrawer || progress > 0.005f
+            }
         }
-        if (showSessionDrawer || drawerProgress > 0.005f) {
+        if (isDrawerVisible) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.65f * drawerProgress))
+                    .drawBehind {
+                        val raw = drawerState.offset
+                        val offsetX = if (raw.isNaN()) -drawerWidthPx else raw
+                        val progress = if (drawerWidthPx > 0f) {
+                            ((offsetX + drawerWidthPx) / drawerWidthPx).coerceIn(0f, 1f)
+                        } else {
+                            0f
+                        }
+                        drawRect(Color.Black.copy(alpha = 0.65f * progress))
+                    }
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -3462,7 +3482,11 @@ fun ChatAssistantTab(
                     .align(Alignment.CenterStart)
                     .width(drawerWidth)
                     .fillMaxHeight()
-                    .offset { IntOffset(offsetX.roundToInt(), 0) }
+                    .offset {
+                        val raw = drawerState.offset
+                        val offsetX = if (raw.isNaN()) -drawerWidthPx else raw
+                        IntOffset(offsetX.roundToInt(), 0)
+                    }
                     .anchoredDraggable(drawerState, Orientation.Horizontal)
             ) {
                 PhantomFloatingSurface(
