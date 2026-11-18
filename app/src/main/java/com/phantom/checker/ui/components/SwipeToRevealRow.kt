@@ -3,7 +3,6 @@ package com.phantom.checker.ui.components
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.AnchoredDraggableState
 import androidx.compose.foundation.gestures.DraggableAnchors
@@ -17,13 +16,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -87,15 +88,25 @@ fun SwipeToRevealRow(
         }
     }
 
+    val isActionInteractive by remember {
+        derivedStateOf { revealed || (!state.offset.isNaN() && state.offset < -0.5f) }
+    }
+
     Box(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .matchParentSize()
-                .padding(horizontal = ActionAreaHorizontalPadding),
+                .padding(horizontal = ActionAreaHorizontalPadding)
+                .graphicsLayer {
+                    val currentOffset = if (state.offset.isNaN()) 0f else state.offset
+                    alpha = if (revealPx > 0f) (-currentOffset / revealPx).coerceIn(0f, 1f) else 0f
+                },
             horizontalArrangement = Arrangement.spacedBy(ActionSpacing, Alignment.End),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            actions()
+            if (isActionInteractive) {
+                actions()
+            }
         }
         Box(
             modifier = Modifier
@@ -106,7 +117,6 @@ fun SwipeToRevealRow(
                         0,
                     )
                 }
-                .background(MaterialTheme.colorScheme.background)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
