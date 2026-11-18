@@ -9,4 +9,5 @@
     <string name="daily_summary_widget_description">顯示最新每日 AI 摘要節錄，點擊開啟統計頁。</string>
     <string name="high_risk_widget_description">顯示最新高風險訊息，可一鍵標記詐騙或加入白名單。</string>
     <string name="todo_reminder_widget_description">顯示最近 2–3 則未觸發待辦提醒事項，點擊開啟幻訊。</string>
+    <string name="notes_widget_description">顯示最近 5 則記事（置頂優先），點擊開啟幻訊記事頁。</string>
 </resources>

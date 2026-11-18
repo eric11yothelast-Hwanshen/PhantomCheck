@@ -2798,6 +2798,7 @@ private fun NotesTab(
                                 )
                             )
                         }
+                        com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx)
                     }
                     onShowMessage(if (target == null) "已新增記事" else "已更新記事")
                 }
@@ -3245,6 +3246,7 @@ private fun NotesTab(
                                                     updatedAt = System.currentTimeMillis()
                                                 )
                                             )
+                                            com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx)
                                         }
                                     }
                                 }
@@ -3265,6 +3267,7 @@ private fun NotesTab(
                                         scope.launch {
                                             withContext(Dispatchers.IO) {
                                                 db.noteDao().deleteById(note.id)
+                                                com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx)
                                             }
                                             onShowMessage("已刪除記事")
                                         }

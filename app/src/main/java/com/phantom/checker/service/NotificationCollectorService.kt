@@ -1209,6 +1209,7 @@ class NotificationCollectorService : NotificationListenerService() {
             if (existing != null) {
                 if (existing.pinned) return
                 db.noteDao().update(existing.copy(content = clean, updatedAt = now))
+                com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(ctx)
                 return
             }
 
@@ -1227,6 +1228,7 @@ class NotificationCollectorService : NotificationListenerService() {
                         relatedMessageId = msg.id
                     )
                 )
+                com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(ctx)
                 return
             }
 
@@ -1240,6 +1242,7 @@ class NotificationCollectorService : NotificationListenerService() {
                     updatedAt = now
                 )
             )
+            com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(ctx)
         }
 
         private fun sha256(input: String): String {
