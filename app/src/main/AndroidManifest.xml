@@ -160,6 +160,7 @@
         </receiver>
 
         <receiver android:name=".service.ReminderReceiver" android:exported="false" />
+        <receiver android:name=".service.ReplyProxyReceiver" android:exported="false" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

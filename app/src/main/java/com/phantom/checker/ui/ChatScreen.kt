@@ -2589,8 +2589,17 @@ fun ChatAssistantTab(
                                                             contentSnippet = primaryMsg.content,
                                                             replyText = draftReply
                                                         )) {
-                                                            is NotificationCollectorService.Companion.ReplySendResult.Success ->
+                                                            is NotificationCollectorService.Companion.ReplySendResult.Success -> {
+                                                                com.phantom.checker.service.ReplyProxyManager.startOrRefreshSession(
+                                                                    ctx = appCtx,
+                                                                    packageName = primaryMsg.packageName,
+                                                                    appLabel = primaryMsg.appLabel,
+                                                                    sender = primaryMsg.sender,
+                                                                    originalSnippet = primaryMsg.content,
+                                                                    initialReplyText = draftReply
+                                                                )
                                                                 "已透過通知快速回覆送出給「${primaryMsg.sender.ifBlank { primaryMsg.appLabel }}」：$draftReply"
+                                                            }
                                                             is NotificationCollectorService.Companion.ReplySendResult.Unavailable ->
                                                                 res.reason
                                                         }

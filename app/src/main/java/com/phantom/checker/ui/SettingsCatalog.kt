@@ -59,6 +59,8 @@ object SettingsCatalog {
         SettingSearchItem("notif_swipe_delete", "notif", "對話頁滑動刪除", "在對話訊息氣泡向左滑動快速刪除", listOf("左滑", "滑動刪除", "swipe")),
         SettingSearchItem("notif_throttle", "notif", "同 key 重複節流與個別 App 覆寫", "相同通知節流秒數與個別 App 節流覆寫", listOf("節流", "同 key", "重複通知", "漏訊", "覆寫", "節流秒數", "重複節流")),
         SettingSearchItem("notif_digit_variance", "notif", "數字微變視為同一則更新", "對監控類通知將僅數字變動視為同 key 更新並節流", listOf("數字微變", "節流", "電量", "流量")),
+        SettingSearchItem("notif_reply_proxy", "notif", "通知欄連續快速回覆", "透過 AI 助手回覆後於通知欄保留對話輸入框，可連續回覆多則", listOf("連續回覆", "快速回覆", "代理回覆", "通知欄回覆", "reply")),
+        SettingSearchItem("notif_reply_proxy_timeout", "notif", "回覆通知閒置自動收起", "設定代理回覆通知閒置多久後自動收起（15 / 30 / 60 分鐘或不自動收起）", listOf("連續回覆", "逾時", "自動收起", "閒置", "回覆通知")),
         SettingSearchItem("notif_clear_read", "notif", "清除已讀訊息", "永久刪除所有已讀訊息（保留未讀訊息）", listOf("清除已讀", "已讀", "刪除已讀", "清已讀")),
         SettingSearchItem("data_retention", "data", "訊息保留與清理", "訊息保留天數與最大保留則數上限", listOf("保留", "天數", "上限", "清理")),
         SettingSearchItem("data_muted_apps", "data", "App 靜音清單", "設定特定 App 完全不記錄或靜默記錄", listOf("靜音", "封鎖", "app", "略過")),
@@ -108,6 +110,7 @@ object SettingsCatalog {
         "notif_quiet_hours",
         "notif_swipe_delete",
         "notif_digit_variance",
+        "notif_reply_proxy",
         "appearance_glass_effect",
         "appearance_haptic",
         "intel_enabled",
@@ -139,6 +142,7 @@ object SettingsCatalog {
             "notif_quiet_hours" -> PhantomPrefs.isQuietHoursEnabled(appCtx)
             "notif_swipe_delete" -> PhantomPrefs.isSwipeToDeleteEnabled(appCtx)
             "notif_digit_variance" -> PhantomPrefs.isSameKeyDigitVarianceThrottleEnabled(appCtx)
+            "notif_reply_proxy" -> PhantomPrefs.isReplyProxyEnabled(appCtx)
             "appearance_glass_effect" -> ThemePreferences.isGlassEffectEnabled(appCtx)
             "appearance_haptic" -> PhantomPrefs.isHapticFeedbackEnabled(appCtx)
             "intel_enabled" -> PhantomPrefs.isIntelEnabled(appCtx)
@@ -198,6 +202,7 @@ object SettingsCatalog {
             "notif_quiet_hours" -> PhantomPrefs.setQuietHoursEnabled(appCtx, enabled)
             "notif_swipe_delete" -> PhantomPrefs.setSwipeToDeleteEnabled(appCtx, enabled)
             "notif_digit_variance" -> PhantomPrefs.setSameKeyDigitVarianceThrottleEnabled(appCtx, enabled)
+            "notif_reply_proxy" -> PhantomPrefs.setReplyProxyEnabled(appCtx, enabled)
             "appearance_glass_effect" -> ThemePreferences.setGlassEffectEnabled(appCtx, enabled)
             "appearance_haptic" -> PhantomPrefs.setHapticFeedbackEnabled(appCtx, enabled)
             "intel_enabled" -> PhantomPrefs.setIntelEnabled(appCtx, enabled)

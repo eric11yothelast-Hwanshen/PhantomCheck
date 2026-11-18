@@ -2327,6 +2327,44 @@ fun FilterSettingsScreen(
                         }
                     }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    var replyProxyEnabled by remember { mutableStateOf(PhantomPrefs.isReplyProxyEnabled(appCtx)) }
+                    var replyProxyTimeout by remember { mutableStateOf(PhantomPrefs.getReplyProxyTimeoutMinutes(appCtx)) }
+                    SettingSwitchRow(
+                        title = "通知欄連續快速回覆",
+                        subtitle = "透過 AI 助手回覆後於通知欄保留對話輸入框，可連續回覆多則",
+                        checked = replyProxyEnabled,
+                        onCheckedChange = {
+                            replyProxyEnabled = it
+                            PhantomPrefs.setReplyProxyEnabled(appCtx, it)
+                        }
+                    )
+                    if (replyProxyEnabled) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "回覆通知閒置自動收起",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.Gray
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(
+                                15 to "15 分鐘",
+                                30 to "30 分鐘",
+                                60 to "60 分鐘",
+                                0 to "不自動收起"
+                            ).forEach { (mins, label) ->
+                                FilterChip(
+                                    selected = replyProxyTimeout == mins,
+                                    onClick = {
+                                        replyProxyTimeout = mins
+                                        PhantomPrefs.setReplyProxyTimeoutMinutes(appCtx, mins)
+                                    },
+                                    label = { Text(label) }
+                                )
+                            }
+                        }
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     OutlinedButton(
                         onClick = { showClearReadConfirm = true },
                         modifier = Modifier.fillMaxWidth(),

@@ -1172,4 +1172,23 @@ object PhantomPrefs {
     fun setUpdateLastNotifiedKey(ctx: Context, key: String) {
         prefs(ctx).edit().putString("update_last_notified_key", key).apply()
     }
+
+    /** 通知欄連續快速回覆開關（預設開） */
+    fun isReplyProxyEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("reply_proxy_enabled", true)
+
+    fun setReplyProxyEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("reply_proxy_enabled", enabled).apply()
+    }
+
+    /** 代理回覆通知閒置自動收起時間（分鐘：15 / 30 / 60 / 0=不自動收起，預設 30） */
+    fun getReplyProxyTimeoutMinutes(ctx: Context): Int {
+        val v = prefs(ctx).getInt("reply_proxy_timeout_minutes", 30)
+        return if (v in setOf(0, 15, 30, 60)) v else 30
+    }
+
+    fun setReplyProxyTimeoutMinutes(ctx: Context, minutes: Int) {
+        val safe = if (minutes in setOf(0, 15, 30, 60)) minutes else 30
+        prefs(ctx).edit().putInt("reply_proxy_timeout_minutes", safe).apply()
+    }
 }
