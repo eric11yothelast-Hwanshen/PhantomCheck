@@ -30,7 +30,6 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.animateTo
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.settle
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1789,14 +1788,28 @@ fun ChatAssistantTab(
                             },
                             onDragEnd = {
                                 if (triggered) {
-                                    scope.launch { drawerState.settle(0f) }
+                                    scope.launch {
+                                        val target = if (drawerState.requireOffset() > -drawerWidthPx * 0.5f) {
+                                            ChatDrawerValue.Open
+                                        } else {
+                                            ChatDrawerValue.Closed
+                                        }
+                                        drawerState.animateTo(target)
+                                    }
                                 }
                                 dragAccum = 0f
                                 triggered = false
                             },
                             onDragCancel = {
                                 if (triggered) {
-                                    scope.launch { drawerState.settle(0f) }
+                                    scope.launch {
+                                        val target = if (drawerState.requireOffset() > -drawerWidthPx * 0.5f) {
+                                            ChatDrawerValue.Open
+                                        } else {
+                                            ChatDrawerValue.Closed
+                                        }
+                                        drawerState.animateTo(target)
+                                    }
                                 }
                                 dragAccum = 0f
                                 triggered = false
