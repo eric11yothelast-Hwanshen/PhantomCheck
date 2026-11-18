@@ -33,9 +33,11 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -1503,7 +1505,12 @@ private fun PhantomCheckApp(
                             targetBounds = targetBounds + (key to rect)
                         }
                     )
-                    MainTab.ASSISTANT -> Column(modifier = Modifier.fillMaxSize()) {
+                    MainTab.ASSISTANT -> Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .consumeWindowInsets(padding)
+                            .imePadding()
+                    ) {
                         SnackbarHost(hostState = assistantSnackbarHostState)
                         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                             ChatAssistantTab(
