@@ -146,13 +146,13 @@ fun Modifier.phantomGlassSurface(
     }
 
     return if (ThemePreferences.isGlassEffectEnabled(ctx) && !isPowerSave) {
+        val clippedBase = this.glassSurface(
+            state = state,
+            fallbackColor = resolvedFallback,
+            outlineColor = outlineColor,
+            cornerRadius = cornerRadius
+        ).clip(shape)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            val base = this.glassSurface(
-                state = state,
-                fallbackColor = resolvedFallback,
-                outlineColor = outlineColor,
-                cornerRadius = cornerRadius
-            )
             val overlayColor: Color? = when (cardBgMode) {
                 PhantomPrefs.CardBgMode.FOLLOW_GLASS -> if (glassStrength > 0) {
                     MaterialTheme.colorScheme.surface.copy(alpha = (glassStrength / 100f) * 0.45f)
@@ -161,17 +161,12 @@ fun Modifier.phantomGlassSurface(
                 PhantomPrefs.CardBgMode.DARK -> darkCardColor
             }
             if (overlayColor != null) {
-                base.clip(shape).background(overlayColor, shape)
+                clippedBase.background(overlayColor, shape)
             } else {
-                base
+                clippedBase
             }
         } else {
-            this.glassSurface(
-                state = state,
-                fallbackColor = resolvedFallback,
-                outlineColor = outlineColor,
-                cornerRadius = cornerRadius
-            )
+            clippedBase
         }
     } else {
         val resolvedOutline = outlineColor ?: if (isDark) {
@@ -245,12 +240,12 @@ fun PhantomGlassCard(
                         stiffness = Spring.StiffnessMediumLow
                     )
                 )
-                .clip(shape)
                 .glassSurface(
                     state = glassState,
                     fallbackColor = fallbackColor,
                     cornerRadius = cornerRadius
                 )
+                .clip(shape)
                 .let { m -> if (overlayColor != null) m.background(overlayColor, shape) else m }
         ) {
             Column(
