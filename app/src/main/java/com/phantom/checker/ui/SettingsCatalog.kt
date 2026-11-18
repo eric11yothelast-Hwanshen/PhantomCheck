@@ -83,7 +83,10 @@ object SettingsCatalog {
         SettingSearchItem("personal_sort", "personalization", "首頁 App 排序", "切換首頁 App 清單依時間新→舊、未讀多→少或風險高→低排序", listOf("個人化", "排序", "未讀", "風險", "時間", "sort")),
         SettingSearchItem("personal_filters", "personalization", "首頁篩選欄顯示項目", "自訂首頁篩選欄是否顯示星標、詐騙、已過濾與標籤按鈕", listOf("個人化", "篩選", "filter", "星標", "標籤", "隱藏")),
         SettingSearchItem("personal_summary_collapse", "personalization", "摘要卡預設收合", "控制每日與本週 AI 摘要卡是否預設收合為單行預覽", listOf("個人化", "摘要", "收合", "展開", "折疊")),
-        SettingSearchItem("personal_home_card_layout", "personalization", "首頁卡片排列模式", "切換首頁 App 卡片為一般條列、往下露頂部（撲克牌式）或往上露底部（資料夾式）", listOf("堆疊", "條列", "撲克牌", "資料夾", "卡片排列", "重疊", "個人化")),
+        SettingSearchItem("personal_home_card_layout", "personalization", "首頁卡片排列模式", "切換首頁 App 卡片為一般條列或中央堆疊（焦點卡片在正中央、上下對稱縮小堆疊的垂直滾輪）", listOf("堆疊", "條列", "卡片排列", "中央堆疊", "滾輪", "重疊", "個人化")),
+        SettingSearchItem("personal_notes_card_layout", "personalization", "記事卡片排列模式", "獨立設定記事分頁卡片排列：一般條列、往下露頂部（撲克牌式）或中央堆疊滾輪（不影響首頁）", listOf("記事", "備忘錄", "卡片排列", "堆疊", "撲克牌", "滾輪", "中央堆疊")),
+        SettingSearchItem("personal_notes_todo_collapsed", "personalization", "記事分頁待辦事項收合", "收起記事分頁上方的待辦事項區，僅顯示最快到期的未完成待辦以節省空間", listOf("待辦", "收合", "收起", "展開", "待辦事項")),
+        SettingSearchItem("personal_home_filter_chips", "personalization", "首頁篩選標籤列收合", "將首頁頂部「全部／未讀」等篩選標籤收合成單行，點箭頭可展開（不與記事分頁共用）", listOf("篩選", "標籤", "chip", "收合", "未讀", "換行")),
         SettingSearchItem("personal_time_format", "personalization", "時間顯示格式（12 / 24 小時制）", "切換訊息與對話的時間顯示格式", listOf("個人化", "時間", "12小時", "24小時", "am", "pm")),
         SettingSearchItem("bg_global", "personalization", "全域背景圖片", "設定套用於訊息中心、統計、AI 助手與對話頁的全域底圖", listOf("個人化", "背景", "桌布", "wallpaper", "圖片", "全域")),
         SettingSearchItem("bg_chat", "personalization", "AI 聊天背景圖片", "自訂 AI 助手分頁背景圖片（未設定時沿用全域背景）", listOf("個人化", "背景", "桌布", "wallpaper", "AI", "聊天")),
@@ -295,7 +298,9 @@ object SettingsCatalog {
         val max: Int,
         val step: Int,
         val unit: String,
-        val zeroLabel: String? = null
+        val zeroLabel: String? = null,
+        /** 選項型數值設定：以整數索引對應的選項標籤（如 0=一般條列、1=中央堆疊） */
+        val valueLabels: List<String>? = null
     ) {
         fun clampAndSnap(raw: Int): Pair<Int, Boolean> {
             val wasClamped = raw < min || raw > max
@@ -309,7 +314,11 @@ object SettingsCatalog {
         }
 
         fun formatValue(value: Int): String =
-            if (value == 0 && zeroLabel != null) zeroLabel else "$value $unit"
+            when {
+                valueLabels != null -> valueLabels.getOrNull(value) ?: "$value $unit"
+                value == 0 && zeroLabel != null -> zeroLabel
+                else -> "$value $unit"
+            }
     }
 
     val NUMERIC_SPECS: List<NumericSettingSpec> = listOf(
@@ -346,6 +355,24 @@ object SettingsCatalog {
             max = 30,
             step = 1,
             unit = "字"
+        ),
+        NumericSettingSpec(
+            id = "home_card_layout",
+            title = "首頁卡片排列模式",
+            min = 0,
+            max = 1,
+            step = 1,
+            unit = "模式",
+            valueLabels = listOf("一般條列", "中央堆疊")
+        ),
+        NumericSettingSpec(
+            id = "notes_card_layout",
+            title = "記事卡片排列模式",
+            min = 0,
+            max = 2,
+            step = 1,
+            unit = "模式",
+            valueLabels = listOf("一般條列", "往下露頂部", "中央堆疊")
         )
     )
 
@@ -358,6 +385,15 @@ object SettingsCatalog {
             "ai_daily_limit" -> PhantomPrefs.getDailyAiLimit(appCtx)
             "notif_throttle" -> PhantomPrefs.getSameKeyThrottleSeconds(appCtx)
             "ai_min_trigger_length" -> PhantomPrefs.getAiMinTriggerLength(appCtx)
+            "home_card_layout" -> when (PhantomPrefs.getHomeCardLayoutMode(appCtx)) {
+                PhantomPrefs.HomeCardLayoutMode.LIST -> 0
+                PhantomPrefs.HomeCardLayoutMode.CENTER -> 1
+            }
+            "notes_card_layout" -> when (PhantomPrefs.getNoteCardLayoutMode(appCtx)) {
+                PhantomPrefs.NoteCardLayoutMode.LIST -> 0
+                PhantomPrefs.NoteCardLayoutMode.PEEK_TOP -> 1
+                PhantomPrefs.NoteCardLayoutMode.CENTER -> 2
+            }
             else -> null
         }
     }
@@ -376,6 +412,14 @@ object SettingsCatalog {
             "ai_daily_limit" -> PhantomPrefs.setDailyAiLimit(appCtx, target)
             "notif_throttle" -> PhantomPrefs.setSameKeyThrottleSeconds(appCtx, target)
             "ai_min_trigger_length" -> PhantomPrefs.setAiMinTriggerLength(appCtx, target)
+            "home_card_layout" -> PhantomPrefs.setHomeCardLayoutMode(
+                appCtx,
+                if (target == 1) PhantomPrefs.HomeCardLayoutMode.CENTER else PhantomPrefs.HomeCardLayoutMode.LIST
+            )
+            "notes_card_layout" -> PhantomPrefs.setNoteCardLayoutMode(
+                appCtx,
+                PhantomPrefs.NoteCardLayoutMode.entries[target]
+            )
             else -> return null
         }
         PhantomSettingsBus.notifyChanged()
@@ -387,7 +431,10 @@ object SettingsCatalog {
         val appCtx = ctx.applicationContext
         return NUMERIC_SPECS.joinToString("\n") { spec ->
             val current = getNumericValue(appCtx, spec.id) ?: spec.min
-            "- id=${spec.id} | 名稱=${spec.title} | 範圍=${spec.min}–${spec.max}（步進 ${spec.step} ${spec.unit}） | 目前值=${spec.formatValue(current)}"
+            val optionsPart = spec.valueLabels?.let { labels ->
+                " | 選項=" + labels.mapIndexed { i, l -> "$i=$l" }.joinToString("/")
+            } ?: ""
+            "- id=${spec.id} | 名稱=${spec.title} | 範圍=${spec.min}–${spec.max}（步進 ${spec.step} ${spec.unit}） | 目前值=${spec.formatValue(current)}$optionsPart"
         }
     }
 

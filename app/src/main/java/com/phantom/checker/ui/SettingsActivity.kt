@@ -34,7 +34,9 @@ import java.util.Date
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -386,6 +388,7 @@ fun FilterSettingsScreen(
     var visibleHomeFilters by remember { mutableStateOf(PhantomPrefs.getVisibleHomeFilters(appCtx)) }
     var summaryDefaultCollapsed by remember { mutableStateOf(PhantomPrefs.isSummaryDefaultCollapsed(appCtx)) }
     var homeCardLayoutMode by remember { mutableStateOf(PhantomPrefs.getHomeCardLayoutMode(appCtx)) }
+    var noteCardLayoutMode by remember { mutableStateOf(PhantomPrefs.getNoteCardLayoutMode(appCtx)) }
     var use24HourFormat by remember { mutableStateOf(PhantomPrefs.is24HourFormat(appCtx)) }
     var visibleStatsCards by remember { mutableStateOf(PhantomPrefs.getVisibleStatsCards(appCtx)) }
 
@@ -505,6 +508,7 @@ fun FilterSettingsScreen(
             visibleHomeFilters = PhantomPrefs.getVisibleHomeFilters(appCtx)
             summaryDefaultCollapsed = PhantomPrefs.isSummaryDefaultCollapsed(appCtx)
             homeCardLayoutMode = PhantomPrefs.getHomeCardLayoutMode(appCtx)
+            noteCardLayoutMode = PhantomPrefs.getNoteCardLayoutMode(appCtx)
             use24HourFormat = PhantomPrefs.is24HourFormat(appCtx)
             visibleStatsCards = PhantomPrefs.getVisibleStatsCards(appCtx)
             hapticEnabled = PhantomPrefs.isHapticFeedbackEnabled(appCtx)
@@ -548,6 +552,7 @@ fun FilterSettingsScreen(
                 dailySummaryNotifEnabled = PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
                 summaryDefaultCollapsed = PhantomPrefs.isSummaryDefaultCollapsed(appCtx)
                 homeCardLayoutMode = PhantomPrefs.getHomeCardLayoutMode(appCtx)
+            noteCardLayoutMode = PhantomPrefs.getNoteCardLayoutMode(appCtx)
                 visibleStatsCards = PhantomPrefs.getVisibleStatsCards(appCtx)
                 hapticEnabled = PhantomPrefs.isHapticFeedbackEnabled(appCtx)
                 ShizukuManager.refreshState(appCtx)
@@ -1211,7 +1216,7 @@ fun FilterSettingsScreen(
 
                         Text("首頁卡片排列模式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         Text(
-                            text = "切換首頁 App 卡片為一般條列、往下露頂部（撲克牌式）或往上露底部（資料夾式）",
+                            text = "一般條列：垂直獨立卡片列表；中央堆疊：焦點卡片在畫面正中央、上下對稱縮小堆疊的垂直滾輪",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1223,6 +1228,29 @@ fun FilterSettingsScreen(
                                     onClick = {
                                         homeCardLayoutMode = mode
                                         PhantomPrefs.setHomeCardLayoutMode(appCtx, mode)
+                                        PhantomSettingsBus.notifyChanged()
+                                    },
+                                    label = { Text(mode.label) }
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                        Text("記事卡片排列模式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text(
+                            text = "獨立設定記事分頁的卡片排列（不影響首頁）：一般條列、往下露頂部（撲克牌式）或中央堆疊滾輪",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            PhantomPrefs.NoteCardLayoutMode.entries.forEach { mode ->
+                                FilterChip(
+                                    selected = noteCardLayoutMode == mode,
+                                    onClick = {
+                                        noteCardLayoutMode = mode
+                                        PhantomPrefs.setNoteCardLayoutMode(appCtx, mode)
                                         PhantomSettingsBus.notifyChanged()
                                     },
                                     label = { Text(mode.label) }
@@ -1757,31 +1785,55 @@ fun FilterSettingsScreen(
                         )
                     }
                     Spacer(Modifier.height(8.dp))
+                    val quickCommandsExpanded = remember {
+                        mutableStateOf(PhantomPrefs.isSettingsSubCardExpanded(appCtx, "sub_ai_quick_commands"))
+                    }
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                quickCommandsExpanded.value = !quickCommandsExpanded.value
+                                PhantomPrefs.setSettingsSubCardExpanded(appCtx, "sub_ai_quick_commands", quickCommandsExpanded.value)
+                            },
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "自訂常用指令（${quickChatCommands.size} 則）",
                             style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f)
                         )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (quickChatCommands.any { it.id.startsWith("default_") && it.mode != PhantomPrefs.QuickChatCommand.MODE_FOLLOW }) {
-                                TextButton(onClick = {
-                                    quickChatCommands = PhantomPrefs.resetBuiltInQuickCommandsToFollow(appCtx)
-                                }) {
-                                    Text("內建重設為跟隨預設")
+                        Icon(
+                            imageVector = if (quickCommandsExpanded.value) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = if (quickCommandsExpanded.value) "收起自訂常用指令" else "展開自訂常用指令",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    AnimatedVisibility(
+                        visible = quickCommandsExpanded.value,
+                        enter = expandVertically(),
+                        exit = shrinkVertically()
+                    ) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (quickChatCommands.any { it.id.startsWith("default_") && it.mode != PhantomPrefs.QuickChatCommand.MODE_FOLLOW }) {
+                                    TextButton(onClick = {
+                                        quickChatCommands = PhantomPrefs.resetBuiltInQuickCommandsToFollow(appCtx)
+                                    }) {
+                                        Text("內建重設為跟隨預設")
+                                    }
+                                }
+                                TextButton(onClick = { showAddQuickCommandDialog = true }) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("新增指令")
                                 }
                             }
-                            TextButton(onClick = { showAddQuickCommandDialog = true }) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(4.dp))
-                                Text("新增指令")
-                            }
-                        }
-                    }
                     if (quickChatCommands.isEmpty()) {
                         Text(
                             text = "尚未自訂指令，可在這裡新增或在 AI 助手輸入「加入常用指令：…」",
@@ -1853,7 +1905,9 @@ fun FilterSettingsScreen(
                                 }
                             }
                         }
+                    }                        }
                     }
+
                     if (showAddQuickCommandDialog) {
                         var draftLabel by remember { mutableStateOf("") }
                         var draftPrompt by remember { mutableStateOf("") }
@@ -2316,11 +2370,41 @@ fun FilterSettingsScreen(
                         }
                     )
                     Spacer(Modifier.height(8.dp))
+                    val appThrottleExpanded = remember {
+                        mutableStateOf(PhantomPrefs.isSettingsSubCardExpanded(appCtx, "sub_notif_app_throttle"))
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                appThrottleExpanded.value = !appThrottleExpanded.value
+                                PhantomPrefs.setSettingsSubCardExpanded(appCtx, "sub_notif_app_throttle", appThrottleExpanded.value)
+                            },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "個別 App 節流覆寫（${appThrottleMap.size} 個）",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Icon(
+                            imageVector = if (appThrottleExpanded.value) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = if (appThrottleExpanded.value) "收起個別 App 節流覆寫" else "展開個別 App 節流覆寫",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Text(
-                        text = "個別 App 節流覆寫（0 秒 = 永不節流，且通訊類若 postTime 更新則收錄同內容訊息）",
+                        text = "0 秒 = 永不節流，且通訊類若 postTime 更新則收錄同內容訊息",
                         style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    AnimatedVisibility(
+                        visible = appThrottleExpanded.value,
+                        enter = expandVertically(),
+                        exit = shrinkVertically()
+                    ) {
+                        Column {
                     if (appThrottleMap.isEmpty()) {
                         Text(
                             text = "尚未設定個別 App 覆寫，全部套用上方全域秒數",
@@ -2359,6 +2443,8 @@ fun FilterSettingsScreen(
                         modifier = Modifier.padding(top = 4.dp)
                     ) {
                         Text("新增 App 節流覆寫")
+                    }
+                        }
                     }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
