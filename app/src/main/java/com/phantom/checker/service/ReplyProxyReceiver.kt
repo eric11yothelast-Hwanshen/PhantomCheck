@@ -1,9 +1,13 @@
 package com.phantom.checker.service
 
+import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.telephony.SmsManager
+import android.widget.Toast
 import androidx.core.app.RemoteInput
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,7 +40,23 @@ class ReplyProxyReceiver : BroadcastReceiver() {
                 val pendingResult = goAsync()
                 CoroutineScope(Dispatchers.IO).launch {
                     try {
-                        val session = ReplyProxyManager.getSession(sessionKey) ?: return@launch
+                        val session = ReplyProxyManager.getSession(sessionKey)
+                        if (session == null) {
+                            val notifId = NotifIds.replyProxy(sessionKey.hashCode())
+                            try {
+                                appCtx.getSystemService(NotificationManager::class.java)
+                                    ?.cancel(notifId)
+                            } catch (_: Exception) {
+                            }
+                            Handler(Looper.getMainLooper()).post {
+                                Toast.makeText(
+                                    appCtx,
+                                    "對話已結束，請開啟原 App 回覆",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                            return@launch
+                        }
                         val res = NotificationCollectorService.sendReplyToNotification(
                             context = appCtx,
                             packageName = session.packageName,
