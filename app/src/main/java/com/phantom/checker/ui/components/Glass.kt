@@ -29,13 +29,15 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeInput
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.HazeColorEffect
+import dev.chrisbanes.haze.blur.hazeBlur
 import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.materials.HazeMaterials
 
 /**
- * 玻璃態元件：API 33+ 使用 Haze 背景模糊＋高光描邊；
+ * 玻璃態元件：API 31+ (S) 使用 Haze 2.x 背景模糊＋高光描邊；
  * 低版本自動降級為半透明壓色（不呼叫進階 API，保證 API 26+ 不崩潰）。
  */
 
@@ -44,7 +46,7 @@ import dev.chrisbanes.haze.materials.HazeMaterials
 fun Modifier.glassSource(state: HazeState): Modifier = this.hazeSource(state)
 
 /**
- * 玻璃表面修飾詞：API 33+ 背景模糊；低版本半透明壓色＋描邊。
+ * 玻璃表面修飾詞：API 31+ 背景模糊；低版本半透明壓色＋描邊。
  */
 @Composable
 fun Modifier.glassSurface(
@@ -62,10 +64,26 @@ fun Modifier.glassSurface(
             MaterialTheme.colorScheme.outlineVariant
         }
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        val surfaceColor = MaterialTheme.colorScheme.surface
+        val blurStyle = remember(surfaceColor, isDark, fallbackColor) {
+            HazeBlurStyle {
+                blurEnabled(true)
+                blurRadius(20.dp)
+                noiseFactor(0.15f)
+                colorEffects(
+                    listOf(
+                        HazeColorEffect.tint(
+                            surfaceColor.copy(alpha = if (isDark) 0.55f else 0.72f)
+                        )
+                    )
+                )
+                fallbackColorEffect(HazeColorEffect.tint(fallbackColor))
+            }
+        }
         clip(shape)
-            .hazeEffect(
-                state = state,
-                style = HazeMaterials.thin(),
+            .hazeBlur(
+                input = HazeInput.Sources(state),
+                style = blurStyle,
             )
             .border(width = 1.dp, color = resolvedOutline, shape = shape)
     } else {
