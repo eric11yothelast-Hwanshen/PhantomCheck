@@ -826,30 +826,42 @@ class NotificationCollectorService : NotificationListenerService() {
             packageName: String,
             sender: String,
             contentSnippet: String,
-            replyText: String
+            replyText: String,
+            conversationKey: String? = null
         ): ReplySendResult {
             val service = activeInstance
-                ?: return ReplySendResult.Unavailable("通知監聽服務尚未連線，無法取得即時通知，建議開啟原 App 回覆。")
+            if (service == null) {
+                Log.w("PhantomReply", "sendReplyToNotification: activeInstance is null pkg=$packageName")
+                return ReplySendResult.Unavailable("通知監聽服務尚未連線，無法取得即時通知，建議開啟原 App 回覆。")
+            }
             val trimmedReply = replyText.trim()
             if (trimmedReply.isEmpty()) {
                 return ReplySendResult.Unavailable("回覆內容不可為空。")
             }
             val active = try {
                 service.activeNotifications?.toList().orEmpty()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.e("PhantomReply", "sendReplyToNotification: activeNotifications failed pkg=$packageName", e)
                 return ReplySendResult.Unavailable("無法讀取目前通知列狀態，建議開啟原 App 回覆。")
             }
             val pkgNotifs = active.filter { it.packageName == packageName }
             if (pkgNotifs.isEmpty()) {
+                Log.w("PhantomReply", "sendReplyToNotification: no active notifs for pkg=$packageName")
                 return ReplySendResult.Unavailable("該通知已被清除或不在通知列中，無法快速回覆，建議開啟原 App 回覆。")
             }
 
             val senderNorm = sender.trim()
+            val convKeyNorm = conversationKey?.replace(WHITESPACE_REGEX, " ")?.trim().orEmpty()
             val snippetNorm = contentSnippet.trim().take(40)
             var foundMatchingNotifWithoutRemoteInput = false
 
             val candidates = pkgNotifs.sortedByDescending { sbn ->
                 val extras = sbn.notification?.extras ?: return@sortedByDescending 0
+                val convTitle = extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
+                    ?.toString()
+                    ?.replace(WHITESPACE_REGEX, " ")
+                    ?.trim()
+                    .orEmpty()
                 val t = (extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
                     ?: extras.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString()
                     ?: "").trim()
@@ -857,22 +869,44 @@ class NotificationCollectorService : NotificationListenerService() {
                     ?: extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
                     ?: "").trim()
                 var score = 0
+                if (convKeyNorm.isNotEmpty()) {
+                    if (convTitle.equals(convKeyNorm, ignoreCase = true)) score += 20
+                    else if (convTitle.contains(convKeyNorm, ignoreCase = true)) score += 12
+                    else if (t.equals(convKeyNorm, ignoreCase = true)) score += 10
+                }
                 if (senderNorm.isNotEmpty() && t.equals(senderNorm, ignoreCase = true)) score += 10
                 else if (senderNorm.isNotEmpty() && t.contains(senderNorm, ignoreCase = true)) score += 5
                 if (snippetNorm.isNotEmpty() && body.contains(snippetNorm, ignoreCase = true)) score += 4
+                val hasRemoteInput = sbn.notification?.actions?.any { act ->
+                    act.actionIntent != null && act.remoteInputs?.any { it.allowFreeFormInput } == true
+                } == true
+                if (hasRemoteInput) score += 1
                 score
             }
 
             for (sbn in candidates) {
                 val notif = sbn.notification ?: continue
                 val extras = notif.extras ?: continue
+                val convTitle = extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
+                    ?.toString()
+                    ?.replace(WHITESPACE_REGEX, " ")
+                    ?.trim()
+                    .orEmpty()
                 val t = (extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
                     ?: extras.getCharSequence(Notification.EXTRA_TITLE_BIG)?.toString()
                     ?: "").trim()
-                val senderMatches = senderNorm.isEmpty() ||
-                    t.equals(senderNorm, ignoreCase = true) ||
-                    t.contains(senderNorm, ignoreCase = true) ||
-                    senderNorm.contains(t, ignoreCase = true)
+                val convMatches = convKeyNorm.isNotEmpty() && (
+                    convTitle.equals(convKeyNorm, ignoreCase = true) ||
+                        convTitle.contains(convKeyNorm, ignoreCase = true) ||
+                        t.equals(convKeyNorm, ignoreCase = true)
+                    )
+                val senderMatches = (senderNorm.isEmpty() && convKeyNorm.isEmpty()) ||
+                    convMatches ||
+                    (senderNorm.isNotEmpty() && (
+                        t.equals(senderNorm, ignoreCase = true) ||
+                            t.contains(senderNorm, ignoreCase = true) ||
+                            senderNorm.contains(t, ignoreCase = true)
+                        ))
                 if (!senderMatches && pkgNotifs.size > 1) continue
 
                 val actions = notif.actions ?: emptyArray()
@@ -884,7 +918,7 @@ class NotificationCollectorService : NotificationListenerService() {
                     foundMatchingNotifWithoutRemoteInput = true
                     continue
                 }
-                val remoteInput = replyAction.remoteInputs.first { it.allowFreeFormInput }
+                val remoteInput = replyAction.remoteInputs?.firstOrNull { it.allowFreeFormInput } ?: continue
                 return try {
                     val replyIntent = Intent()
                     val bundle = android.os.Bundle().apply {
@@ -892,16 +926,19 @@ class NotificationCollectorService : NotificationListenerService() {
                     }
                     android.app.RemoteInput.addResultsToIntent(arrayOf(remoteInput), replyIntent, bundle)
                     replyAction.actionIntent.send(context, 0, replyIntent)
+                    Log.d("PhantomReply", "sendReplyToNotification: sent pkg=$packageName convKey=$convKeyNorm sender=$senderNorm")
                     ReplySendResult.Success
                 } catch (e: Exception) {
+                    Log.e("PhantomReply", "sendReplyToNotification: actionIntent.send failed pkg=$packageName convKey=$convKeyNorm", e)
                     ReplySendResult.Unavailable("傳送快速回覆失敗（${e.message ?: "未知錯誤"}），建議開啟原 App 回覆。")
                 }
             }
 
+            Log.w("PhantomReply", "sendReplyToNotification: no suitable RemoteInput pkg=$packageName convKey=$convKeyNorm sender=$senderNorm noRemoteInput=$foundMatchingNotifWithoutRemoteInput")
             return if (foundMatchingNotifWithoutRemoteInput) {
                 ReplySendResult.Unavailable("該通知不支援快速回覆（無 RemoteInput），建議開啟原 App 回覆。")
             } else {
-                ReplySendResult.Unavailable("找不到來自「${sender.ifBlank { packageName }}」的可回覆通知，可能已被清除，建議開啟原 App 回覆。")
+                ReplySendResult.Unavailable("找不到來自「${sender.ifBlank { convKeyNorm.ifBlank { packageName } }}」的可回覆通知，可能已被清除，建議開啟原 App 回覆。")
             }
         }
 

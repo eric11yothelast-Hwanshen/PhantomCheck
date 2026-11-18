@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
@@ -20,6 +21,7 @@ import com.phantom.checker.util.PhantomPrefs
  */
 object ReplyProxyManager {
 
+    private const val TAG = "PhantomReply"
     const val CHANNEL_ID = "phantom_reply_proxy"
     const val REMOTE_INPUT_KEY = "proxy_reply"
     const val ACTION_REPLY = "com.phantom.checker.ACTION_PROXY_REPLY"
@@ -179,124 +181,142 @@ object ReplyProxyManager {
     }
 
     private fun ensureChannel(ctx: Context) {
-        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
-        if (nm.getNotificationChannel(CHANNEL_ID) == null) {
-            nm.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID,
-                    "快速回覆對話",
-                    NotificationManager.IMPORTANCE_DEFAULT
-                ).apply {
-                    description = "透過 AI 助手回覆後保留於通知欄，方便連續回覆同一對話"
-                }
-            )
+        try {
+            val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+            if (nm.getNotificationChannel(CHANNEL_ID) == null) {
+                nm.createNotificationChannel(
+                    NotificationChannel(
+                        CHANNEL_ID,
+                        "快速回覆對話",
+                        NotificationManager.IMPORTANCE_DEFAULT
+                    ).apply {
+                        description = "透過 AI 助手回覆後保留於通知欄，方便連續回覆同一對話"
+                    }
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "ensureChannel failed", e)
         }
     }
 
     private fun postOrUpdateNotification(ctx: Context, session: ProxySession) {
-        ensureChannel(ctx)
-        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
-
-        val selfPerson = Person.Builder().setName("我").build()
-        val senderPerson = Person.Builder().setName(session.sender).build()
-        val style = NotificationCompat.MessagingStyle(selfPerson)
-            .setConversationTitle("${session.sender}（${session.appLabel}）")
-            .setGroupConversation(false)
-
-        val snapshotHistory = synchronized(lock) { session.history.toList() }
-        snapshotHistory.forEach { entry ->
-            style.addMessage(
-                entry.text,
-                entry.timestamp,
-                if (entry.isSelf) selfPerson else senderPerson
-            )
-        }
-
-        val replyIntent = Intent(ctx, ReplyProxyReceiver::class.java).apply {
-            action = ACTION_REPLY
-            putExtra(EXTRA_SESSION_KEY, session.sessionKey)
-        }
-        val replyPi = PendingIntent.getBroadcast(
-            ctx,
-            reqCode(session.sessionKey, 1),
-            replyIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val remoteInput = RemoteInput.Builder(REMOTE_INPUT_KEY)
-            .setLabel("繼續回覆 ${session.sender}…")
-            .build()
-        val replyAction = NotificationCompat.Action.Builder(
-            R.drawable.ic_stat_phantom,
-            "回覆",
-            replyPi
-        ).addRemoteInput(remoteInput).build()
-
-        val closeIntent = Intent(ctx, ReplyProxyReceiver::class.java).apply {
-            action = ACTION_CLOSE
-            putExtra(EXTRA_SESSION_KEY, session.sessionKey)
-        }
-        val closePi = PendingIntent.getBroadcast(
-            ctx,
-            reqCode(session.sessionKey, 2),
-            closeIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val closeAction = NotificationCompat.Action.Builder(
-            0,
-            "關閉",
-            closePi
-        ).build()
-
-        val dismissIntent = Intent(ctx, ReplyProxyReceiver::class.java).apply {
-            action = ACTION_DISMISSED
-            putExtra(EXTRA_SESSION_KEY, session.sessionKey)
-        }
-        val dismissPi = PendingIntent.getBroadcast(
-            ctx,
-            reqCode(session.sessionKey, 3),
-            dismissIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notif = NotificationCompat.Builder(ctx, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_phantom)
-            .setStyle(style)
-            .setContentTitle("${session.sender}（${session.appLabel}）")
-            .setContentText(snapshotHistory.lastOrNull()?.text.orEmpty())
-            .addAction(replyAction)
-            .addAction(closeAction)
-            .setDeleteIntent(dismissPi)
-            .setAutoCancel(false)
-            .setOngoing(false)
-            .setOnlyAlertOnce(true)
-            .build()
-
         try {
-            nm.notify(session.notificationId, notif)
-        } catch (_: SecurityException) {
+            ensureChannel(ctx)
+            val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+
+            val selfPerson = Person.Builder().setName("我").build()
+            val senderPerson = Person.Builder().setName(session.sender).build()
+            val style = NotificationCompat.MessagingStyle(selfPerson)
+                .setConversationTitle("${session.sender}（${session.appLabel}）")
+                .setGroupConversation(false)
+
+            val snapshotHistory = synchronized(lock) { session.history.toList() }
+            snapshotHistory.forEach { entry ->
+                style.addMessage(
+                    entry.text,
+                    entry.timestamp,
+                    if (entry.isSelf) selfPerson else senderPerson
+                )
+            }
+
+            val replyIntent = Intent(ctx, ReplyProxyReceiver::class.java).apply {
+                action = ACTION_REPLY
+                putExtra(EXTRA_SESSION_KEY, session.sessionKey)
+            }
+            val replyPi = PendingIntent.getBroadcast(
+                ctx,
+                reqCode(session.sessionKey, 1),
+                replyIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            )
+            val remoteInput = RemoteInput.Builder(REMOTE_INPUT_KEY)
+                .setLabel("繼續回覆 ${session.sender}…")
+                .build()
+            val replyAction = NotificationCompat.Action.Builder(
+                R.drawable.ic_stat_phantom,
+                "回覆",
+                replyPi
+            ).addRemoteInput(remoteInput).build()
+
+            val closeIntent = Intent(ctx, ReplyProxyReceiver::class.java).apply {
+                action = ACTION_CLOSE
+                putExtra(EXTRA_SESSION_KEY, session.sessionKey)
+            }
+            val closePi = PendingIntent.getBroadcast(
+                ctx,
+                reqCode(session.sessionKey, 2),
+                closeIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val closeAction = NotificationCompat.Action.Builder(
+                0,
+                "關閉",
+                closePi
+            ).build()
+
+            val dismissIntent = Intent(ctx, ReplyProxyReceiver::class.java).apply {
+                action = ACTION_DISMISSED
+                putExtra(EXTRA_SESSION_KEY, session.sessionKey)
+            }
+            val dismissPi = PendingIntent.getBroadcast(
+                ctx,
+                reqCode(session.sessionKey, 3),
+                dismissIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notif = NotificationCompat.Builder(ctx, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_phantom)
+                .setStyle(style)
+                .setContentTitle("${session.sender}（${session.appLabel}）")
+                .setContentText(snapshotHistory.lastOrNull()?.text.orEmpty())
+                .addAction(replyAction)
+                .addAction(closeAction)
+                .setDeleteIntent(dismissPi)
+                .setAutoCancel(false)
+                .setOngoing(false)
+                .setOnlyAlertOnce(true)
+                .build()
+
+            try {
+                nm.notify(session.notificationId, notif)
+                Log.d(TAG, "Posted proxy notification id=${session.notificationId} key=${session.sessionKey}")
+            } catch (e: SecurityException) {
+                Log.w(TAG, "postOrUpdateNotification SecurityException (missing POST_NOTIFICATIONS?)", e)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "postOrUpdateNotification failed key=${session.sessionKey}", e)
         }
     }
 
     private fun scheduleIdleTimeout(ctx: Context, session: ProxySession) {
-        val minutes = PhantomPrefs.getReplyProxyTimeoutMinutes(ctx)
-        cancelTimeoutAlarm(ctx, session.sessionKey)
-        if (minutes <= 0) return
-
-        val am = ctx.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-        val triggerAt = System.currentTimeMillis() + minutes * 60L * 1000L
-        val pi = buildTimeoutPendingIntent(ctx, session.sessionKey)
         try {
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
-        } catch (_: SecurityException) {
-            am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+            val minutes = PhantomPrefs.getReplyProxyTimeoutMinutes(ctx)
+            cancelTimeoutAlarm(ctx, session.sessionKey)
+            if (minutes <= 0) return
+
+            val am = ctx.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val triggerAt = System.currentTimeMillis() + minutes * 60L * 1000L
+            val pi = buildTimeoutPendingIntent(ctx, session.sessionKey)
+            try {
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+            } catch (_: SecurityException) {
+                am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "scheduleIdleTimeout failed key=${session.sessionKey}", e)
         }
     }
 
     private fun cancelTimeoutAlarm(ctx: Context, sessionKey: String) {
-        val am = ctx.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-        val pi = buildTimeoutPendingIntent(ctx, sessionKey)
-        am.cancel(pi)
-        pi.cancel()
+        try {
+            val am = ctx.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val pi = buildTimeoutPendingIntent(ctx, sessionKey)
+            am.cancel(pi)
+            pi.cancel()
+        } catch (e: Exception) {
+            Log.e(TAG, "cancelTimeoutAlarm failed key=$sessionKey", e)
+        }
     }
 
     private fun buildTimeoutPendingIntent(ctx: Context, sessionKey: String): PendingIntent {

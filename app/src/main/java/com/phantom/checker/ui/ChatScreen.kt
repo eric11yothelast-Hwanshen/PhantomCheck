@@ -7,6 +7,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Base64
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -2414,7 +2415,7 @@ fun ChatAssistantTab(
                         item(key = "pending_msg_action_card") {
                             var draftReply by remember(actState) { mutableStateOf(actState.replyText) }
                             var selectedId by remember(actState) { mutableStateOf(actState.selectedMessageId) }
-                            val primaryMsg = actState.messages.firstOrNull { it.id == selectedId } ?: actState.messages.first()
+                            val primaryMsg = actState.messages.firstOrNull { it.id == selectedId } ?: actState.messages.firstOrNull()
                             val isSingleTarget = actState.action == "reply_message" || actState.action == "open_app"
                             val scamMsgs = actState.messages.filter { it.riskLabel == "scam" }
                             val safeDeleteMsgs = actState.messages.filter { it.riskLabel != "scam" }
@@ -2456,7 +2457,7 @@ fun ChatAssistantTab(
                                 val displayMsgs = if (isSingleTarget) actState.messages else actState.messages.take(5)
                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     displayMsgs.forEach { m ->
-                                        val isPicked = m.id == primaryMsg.id
+                                        val isPicked = primaryMsg != null && m.id == primaryMsg.id
                                         val mTime = remember(m.timestamp) {
                                             SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(m.timestamp))
                                         }
@@ -2514,7 +2515,7 @@ fun ChatAssistantTab(
                                     }
                                 }
 
-                                if (actState.action == "reply_message") {
+                                if (actState.action == "reply_message" && primaryMsg != null) {
                                     Spacer(Modifier.height(8.dp))
                                     if (OtpDetector.extractOtp(primaryMsg.content) != null) {
                                         Text(
@@ -2552,17 +2553,21 @@ fun ChatAssistantTab(
                                             val sid = actState.sessionId
                                             pendingMsgActionQueue = pendingMsgActionQueue.drop(1)
                                             scope.launch {
-                                                withContext(Dispatchers.IO) {
-                                                    AppDatabaseHolder.db(appCtx).chatDao().insertMessage(
-                                                        ChatMessageEntity(
-                                                            sessionId = sid,
-                                                            role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                            content = "已取消操作。",
-                                                            createdAt = System.currentTimeMillis()
+                                                try {
+                                                    withContext(Dispatchers.IO) {
+                                                        AppDatabaseHolder.db(appCtx).chatDao().insertMessage(
+                                                            ChatMessageEntity(
+                                                                sessionId = sid,
+                                                                role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                                content = "已取消操作。",
+                                                                createdAt = System.currentTimeMillis()
+                                                            )
                                                         )
-                                                    )
+                                                    }
+                                                    loadMessages(sid)
+                                                } catch (e: Exception) {
+                                                    Log.e("PhantomChatAction", "Cancel action failed sid=$sid", e)
                                                 }
-                                                loadMessages(sid)
                                             }
                                         },
                                         modifier = Modifier.weight(1f)
@@ -2570,9 +2575,10 @@ fun ChatAssistantTab(
                                         Text("取消")
                                     }
                                     val canConfirm = when (actState.action) {
-                                        "reply_message" -> draftReply.isNotBlank()
+                                        "reply_message" -> primaryMsg != null && draftReply.isNotBlank()
+                                        "open_app" -> primaryMsg != null
                                         "delete_message" -> safeDeleteMsgs.isNotEmpty()
-                                        else -> true
+                                        else -> actState.messages.isNotEmpty()
                                     }
                                     Button(
                                         enabled = canConfirm,
@@ -2580,106 +2586,126 @@ fun ChatAssistantTab(
                                             val sid = actState.sessionId
                                             pendingMsgActionQueue = pendingMsgActionQueue.drop(1)
                                             scope.launch {
-                                                val reportText: String = when (actState.action) {
-                                                    "reply_message" -> {
-                                                        when (val res = NotificationCollectorService.sendReplyToNotification(
-                                                            context = appCtx,
-                                                            packageName = primaryMsg.packageName,
-                                                            sender = primaryMsg.sender,
-                                                            contentSnippet = primaryMsg.content,
-                                                            replyText = draftReply
-                                                        )) {
-                                                            is NotificationCollectorService.Companion.ReplySendResult.Success -> {
-                                                                com.phantom.checker.service.ReplyProxyManager.startOrRefreshSession(
-                                                                    ctx = appCtx,
+                                                val reportText: String = try {
+                                                    when (actState.action) {
+                                                        "reply_message" -> {
+                                                            if (primaryMsg == null) {
+                                                                "找不到可回覆的目標訊息。"
+                                                            } else {
+                                                                when (val res = NotificationCollectorService.sendReplyToNotification(
+                                                                    context = appCtx,
                                                                     packageName = primaryMsg.packageName,
-                                                                    appLabel = primaryMsg.appLabel,
                                                                     sender = primaryMsg.sender,
-                                                                    originalSnippet = primaryMsg.content,
-                                                                    initialReplyText = draftReply
-                                                                )
-                                                                "已透過通知快速回覆送出給「${primaryMsg.sender.ifBlank { primaryMsg.appLabel }}」：$draftReply"
-                                                            }
-                                                            is NotificationCollectorService.Companion.ReplySendResult.Unavailable ->
-                                                                res.reason
-                                                        }
-                                                    }
-                                                    "open_app" -> {
-                                                        val launch = ctx.packageManager.getLaunchIntentForPackage(primaryMsg.packageName)
-                                                        if (launch != null) {
-                                                            try {
-                                                                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                                ctx.startActivity(launch)
-                                                                "已開啟「${primaryMsg.appLabel}」。"
-                                                            } catch (e: Exception) {
-                                                                "無法開啟「${primaryMsg.appLabel}」（${e.message ?: "啟動失敗"}）。"
-                                                            }
-                                                        } else {
-                                                            val detailsIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                                                data = Uri.parse("package:${primaryMsg.packageName}")
-                                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                            }
-                                                            try {
-                                                                ctx.startActivity(detailsIntent)
-                                                                "「${primaryMsg.appLabel}」無可開啟的桌面入口，已改為開啟應用程式資訊頁。"
-                                                            } catch (_: Exception) {
-                                                                "裝置上未安裝「${primaryMsg.appLabel}（${primaryMsg.packageName}）」，無法開啟。"
+                                                                    contentSnippet = primaryMsg.content,
+                                                                    replyText = draftReply,
+                                                                    conversationKey = primaryMsg.conversationKey
+                                                                )) {
+                                                                    is NotificationCollectorService.Companion.ReplySendResult.Success -> {
+                                                                        com.phantom.checker.service.ReplyProxyManager.startOrRefreshSession(
+                                                                            ctx = appCtx,
+                                                                            packageName = primaryMsg.packageName,
+                                                                            appLabel = primaryMsg.appLabel,
+                                                                            sender = primaryMsg.sender,
+                                                                            originalSnippet = primaryMsg.content,
+                                                                            initialReplyText = draftReply
+                                                                        )
+                                                                        "已透過通知快速回覆送出給「${primaryMsg.sender.ifBlank { primaryMsg.appLabel }}」：$draftReply"
+                                                                    }
+                                                                    is NotificationCollectorService.Companion.ReplySendResult.Unavailable ->
+                                                                        res.reason
+                                                                }
                                                             }
                                                         }
-                                                    }
-                                                    "delete_message" -> {
-                                                        withContext(Dispatchers.IO) {
-                                                            AppDatabaseHolder.db(appCtx).messageDao()
-                                                                .deleteByIds(safeDeleteMsgs.map { it.id })
-                                                        }
-                                                        StatsForegroundService.startOrRefresh(appCtx, force = true)
-                                                        if (scamMsgs.isNotEmpty()) {
-                                                            "已刪除 ${safeDeleteMsgs.size} 則訊息（另有 ${scamMsgs.size} 則詐騙紀錄受保護未刪除）。"
-                                                        } else {
-                                                            "已刪除 ${safeDeleteMsgs.size} 則訊息。"
-                                                        }
-                                                    }
-                                                    "tag_message" -> {
-                                                        val tid = actState.tagId
-                                                        val tName = actState.tagName.orEmpty()
-                                                        if (tid == null) {
-                                                            "找不到目標標籤「$tName」。"
-                                                        } else {
-                                                            withContext(Dispatchers.IO) {
-                                                                val tDao = AppDatabaseHolder.db(appCtx).tagDao()
-                                                                if (actState.tagOperation == "remove") {
-                                                                    actState.messages.forEach { m ->
-                                                                        tDao.removeTagFromMessage(m.id, tid)
+                                                        "open_app" -> {
+                                                            if (primaryMsg == null) {
+                                                                "找不到目標 App 訊息。"
+                                                            } else {
+                                                                val launch = ctx.packageManager.getLaunchIntentForPackage(primaryMsg.packageName)
+                                                                if (launch != null) {
+                                                                    try {
+                                                                        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                                        ctx.startActivity(launch)
+                                                                        "已開啟「${primaryMsg.appLabel}」。"
+                                                                    } catch (e: Exception) {
+                                                                        Log.e("PhantomChatAction", "open_app launch failed pkg=${primaryMsg.packageName}", e)
+                                                                        "無法開啟「${primaryMsg.appLabel}」（${e.message ?: "啟動失敗"}）。"
                                                                     }
                                                                 } else {
-                                                                    actState.messages.forEach { m ->
-                                                                        tDao.addTagToMessage(
-                                                                            MessageTagCrossRef(
-                                                                                messageId = m.id,
-                                                                                tagId = tid,
-                                                                                source = MessageTagCrossRef.SOURCE_MANUAL
-                                                                            )
-                                                                        )
+                                                                    val detailsIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                                                        data = Uri.parse("package:${primaryMsg.packageName}")
+                                                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                                    }
+                                                                    try {
+                                                                        ctx.startActivity(detailsIntent)
+                                                                        "「${primaryMsg.appLabel}」無可開啟的桌面入口，已改為開啟應用程式資訊頁。"
+                                                                    } catch (e: Exception) {
+                                                                        Log.e("PhantomChatAction", "open_app details failed pkg=${primaryMsg.packageName}", e)
+                                                                        "裝置上未安裝「${primaryMsg.appLabel}（${primaryMsg.packageName}）」，無法開啟。"
                                                                     }
                                                                 }
                                                             }
-                                                            val verb = if (actState.tagOperation == "remove") "移除" else "加上"
-                                                            "已為 ${actState.messages.size} 則訊息${verb}標籤「$tName」。"
                                                         }
+                                                        "delete_message" -> {
+                                                            withContext(Dispatchers.IO) {
+                                                                AppDatabaseHolder.db(appCtx).messageDao()
+                                                                    .deleteByIds(safeDeleteMsgs.map { it.id })
+                                                            }
+                                                            StatsForegroundService.startOrRefresh(appCtx, force = true)
+                                                            if (scamMsgs.isNotEmpty()) {
+                                                                "已刪除 ${safeDeleteMsgs.size} 則訊息（另有 ${scamMsgs.size} 則詐騙紀錄受保護未刪除）。"
+                                                            } else {
+                                                                "已刪除 ${safeDeleteMsgs.size} 則訊息。"
+                                                            }
+                                                        }
+                                                        "tag_message" -> {
+                                                            val tid = actState.tagId
+                                                            val tName = actState.tagName.orEmpty()
+                                                            if (tid == null) {
+                                                                "找不到目標標籤「$tName」。"
+                                                            } else {
+                                                                withContext(Dispatchers.IO) {
+                                                                    val tDao = AppDatabaseHolder.db(appCtx).tagDao()
+                                                                    if (actState.tagOperation == "remove") {
+                                                                        actState.messages.forEach { m ->
+                                                                            tDao.removeTagFromMessage(m.id, tid)
+                                                                        }
+                                                                    } else {
+                                                                        actState.messages.forEach { m ->
+                                                                            tDao.addTagToMessage(
+                                                                                MessageTagCrossRef(
+                                                                                    messageId = m.id,
+                                                                                    tagId = tid,
+                                                                                    source = MessageTagCrossRef.SOURCE_MANUAL
+                                                                                )
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                }
+                                                                val verb = if (actState.tagOperation == "remove") "移除" else "加上"
+                                                                "已為 ${actState.messages.size} 則訊息${verb}標籤「$tName」。"
+                                                            }
+                                                        }
+                                                        else -> "未知操作。"
                                                     }
-                                                    else -> "未知操作。"
+                                                } catch (e: Exception) {
+                                                    Log.e("PhantomChatAction", "Action ${actState.action} failed sid=$sid", e)
+                                                    "⚠️ 執行失敗（${e.message ?: "未知錯誤"}），請重試或開啟原 App 操作。"
                                                 }
-                                                withContext(Dispatchers.IO) {
-                                                    AppDatabaseHolder.db(appCtx).chatDao().insertMessage(
-                                                        ChatMessageEntity(
-                                                            sessionId = sid,
-                                                            role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                            content = reportText,
-                                                            createdAt = System.currentTimeMillis()
+                                                try {
+                                                    withContext(Dispatchers.IO) {
+                                                        AppDatabaseHolder.db(appCtx).chatDao().insertMessage(
+                                                            ChatMessageEntity(
+                                                                sessionId = sid,
+                                                                role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                                content = reportText,
+                                                                createdAt = System.currentTimeMillis()
+                                                            )
                                                         )
-                                                    )
+                                                    }
+                                                    loadMessages(sid)
+                                                } catch (e: Exception) {
+                                                    Log.e("PhantomChatAction", "Failed to save action report sid=$sid", e)
                                                 }
-                                                loadMessages(sid)
                                             }
                                         },
                                         modifier = Modifier.weight(1f)
