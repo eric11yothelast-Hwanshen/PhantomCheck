@@ -370,6 +370,13 @@ fun ChatAssistantTab(
 
     LaunchedEffect(Unit) {
         loadSessionsAndSuggestions()
+        if (PhantomPrefs.isAiChatTabContinue(appCtx) && currentSessionId == null && messages.isEmpty()) {
+            val latest = sessions.firstOrNull()
+            if (latest != null) {
+                currentSessionId = latest.id
+                loadMessages(latest.id)
+            }
+        }
     }
 
     LaunchedEffect(messages.size, isSending) {

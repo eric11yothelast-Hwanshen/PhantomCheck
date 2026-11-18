@@ -1201,4 +1201,21 @@ object PhantomPrefs {
         val safe = if (minutes in setOf(0, 15, 30, 60)) minutes else 30
         prefs(ctx).edit().putInt("reply_proxy_timeout_minutes", safe).apply()
     }
+
+    const val AI_CHAT_TAB_NEW = "new"
+    const val AI_CHAT_TAB_CONTINUE = "continue"
+
+    /** 切換到 AI 助手分頁時的行為（"new" = 開啟新對話，"continue" = 接續上次對話，預設 "new"） */
+    fun getAiChatTabBehavior(ctx: Context): String {
+        val v = prefs(ctx).getString("ai_chat_tab_behavior", AI_CHAT_TAB_NEW)
+        return if (v == AI_CHAT_TAB_CONTINUE) AI_CHAT_TAB_CONTINUE else AI_CHAT_TAB_NEW
+    }
+
+    fun setAiChatTabBehavior(ctx: Context, behavior: String) {
+        val safe = if (behavior == AI_CHAT_TAB_CONTINUE) AI_CHAT_TAB_CONTINUE else AI_CHAT_TAB_NEW
+        prefs(ctx).edit().putString("ai_chat_tab_behavior", safe).apply()
+    }
+
+    fun isAiChatTabContinue(ctx: Context): Boolean =
+        getAiChatTabBehavior(ctx) == AI_CHAT_TAB_CONTINUE
 }

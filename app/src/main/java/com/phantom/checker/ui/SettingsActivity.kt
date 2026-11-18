@@ -344,6 +344,7 @@ fun FilterSettingsScreen(
     var dualModelRoutingEnabled by remember { mutableStateOf(PhantomPrefs.isDualModelRoutingEnabled(appCtx)) }
     var dualModelRoutingModel by remember { mutableStateOf(PhantomPrefs.getDualModelRoutingModel(appCtx)) }
     var chatSuggestionsEnabled by remember { mutableStateOf(PhantomPrefs.isChatSuggestionsEnabled(appCtx)) }
+    var aiChatTabContinue by remember { mutableStateOf(PhantomPrefs.isAiChatTabContinue(appCtx)) }
     var quickCommandDefaultMode by remember { mutableStateOf(PhantomPrefs.getQuickCommandDefaultMode(appCtx)) }
     var quickChatCommands by remember { mutableStateOf(PhantomPrefs.getQuickChatCommands(appCtx)) }
     var dailyAiLimit by remember { mutableIntStateOf(PhantomPrefs.getDailyAiLimit(appCtx)) }
@@ -482,6 +483,7 @@ fun FilterSettingsScreen(
                 aiRiskEnabled = PhantomPrefs.isAiRiskEnabled(appCtx)
                 aiAutoTagEnabled = PhantomPrefs.isAiAutoTagEnabled(appCtx)
                 chatSuggestionsEnabled = PhantomPrefs.isChatSuggestionsEnabled(appCtx)
+                aiChatTabContinue = PhantomPrefs.isAiChatTabContinue(appCtx)
                 quickCommandDefaultMode = PhantomPrefs.getQuickCommandDefaultMode(appCtx)
                 quickChatCommands = PhantomPrefs.getQuickChatCommands(appCtx)
                 chatRagLimit = PhantomPrefs.getChatRagMessageLimit(appCtx)
@@ -1575,6 +1577,20 @@ fun FilterSettingsScreen(
                         onCheckedChange = { checked ->
                             chatSuggestionsEnabled = checked
                             PhantomPrefs.setChatSuggestionsEnabled(appCtx, checked)
+                        }
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+                    SettingSwitchRow(
+                        title = "切到 AI 助手時接續上次對話",
+                        subtitle = "預設為開啟新對話",
+                        checked = aiChatTabContinue,
+                        onCheckedChange = { checked ->
+                            aiChatTabContinue = checked
+                            PhantomPrefs.setAiChatTabBehavior(
+                                appCtx,
+                                if (checked) PhantomPrefs.AI_CHAT_TAB_CONTINUE else PhantomPrefs.AI_CHAT_TAB_NEW
+                            )
                         }
                     )
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
