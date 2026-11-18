@@ -117,6 +117,7 @@ import com.phantom.checker.service.ReminderScheduler
 import com.phantom.checker.service.StatsForegroundService
 import com.phantom.checker.util.ClientTimeParser
 import com.phantom.checker.util.NaturalTimeParseResult
+import com.phantom.checker.util.NotificationFoldUtil
 import com.phantom.checker.util.OtpDetector
 import com.phantom.checker.util.PhantomPrefs
 import com.phantom.checker.widget.ReminderWidgetProvider
@@ -3674,40 +3675,32 @@ private suspend fun buildRagSystemPrompt(
             }
         } else {
             val contentCap = if (AiClient.isGroqActive(ctx, com.phantom.checker.util.AiPurpose.CHAT)) 100 else 150
-            data class DedupRagEntry(val msg: MessageEntity, var count: Int = 1)
-            val dedupMap = LinkedHashMap<String, DedupRagEntry>()
-            msgs.forEach { m ->
-                val normPrefix = m.content.replace(Regex("\\s+"), " ").trim().take(40)
-                val key = "${m.packageName}|${m.sender.trim()}|$normPrefix"
-                val existing = dedupMap[key]
-                if (existing == null) {
-                    dedupMap[key] = DedupRagEntry(m, 1)
-                } else {
-                    existing.count++
-                }
-            }
-            val deduped = dedupMap.values.toList()
+            val folded = NotificationFoldUtil.fold(msgs)
             val headerTitle = if (canUseIncrementalCache) {
-                "【上次對話後新增訊息（共 ${deduped.size} 組／原 ${msgs.size} 則，舊→新）】"
+                "【上次對話後新增訊息（共 ${folded.size} 組／原 ${msgs.size} 則，舊→新）】"
             } else {
-                "【符合條件的訊息節錄（共 ${deduped.size} 組／原 ${msgs.size} 則，上限 $ragLimit，舊→新）】"
+                "【符合條件的訊息節錄（共 ${folded.size} 組／原 ${msgs.size} 則，上限 $ragLimit，舊→新）】"
             }
             appendLine(headerTitle)
             appendLine("<message_content>")
             val ragSectionBuilder = StringBuilder()
-            deduped.forEachIndexed { idx, entry ->
-                val m = entry.msg
-                val t = timeFmt.format(Date(m.timestamp))
+            folded.forEachIndexed { idx, entry ->
+                val m = entry.representative
                 val risk = if (m.riskLabel.isNotBlank()) "${m.riskLabel}(${m.riskScore})" else "未分析"
-                val safeSender = AiClient.sanitizeForPrompt(m.sender)
-                val contentShort = AiClient.sanitizeForPrompt(m.content.replace("\n", " ").take(contentCap))
-                val repeatTag = if (entry.count > 1) " (×${entry.count})" else ""
-                val line = "${idx + 1}. [id=${m.id}] [${m.appLabel}] $safeSender ($t) [$risk]$repeatTag: $contentShort"
+                val line = if (entry.isFolded) {
+                    val headline = AiClient.sanitizeForPrompt(NotificationFoldUtil.formatFoldedHeadline(entry))
+                    "${idx + 1}. [id=${m.id}] $headline [$risk]"
+                } else {
+                    val t = timeFmt.format(Date(m.timestamp))
+                    val safeSender = AiClient.sanitizeForPrompt(m.sender)
+                    val contentShort = AiClient.sanitizeForPrompt(m.content.replace("\n", " ").take(contentCap))
+                    "${idx + 1}. [id=${m.id}] [${m.appLabel}] $safeSender ($t) [$risk]: $contentShort"
+                }
                 appendLine(line)
                 ragSectionBuilder.appendLine(line)
             }
             appendLine("</message_content>")
-            if (!canUseIncrementalCache && sessionId != null && deduped.size >= 15) {
+            if (!canUseIncrementalCache && sessionId != null && folded.size >= 15) {
                 ragTextForSummary = ragSectionBuilder.toString()
             }
         }

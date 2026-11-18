@@ -594,8 +594,14 @@ fun MessageDetailScreen(
                                                     } else {
                                                         val highRiskCount = past.count { it.riskScore >= 70 }
                                                         val fmt = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
-                                                        val recentLines = past.take(3).joinToString("；") { m ->
-                                                            "${fmt.format(Date(m.timestamp))} 風險${m.riskScore}分「${m.content.replace("\n", " ").take(40)}」"
+                                                        val foldedPast = com.phantom.checker.util.NotificationFoldUtil.fold(past)
+                                                        val recentLines = foldedPast.take(3).joinToString("；") { entry ->
+                                                            val m = entry.representative
+                                                            if (entry.isFolded) {
+                                                                "${com.phantom.checker.util.NotificationFoldUtil.formatFoldedHeadline(entry)} 風險${m.riskScore}分"
+                                                            } else {
+                                                                "${fmt.format(Date(m.timestamp))} 風險${m.riskScore}分「${m.content.replace("\n", " ").take(40)}」"
+                                                            }
                                                         }
                                                         "過去共 ${past.size} 則（高風險 $highRiskCount 則），近期：$recentLines"
                                                     }

@@ -137,48 +137,35 @@ object DailySummaryPolicy {
         messages: List<MessageEntity>,
         maxChars: Int = 2400
     ): String {
-        data class DedupBucket(val msg: MessageEntity, var count: Int = 1)
-
-        fun dedup(list: List<MessageEntity>, maxItems: Int): List<DedupBucket> {
-            val map = LinkedHashMap<String, DedupBucket>()
-            for (m in list) {
-                val normPrefix = m.content.replace(Regex("\\s+"), " ").trim().take(40)
-                val key = "${m.packageName}|${m.sender.trim()}|$normPrefix"
-                val existing = map[key]
-                if (existing == null) {
-                    if (map.size >= maxItems) continue
-                    map[key] = DedupBucket(m, 1)
-                } else {
-                    existing.count++
-                }
-            }
-            return map.values.toList()
-        }
-
-        val riskyBuckets = dedup(
-            messages.filter { it.riskLabel == "scam" || it.riskLabel == "suspicious" },
-            maxItems = 20
-        )
-        val unanalyzedBuckets = dedup(
-            messages.filter { it.riskLabel.isBlank() },
-            maxItems = 10
-        )
+        val riskyBuckets = com.phantom.checker.util.NotificationFoldUtil.fold(
+            messages.filter { it.riskLabel == "scam" || it.riskLabel == "suspicious" }
+        ).take(20)
+        val unanalyzedBuckets = com.phantom.checker.util.NotificationFoldUtil.fold(
+            messages.filter { it.riskLabel.isBlank() }
+        ).take(10)
 
         return buildString {
             var remaining = maxChars
             var truncated = false
 
-            fun appendSection(header: String, buckets: List<DedupBucket>, tagResolver: (MessageEntity) -> String) {
+            fun appendSection(
+                header: String,
+                buckets: List<com.phantom.checker.util.FoldedMessage>,
+                tagResolver: (MessageEntity) -> String
+            ) {
                 if (buckets.isEmpty() || remaining <= header.length + 16) return
                 appendLine(header)
                 remaining -= header.length + 1
                 buckets.forEachIndexed { idx, bucket ->
                     if (truncated) return@forEachIndexed
-                    val m = bucket.msg
+                    val m = bucket.representative
                     val tag = tagResolver(m)
-                    val repeat = if (bucket.count > 1) " (×${bucket.count})" else ""
-                    val snippet = m.content.replace("\n", " ").trim().take(90)
-                    val line = "${idx + 1}. [$tag][${m.appLabel}] ${m.sender}$repeat: $snippet"
+                    val line = if (bucket.isFolded) {
+                        "${idx + 1}. [$tag]${com.phantom.checker.util.NotificationFoldUtil.formatFoldedHeadline(bucket)}"
+                    } else {
+                        val snippet = m.content.replace("\n", " ").trim().take(90)
+                        "${idx + 1}. [$tag][${m.appLabel}] ${m.sender}: $snippet"
+                    }
                     if (line.length + 1 <= remaining) {
                         appendLine(line)
                         remaining -= line.length + 1
