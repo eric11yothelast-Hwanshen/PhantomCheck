@@ -270,6 +270,7 @@ private data class AppGroupUi(
     val totalCount: Int,
     val todayCount: Int,
     val unreadTodayCount: Int,
+    val totalUnreadCount: Int = 0,
     val lastTs: Long,
     val lastPreview: String,
     val latestTags: List<MessageTagRow> = emptyList(),
@@ -549,6 +550,8 @@ private fun PhantomCheckApp(
                                 .associate { it.packageName to it.cnt }
                             val unreadTodayMap = dao.todayUnreadCountsByApp(startOfDay)
                                 .associate { it.packageName to it.cnt }
+                            val totalUnreadMap = dao.unreadCountsByApp()
+                                .associate { it.packageName to it.cnt }
                             val recentMsgs = dao.paged(PAGE_SIZE, 0)
                             val latestPreviewByPkg = recentMsgs
                                 .groupBy { it.packageName }
@@ -572,6 +575,7 @@ private fun PhantomCheckApp(
                                     totalCount = g.cnt,
                                     todayCount = todayMap[g.packageName] ?: 0,
                                     unreadTodayCount = unreadTodayMap[g.packageName] ?: 0,
+                                    totalUnreadCount = totalUnreadMap[g.packageName] ?: 0,
                                     lastTs = g.lastTs,
                                     lastPreview = preview,
                                     latestTags = latestMsgId?.let { tagsByLatestMsgId[it] }.orEmpty(),
@@ -582,7 +586,7 @@ private fun PhantomCheckApp(
                                     com.phantom.checker.util.HomeSortOrder.RECENT ->
                                         list.sortedByDescending { it.lastTs }
                                     com.phantom.checker.util.HomeSortOrder.UNREAD ->
-                                        list.sortedWith(compareByDescending<AppGroupUi> { it.unreadTodayCount }.thenByDescending { it.lastTs })
+                                        list.sortedWith(compareByDescending<AppGroupUi> { it.totalUnreadCount }.thenByDescending { it.lastTs })
                                     com.phantom.checker.util.HomeSortOrder.RISK ->
                                         list.sortedWith(compareByDescending<AppGroupUi> { it.riskScore }.thenByDescending { it.lastTs })
                                 }
@@ -2160,7 +2164,7 @@ private fun MessagesHomeTab(
                             } catch (_: Exception) {
                                 pkg
                             }
-                            val todayBadge = group?.todayCount ?: 0
+                            val unreadBadge = group?.totalUnreadCount ?: 0
                             val favTags = group?.latestTags.orEmpty()
                             PhantomGlassCard(
                                 glassState = glassState,
@@ -2184,14 +2188,14 @@ private fun MessagesHomeTab(
                                             contentDescription = label,
                                             size = 38.dp
                                         )
-                                        if (todayBadge > 0) {
+                                        if (unreadBadge > 0) {
                                             Surface(
                                                 shape = CircleShape,
                                                 color = MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.align(Alignment.TopEnd)
                                             ) {
                                                 Text(
-                                                    text = if (todayBadge > 99) "99+" else "$todayBadge",
+                                                    text = if (unreadBadge > 99) "99+" else "$unreadBadge",
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onPrimary,
                                                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)

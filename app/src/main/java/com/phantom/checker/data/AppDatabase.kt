@@ -481,6 +481,9 @@ interface MessageDao {
     @Query("SELECT packageName, COUNT(*) as cnt FROM messages WHERE isOwn = 0 AND isRead = 0 AND timestamp >= :startOfDay GROUP BY packageName")
     suspend fun todayUnreadCountsByApp(startOfDay: Long): List<AppCountRow>
 
+    @Query("SELECT packageName, COUNT(*) as cnt FROM messages WHERE isOwn = 0 AND isRead = 0 GROUP BY packageName")
+    suspend fun unreadCountsByApp(): List<AppCountRow>
+
     @Query("SELECT packageName, id AS messageId FROM messages WHERE isOwn = 0 AND id IN (SELECT MAX(id) FROM messages m1 WHERE isOwn = 0 AND timestamp = (SELECT MAX(timestamp) FROM messages m2 WHERE isOwn = 0 AND m2.packageName = m1.packageName) GROUP BY packageName)")
     suspend fun latestMessageIdsByApp(): List<AppLatestMsgRow>
 
