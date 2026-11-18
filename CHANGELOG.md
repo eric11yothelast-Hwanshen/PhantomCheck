@@ -2,6 +2,34 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.10.0] - 2026-11-18
+
+### 新增
+- **首頁卡片排列模式三選一（#230）**：
+  - `PhantomPrefs` 新增 `HomeCardLayoutMode`（`LIST` 一般條列預設／`PEEK_TOP` 撲克牌式往下露頂部 52dp／`PEEK_BOTTOM` 資料夾式往上露底部邊緣縮放），自動遷移舊 `card_stack_effect_enabled`（`true → PEEK_BOTTOM`、`false → LIST`）。
+  - 重疊模式由 `MessagesHomeTab` `LazyColumn` 搭配 `rememberSnapFlingBehavior`＋自訂 `SnapLayoutInfoProvider` 於列表層控制 `zIndex` 與 `graphicsLayer`（`translationY`／`scaleX`）滑動吸附，並透過 `PhantomGlassCard(overlapOpaqueBoost = true)` 提升深色毛玻璃不透明度與邊框陰影防止底層透字；全鏈移除 `StackedAppCard` 與舊開關，並於 `SettingsActivity` 改為三顆並排 `FilterChip`（接入 `SettingsCatalog` `personal_home_card_layout` 與 `PhantomSettingsBus` 即時生效）。
+- **寄件者頭像擷取與多層顯示（#231）**：
+  - Room 升版至 v16（`MIGRATION_15_16`），新增 `sender_avatars` 表；`NotificationCollectorService` 於 `EXTRA_MESSAGES` 解析處擷取 `MessagingStyle.Message.getSenderPerson()?.getIcon()`，降採樣至 `≤96px` 並壓縮至 `≤16KB` 後 upsert 寫入（自動清理 30 天前舊頭像）。
+  - `AppIconHelper` 新增 `SenderAvatarImage`（`LruCache` 128 項快取），顯示優先序為 `sender_avatars` → 圓形裁切 App 圖示 → 寄件者首字母 Material 彩色圓頭像；整合至 `AppThreadsScreen`（40dp）與 `ConversationScreen` 非 `isOwn` 氣泡（28dp 頂端對齊）。
+- **自己回覆抑制與自我身分名稱設定（#237）**：
+  - 隨 `MIGRATION_15_16` 新增 `own_reply_echo` 表；於通知快速回覆與 SMS fallback 成功送出後寫入抑制列，3 分鐘內 `NotificationCollectorService` 解析新訊息尾巴若命中（正規化全等或 `diceBigramSimilarity ≥ 0.9`）即略過重複入庫並刪除抑制列。
+  - `PhantomPrefs` 新增 `my_display_names`（預設含 `"Eric Chiu"`，trim 不分大小寫比對），群組通知寄件者命中時直接標記 `isOwn = true`／`isRead = true` 並跳過詐騙警示；設定頁「訊息與通知」卡片與 `SettingsCatalog`（`notif_my_display_names`）新增編輯入口。
+
+### 變更與修正
+- **浮動層黑底範圍與遮罩修復（#229）**：
+  - `ChatScreen` 歷史對話抽屜容器補上上下 `10.dp` 垂直 inset 與 `displayCutoutPadding()`，使 `20.dp` 圓角完整落在桌布內；抽屜 scrim 與 `MainActivity` 自動記事規則全螢幕 scrim 統一調降為 `0.45f`，`PhantomFloatingSurface` 深色底調整為 `0xEB12151E`（約 92% 不透明）。
+- **記事搜尋膠囊置左（#232）**：
+  - `MainActivity` `NotesTab` `notes_search_pill` 移除 `PhantomSearchBarPill` 的 `weight(1f)`，改為緊湊置左並以 `Spacer(weight(1f))` 推開右側 `Tune` 按鈕（保留 48dp 觸控目標與安全區域間距）。
+- **AI 歷史對話抽屜速度感知手勢（#233）**：
+  - `ChatScreen` `AnchoredDraggableState` `positionalThreshold` 調整為 `0.35f`、`velocityThreshold` 調整為 `400.dp`；拖曳放手改用 `VelocityTracker` 投影（`offset + velocity * 0.15s`）搭配 `400.dp/s` 或 `25%` 寬度判定開啟／關閉，維持 lambda `offset {}` 延遲讀取與所有現有互動零回歸。
+- **自動待辦相似去重強化（#234）**：
+  - `NotificationCollectorService.saveAutoMemoIfPresent` 強化 `normalizeForSimilarity`（NFKC、小寫、標點與空白正規化），`TodoDao` 新增 `findRecentPendingByAppLabel`，補齊 `diceBigramSimilarity ≥ 0.9` 判定，命中時原地更新既有待辦並重排提醒與小工具而不重複建立。
+- **底部分頁欄水滴與全域流暢度優化（#235, #236）**：
+  - `LiquidGlassTabBar.kt` 重用 `Path`（`rewind()`）、`Stroke`／`Color`／`Brush.verticalGradient` 快取物件，水滴彈簧調升為 `stiffness = 600f, dampingRatio = 0.8f`，並將 `onHorizontalDrag` 改為同步狀態驅動以消除每幀配置與 coroutine churn。
+  - `MainActivity` 以 `rememberSaveableStateHolder`（`SaveableStateProvider(selectedTab.name)`）保留分頁切換狀態；完成全庫 `LazyColumn` `key`、`derivedStateOf`、`graphicsLayer` lambda 與 `StatsDetailWidgetProvider` SQL `GROUP BY`／`AppIconHelper` `LruCache` 慣例稽核。
+- **發佈準備（#238）**：
+  - 版號更新：`versionCode` 28、`versionName` `"2.10.0"`；復核全依賴為最新穩定版並同步 `CHANGELOG.md` 與 `README.md`。
+
 ## [2.9.0] - 2026-11-18
 
 ### 新增
