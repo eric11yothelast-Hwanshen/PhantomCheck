@@ -2,6 +2,36 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.11.0] - 2026-11-18
+
+### 新增
+- **首頁卡片排列模式重寫為「中央聚焦垂直滾輪堆疊」（#240）**：
+  - `PhantomPrefs.HomeCardLayoutMode` 精簡為 `LIST`（一般條列）／`CENTER`（中央堆疊）兩種，舊 `peek_top`／`peek_bottom` 與 legacy `card_stack_effect_enabled` 自動遷移為 `CENTER`；`SettingsActivity` 對應改為兩顆膠囊選項。
+  - `Components.kt` 新增 `CenterFocusCardStack`：`VerticalPager` + `PageSize.FillParentSize`（`beyondViewportPageCount = 2`）可滾動分頁容器，每頁以 `graphicsLayer` 依 `pagerState` 頁偏移動態計算 `translationY`（對稱上下錯開）、`scale`（|q|=1 → 0.92f、|q|=2 → 0.84f）、`alpha`（距離 > 2 隱藏）與 `zIndex`（`derivedStateOf` 隨焦點變化），焦點卡恆在容器垂直正中央、鬆手由 Pager 原生 snap 吸附，首末卡皆可捲動至正中央。
+  - 堆疊模式卡片以 `PhantomGlassCard(overlapOpaqueBoost = true)` 提升不透明深色底（`#F6161822` ≥ 0.96，亮色主題 surface 0.96）防後卡文字透出；`MessagesHomeTab` 移除壞掉的 peek 模式、負 spacing 與自訂 snap 佈局。
+- **記事分頁待辦收合＋智慧排序、記事卡片三種排列模式（#241）**：
+  - `PhantomPrefs` 新增 `NoteCardLayoutMode`（`LIST`／`PEEK_TOP`／`CENTER`，key `note_card_layout_mode`）與 `notes_todo_collapsed`（預設收合）；`MainActivity` `NotesTab` 重構為「搜尋列＋可收合待辦卡＋weight(1f) 記事容器」結構。
+  - 待辦卡標題列可點擊切換收合（＋ 34dp 箭頭），`AnimatedVisibility` 平滑過渡且狀態持久化；收合時隱藏篩選膠囊列、只顯示距離現在最近且尚未逾期的 1 則未完成待辦（全部逾期時順延最早逾期那則、無未完成時顯示提示文字）。
+  - `ReminderScheduler.sortTodosSmart` 重寫：未完成未逾期（dueAt 升冪）→ 已逾期未完成（dueAt 升冪，過期自動下移）→ 已完成（完成時間降冪）；與 AI 助手、桌面小工具共用同一排序。
+  - 記事卡片排列模式：一般條列為原垂直列表；「往下露頂部」為 `LazyColumn` + `SnapLayoutInfoProvider(SnapPosition.Start)` 撲克牌式堆疊（逐卡 `graphicsLayer` 依 `layoutInfo` 錯開 52dp、`zIndex` 遞減）；「中央堆疊」重用 `CenterFocusCardStack`；共用新抽出的 `NoteCardItem`（堆疊模式限 6 行內文、`overlapOpaqueBoost` 防透字）；待辦收起時記事容器自動填滿垂直空間。
+- **設定頁子區塊可收合（#242）**：
+  - 「個別 App 節流覆寫」與「自訂常用指令（N 則）」改為可收合子區塊（標題列點擊／箭頭切換，預設收合並顯示數量摘要）；展開狀態以新 `PhantomPrefs.isSettingsSubCardExpanded`／`setSettingsSubCardExpanded`（key `settings_expanded_subcards`）持久化，獨立於大分類卡片（`KEY_COLLAPSED_CARDS`），大卡片收合重開不會重置子區塊。
+- **首頁篩選標籤列可收合成單行（#245）**：
+  - `MessagesHomeTab` 篩選 chip 列收合時僅顯示「全部、未讀」與作用中篩選／標籤 chip，其餘隱藏（單行不換行），右側 34dp 圓角箭頭切換；狀態以 `home_filter_chips_collapsed` 持久化，不再溢出換行。
+
+### 變更與修正
+- **根除浮動層外層直角黑底（#243）**：
+  - `Components.kt` 新增 `PhantomDialog`：`Dialog(usePlatformDefaultWidth = false)` + `SideEffect` 將 window 背景 `setBackgroundDrawable(ColorDrawable(TRANSPARENT))` 設為全透明，深色不透明底只由內層 `PhantomFloatingSurface`（clip → background → border）繪製，圓角框線外 100% 透出桌布；「手動新增自動記事規則」彈窗由 `AlertDialog` 改用 `PhantomDialog`。
+  - `MainActivity`（訊息操作、標籤選擇）、`ConversationScreen`（訊息操作）、`ChatScreen`（待辦提醒清單）共 4 處 `ModalBottomSheet` 一律 `containerColor = Color.Transparent`，內容改包 `PhantomFloatingSurface` 圓角容器。
+- **介面與設定模型同步（#244）**：
+  - 首頁／記事排列模式與收合狀態統一以 `PhantomSettingsBus.version.collectAsState()` 驅動 `remember` 重新讀取 `PhantomPrefs`，設定頁變更回分頁立即生效。
+- **每日／本週摘要準時觸發（#246）**：
+  - `DailySummaryPolicy`／`WeeklySummaryPolicy` 由 `PeriodicWorkRequest` + `UPDATE`（不重錨點，改設定後仍按舊時間觸發）改為 `OneTimeWorkRequestBuilder` + `enqueueUniqueWork(REPLACE)`，`initialDelay` 為距下次觸發的精確時間（下限 60 秒），Worker `doWork` 以 `try/finally` 結束時自我重新排程，杜絕排程漂移。
+- **AI 助手／設定搜尋支援新設定（#247）**：
+  - `SettingsCatalog` 更新 `personal_home_card_layout` 描述與別名，新增 `personal_notes_card_layout`、`personal_notes_todo_collapsed`、`personal_home_filter_chips` 搜尋項；`NumericSettingSpec` 新增 `valueLabels` 選項型數值設定，登錄 `home_card_layout`（0=一般條列／1=中央堆疊）與 `notes_card_layout`（0=一般條列／1=往下露頂部／2=中央堆疊），AI 助手可對話直接切換排列模式，系統提示輸出選項對照與目前值。
+- **發佈準備（#247）**：
+  - 版號更新：`versionCode` 29、`versionName` "2.11.0"；同步 `CHANGELOG.md` 與 `README.md` 功能總覽。
+
 ## [2.10.0] - 2026-11-18
 
 ### 新增
