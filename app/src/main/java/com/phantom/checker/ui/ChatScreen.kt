@@ -3450,7 +3450,7 @@ fun ChatAssistantTab(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.4f * drawerProgress))
+                    .background(Color.Black.copy(alpha = 0.65f * drawerProgress))
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -3465,8 +3465,7 @@ fun ChatAssistantTab(
                     .offset { IntOffset(offsetX.roundToInt(), 0) }
                     .anchoredDraggable(drawerState, Orientation.Horizontal)
             ) {
-                PhantomGlassCard(
-                    glassState = glassState,
+                PhantomFloatingSurface(
                     modifier = Modifier.fillMaxSize(),
                     cornerRadius = 20.dp,
                     contentPadding = 14.dp
@@ -3529,9 +3528,9 @@ fun ChatAssistantTab(
                                     Surface(
                                         shape = RoundedCornerShape(12.dp),
                                         color = if (isSelected) {
-                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.95f)
                                         } else {
-                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
                                         },
                                         modifier = Modifier
                                             .fillMaxWidth()

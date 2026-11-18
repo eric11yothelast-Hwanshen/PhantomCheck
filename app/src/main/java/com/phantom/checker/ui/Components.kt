@@ -201,6 +201,41 @@ fun Modifier.phantomGlassSurface(
     }
 }
 
+/**
+ * #222 浮動層專用不透明容器（歷史對話抽屜、記事規則面板等）。
+ * 不使用 glassSurface/blur，避免圓角外溢出與底層文字透出；.clip(shape) 必在 .background() 之前。
+ */
+@Composable
+fun PhantomFloatingSurface(
+    modifier: Modifier = Modifier,
+    cornerRadius: Dp = 20.dp,
+    contentPadding: Dp = 14.dp,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val bgColor = if (isDark) {
+        Color(0xF012151E)
+    } else {
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+    }
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(bgColor, shape)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant,
+                shape = shape
+            )
+    ) {
+        Column(
+            modifier = Modifier.padding(contentPadding),
+            content = content
+        )
+    }
+}
+
 @Composable
 fun PhantomGlassCard(
     glassState: HazeState,

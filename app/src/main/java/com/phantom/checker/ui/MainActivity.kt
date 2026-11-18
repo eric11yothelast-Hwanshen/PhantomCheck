@@ -3292,7 +3292,7 @@ private fun NotesTab(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.25f))
+                .background(Color.Black.copy(alpha = 0.65f))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -3323,8 +3323,7 @@ private fun NotesTab(
             .align(Alignment.TopEnd)
             .padding(top = 52.dp)
     ) {
-        PhantomGlassCard(
-            glassState = glassState,
+        PhantomFloatingSurface(
             modifier = Modifier
                 .width(panelWidth)
                 .heightIn(max = panelMaxHeight),
