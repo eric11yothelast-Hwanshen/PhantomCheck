@@ -107,6 +107,19 @@ import com.phantom.checker.data.AppGroupRow
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.data.MessageTagCrossRef
 import com.phantom.checker.data.MessageTagRow
+import android.graphics.drawable.ColorDrawable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.zIndex
+import androidx.compose.foundation.pager.PageSize
+import androidx.compose.foundation.pager.VerticalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindow
 import com.phantom.checker.ui.components.GlassCard
 import com.phantom.checker.ui.components.glassSource
 import com.phantom.checker.ui.components.glassSurface
@@ -267,10 +280,11 @@ fun PhantomGlassCard(
     } else {
         Color(0xFF16181F).copy(alpha = 0.94f)
     }
+    // #243/#244 重疊／堆疊模式防透字：深色不透明底提高至 0.96 以上 (#F6161822)
     val boostedOverlay = if (isDark) {
-        Color(0xFF16181F).copy(alpha = 0.88f)
+        Color(0xF6161822)
     } else {
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
     }
     val outline = if (overlapOpaqueBoost) {
         if (isDark) Color.White.copy(alpha = 0.22f) else MaterialTheme.colorScheme.outlineVariant
@@ -346,6 +360,122 @@ fun PhantomGlassCard(
                 modifier = Modifier.padding(contentPadding),
                 content = content
             )
+        }
+    }
+}
+
+/**
+ * #243 中央聚焦垂直滾輪堆疊（Vertical Center-Focused Card Stack）。
+ *
+ * 以 VerticalPager + PageSize.FillParentSize 實作「可滾動的分頁容器」：
+ * - 每張卡片佔滿一個分頁高度，焦點卡片永遠位於容器垂直正中央，
+ *   保持 scale = 1.0f、alpha = 1.0f 且 zIndex 最高，完整顯示內容。
+ * - 上下兩側卡片依距離 q 對稱錯開（peekPx = 卡片高度 * peekRatio），
+ *   並逐步縮小（|q|=1 → 0.92f、|q|=2 → 0.84f），壓在焦點卡片後方，
+ *   形成上下對稱的立體卡片輪盤。
+ * - 距離超過 maxVisibleDistance 的卡片 alpha = 0f 隱藏，不會擠成一團。
+ * - 鬆手自動吸附回正中央（Pager 原生 snap 行為），第一張與最後一張
+ *   卡片同樣可捲動至正中央（FillParentSize 天然置中，無需 contentPadding）。
+ * - 滾動高度由分頁容器提供（嚴禁寫死在靜態 Box 中）。
+ */
+@Composable
+fun <T> CenterFocusCardStack(
+    items: List<T>,
+    key: (T) -> Any,
+    modifier: Modifier = Modifier,
+    peekRatio: Float = 0.78f,
+    maxVisibleDistance: Float = 2f,
+    cardContent: @Composable (T) -> Unit
+) {
+    if (items.isEmpty()) return
+    val pagerState = rememberPagerState(initialPage = 0) { items.size }
+    VerticalPager(
+        state = pagerState,
+        modifier = modifier,
+        pageSize = PageSize.FillParentSize,
+        pageSpacing = 0.dp,
+        beyondViewportPageCount = 2
+    ) { page ->
+        var cardHeightPx by remember(page) { mutableStateOf(0f) }
+        // zIndex 必須隨焦點動態變化：距離中央越近 zIndex 越高，確保焦點卡片在最上層
+        val pageZ by remember(page) {
+            derivedStateOf {
+                val q = (page - pagerState.currentPage - pagerState.currentPageOffsetFraction).let { -it }
+                1000f - kotlin.math.abs(q)
+            }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(pageZ)
+                .graphicsLayer {
+                    // q > 0：位於焦點上方的卡片；q < 0：位於焦點下方
+                    val q = (page - pagerState.currentPage - pagerState.currentPageOffsetFraction).let { -it }
+                    val distance = kotlin.math.abs(q)
+                    val viewportH = size.height.toFloat()
+                    val peekPx = if (cardHeightPx > 0f) cardHeightPx * peekRatio else viewportH * 0.24f
+                    // 對稱上下錯開：距中央 peek * |q|（利用分頁容器本身高度換算回聚焦點附近）
+                    translationY = q * (viewportH - peekPx)
+                    // 逐步縮小：0.92f / 0.84f，超過 2 張維持最小比例
+                    val shrink = (0.08f * distance.coerceAtMost(maxVisibleDistance))
+                    scaleX = 1f - shrink
+                    scaleY = 1f - shrink
+                    // 距離超過 2 張隱藏，避免列表上下兩端擠成一團
+                    alpha = (1f - (distance - maxVisibleDistance).coerceAtLeast(0f)).coerceIn(0f, 1f)
+                }
+        ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .onGloballyPositioned { coords -> cardHeightPx = coords.size.height.toFloat() }
+            ) {
+                cardContent(items[page])
+            }
+        }
+    }
+}
+
+/**
+ * #244 浮動彈窗專用 Dialog 外框：
+ * - 外層系統視窗背景強制完全透明（window?.setBackgroundDrawable(ColorDrawable(TRANSPARENT))），
+ *   圓角框線以外 100% 透出後方桌布，根除「直角長方形黑底」。
+ * - 深色不透明底色（Alpha ≈ 0.92）只畫在帶細圓角邊框的這一層（PhantomFloatingSurface），
+ *   裁切順序：clip(shape) → background → border，確保沒有雙層背景疊加。
+ */
+@Composable
+fun PhantomDialog(
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    cornerRadius: Dp = 20.dp,
+    contentPadding: Dp = 18.dp,
+    maxContentHeightFraction: Float = 0.7f,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        val view = LocalView.current
+        val window = (view.parent as? DialogWindow)?.window
+        SideEffect {
+            window?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+        }
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            PhantomFloatingSurface(
+                modifier = modifier
+                    .widthIn(max = maxWidth)
+                    .heightIn(max = maxHeight * maxContentHeightFraction),
+                cornerRadius = cornerRadius,
+                contentPadding = contentPadding
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    content = content
+                )
+            }
         }
     }
 }

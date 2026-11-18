@@ -131,6 +131,7 @@ object PhantomPrefs {
     private const val KEY_DAILY_SUMMARY_NOTIF = "daily_summary_notif_enabled"
     private const val KEY_VIP_SENDERS_MAP = "vip_senders_per_app"
     private const val KEY_COLLAPSED_CARDS = "settings_collapsed_cards"
+private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     private const val KEY_TOKEN_SAVER_ENABLED = "token_saver_enabled"
     private const val KEY_PERSISTENT_NOTIF_ICONS = "persistent_notif_show_icons"
     private const val KEY_PERSISTENT_NOTIF_STYLE = "persistent_notif_style"
@@ -648,6 +649,18 @@ object PhantomPrefs {
         val collapsed = (prefs(ctx).getStringSet(KEY_COLLAPSED_CARDS, emptySet()) ?: emptySet()).toMutableSet()
         if (expanded) collapsed.remove(cardKey) else collapsed.add(cardKey)
         prefs(ctx).edit().putStringSet(KEY_COLLAPSED_CARDS, collapsed).apply()
+    }
+
+    /** 設定頁子區塊（個別 App 節流覆寫、自訂常用指令等）展開狀態：預設收合，獨立於大分類卡片收合，不互相重置 */
+    fun isSettingsSubCardExpanded(ctx: Context, cardKey: String): Boolean {
+        val expanded = prefs(ctx).getStringSet(KEY_EXPANDED_SUBCARDS, emptySet()) ?: emptySet()
+        return cardKey in expanded
+    }
+
+    fun setSettingsSubCardExpanded(ctx: Context, cardKey: String, expanded: Boolean) {
+        val expandedSet = (prefs(ctx).getStringSet(KEY_EXPANDED_SUBCARDS, emptySet()) ?: emptySet()).toMutableSet()
+        if (expanded) expandedSet.add(cardKey) else expandedSet.remove(cardKey)
+        prefs(ctx).edit().putStringSet(KEY_EXPANDED_SUBCARDS, expandedSet).apply()
     }
 
     /** 新手引導步驟索引（1~18），中斷可續 */
@@ -1221,8 +1234,7 @@ object PhantomPrefs {
 
     enum class HomeCardLayoutMode(val key: String, val label: String) {
         LIST("list", "一般條列"),
-        PEEK_TOP("peek_top", "往下露頂部"),
-        PEEK_BOTTOM("peek_bottom", "往上露底部")
+        CENTER("center", "中央堆疊")
     }
 
     private const val KEY_HOME_CARD_LAYOUT_MODE = "home_card_layout_mode"
@@ -1231,16 +1243,58 @@ object PhantomPrefs {
         val p = prefs(ctx)
         val raw = p.getString(KEY_HOME_CARD_LAYOUT_MODE, null)
         if (raw != null) {
-            return HomeCardLayoutMode.entries.firstOrNull { it.key == raw } ?: HomeCardLayoutMode.LIST
+            return when (raw) {
+                // 舊版 peek_top / peek_bottom 統一遷移至中央堆疊
+                "peek_top", "peek_bottom" -> HomeCardLayoutMode.CENTER
+                else -> HomeCardLayoutMode.entries.firstOrNull { it.key == raw } ?: HomeCardLayoutMode.LIST
+            }
         }
         val legacyEnabled = p.getBoolean("card_stack_effect_enabled", false)
-        val migrated = if (legacyEnabled) HomeCardLayoutMode.PEEK_BOTTOM else HomeCardLayoutMode.LIST
+        val migrated = if (legacyEnabled) HomeCardLayoutMode.CENTER else HomeCardLayoutMode.LIST
         p.edit().putString(KEY_HOME_CARD_LAYOUT_MODE, migrated.key).remove("card_stack_effect_enabled").apply()
         return migrated
     }
 
     fun setHomeCardLayoutMode(ctx: Context, mode: HomeCardLayoutMode) {
         prefs(ctx).edit().putString(KEY_HOME_CARD_LAYOUT_MODE, mode.key).apply()
+    }
+
+    /** 記事分頁卡片排列模式（獨立於首頁，不互相衝突） */
+    enum class NoteCardLayoutMode(val key: String, val label: String) {
+        LIST("list", "一般條列"),
+        PEEK_TOP("peek_top", "往下露頂部"),
+        CENTER("center", "中央堆疊")
+    }
+
+    private const val KEY_NOTE_CARD_LAYOUT_MODE = "note_card_layout_mode"
+
+    fun getNoteCardLayoutMode(ctx: Context): NoteCardLayoutMode {
+        val raw = prefs(ctx).getString(KEY_NOTE_CARD_LAYOUT_MODE, null)
+        return NoteCardLayoutMode.entries.firstOrNull { it.key == raw } ?: NoteCardLayoutMode.LIST
+    }
+
+    fun setNoteCardLayoutMode(ctx: Context, mode: NoteCardLayoutMode) {
+        prefs(ctx).edit().putString(KEY_NOTE_CARD_LAYOUT_MODE, mode.key).apply()
+    }
+
+    /** 記事分頁待辦事項區塊預設收合（節省畫面空間） */
+    private const val KEY_NOTES_TODO_COLLAPSED = "notes_todo_collapsed"
+
+    fun isNotesTodoCollapsed(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_NOTES_TODO_COLLAPSED, true)
+
+    fun setNotesTodoCollapsed(ctx: Context, collapsed: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_NOTES_TODO_COLLAPSED, collapsed).apply()
+    }
+
+    /** 首頁篩選標籤列收合狀態（避免標籤換行佔兩行） */
+    private const val KEY_HOME_FILTER_CHIPS_COLLAPSED = "home_filter_chips_collapsed"
+
+    fun isHomeFilterChipsCollapsed(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_HOME_FILTER_CHIPS_COLLAPSED, false)
+
+    fun setHomeFilterChipsCollapsed(ctx: Context, collapsed: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_HOME_FILTER_CHIPS_COLLAPSED, collapsed).apply()
     }
 
     data class StatsCardOption(val key: String, val title: String, val subtitle: String, val defaultVisible: Boolean)

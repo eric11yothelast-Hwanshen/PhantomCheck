@@ -146,6 +146,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -977,7 +978,15 @@ private fun PhantomCheckApp(
                 AppDatabaseHolder.db(appCtx).tagDao().tagsForMessage(msg.id).map { it.id }.toSet()
             }
         }
-        ModalBottomSheet(onDismissRequest = { messageSheetTarget = null }) {
+        ModalBottomSheet(
+            onDismissRequest = { messageSheetTarget = null },
+            containerColor = Color.Transparent
+        ) {
+            PhantomFloatingSurface(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp,
+                contentPadding = 0.dp
+            ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1142,6 +1151,7 @@ private fun PhantomCheckApp(
                 }
                 Spacer(Modifier.height(12.dp))
             }
+            }
         }
     }
 
@@ -1164,7 +1174,15 @@ private fun PhantomCheckApp(
     }
 
     if (showTagPickerSheet) {
-        ModalBottomSheet(onDismissRequest = { showTagPickerSheet = false }) {
+        ModalBottomSheet(
+            onDismissRequest = { showTagPickerSheet = false },
+            containerColor = Color.Transparent
+        ) {
+            PhantomFloatingSurface(
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 20.dp,
+                contentPadding = 0.dp
+            ) {
             val filteredTagRows = remember(tagCounts, tagPickerQuery) {
                 val q = tagPickerQuery.trim()
                 if (q.isEmpty()) tagCounts
@@ -1299,6 +1317,7 @@ private fun PhantomCheckApp(
                     }
                 }
                 Spacer(Modifier.height(12.dp))
+            }
             }
         }
     }
@@ -2096,140 +2115,175 @@ private fun MessagesHomeTab(
             }
         }
 
-        // 快速篩選 Chip 列（固定，FlowRow 自動換行，免橫向滑動全部可見；全部與未讀固定顯示）
+        // 快速篩選 Chip 列（可收合，避免標籤自動換行佔兩行；collapsed 只保留全部／未讀）
         val activeTag = (activeFilter as? MessageFilter.Tag)?.tag
         val visibleFilters = PhantomPrefs.getVisibleHomeFilters(ctx)
+        var filterChipsCollapsed by remember { mutableStateOf(PhantomPrefs.isHomeFilterChipsCollapsed(ctx)) }
         val chipShape = RoundedCornerShape(8.dp)
-        FlowRow(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .onGloballyPositioned { coords ->
                     onReportBounds(OnboardingTargets.FILTER_CHIPS, coords.boundsInRoot())
                 },
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            FilterChip(
-                selected = activeFilter == MessageFilter.All,
-                onClick = { onSelectFilter(MessageFilter.All) },
-                shape = chipShape,
-                modifier = Modifier.height(32.dp),
-                label = { Text("全部", style = MaterialTheme.typography.labelMedium) }
-            )
-            FilterChip(
-                selected = activeFilter == MessageFilter.Unread,
-                onClick = { onSelectFilter(MessageFilter.Unread) },
-                shape = chipShape,
-                modifier = Modifier.height(32.dp),
-                label = { Text("未讀", style = MaterialTheme.typography.labelMedium) }
-            )
-            if ("starred" in visibleFilters || activeFilter == MessageFilter.Starred) {
+            FlowRow(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
                 FilterChip(
-                    selected = activeFilter == MessageFilter.Starred,
-                    onClick = { onSelectFilter(MessageFilter.Starred) },
+                    selected = activeFilter == MessageFilter.All,
+                    onClick = { onSelectFilter(MessageFilter.All) },
                     shape = chipShape,
                     modifier = Modifier.height(32.dp),
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
-                        )
+                    label = { Text("全部", style = MaterialTheme.typography.labelMedium) }
+                )
+                FilterChip(
+                    selected = activeFilter == MessageFilter.Unread,
+                    onClick = { onSelectFilter(MessageFilter.Unread) },
+                    shape = chipShape,
+                    modifier = Modifier.height(32.dp),
+                    label = { Text("未讀", style = MaterialTheme.typography.labelMedium) }
+                )
+                // 收合時僅顯示全部／未讀（與目前生效的篩選一顆），不換行、不浪費右側空間
+                if ((!filterChipsCollapsed || activeFilter == MessageFilter.Starred) &&
+                    ("starred" in visibleFilters || activeFilter == MessageFilter.Starred)
+                ) {
+                    FilterChip(
+                        selected = activeFilter == MessageFilter.Starred,
+                        onClick = { onSelectFilter(MessageFilter.Starred) },
+                        shape = chipShape,
+                        modifier = Modifier.height(32.dp),
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        },
+                        label = { Text("星標", style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
+                if ((!filterChipsCollapsed || activeFilter == MessageFilter.Scams) &&
+                    ("scams" in visibleFilters || activeFilter == MessageFilter.Scams)
+                ) {
+                    FilterChip(
+                        selected = activeFilter == MessageFilter.Scams,
+                        onClick = { onSelectFilter(MessageFilter.Scams) },
+                        shape = chipShape,
+                        modifier = Modifier.height(32.dp),
+                        label = { Text("詐騙", style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
+                if ((!filterChipsCollapsed || activeFilter == MessageFilter.Filtered) &&
+                    ("filtered" in visibleFilters || activeFilter == MessageFilter.Filtered)
+                ) {
+                    FilterChip(
+                        selected = activeFilter == MessageFilter.Filtered,
+                        onClick = { onSelectFilter(MessageFilter.Filtered) },
+                        shape = chipShape,
+                        modifier = Modifier.height(32.dp),
+                        label = { Text("已過濾", style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
+                if ((!filterChipsCollapsed || activeFilter == MessageFilter.Noted) &&
+                    ("noted" in visibleFilters || activeFilter == MessageFilter.Noted)
+                ) {
+                    FilterChip(
+                        selected = activeFilter == MessageFilter.Noted,
+                        onClick = { onSelectFilter(MessageFilter.Noted) },
+                        shape = chipShape,
+                        modifier = Modifier.height(32.dp),
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        },
+                        label = { Text("已記事", style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
+                if ((!filterChipsCollapsed || activeFilter == MessageFilter.Todoed) &&
+                    ("todoed" in visibleFilters || activeFilter == MessageFilter.Todoed)
+                ) {
+                    FilterChip(
+                        selected = activeFilter == MessageFilter.Todoed,
+                        onClick = { onSelectFilter(MessageFilter.Todoed) },
+                        shape = chipShape,
+                        modifier = Modifier.height(32.dp),
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        },
+                        label = { Text("已待辦", style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
+                if (activeTag != null) {
+                    val tagColor = parseTagColor(activeTag.colorHex)
+                    FilterChip(
+                        selected = true,
+                        onClick = onOpenTagPicker,
+                        shape = chipShape,
+                        modifier = Modifier.height(32.dp),
+                        leadingIcon = {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(tagColor)
+                            )
+                        },
+                        trailingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "關閉標籤篩選",
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .clickable { onSelectFilter(MessageFilter.All) }
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = tagColor.copy(alpha = 0.2f)
+                        ),
+                        label = { Text(activeTag.name, style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
+                if (!filterChipsCollapsed && ("tag" in visibleFilters || activeTag != null)) {
+                    FilterChip(
+                        selected = activeTag != null,
+                        onClick = onOpenTagPicker,
+                        shape = chipShape,
+                        modifier = Modifier.height(32.dp),
+                        label = { Text("標籤 ▾", style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
+            }
+            Spacer(Modifier.width(2.dp))
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
+                    .clickable {
+                        filterChipsCollapsed = !filterChipsCollapsed
+                        PhantomPrefs.setHomeFilterChipsCollapsed(ctx, filterChipsCollapsed)
                     },
-                    label = { Text("星標", style = MaterialTheme.typography.labelMedium) }
-                )
-            }
-            if ("scams" in visibleFilters || activeFilter == MessageFilter.Scams) {
-                FilterChip(
-                    selected = activeFilter == MessageFilter.Scams,
-                    onClick = { onSelectFilter(MessageFilter.Scams) },
-                    shape = chipShape,
-                    modifier = Modifier.height(32.dp),
-                    label = { Text("詐騙", style = MaterialTheme.typography.labelMedium) }
-                )
-            }
-            if ("filtered" in visibleFilters || activeFilter == MessageFilter.Filtered) {
-                FilterChip(
-                    selected = activeFilter == MessageFilter.Filtered,
-                    onClick = { onSelectFilter(MessageFilter.Filtered) },
-                    shape = chipShape,
-                    modifier = Modifier.height(32.dp),
-                    label = { Text("已過濾", style = MaterialTheme.typography.labelMedium) }
-                )
-            }
-            if ("noted" in visibleFilters || activeFilter == MessageFilter.Noted) {
-                FilterChip(
-                    selected = activeFilter == MessageFilter.Noted,
-                    onClick = { onSelectFilter(MessageFilter.Noted) },
-                    shape = chipShape,
-                    modifier = Modifier.height(32.dp),
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    },
-                    label = { Text("已記事", style = MaterialTheme.typography.labelMedium) }
-                )
-            }
-            if ("todoed" in visibleFilters || activeFilter == MessageFilter.Todoed) {
-                FilterChip(
-                    selected = activeFilter == MessageFilter.Todoed,
-                    onClick = { onSelectFilter(MessageFilter.Todoed) },
-                    shape = chipShape,
-                    modifier = Modifier.height(32.dp),
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    },
-                    label = { Text("已待辦", style = MaterialTheme.typography.labelMedium) }
-                )
-            }
-            if (activeTag != null) {
-                val tagColor = parseTagColor(activeTag.colorHex)
-                FilterChip(
-                    selected = true,
-                    onClick = onOpenTagPicker,
-                    shape = chipShape,
-                    modifier = Modifier.height(32.dp),
-                    leadingIcon = {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(tagColor)
-                        )
-                    },
-                    trailingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Clear,
-                            contentDescription = "關閉標籤篩選",
-                            modifier = Modifier
-                                .size(14.dp)
-                                .clickable { onSelectFilter(MessageFilter.All) }
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = tagColor.copy(alpha = 0.2f)
-                    ),
-                    label = { Text(activeTag.name, style = MaterialTheme.typography.labelMedium) }
-                )
-            }
-            if ("tag" in visibleFilters || activeTag != null) {
-                FilterChip(
-                    selected = activeTag != null,
-                    onClick = onOpenTagPicker,
-                    shape = chipShape,
-                    modifier = Modifier.height(32.dp),
-                    label = { Text("標籤 ▾", style = MaterialTheme.typography.labelMedium) }
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (filterChipsCollapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                    contentDescription = if (filterChipsCollapsed) "展開篩選標籤" else "收合篩選標籤",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
-
         if (activeFilter == MessageFilter.All) {
             // 我的最愛 App 橫向列（固定）
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2321,18 +2375,9 @@ private fun MessagesHomeTab(
         }
         val is24h = remember(homeSettingsVersion) { PhantomPrefs.is24HourFormat(ctx) }
         val isOverlapMode = activeFilter == MessageFilter.All &&
-            layoutMode != PhantomPrefs.HomeCardLayoutMode.LIST
-        val snapLayoutInfoProvider = remember(listState) {
-            SnapLayoutInfoProvider(listState, SnapPosition.Start)
-        }
-        val snapFlingBehavior = rememberSnapFlingBehavior(snapLayoutInfoProvider)
-        val activeFlingBehavior = if (isOverlapMode) snapFlingBehavior else ScrollableDefaults.flingBehavior()
+            layoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER
         val listSpacing = if (activeFilter == MessageFilter.All) {
-            when (layoutMode) {
-                PhantomPrefs.HomeCardLayoutMode.LIST -> 12.dp
-                PhantomPrefs.HomeCardLayoutMode.PEEK_TOP -> if (isCompactCard) (-56).dp else (-68).dp
-                PhantomPrefs.HomeCardLayoutMode.PEEK_BOTTOM -> if (isCompactCard) (-84).dp else (-100).dp
-            }
+            if (layoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER) 0.dp else 12.dp
         } else {
             12.dp
         }
@@ -2341,8 +2386,7 @@ private fun MessagesHomeTab(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            flingBehavior = activeFlingBehavior,
-            contentPadding = if (isOverlapMode) PaddingValues(bottom = 160.dp) else PaddingValues(0.dp),
+            contentPadding = PaddingValues(0.dp),
             verticalArrangement = Arrangement.spacedBy(listSpacing)
         ) {
             if (activeFilter == MessageFilter.All) {
@@ -2381,60 +2425,143 @@ private fun MessagesHomeTab(
                         }
                     }
                 }
-                else -> {
+                else -> if (layoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER) {
+                    // #243 中央聚焦垂直滾輪堆疊：VerticalPager 可滾動分頁容器，焦點卡片恆在正中央
+                    item(key = "home_center_stack") {
+                        CenterFocusCardStack(
+                            items = appGroups,
+                            key = { it.packageName },
+                            modifier = Modifier.fillParentMaxSize()
+                        ) { app ->
+                            val isMuted = app.packageName in mutedPackages
+                            val timeText = remember(app.lastTs, is24h) {
+                                PhantomPrefs.formatMessageTime(ctx, app.lastTs, includeDate = true)
+                            }
+                            PhantomGlassCard(
+                                glassState = glassState,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .alpha(if (isMuted) 0.5f else 1f)
+                                    .pressableScale()
+                                    .combinedClickable(
+                                        onClick = { onOpenApp(app.packageName, app.appLabel) },
+                                        onLongClick = { onLongPressApp(app) }
+                                    ),
+                                cornerRadius = 20.dp,
+                                contentPadding = if (isCompactCard) 8.dp else 12.dp,
+                                overlapOpaqueBoost = true
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box {
+                                        AppIconImage(
+                                            packageName = app.packageName,
+                                            contentDescription = app.appLabel,
+                                            size = 44.dp
+                                        )
+                                        if (app.unreadTodayCount > 0) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(10.dp)
+                                                    .align(Alignment.TopEnd)
+                                                    .clip(CircleShape)
+                                                    .background(MaterialTheme.colorScheme.error)
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.weight(1f),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = app.appLabel,
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false)
+                                                )
+                                                if (isMuted) {
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Surface(
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                                    ) {
+                                                        Text(
+                                                            text = "靜音",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                } else if (app.unreadTodayCount > 0) {
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Surface(
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        color = MaterialTheme.colorScheme.errorContainer
+                                                    ) {
+                                                        Text(
+                                                            text = "未讀 ${app.unreadTodayCount}",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                } else if (app.todayCount > 0) {
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Surface(
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        color = MaterialTheme.colorScheme.primaryContainer
+                                                    ) {
+                                                        Text(
+                                                            text = "今日 ${app.todayCount}",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                text = timeText,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            text = app.lastPreview.ifBlank { "共 ${app.totalCount} 則訊息" },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        if (app.latestTags.isNotEmpty()) {
+                                            Spacer(Modifier.height(6.dp))
+                                            MessageTagChipRow(tags = app.latestTags)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
                     itemsIndexed(appGroups, key = { _, app -> app.packageName }) { idx, app ->
                         val isMuted = app.packageName in mutedPackages
                         val timeText = remember(app.lastTs, is24h) {
                             PhantomPrefs.formatMessageTime(ctx, app.lastTs, includeDate = true)
                         }
-                        val itemStackModifier = when (layoutMode) {
-                            PhantomPrefs.HomeCardLayoutMode.LIST -> Modifier
-                            PhantomPrefs.HomeCardLayoutMode.PEEK_TOP -> {
-                                Modifier
-                                    .zIndex(idx.toFloat())
-                                    .graphicsLayer {
-                                        val focusIdx = listState.firstVisibleItemIndex
-                                        val scrollOff = listState.firstVisibleItemScrollOffset.toFloat()
-                                        val focusFraction = (scrollOff / 52.dp.toPx()).coerceIn(0f, 1f)
-                                        val shiftPx = (if (isCompactCard) 56.dp else 68.dp).toPx()
-                                        translationY = when {
-                                            idx <= focusIdx -> 0f
-                                            idx == focusIdx + 1 -> shiftPx * (1f - focusFraction)
-                                            else -> shiftPx
-                                        }
-                                    }
-                            }
-                            PhantomPrefs.HomeCardLayoutMode.PEEK_BOTTOM -> {
-                                val itemZ by remember(idx) {
-                                    derivedStateOf {
-                                        val focusIdx = listState.firstVisibleItemIndex
-                                        if (idx == focusIdx + 1 && listState.firstVisibleItemScrollOffset > 40) {
-                                            (10000 - focusIdx + 1).toFloat()
-                                        } else {
-                                            (10000 - idx).toFloat()
-                                        }
-                                    }
-                                }
-                                Modifier
-                                    .zIndex(itemZ)
-                                    .graphicsLayer {
-                                        val relIdx = idx - listState.firstVisibleItemIndex
-                                        val focusFraction = (listState.firstVisibleItemScrollOffset.toFloat() / 40.dp.toPx()).coerceIn(0f, 1f)
-                                        scaleX = when {
-                                            relIdx <= 0 -> 1f
-                                            relIdx == 1 -> 0.96f + 0.04f * focusFraction
-                                            relIdx == 2 -> 0.92f + 0.04f * focusFraction
-                                            else -> 0.90f
-                                        }
-                                        val bottomPeekPx = 14.dp.toPx()
-                                        translationY = when {
-                                            relIdx <= 0 -> 0f
-                                            relIdx == 1 -> bottomPeekPx * (1f - focusFraction)
-                                            else -> bottomPeekPx * (relIdx - focusFraction).coerceAtMost(2.5f)
-                                        }
-                                    }
-                            }
-                        }
+                        val itemStackModifier = Modifier
                         val rowModifier = Modifier
                             .fillMaxWidth()
                             .then(
@@ -2751,6 +2878,271 @@ private val TuneIcon: ImageVector by lazy {
     }.build()
 }
 
+/**
+ * #242 待辦事項單列（展開清單與收合精簡顯示共用）。
+ * 到期資訊依智慧排序結果渲染：未逾期近者在上、已逾期下移、已完成殿後。
+ */
+@Composable
+private fun NotesTodoRow(
+    todo: TodoEntity,
+    now: Long,
+    startOfToday: Long,
+    endOfToday: Long,
+    dayMs: Long,
+    onEdit: (TodoEntity) -> Unit,
+    onDelete: (TodoEntity) -> Unit,
+    onComplete: (TodoEntity, Boolean) -> Unit,
+    onOpenMessageDetail: (Long) -> Unit
+) {
+    val ctx = LocalContext.current
+    val isOverdue = !todo.isDone && todo.dueAt < now
+    val isDueToday = !todo.isDone && todo.dueAt in startOfToday..endOfToday && !isOverdue
+    val overdueDays = if (isOverdue) {
+        ((startOfToday - todo.dueAt) / dayMs).toInt().coerceAtLeast(0)
+    } else 0
+    val priorityColor = when (todo.priority) {
+        TodoEntity.PRIORITY_HIGH -> MaterialTheme.colorScheme.error
+        TodoEntity.PRIORITY_LOW -> Color(0xFF26A69A)
+        else -> Color(0xFFFFB300)
+    }
+    val overdueColor = Color(0xFFFF6D00)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onEdit(todo) }
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = todo.isDone,
+            onCheckedChange = { checked -> onComplete(todo, checked) }
+        )
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(priorityColor)
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = todo.title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (isOverdue) FontWeight.SemiBold else FontWeight.Normal,
+                textDecoration = if (todo.isDone) {
+                    androidx.compose.ui.text.style.TextDecoration.LineThrough
+                } else {
+                    null
+                },
+                color = when {
+                    todo.isDone -> MaterialTheme.colorScheme.onSurfaceVariant
+                    isOverdue -> overdueColor
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
+            )
+            val statusBadge = when {
+                isOverdue -> if (overdueDays >= 1) "已逾期 $overdueDays 天 · " else "已逾期 · "
+                isDueToday -> "今天到期 · "
+                else -> ""
+            }
+            val repeatTag = when (todo.repeatRule) {
+                TodoEntity.REPEAT_DAILY -> " · 每日"
+                TodoEntity.REPEAT_WEEKLY -> " · 每週"
+                else -> ""
+            }
+            Text(
+                text = "${statusBadge}到期：${PhantomPrefs.formatMessageTime(ctx, todo.dueAt, includeDate = true)}$repeatTag",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isOverdue) overdueColor else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (todo.isDone && todo.completedAt != null) {
+                Text(
+                    text = "完成於：${PhantomPrefs.formatMessageTime(ctx, todo.completedAt, includeDate = true)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            if (todo.notes.isNotBlank()) {
+                Text(
+                    text = todo.notes,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        if (todo.relatedMessageId != null) {
+            IconButton(
+                onClick = { onOpenMessageDetail(todo.relatedMessageId) },
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = "查看來源訊息",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+        IconButton(onClick = { onEdit(todo) }) {
+            Icon(
+                imageVector = Icons.Default.Edit,
+                contentDescription = "編輯待辦",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        IconButton(onClick = { onDelete(todo) }) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = "刪除待辦",
+                tint = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
+
+/**
+ * #245 記事卡片內容（供一般條列 / 往下露頂部 / 中央堆疊三種排列模式共用）。
+ * 堆疊模式（overlapOpaque = true）啟用不透明深色底防止後卡文字透出，
+ * 並以 contentMaxLines 限制內文行數讓焦點卡保持易讀。
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun NoteCardItem(
+    note: NoteEntity,
+    glassState: HazeState,
+    contentMaxLines: Int = Int.MAX_VALUE,
+    overlapOpaque: Boolean = false,
+    onOpenMessageDetail: (Long) -> Unit,
+    onEdit: (NoteEntity) -> Unit,
+    onDelete: (NoteEntity) -> Unit,
+    onTogglePin: (NoteEntity) -> Unit,
+    onAutoNoteLongPress: (NoteEntity) -> Unit
+) {
+    val ctx = LocalContext.current
+    val accentColor = remember(note.colorHex) {
+        note.colorHex?.let { hex ->
+            runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull()
+        }
+    }
+    val isAuto = note.source == NoteEntity.SOURCE_AUTO
+    PhantomGlassCard(
+        glassState = glassState,
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (isAuto) {
+                    Modifier.combinedClickable(
+                        onClick = {
+                            if (note.relatedMessageId != null) {
+                                onOpenMessageDetail(note.relatedMessageId)
+                            }
+                        },
+                        onLongClick = { onAutoNoteLongPress(note) }
+                    )
+                } else {
+                    Modifier
+                }
+            ),
+        cornerRadius = 18.dp,
+        contentPadding = 14.dp,
+        overlapOpaqueBoost = overlapOpaque
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top
+        ) {
+            if (accentColor != null) {
+                Box(
+                    modifier = Modifier
+                        .width(4.dp)
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(accentColor)
+                )
+                Spacer(Modifier.width(10.dp))
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (note.pinned) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "置頂",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    if (isAuto) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "自動",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    val appLabel = note.relatedAppLabel
+                    if (!appLabel.isNullOrBlank()) {
+                        Text(
+                            text = appLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                if (note.pinned || isAuto || !note.relatedAppLabel.isNullOrBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                }
+                Text(
+                    text = note.content,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = contentMaxLines,
+                    overflow = if (contentMaxLines == Int.MAX_VALUE) {
+                        TextOverflow.Clip
+                    } else {
+                        TextOverflow.Ellipsis
+                    }
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = PhantomPrefs.formatMessageTime(ctx, note.updatedAt, includeDate = true),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                TextButton(onClick = { onTogglePin(note) }) {
+                    Text(if (note.pinned) "取消置頂" else "置頂")
+                }
+                Row {
+                    TextButton(onClick = { onEdit(note) }) {
+                        Text("編輯")
+                    }
+                    TextButton(onClick = { onDelete(note) }) {
+                        Text("刪除", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun NotesTab(
@@ -2903,12 +3295,84 @@ private fun NotesTab(
     var showNotesSearch by remember { mutableStateOf(false) }
     var notesSearchQuery by remember { mutableStateOf("") }
 
+    // 待辦資料操作回呼（展開／收合兩種顯示狀態共用，避免重複邏輯）
+    val onEditTodo: (TodoEntity) -> Unit = { t ->
+        editingTodo = t
+        showTodoEditor = true
+    }
+    val onDeleteTodo: (TodoEntity) -> Unit = { t ->
+        scope.launch {
+            ReminderScheduler.cancelTodo(appCtx, t.id)
+            withContext(Dispatchers.IO) {
+                db.todoDao().deleteById(t.id)
+            }
+            com.phantom.checker.widget.ReminderWidgetProvider.updateAllIfChanged(appCtx)
+            onShowMessage("已刪除待辦事項")
+        }
+    }
+    val onCompleteTodo: (TodoEntity, Boolean) -> Unit = { t, checked ->
+        scope.launch {
+            val spawned = withContext(Dispatchers.IO) {
+                ReminderScheduler.completeTodoWithRecurrence(appCtx, t, checked)
+            }
+            if (spawned != null) {
+                onShowMessage("已完成並自動建立下一次重複待辦")
+            }
+        }
+    }
+    // 記事卡片內容操作回呼（三種排列模式共用）
+    val onEditNote: (NoteEntity) -> Unit = { n ->
+        editingNote = n
+        showEditor = true
+    }
+    val onDeleteNote: (NoteEntity) -> Unit = { n ->
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                db.noteDao().deleteById(n.id)
+                com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx)
+            }
+            onShowMessage("已刪除記事")
+        }
+    }
+    val onTogglePinNote: (NoteEntity) -> Unit = { n ->
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                db.noteDao().update(
+                    n.copy(
+                        pinned = !n.pinned,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+                com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx)
+            }
+        }
+    }
+    val onAutoNoteLongPress: (NoteEntity) -> Unit = { n ->
+        val relId = n.relatedMessageId
+        if (relId != null) {
+            scope.launch {
+                val src = withContext(Dispatchers.IO) {
+                    db.messageDao().byId(relId)
+                }
+                if (src != null) {
+                    neverMemoTargetMsg = src
+                } else {
+                    neverMemoFallbackNote = n
+                }
+            }
+        } else {
+            neverMemoFallbackNote = n
+        }
+    }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item(key = "notes_search_pill") {
+        // 記事卡片排列模式（獨立於首頁，於設定頁調整後即時同步）；待辦收合狀態持久化
+        val notesSettingsVersion by PhantomSettingsBus.version.collectAsState()
+        val noteLayout = remember(notesSettingsVersion) { PhantomPrefs.getNoteCardLayoutMode(ctx) }
+        val todoSectionCollapsed = remember { mutableStateOf(PhantomPrefs.isNotesTodoCollapsed(ctx)) }
+
+        Column(modifier = Modifier.fillMaxSize()) {
+            // 0. 搜尋膠囊列（待辦與記事共用入口）
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -2950,11 +3414,20 @@ private fun NotesTab(
                     }
                 }
             }
-        }
-        // 1. 待辦事項區（與 AI 助手、桌面小工具同步）
-        item(key = "notes_todos_section") {
+
+            Spacer(Modifier.height(12.dp))
+
+            // 1. 待辦事項區（與 AI 助手、桌面小工具同步；可收合以節省空間）
             val pendingCount = todos.count { !it.isDone }
             val overdueCount = todos.count { !it.isDone && it.dueAt < now }
+            // 收合時的精簡顯示：距離系統時間最近、尚未逾期的未完成待辦；全部逾期時順延最早逾期那則
+            val nextUpcomingTodo = todos.filter { !it.isDone && it.dueAt >= now }.minByOrNull { it.dueAt }
+            val overdueFallbackTodo = if (nextUpcomingTodo == null) {
+                todos.filter { !it.isDone }.minByOrNull { it.dueAt }
+            } else {
+                null
+            }
+
             PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
@@ -2962,7 +3435,12 @@ private fun NotesTab(
                 contentPadding = 14.dp
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            todoSectionCollapsed.value = !todoSectionCollapsed.value
+                            PhantomPrefs.setNotesTodoCollapsed(ctx, todoSectionCollapsed.value)
+                        },
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -2991,185 +3469,128 @@ private fun NotesTab(
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
-                }
-                Spacer(Modifier.height(6.dp))
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    TodoFilterMode.entries.forEach { mode ->
-                        FilterChip(
-                            selected = todoFilter == mode,
-                            onClick = { todoFilter = mode },
-                            label = {
-                                val badge = when (mode) {
-                                    TodoFilterMode.ALL -> todos.size
-                                    TodoFilterMode.PENDING -> pendingCount
-                                    TodoFilterMode.DONE -> todos.count { it.isDone }
-                                    TodoFilterMode.OVERDUE -> overdueCount
-                                }
-                                Text("${mode.label}($badge)", style = MaterialTheme.typography.labelSmall)
-                            }
+                    IconButton(
+                        onClick = {
+                            todoSectionCollapsed.value = !todoSectionCollapsed.value
+                            PhantomPrefs.setNotesTodoCollapsed(ctx, todoSectionCollapsed.value)
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (todoSectionCollapsed.value) {
+                                Icons.Default.KeyboardArrowDown
+                            } else {
+                                Icons.Default.KeyboardArrowUp
+                            },
+                            contentDescription = if (todoSectionCollapsed.value) "展開待辦事項" else "收起待辦事項",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                if (filteredTodos.isEmpty()) {
-                    Text(
-                        text = if (todos.isEmpty()) {
-                            "尚無待辦事項（點右上角 + 手動新增，或在 AI 助手對話中建立）"
-                        } else {
-                            "此篩選條件下無待辦事項"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
-                    filteredTodos.forEachIndexed { idx, todo ->
-                        if (idx > 0) {
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                        }
-                        val isOverdue = !todo.isDone && todo.dueAt < now
-                        val isDueToday = !todo.isDone && todo.dueAt in startOfToday..endOfToday && !isOverdue
-                        val overdueDays = if (isOverdue) {
-                            ((startOfToday - todo.dueAt) / dayMs).toInt().coerceAtLeast(0)
-                        } else 0
-                        val priorityColor = when (todo.priority) {
-                            TodoEntity.PRIORITY_HIGH -> MaterialTheme.colorScheme.error
-                            TodoEntity.PRIORITY_LOW -> Color(0xFF26A69A)
-                            else -> Color(0xFFFFB300)
-                        }
-                        val overdueColor = Color(0xFFFF6D00)
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    editingTodo = todo
-                                    showTodoEditor = true
-                                }
-                                .padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                Spacer(Modifier.height(6.dp))
+                // 展開狀態：篩選膠囊列 + 完整待辦清單（依智慧排序：未逾期近者在上、已逾期下移、已完成殿後）
+                AnimatedVisibility(
+                    visible = !todoSectionCollapsed.value,
+                    enter = expandVertically(),
+                    exit = shrinkVertically()
+                ) {
+                    Column {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Checkbox(
-                                checked = todo.isDone,
-                                onCheckedChange = { checked ->
-                                    scope.launch {
-                                        val spawned = withContext(Dispatchers.IO) {
-                                            ReminderScheduler.completeTodoWithRecurrence(appCtx, todo, checked)
+                            TodoFilterMode.entries.forEach { mode ->
+                                FilterChip(
+                                    selected = todoFilter == mode,
+                                    onClick = { todoFilter = mode },
+                                    label = {
+                                        val badge = when (mode) {
+                                            TodoFilterMode.ALL -> todos.size
+                                            TodoFilterMode.PENDING -> pendingCount
+                                            TodoFilterMode.DONE -> todos.count { it.isDone }
+                                            TodoFilterMode.OVERDUE -> overdueCount
                                         }
-                                                            if (spawned != null) {
-                                            onShowMessage("已完成並自動建立下一次重複待辦")
-                                        }
+                                        Text("${mode.label}($badge)", style = MaterialTheme.typography.labelSmall)
                                     }
-                                }
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        if (filteredTodos.isEmpty()) {
+                            Text(
+                                text = if (todos.isEmpty()) {
+                                    "尚無待辦事項（點右上角 + 手動新增，或在 AI 助手對話中建立）"
+                                } else {
+                                    "此篩選條件下無待辦事項"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(priorityColor)
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = todo.title,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (isOverdue) FontWeight.SemiBold else FontWeight.Normal,
-                                    textDecoration = if (todo.isDone) {
-                                        androidx.compose.ui.text.style.TextDecoration.LineThrough
-                                    } else {
-                                        null
-                                    },
-                                    color = when {
-                                        todo.isDone -> MaterialTheme.colorScheme.onSurfaceVariant
-                                        isOverdue -> overdueColor
-                                        else -> MaterialTheme.colorScheme.onSurface
-                                    }
-                                )
-                                val statusBadge = when {
-                                    isOverdue -> if (overdueDays >= 1) "已逾期 $overdueDays 天 · " else "已逾期 · "
-                                    isDueToday -> "今天到期 · "
-                                    else -> ""
+                        } else {
+                            filteredTodos.forEachIndexed { idx, todo ->
+                                if (idx > 0) {
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                                 }
-                                val repeatTag = when (todo.repeatRule) {
-                                    TodoEntity.REPEAT_DAILY -> " · 每日"
-                                    TodoEntity.REPEAT_WEEKLY -> " · 每週"
-                                    else -> ""
-                                }
-                                Text(
-                                    text = "${statusBadge}到期：${PhantomPrefs.formatMessageTime(ctx, todo.dueAt, includeDate = true)}$repeatTag",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (isOverdue) overdueColor else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                if (todo.isDone && todo.completedAt != null) {
-                                    Text(
-                                        text = "完成於：${PhantomPrefs.formatMessageTime(ctx, todo.completedAt, includeDate = true)}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                                if (todo.notes.isNotBlank()) {
-                                    Text(
-                                        text = todo.notes,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                            if (todo.relatedMessageId != null) {
-                                IconButton(
-                                    onClick = { onOpenMessageDetail(todo.relatedMessageId) },
-                                    modifier = Modifier.size(48.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Info,
-                                        contentDescription = "查看來源訊息",
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                            IconButton(
-                                onClick = {
-                                    editingTodo = todo
-                                    showTodoEditor = true
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = "編輯待辦",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            IconButton(
-                                onClick = {
-                                    scope.launch {
-                                        ReminderScheduler.cancelTodo(appCtx, todo.id)
-                                        withContext(Dispatchers.IO) {
-                                            db.todoDao().deleteById(todo.id)
-                                        }
-                                        com.phantom.checker.widget.ReminderWidgetProvider.updateAllIfChanged(appCtx)
-                                                            onShowMessage("已刪除待辦事項")
-                                    }
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "刪除待辦",
-                                    tint = MaterialTheme.colorScheme.error
+                                NotesTodoRow(
+                                    todo = todo,
+                                    now = now,
+                                    startOfToday = startOfToday,
+                                    endOfToday = endOfToday,
+                                    dayMs = dayMs,
+                                    onEdit = onEditTodo,
+                                    onDelete = onDeleteTodo,
+                                    onComplete = onCompleteTodo,
+                                    onOpenMessageDetail = onOpenMessageDetail
                                 )
                             }
                         }
                     }
                 }
+                // 收合狀態：只顯示最快到期的未完成待辦（或最少量的提示文字）
+                AnimatedVisibility(
+                    visible = todoSectionCollapsed.value,
+                    enter = expandVertically(),
+                    exit = shrinkVertically()
+                ) {
+                    when {
+                        nextUpcomingTodo != null -> NotesTodoRow(
+                            todo = nextUpcomingTodo,
+                            now = now,
+                            startOfToday = startOfToday,
+                            endOfToday = endOfToday,
+                            dayMs = dayMs,
+                            onEdit = onEditTodo,
+                            onDelete = onDeleteTodo,
+                            onComplete = onCompleteTodo,
+                            onOpenMessageDetail = onOpenMessageDetail
+                        )
+                        overdueFallbackTodo != null -> NotesTodoRow(
+                            todo = overdueFallbackTodo,
+                            now = now,
+                            startOfToday = startOfToday,
+                            endOfToday = endOfToday,
+                            dayMs = dayMs,
+                            onEdit = onEditTodo,
+                            onDelete = onDeleteTodo,
+                            onComplete = onCompleteTodo,
+                            onOpenMessageDetail = onOpenMessageDetail
+                        )
+                        pendingCount == 0 && todos.isNotEmpty() -> Text(
+                            text = "所有待辦事項皆已完成",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        else -> Text(
+                            text = "尚無待辦事項（點上方 + 新增）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
-        }
 
-        // 2. 記事／備忘錄標題列 + 新增按鈕
-        item(key = "notes_header") {
+            Spacer(Modifier.height(12.dp))
+
+            // 2. 記事／備忘錄標題列 + 新增按鈕
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -3190,179 +3611,109 @@ private fun NotesTab(
                     Text("新增記事")
                 }
             }
-        }
 
-        if (notes.isEmpty()) {
-            item(key = "notes_empty") {
-                EmptyStateView(
-                    icon = Icons.Default.Edit,
-                    title = "尚無記事",
-                    description = "點擊「新增記事」記錄備忘事項，或至設定頁開啟「自動備忘錄」。"
-                )
-            }
-        } else {
-            items(notes, key = { it.id }) { note ->
-                val accentColor = remember(note.colorHex) {
-                    note.colorHex?.let { hex ->
-                        runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull()
-                    }
-                }
-                val isAuto = note.source == NoteEntity.SOURCE_AUTO
-                PhantomGlassCard(
-                    glassState = glassState,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(
-                            if (isAuto) {
-                                Modifier.combinedClickable(
-                                    onClick = {
-                                        if (note.relatedMessageId != null) {
-                                            onOpenMessageDetail(note.relatedMessageId)
-                                        }
-                                    },
-                                    onLongClick = {
-                                        val relId = note.relatedMessageId
-                                        if (relId != null) {
-                                            scope.launch {
-                                                val src = withContext(Dispatchers.IO) {
-                                                    db.messageDao().byId(relId)
-                                                }
-                                                if (src != null) {
-                                                    neverMemoTargetMsg = src
-                                                } else {
-                                                    neverMemoFallbackNote = note
-                                                }
-                                            }
-                                        } else {
-                                            neverMemoFallbackNote = note
-                                        }
-                                    }
-                                )
-                            } else {
-                                Modifier
-                            }
-                        ),
-                    cornerRadius = 18.dp,
-                    contentPadding = 14.dp
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        if (accentColor != null) {
-                            Box(
-                                modifier = Modifier
-                                    .width(4.dp)
-                                    .height(44.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(accentColor)
-                            )
-                            Spacer(Modifier.width(10.dp))
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            Spacer(Modifier.height(8.dp))
+
+            // 3. 記事內容：依排列模式（一般條列 / 往下露頂部 / 中央堆疊）填滿剩餘高度；
+            //    待辦收起時此容器(weight(1f))自動向上延伸，釋放滑動視野
+            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                if (notes.isEmpty()) {
+                    EmptyStateView(
+                        icon = Icons.Default.Edit,
+                        title = "尚無記事",
+                        description = "點擊「新增記事」記錄備忘事項，或至設定頁開啟「自動備忘錄」。"
+                    )
+                } else {
+                    when (noteLayout) {
+                        PhantomPrefs.NoteCardLayoutMode.LIST -> {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                                contentPadding = PaddingValues(bottom = 120.dp)
                             ) {
-                                if (note.pinned) {
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.primaryContainer,
-                                        shape = RoundedCornerShape(6.dp)
-                                    ) {
-                                        Text(
-                                            text = "置頂",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                                if (isAuto) {
-                                    Surface(
-                                        color = MaterialTheme.colorScheme.secondaryContainer,
-                                        shape = RoundedCornerShape(6.dp)
-                                    ) {
-                                        Text(
-                                            text = "自動",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                                val appLabel = note.relatedAppLabel
-                                if (!appLabel.isNullOrBlank()) {
-                                    Text(
-                                        text = appLabel,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                items(notes, key = { it.id }) { note ->
+                                    NoteCardItem(
+                                        note = note,
+                                        glassState = glassState,
+                                        onOpenMessageDetail = onOpenMessageDetail,
+                                        onEdit = onEditNote,
+                                        onDelete = onDeleteNote,
+                                        onTogglePin = onTogglePinNote,
+                                        onAutoNoteLongPress = onAutoNoteLongPress
                                     )
                                 }
                             }
-                            if (note.pinned || isAuto || !note.relatedAppLabel.isNullOrBlank()) {
-                                Spacer(Modifier.height(4.dp))
-                            }
-                            Text(
-                                text = note.content,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = PhantomPrefs.formatMessageTime(ctx, note.updatedAt, includeDate = true),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
-                        Column(horizontalAlignment = Alignment.End) {
-                            TextButton(
-                                onClick = {
-                                    scope.launch {
-                                        withContext(Dispatchers.IO) {
-                                            db.noteDao().update(
-                                                note.copy(
-                                                    pinned = !note.pinned,
-                                                    updatedAt = System.currentTimeMillis()
-                                                )
-                                            )
-                                            com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx)
-                                        }
-                                    }
-                                }
-                            ) {
-                                Text(if (note.pinned) "取消置頂" else "置頂")
+                        PhantomPrefs.NoteCardLayoutMode.PEEK_TOP -> {
+                            // 撲克牌式往下露頂部堆疊：可自然滾動，鬆手吸附回頂端聚焦卡
+                            val deckListState = rememberLazyListState()
+                            val deckPeekPx = with(LocalDensity.current) { 52.dp.toPx() }
+                            val deckSnapProvider = remember(deckListState) {
+                                SnapLayoutInfoProvider(deckListState, SnapPosition.Start)
                             }
-                            Row {
-                                TextButton(
-                                    onClick = {
-                                        editingNote = note
-                                        showEditor = true
-                                    }
-                                ) {
-                                    Text("編輯")
-                                }
-                                TextButton(
-                                    onClick = {
-                                        scope.launch {
-                                            withContext(Dispatchers.IO) {
-                                                db.noteDao().deleteById(note.id)
-                                                com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx)
+                            LazyColumn(
+                                state = deckListState,
+                                modifier = Modifier.fillMaxSize(),
+                                flingBehavior = rememberSnapFlingBehavior(deckSnapProvider),
+                                verticalArrangement = Arrangement.spacedBy(0.dp),
+                                contentPadding = PaddingValues(bottom = 96.dp)
+                            ) {
+                                itemsIndexed(notes, key = { _, n -> n.id }) { idx, note ->
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .zIndex((notes.size - idx).toFloat())
+                                            .graphicsLayer {
+                                                val visible = deckListState.layoutInfo.visibleItemsInfo
+                                                val first = visible.firstOrNull() ?: return@graphicsLayer
+                                                val own = visible.firstOrNull { it.index == idx }
+                                                    ?: return@graphicsLayer
+                                                // 以第一張可見卡為錨點，往下錯開 deckPeekPx，支援變高卡片
+                                                translationY = first.offset +
+                                                    (idx - first.index) * deckPeekPx - own.offset
                                             }
-                                            onShowMessage("已刪除記事")
-                                        }
+                                    ) {
+                                        NoteCardItem(
+                                            note = note,
+                                            glassState = glassState,
+                                            contentMaxLines = 6,
+                                            overlapOpaque = true,
+                                            onOpenMessageDetail = onOpenMessageDetail,
+                                            onEdit = onEditNote,
+                                            onDelete = onDeleteNote,
+                                            onTogglePin = onTogglePinNote,
+                                            onAutoNoteLongPress = onAutoNoteLongPress
+                                        )
                                     }
-                                ) {
-                                    Text("刪除", color = MaterialTheme.colorScheme.error)
                                 }
+                            }
+                        }
+                        PhantomPrefs.NoteCardLayoutMode.CENTER -> {
+                            // 中央堆疊：焦點記事在容器正中央完整顯示，上下對稱縮小堆疊
+                            CenterFocusCardStack(
+                                items = notes,
+                                key = { it.id },
+                                modifier = Modifier.fillMaxSize()
+                            ) { note ->
+                                NoteCardItem(
+                                    note = note,
+                                    glassState = glassState,
+                                    contentMaxLines = 6,
+                                    overlapOpaque = true,
+                                    onOpenMessageDetail = onOpenMessageDetail,
+                                    onEdit = onEditNote,
+                                    onDelete = onDeleteNote,
+                                    onTogglePin = onTogglePinNote,
+                                    onAutoNoteLongPress = onAutoNoteLongPress
+                                )
                             }
                         }
                     }
                 }
             }
         }
-
     }
+
 
     BackHandler(enabled = showMemoRulesPanel) {
         showMemoRulesPanel = false
@@ -5514,14 +5865,17 @@ private fun ManualMemoRuleDialog(
 
     val isValid = pkgText.isNotBlank() || senderText.isNotBlank() || keywordText.isNotBlank()
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("手動新增自動記事規則") },
-        text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
+    PhantomDialog(onDismissRequest = onDismiss) {
+        Text(
+            text = "手動新增自動記事規則",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(12.dp))
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
                 Text(
                     text = "以下三項條件至少填寫一項（同時填寫時須全部符合）：",
                     style = MaterialTheme.typography.bodySmall,
@@ -5596,9 +5950,15 @@ private fun ManualMemoRuleDialog(
                         Text(text = label, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
             }
-        },
-        confirmButton = {
             Button(
                 onClick = {
                     onSave(
@@ -5612,12 +5972,6 @@ private fun ManualMemoRuleDialog(
             ) {
                 Text("儲存")
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
         }
-    )
-}
+    }
 
