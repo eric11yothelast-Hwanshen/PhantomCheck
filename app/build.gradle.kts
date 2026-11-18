@@ -14,7 +14,7 @@ val localProps = Properties().apply {
 
 android {
     namespace = "com.phantom.checker"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.phantom.checker"

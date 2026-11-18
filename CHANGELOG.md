@@ -14,8 +14,8 @@
 
 ### 變更與修正
 - **全域依賴、編譯工具鏈與目標 SDK 升級（#200）**：
-  - 升級 Gradle Wrapper 至 `9.9.1`、AGP 至 `9.5.1`（啟用 AGP 9 內建 Kotlin，移除 `org.jetbrains.kotlin.android` 與 `kotlinOptions`）、Kotlin Compose plugin 至 `2.4.21`、`compileSdk`／`targetSdk` 升至 `36`（Android 16）。
-  - 導入 Jetpack Compose BOM `2026.09.00`（Material 3 `1.4.0`），升級 `core-ktx` `1.19.1`、`activity-compose` `1.13.0`、`lifecycle-runtime-ktx` `2.11.0`、`work-runtime-ktx` `2.12.0`、`Retrofit` `3.0.0`、`Room` `2.8.5`（完成 `kapt` → `KSP 2.3.12` 遷移）。
+  - 升級 Gradle Wrapper 至 `9.9.1`、AGP 至 `9.5.1`（啟用 AGP 9 內建 Kotlin，移除 `org.jetbrains.kotlin.android` 與 `kotlinOptions`）、Kotlin Compose plugin 至 `2.4.21`、`compileSdk` 升至 `37`（滿足 `core-ktx 1.19.1`／`Compose BOM 2026.09.00`／`lifecycle 2.11.0` 編譯要求）、`targetSdk` 升至 `36`（Android 16）。
+  - 導入 Jetpack Compose BOM `2026.09.00`（Material 3 `1.4.0`），升級 `core-ktx` `1.19.1`、`activity-compose` `1.13.0`、`lifecycle-runtime-ktx` `2.11.0`、`work-runtime-ktx` `2.12.0`、`Retrofit` `3.0.0`、`Room` `2.8.5`（完成 `kapt` → `KSP 2.3.14` 遷移）。
   - 升級 `Haze` 至 `2.1.0`（`haze`＋`haze-blur`），重寫 `Glass.kt` 遷移至 `Modifier.hazeBlur`＋`HazeInput.Sources`＋自建 `HazeBlurStyle`（取代已停產的 `haze-materials`），完整保留三種卡片底色模式、省電降級與 API < S fallback。
   - `AGENTS.md` 發佈檢查清單新增第 6 項常態規則：每次發佈須檢查並升級依賴至最新穩定版。
 - **全螢幕搜尋覆蓋層層級修正（#193）**：

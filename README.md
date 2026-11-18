@@ -44,7 +44,7 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 - **獨立白名單管理頁與收合持久化（#199）**：新增 `WhitelistManagementActivity`（`exported="false"`）承載分組白名單管理，設定頁精簡為入口按鈕；`PhantomPrefs` 持久化分組收合狀態並連動 `SettingsCatalog` 搜尋導覽。
 - **待辦事項 Flow 即時同步（#198）**：`TodoDao.observeAll()` 讓記事分頁與 `ChatScreen` 待辦選單即時響應桌面小工具變更，`MessageDetailActivity` 補齊 `ON_RESUME` 刷新 `remindAt`。
 - **搜尋與透明背景 UI 優化（#193, #194, #195）**：修正 `ConversationScreen` 與 `AppThreadsScreen` 全螢幕搜尋覆蓋層被頂欄遮擋；`PhantomSearchBarPill` 統一為 36dp 迷你玻璃膠囊（觸控目標 ≥48dp）；移除 `SwipeToRevealRow` 不透明滿版底色讓自訂背景完整透出。
-- **全域依賴、AGP 9 與 targetSdk 36 升級（#200）**：升級 Gradle `9.9.1`、AGP `9.5.1`（內建 Kotlin）、Kotlin `2.4.21`、Compose BOM `2026.09.00`、Room `2.8.5`（kapt → KSP `2.3.12`）、Retrofit `3.0.0`、WorkManager `2.12.0`、`compileSdk`/`targetSdk` `36`，並遷移 `Glass.kt` 至 Haze `2.1.0` `hazeBlur` API。
+- **全域依賴、AGP 9 與 targetSdk 36 升級（#200）**：升級 Gradle `9.9.1`、AGP `9.5.1`（內建 Kotlin）、Kotlin `2.4.21`、Compose BOM `2026.09.00`、Room `2.8.5`（kapt → KSP `2.3.14`）、Retrofit `3.0.0`、WorkManager `2.12.0`、`compileSdk` `37`／`targetSdk` `36`，並遷移 `Glass.kt` 至 Haze `2.1.0` `hazeBlur` API。
 
 ### v2.5.0 更新重點（versionCode 23）
 
