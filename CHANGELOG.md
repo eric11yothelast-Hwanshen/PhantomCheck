@@ -2,6 +2,27 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.9.0] - 2026-11-18
+
+### 新增
+- **設定即時同步匯流排 `PhantomSettingsBus`（#225）**：
+  - 新增 `util/PhantomSettingsBus`（`MutableStateFlow<Long>` 版本計數＋`notifyChanged()`），`SettingsCatalog.applyBooleanSetting` 與 `applyNumericSetting` 成功寫入偏好後立即發送變更通知。
+  - `MainActivity`（含 `StatsTab`）、`ChatScreen` 與 `SettingsActivity`（含 `FilterSettingsScreen` 及子元件 `replyProxyEnabled`／`intelEnabled`／`updateAutoCheck`）即時收集匯流排，AI 對話或設定搜尋修改後不需重進頁面或等待 `ON_RESUME` 即同步反映於 UI。
+
+### 變更與修正
+- **浮動層不透明實底與遮罩修復（#222）**：
+  - `Components.kt` 新增 `PhantomFloatingSurface`（`.clip(shape)` 置於 `.background()` 之前，深色底色 `Color(0xF012151E)`、淺色 `surface.copy(alpha = 0.95f)`、1dp `outlineVariant` 描邊，不使用 `glassSurface`／blur；頁面內玻璃卡片行為維持不變）。
+  - `ChatScreen` 歷史對話抽屜（`cornerRadius = 20.dp`、session 卡 alpha 提升為選中 `0.95f`／未選 `0.9f`）與 `MainActivity` 自動記事規則懸浮面板改用 `PhantomFloatingSurface`，兩者全螢幕 scrim 統一調升至 `0.65f`（抽屜為 `0.65f * progress`）；完成全庫浮動層四點稽核。
+- **AI 歷史對話抽屜拖曳效能修復（#223）**：
+  - `ChatScreen` 抽屜位移改由 `Modifier.offset { IntOffset(...) }` lambda 於 layout 階段讀取 `drawerState.offset`（含 `NaN` fallback），scrim 透明度改由 `Modifier.drawBehind` 於 draw 階段繪製，可見性由 `derivedStateOf` 控制；`LaunchedEffect` 改用 `snapshotFlow` 收集 `currentValue to isAnimationRunning`，消除拖曳期間每幀重組。
+- **訊息卡片堆疊邊緣對比強化（#224）**：
+  - `StackedAppCard` 層色改用 `lerp(surfaceVariant, onSurface, 0.25f)`，alpha 調升為層 1 `0.55f`／層 2 `0.35f`，scale 調整為 `0.96f`／`0.92f`，層 1 補上 1dp `outlineVariant.copy(alpha = 0.4f)` 描邊，深淺主題與背景圖情境下皆清晰可辨。
+- **自動記事 keyword-only「不再記事」語意化與全鏈健檢（#226）**：
+  - `NotificationCollectorService.saveAutoMemoIfPresent` 的字面 `ACTION_NEVER` 閘門改為僅對含 `packageName` 或 `sender` 條件的規則生效，keyword-only `ACTION_NEVER` 交由 AI 語意判斷（涵蓋即時通知與 `PendingAiAnalysisWorker` 離線補佇列）。
+  - `AiClient.buildSystemPrompt` 記事規則段強化為結構化條列（`id`／`App`／`寄件者`／`關鍵字`／`動作`）、明確語意命中定義與反例（如 Gogolook 驗證碼規則不誤殺銀行 OTP），快取 key 升至 `memoV4`，並更新記事規則面板說明文案。
+- **發佈準備（#227）**：
+  - 版號更新：`versionCode` 27、`versionName` `"2.9.0"`；復核全依賴為最新穩定版並同步 `CHANGELOG.md` 與 `README.md`。
+
 ## [2.8.0] - 2026-11-18
 
 ### 新增

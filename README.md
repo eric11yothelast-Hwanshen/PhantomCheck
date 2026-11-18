@@ -39,6 +39,14 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
 
+### v2.9.0 更新重點（versionCode 27）
+
+- **浮動層渲染與遮罩修復（#222）**：新增 `PhantomFloatingSurface`（不使用 blur、`.clip(shape)` 先於 `.background()`、深色 `0xF012151E`／淺色 `0.95f` 實底＋`0.65f` scrim），修正歷史對話抽屜與記事規則面板圓角溢出與底層透字問題，頁面內玻璃卡片行為維持不變。
+- **AI 歷史對話抽屜拖曳效能修復（#223）**：抽屜位移與 scrim 透明度延遲至 layout／draw 階段讀取，搭配 `derivedStateOf` 與 `snapshotFlow` 收集，拖曳全程零重組風暴。
+- **訊息卡片堆疊可見性強化（#224）**：`StackedAppCard` 層色改用 `lerp(surfaceVariant, onSurface, 0.25f)`、alpha 調升至 `0.55f`／`0.35f`、scale 調整為 `0.96f`／`0.92f` 並於層 1 加上 1dp `outlineVariant` 描邊。
+- **AI 變更設定即時生效（#225）**：新增 `PhantomSettingsBus`，透過 AI 對話或設定搜尋修改任何支援項目後，主頁、統計、AI 助手與設定頁 UI 立即同步更新。
+- **記事規則 keyword-only「不再記事」語意化（#226）**：`saveAutoMemoIfPresent` 僅對含 App／寄件者條件的 `never` 規則套用字面閘門，keyword-only `never` 交由 AI 依場景語意判斷（`memoV4`），避免誤殺同字面不同服務的訊息。
+
 ### v2.8.0 更新重點（versionCode 26）
 
 - **訊息卡片堆疊效果（可開關）（#212）**：`StackedAppCard` 依訊息數於卡片後方呈現 0/1/2 層立體堆疊（含捲動微幅視差與點擊收合回饋），設定頁「個人化」支援切換開關。
