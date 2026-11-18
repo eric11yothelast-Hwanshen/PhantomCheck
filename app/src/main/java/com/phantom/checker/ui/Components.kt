@@ -216,7 +216,7 @@ fun PhantomFloatingSurface(
     val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val bgColor = if (isDark) {
-        Color(0xF012151E)
+        Color(0xEB12151E)
     } else {
         MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
     }

@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -3476,7 +3477,7 @@ fun ChatAssistantTab(
                         } else {
                             0f
                         }
-                        drawRect(Color.Black.copy(alpha = 0.65f * progress))
+                        drawRect(Color.Black.copy(alpha = 0.45f * progress))
                     }
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
@@ -3487,6 +3488,8 @@ fun ChatAssistantTab(
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
+                    .padding(vertical = 10.dp)
+                    .displayCutoutPadding()
                     .width(drawerWidth)
                     .fillMaxHeight()
                     .offset {
