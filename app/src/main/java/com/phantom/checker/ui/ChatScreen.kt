@@ -112,6 +112,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -1729,12 +1730,13 @@ fun ChatAssistantTab(
         val drawerWidth = minOf(320.dp, maxWidth * 0.82f)
         val drawerWidthPx = with(density) { drawerWidth.toPx() }
         val openSwipeThresholdPx = with(density) { 24.dp.toPx() }
+        val openVelocityThresholdPx = with(density) { 400.dp.toPx() }
         val decaySpec = rememberSplineBasedDecay<Float>()
         val drawerState = remember {
             AnchoredDraggableState(
                 initialValue = 0f,
-                positionalThreshold = { distance: Float -> distance * 0.5f },
-                velocityThreshold = { with(density) { 800.dp.toPx() } },
+                positionalThreshold = { distance: Float -> distance * 0.35f },
+                velocityThreshold = { openVelocityThresholdPx },
                 snapAnimationSpec = spring(stiffness = 380f, dampingRatio = 0.85f),
                 decayAnimationSpec = decaySpec
             )
@@ -1782,12 +1784,26 @@ fun ChatAssistantTab(
                     if (!showSessionDrawer && drawerWidthPx > 0f) {
                         var dragAccum = 0f
                         var triggered = false
+                        val velocityTracker = VelocityTracker()
+                        fun resolveDrawerTarget(velocityX: Float): Float {
+                            val rawOffset = drawerState.offset
+                            val currentOffset = if (rawOffset.isNaN()) -drawerWidthPx else rawOffset
+                            val projectedOffset = currentOffset + velocityX * 0.15f
+                            val shouldOpen = when {
+                                velocityX > openVelocityThresholdPx -> true
+                                velocityX < -openVelocityThresholdPx -> false
+                                else -> projectedOffset > -drawerWidthPx * 0.75f
+                            }
+                            return if (shouldOpen) 1f else 0f
+                        }
                         detectHorizontalDragGestures(
                             onDragStart = {
                                 dragAccum = 0f
                                 triggered = false
+                                velocityTracker.resetTracking()
                             },
-                            onHorizontalDrag = { _, dragAmount ->
+                            onHorizontalDrag = { change, dragAmount ->
+                                velocityTracker.addPosition(change.uptimeMillis, change.position)
                                 if (dragAmount > 0f || triggered) {
                                     dragAccum += dragAmount
                                     if (!triggered && dragAccum > openSwipeThresholdPx) {
@@ -1802,31 +1818,29 @@ fun ChatAssistantTab(
                             },
                             onDragEnd = {
                                 if (triggered) {
+                                    val velocityX = velocityTracker.calculateVelocity().x
+                                    val target = resolveDrawerTarget(velocityX)
                                     scope.launch {
-                                        val target = if (drawerState.requireOffset() > -drawerWidthPx * 0.5f) {
-                                            1f
-                                        } else {
-                                            0f
-                                        }
                                         drawerState.animateTo(target)
+                                        showSessionDrawer = target == 1f
                                     }
                                 }
                                 dragAccum = 0f
                                 triggered = false
+                                velocityTracker.resetTracking()
                             },
                             onDragCancel = {
                                 if (triggered) {
+                                    val velocityX = velocityTracker.calculateVelocity().x
+                                    val target = resolveDrawerTarget(velocityX)
                                     scope.launch {
-                                        val target = if (drawerState.requireOffset() > -drawerWidthPx * 0.5f) {
-                                            1f
-                                        } else {
-                                            0f
-                                        }
                                         drawerState.animateTo(target)
+                                        showSessionDrawer = target == 1f
                                     }
                                 }
                                 dragAccum = 0f
                                 triggered = false
+                                velocityTracker.resetTracking()
                             }
                         )
                     }
