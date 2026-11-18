@@ -385,7 +385,7 @@ fun FilterSettingsScreen(
     var homeSortOrder by remember { mutableStateOf(PhantomPrefs.getHomeSortOrder(appCtx)) }
     var visibleHomeFilters by remember { mutableStateOf(PhantomPrefs.getVisibleHomeFilters(appCtx)) }
     var summaryDefaultCollapsed by remember { mutableStateOf(PhantomPrefs.isSummaryDefaultCollapsed(appCtx)) }
-    var cardStackEffectEnabled by remember { mutableStateOf(PhantomPrefs.isCardStackEffectEnabled(appCtx)) }
+    var homeCardLayoutMode by remember { mutableStateOf(PhantomPrefs.getHomeCardLayoutMode(appCtx)) }
     var use24HourFormat by remember { mutableStateOf(PhantomPrefs.is24HourFormat(appCtx)) }
     var visibleStatsCards by remember { mutableStateOf(PhantomPrefs.getVisibleStatsCards(appCtx)) }
 
@@ -504,7 +504,7 @@ fun FilterSettingsScreen(
             homeSortOrder = PhantomPrefs.getHomeSortOrder(appCtx)
             visibleHomeFilters = PhantomPrefs.getVisibleHomeFilters(appCtx)
             summaryDefaultCollapsed = PhantomPrefs.isSummaryDefaultCollapsed(appCtx)
-            cardStackEffectEnabled = PhantomPrefs.isCardStackEffectEnabled(appCtx)
+            homeCardLayoutMode = PhantomPrefs.getHomeCardLayoutMode(appCtx)
             use24HourFormat = PhantomPrefs.is24HourFormat(appCtx)
             visibleStatsCards = PhantomPrefs.getVisibleStatsCards(appCtx)
             hapticEnabled = PhantomPrefs.isHapticFeedbackEnabled(appCtx)
@@ -547,7 +547,7 @@ fun FilterSettingsScreen(
                 dailySummaryEnabled = PhantomPrefs.isDailySummaryEnabled(appCtx)
                 dailySummaryNotifEnabled = PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
                 summaryDefaultCollapsed = PhantomPrefs.isSummaryDefaultCollapsed(appCtx)
-                cardStackEffectEnabled = PhantomPrefs.isCardStackEffectEnabled(appCtx)
+                homeCardLayoutMode = PhantomPrefs.getHomeCardLayoutMode(appCtx)
                 visibleStatsCards = PhantomPrefs.getVisibleStatsCards(appCtx)
                 hapticEnabled = PhantomPrefs.isHapticFeedbackEnabled(appCtx)
                 ShizukuManager.refreshState(appCtx)
@@ -1209,15 +1209,26 @@ fun FilterSettingsScreen(
 
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-                        SettingSwitchRow(
-                            title = "訊息卡片堆疊效果",
-                            subtitle = "同一 App 有多則訊息時於卡片後方顯示層疊邊緣",
-                            checked = cardStackEffectEnabled,
-                            onCheckedChange = { checked ->
-                                cardStackEffectEnabled = checked
-                                PhantomPrefs.setCardStackEffectEnabled(appCtx, checked)
-                            }
+                        Text("首頁卡片排列模式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text(
+                            text = "切換首頁 App 卡片為一般條列、往下露頂部（撲克牌式）或往上露底部（資料夾式）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(Modifier.height(6.dp))
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            PhantomPrefs.HomeCardLayoutMode.entries.forEach { mode ->
+                                FilterChip(
+                                    selected = homeCardLayoutMode == mode,
+                                    onClick = {
+                                        homeCardLayoutMode = mode
+                                        PhantomPrefs.setHomeCardLayoutMode(appCtx, mode)
+                                        PhantomSettingsBus.notifyChanged()
+                                    },
+                                    label = { Text(mode.label) }
+                                )
+                            }
+                        }
 
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 

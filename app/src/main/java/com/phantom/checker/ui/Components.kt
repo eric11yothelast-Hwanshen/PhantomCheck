@@ -81,6 +81,7 @@ import com.phantom.checker.util.BackgroundLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
@@ -244,6 +245,7 @@ fun PhantomGlassCard(
     cornerRadius: Dp = 24.dp,
     contentPadding: Dp = 16.dp,
     tintColor: Color? = null,
+    overlapOpaqueBoost: Boolean = false,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val ctx = LocalContext.current
@@ -265,19 +267,30 @@ fun PhantomGlassCard(
     } else {
         Color(0xFF16181F).copy(alpha = 0.94f)
     }
-    val outline = if (isDark) {
+    val boostedOverlay = if (isDark) {
+        Color(0xFF16181F).copy(alpha = 0.88f)
+    } else {
+        MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+    }
+    val outline = if (overlapOpaqueBoost) {
+        if (isDark) Color.White.copy(alpha = 0.22f) else MaterialTheme.colorScheme.outlineVariant
+    } else if (isDark) {
         MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
     } else {
         MaterialTheme.colorScheme.outlineVariant
     }
 
     if (ThemePreferences.isGlassEffectEnabled(ctx) && !isPowerSave) {
-        val fallbackColor = when (cardBgMode) {
+        val fallbackColor = if (overlapOpaqueBoost) {
+            boostedOverlay
+        } else when (cardBgMode) {
             PhantomPrefs.CardBgMode.FOLLOW_GLASS -> MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
             PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(alpha = cardBgAlpha.coerceAtLeast(0.35f))
             PhantomPrefs.CardBgMode.DARK -> darkCardColor
         }
-        val overlayColor: Color? = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        val overlayColor: Color? = if (overlapOpaqueBoost) {
+            boostedOverlay
+        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             when (cardBgMode) {
                 PhantomPrefs.CardBgMode.FOLLOW_GLASS -> if (glassStrength > 0) {
                     MaterialTheme.colorScheme.surface.copy(alpha = (glassStrength / 100f) * 0.45f)
@@ -291,6 +304,7 @@ fun PhantomGlassCard(
 
         Box(
             modifier = modifier
+                .let { m -> if (overlapOpaqueBoost) m.shadow(elevation = 8.dp, shape = shape, clip = false) else m }
                 .animateContentSize(
                     animationSpec = spring(
                         dampingRatio = Spring.DampingRatioNoBouncy,
@@ -305,6 +319,7 @@ fun PhantomGlassCard(
                 .clip(shape)
                 .let { m -> if (overlayColor != null) m.background(overlayColor, shape) else m }
                 .let { m -> if (tintColor != null) m.background(tintColor, shape) else m }
+                .let { m -> if (overlapOpaqueBoost) m.border(width = 1.dp, color = outline, shape = shape) else m }
         ) {
             Column(
                 modifier = Modifier.padding(contentPadding),
@@ -312,13 +327,16 @@ fun PhantomGlassCard(
             )
         }
     } else {
-        val solidBg = when (cardBgMode) {
+        val solidBg = if (overlapOpaqueBoost) {
+            boostedOverlay
+        } else when (cardBgMode) {
             PhantomPrefs.CardBgMode.FOLLOW_GLASS -> MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
             PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(alpha = cardBgAlpha.coerceAtLeast(0.35f))
             PhantomPrefs.CardBgMode.DARK -> darkCardColor
         }
         Box(
             modifier = modifier
+                .let { m -> if (overlapOpaqueBoost) m.shadow(elevation = 8.dp, shape = shape, clip = false) else m }
                 .clip(shape)
                 .background(solidBg, shape)
                 .let { m -> if (tintColor != null) m.background(tintColor, shape) else m }
@@ -1539,97 +1557,3 @@ fun NeverAutoMemoConfirmDialog(
         }
     )
 }
-
-/**
- * #212 訊息分頁 App 卡片堆疊包裝層：在主卡後方依訊息總數繪製 0~2 層裝飾卡片，
- * 支援滑動視差（讀 listState 於 graphicsLayer lambda 內，不引起重組）與點擊收合動畫。
- */
-@Composable
-fun StackedAppCard(
-    totalCount: Int,
-    enabled: Boolean,
-    isCompact: Boolean,
-    isMuted: Boolean = false,
-    listState: LazyListState? = null,
-    isCollapsed: Boolean = false,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit
-) {
-    val layerCount = when {
-        !enabled || totalCount <= 1 -> 0
-        totalCount <= 10 -> 1
-        else -> 2
-    }
-    if (layerCount == 0) {
-        Box(modifier = modifier) {
-            content()
-        }
-        return
-    }
-    val collapseFactor by animateFloatAsState(
-        targetValue = if (isCollapsed) 0f else 1f,
-        animationSpec = tween(durationMillis = 140),
-        label = "stack_collapse"
-    )
-    val baseAlphaScale = if (isMuted) 0.5f else 1f
-    val stepY = if (isCompact) 3.dp else 6.dp
-    val bottomSpace = stepY * layerCount
-    val layerColor = lerp(
-        MaterialTheme.colorScheme.surfaceVariant,
-        MaterialTheme.colorScheme.onSurface,
-        0.25f
-    )
-    val layerOutline = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-    val layerShape = RoundedCornerShape(20.dp)
-
-    Box(modifier = modifier.padding(bottom = bottomSpace)) {
-        if (layerCount >= 2) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .graphicsLayer {
-                        val parallaxPx = if (listState != null) {
-                            val raw = ((listState.firstVisibleItemIndex * 2f) +
-                                (listState.firstVisibleItemScrollOffset * 0.02f)) % 4f - 2f
-                            (raw * 0.5f).dp.toPx()
-                        } else {
-                            0f
-                        }
-                        val scale = 1f - 0.08f * collapseFactor
-                        scaleX = scale
-                        scaleY = scale
-                        alpha = 0.35f * baseAlphaScale * collapseFactor
-                        translationY = (stepY * 2).toPx() * collapseFactor + parallaxPx * collapseFactor
-                    }
-                    .clip(layerShape)
-                    .background(layerColor)
-            )
-        }
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .graphicsLayer {
-                    val parallaxPx = if (listState != null) {
-                        val raw = ((listState.firstVisibleItemIndex * 2f) +
-                            (listState.firstVisibleItemScrollOffset * 0.02f)) % 4f - 2f
-                        (raw * 0.35f).dp.toPx()
-                    } else {
-                        0f
-                    }
-                    val scale = 1f - 0.04f * collapseFactor
-                    scaleX = scale
-                    scaleY = scale
-                    alpha = 0.55f * baseAlphaScale * collapseFactor
-                    translationY = stepY.toPx() * collapseFactor + parallaxPx * collapseFactor
-                }
-                .clip(layerShape)
-                .background(layerColor)
-                .border(width = 1.dp, color = layerOutline, shape = layerShape)
-        )
-        content()
-    }
-}
-
-
-
-

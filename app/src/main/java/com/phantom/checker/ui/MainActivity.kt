@@ -37,7 +37,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.gestures.ScrollableDefaults
+import androidx.compose.foundation.gestures.snapping.SnapLayoutInfoProvider
+import androidx.compose.foundation.gestures.snapping.SnapPosition
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -105,6 +110,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -127,8 +133,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -2302,12 +2310,36 @@ private fun MessagesHomeTab(
         }
 
         // 可捲動訊息清單區
+        val homeSettingsVersion by PhantomSettingsBus.version.collectAsState()
+        val layoutMode = remember(homeSettingsVersion) { PhantomPrefs.getHomeCardLayoutMode(ctx) }
+        val isCompactCard = remember(homeSettingsVersion) {
+            PhantomPrefs.getCardDensity(ctx) == com.phantom.checker.util.CardDensity.COMPACT
+        }
+        val is24h = remember(homeSettingsVersion) { PhantomPrefs.is24HourFormat(ctx) }
+        val isOverlapMode = activeFilter == MessageFilter.All &&
+            layoutMode != PhantomPrefs.HomeCardLayoutMode.LIST
+        val snapLayoutInfoProvider = remember(listState) {
+            SnapLayoutInfoProvider(listState, SnapPosition.Start)
+        }
+        val snapFlingBehavior = rememberSnapFlingBehavior(snapLayoutInfoProvider)
+        val activeFlingBehavior = if (isOverlapMode) snapFlingBehavior else ScrollableDefaults.flingBehavior()
+        val listSpacing = if (activeFilter == MessageFilter.All) {
+            when (layoutMode) {
+                PhantomPrefs.HomeCardLayoutMode.LIST -> 12.dp
+                PhantomPrefs.HomeCardLayoutMode.PEEK_TOP -> if (isCompactCard) (-56).dp else (-68).dp
+                PhantomPrefs.HomeCardLayoutMode.PEEK_BOTTOM -> if (isCompactCard) (-84).dp else (-100).dp
+            }
+        } else {
+            12.dp
+        }
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            flingBehavior = activeFlingBehavior,
+            contentPadding = if (isOverlapMode) PaddingValues(bottom = 160.dp) else PaddingValues(0.dp),
+            verticalArrangement = Arrangement.spacedBy(listSpacing)
         ) {
             if (activeFilter == MessageFilter.All) {
                 // App 分組清單
@@ -2348,12 +2380,56 @@ private fun MessagesHomeTab(
                 else -> {
                     itemsIndexed(appGroups, key = { _, app -> app.packageName }) { idx, app ->
                         val isMuted = app.packageName in mutedPackages
-                        val isCompact = PhantomPrefs.getCardDensity(ctx) == com.phantom.checker.util.CardDensity.COMPACT
-                        val stackEnabled = PhantomPrefs.isCardStackEffectEnabled(ctx)
-                        var isCardCollapsed by remember(app.packageName) { mutableStateOf(false) }
-                        val is24h = PhantomPrefs.is24HourFormat(ctx)
                         val timeText = remember(app.lastTs, is24h) {
                             PhantomPrefs.formatMessageTime(ctx, app.lastTs, includeDate = true)
+                        }
+                        val itemStackModifier = when (layoutMode) {
+                            PhantomPrefs.HomeCardLayoutMode.LIST -> Modifier
+                            PhantomPrefs.HomeCardLayoutMode.PEEK_TOP -> {
+                                Modifier
+                                    .zIndex(idx.toFloat())
+                                    .graphicsLayer {
+                                        val focusIdx = listState.firstVisibleItemIndex
+                                        val scrollOff = listState.firstVisibleItemScrollOffset.toFloat()
+                                        val focusFraction = (scrollOff / 52.dp.toPx()).coerceIn(0f, 1f)
+                                        val shiftPx = (if (isCompactCard) 56.dp else 68.dp).toPx()
+                                        translationY = when {
+                                            idx <= focusIdx -> 0f
+                                            idx == focusIdx + 1 -> shiftPx * (1f - focusFraction)
+                                            else -> shiftPx
+                                        }
+                                    }
+                            }
+                            PhantomPrefs.HomeCardLayoutMode.PEEK_BOTTOM -> {
+                                val itemZ by remember(idx) {
+                                    derivedStateOf {
+                                        val focusIdx = listState.firstVisibleItemIndex
+                                        if (idx == focusIdx + 1 && listState.firstVisibleItemScrollOffset > 40) {
+                                            (10000 - focusIdx + 1).toFloat()
+                                        } else {
+                                            (10000 - idx).toFloat()
+                                        }
+                                    }
+                                }
+                                Modifier
+                                    .zIndex(itemZ)
+                                    .graphicsLayer {
+                                        val relIdx = idx - listState.firstVisibleItemIndex
+                                        val focusFraction = (listState.firstVisibleItemScrollOffset.toFloat() / 40.dp.toPx()).coerceIn(0f, 1f)
+                                        scaleX = when {
+                                            relIdx <= 0 -> 1f
+                                            relIdx == 1 -> 0.96f + 0.04f * focusFraction
+                                            relIdx == 2 -> 0.92f + 0.04f * focusFraction
+                                            else -> 0.90f
+                                        }
+                                        val bottomPeekPx = 14.dp.toPx()
+                                        translationY = when {
+                                            relIdx <= 0 -> 0f
+                                            relIdx == 1 -> bottomPeekPx * (1f - focusFraction)
+                                            else -> bottomPeekPx * (relIdx - focusFraction).coerceAtMost(2.5f)
+                                        }
+                                    }
+                            }
                         }
                         val rowModifier = Modifier
                             .fillMaxWidth()
@@ -2369,26 +2445,16 @@ private fun MessagesHomeTab(
                             .alpha(if (isMuted) 0.5f else 1f)
                             .pressableScale()
                             .combinedClickable(
-                                onClick = {
-                                    isCardCollapsed = true
-                                    onOpenApp(app.packageName, app.appLabel)
-                                },
+                                onClick = { onOpenApp(app.packageName, app.appLabel) },
                                 onLongClick = { onLongPressApp(app) }
                             )
-                        StackedAppCard(
-                            totalCount = app.totalCount,
-                            enabled = stackEnabled,
-                            isCompact = isCompact,
-                            isMuted = isMuted,
-                            listState = listState,
-                            isCollapsed = isCardCollapsed,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
+                        Box(modifier = Modifier.fillMaxWidth().then(itemStackModifier)) {
                         PhantomGlassCard(
                             glassState = glassState,
                             modifier = rowModifier,
                             cornerRadius = 20.dp,
-                            contentPadding = if (isCompact) 8.dp else 12.dp
+                            contentPadding = if (isCompactCard) 8.dp else 12.dp,
+                            overlapOpaqueBoost = isOverlapMode
                         ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),

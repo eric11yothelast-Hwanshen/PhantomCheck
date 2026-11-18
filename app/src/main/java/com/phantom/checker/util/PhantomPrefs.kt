@@ -1219,12 +1219,28 @@ object PhantomPrefs {
     fun isAiChatTabContinue(ctx: Context): Boolean =
         getAiChatTabBehavior(ctx) == AI_CHAT_TAB_CONTINUE
 
-    /** 訊息分頁 App 卡片堆疊效果開關（預設開） */
-    fun isCardStackEffectEnabled(ctx: Context): Boolean =
-        prefs(ctx).getBoolean("card_stack_effect_enabled", true)
+    enum class HomeCardLayoutMode(val key: String, val label: String) {
+        LIST("list", "一般條列"),
+        PEEK_TOP("peek_top", "往下露頂部"),
+        PEEK_BOTTOM("peek_bottom", "往上露底部")
+    }
 
-    fun setCardStackEffectEnabled(ctx: Context, enabled: Boolean) {
-        prefs(ctx).edit().putBoolean("card_stack_effect_enabled", enabled).apply()
+    private const val KEY_HOME_CARD_LAYOUT_MODE = "home_card_layout_mode"
+
+    fun getHomeCardLayoutMode(ctx: Context): HomeCardLayoutMode {
+        val p = prefs(ctx)
+        val raw = p.getString(KEY_HOME_CARD_LAYOUT_MODE, null)
+        if (raw != null) {
+            return HomeCardLayoutMode.entries.firstOrNull { it.key == raw } ?: HomeCardLayoutMode.LIST
+        }
+        val legacyEnabled = p.getBoolean("card_stack_effect_enabled", false)
+        val migrated = if (legacyEnabled) HomeCardLayoutMode.PEEK_BOTTOM else HomeCardLayoutMode.LIST
+        p.edit().putString(KEY_HOME_CARD_LAYOUT_MODE, migrated.key).remove("card_stack_effect_enabled").apply()
+        return migrated
+    }
+
+    fun setHomeCardLayoutMode(ctx: Context, mode: HomeCardLayoutMode) {
+        prefs(ctx).edit().putString(KEY_HOME_CARD_LAYOUT_MODE, mode.key).apply()
     }
 
     data class StatsCardOption(val key: String, val title: String, val subtitle: String, val defaultVisible: Boolean)
