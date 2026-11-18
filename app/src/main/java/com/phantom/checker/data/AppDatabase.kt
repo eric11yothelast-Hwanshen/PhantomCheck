@@ -908,6 +908,9 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE relatedMessageId = :messageId AND source = 'auto' LIMIT 1")
     suspend fun findAutoByMessageId(messageId: Long): NoteEntity?
 
+    @Query("SELECT * FROM notes WHERE source = 'auto' AND relatedAppLabel = :label AND updatedAt >= :since ORDER BY updatedAt DESC")
+    suspend fun findRecentAutoByAppLabel(label: String, since: Long): List<NoteEntity>
+
     @Insert
     suspend fun insert(note: NoteEntity): Long
 

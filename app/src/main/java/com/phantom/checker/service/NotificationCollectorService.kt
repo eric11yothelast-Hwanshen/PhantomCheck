@@ -1048,6 +1048,32 @@ class NotificationCollectorService : NotificationListenerService() {
             }
         }
 
+        private const val AUTO_MEMO_DEDUP_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L
+
+        internal fun normalizeForSimilarity(text: String): String =
+            text.trim().replace(Regex("\\s+"), " ")
+
+        internal fun diceBigramSimilarity(a: String, b: String): Double {
+            if (a == b) return 1.0
+            if (a.length < 2 || b.length < 2) return 0.0
+            val aBigrams = HashMap<String, Int>(a.length)
+            for (i in 0 until a.length - 1) {
+                val bg = a.substring(i, i + 2)
+                aBigrams[bg] = (aBigrams[bg] ?: 0) + 1
+            }
+            var intersection = 0
+            val bCount = b.length - 1
+            for (i in 0 until bCount) {
+                val bg = b.substring(i, i + 2)
+                val rem = aBigrams[bg] ?: 0
+                if (rem > 0) {
+                    intersection++
+                    aBigrams[bg] = rem - 1
+                }
+            }
+            return (2.0 * intersection) / ((a.length - 1) + bCount)
+        }
+
         suspend fun saveAutoMemoIfPresent(
             db: AppDatabase,
             msg: MessageEntity,
@@ -1056,21 +1082,44 @@ class NotificationCollectorService : NotificationListenerService() {
             val clean = rawMemo.trim().take(40)
             if (clean.isEmpty()) return
             val now = System.currentTimeMillis()
+            val appLabel = msg.appLabel.ifBlank { msg.packageName }
+
             val existing = db.noteDao().findAutoByMessageId(msg.id)
             if (existing != null) {
+                if (existing.pinned) return
                 db.noteDao().update(existing.copy(content = clean, updatedAt = now))
-            } else {
-                db.noteDao().insert(
-                    NoteEntity(
+                return
+            }
+
+            val since = now - AUTO_MEMO_DEDUP_WINDOW_MS
+            val recent = db.noteDao().findRecentAutoByAppLabel(appLabel, since)
+            val normClean = normalizeForSimilarity(clean)
+            val duplicate = recent.firstOrNull { cand ->
+                val normCand = normalizeForSimilarity(cand.content)
+                normCand == normClean || diceBigramSimilarity(normCand, normClean) >= 0.9
+            }
+            if (duplicate != null) {
+                if (duplicate.pinned) return
+                db.noteDao().update(
+                    duplicate.copy(
                         content = clean,
-                        source = NoteEntity.SOURCE_AUTO,
-                        relatedMessageId = msg.id,
-                        relatedAppLabel = msg.appLabel.ifBlank { msg.packageName },
-                        createdAt = now,
-                        updatedAt = now
+                        updatedAt = now,
+                        relatedMessageId = msg.id
                     )
                 )
+                return
             }
+
+            db.noteDao().insert(
+                NoteEntity(
+                    content = clean,
+                    source = NoteEntity.SOURCE_AUTO,
+                    relatedMessageId = msg.id,
+                    relatedAppLabel = appLabel,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            )
         }
 
         private fun sha256(input: String): String {
