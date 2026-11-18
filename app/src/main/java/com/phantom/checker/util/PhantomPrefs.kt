@@ -1263,4 +1263,26 @@ object PhantomPrefs {
         if (visible) current.add(key) else current.remove(key)
         setVisibleStatsCards(ctx, current)
     }
+
+    private const val KEY_MY_DISPLAY_NAMES = "my_display_names"
+    val DEFAULT_MY_DISPLAY_NAMES: Set<String> = setOf("Eric Chiu")
+
+    fun getMyDisplayNames(ctx: Context): Set<String> {
+        val p = prefs(ctx)
+        if (!p.contains(KEY_MY_DISPLAY_NAMES)) return DEFAULT_MY_DISPLAY_NAMES
+        return (p.getStringSet(KEY_MY_DISPLAY_NAMES, emptySet()) ?: emptySet())
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+    }
+
+    fun setMyDisplayNames(ctx: Context, names: Set<String>) {
+        val cleaned = names.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        prefs(ctx).edit().putStringSet(KEY_MY_DISPLAY_NAMES, cleaned).apply()
+    }
+
+    fun isMyDisplayName(ctx: Context, name: String?): Boolean {
+        val trimmed = name?.trim()?.takeIf { it.isNotEmpty() } ?: return false
+        return getMyDisplayNames(ctx).any { it.equals(trimmed, ignoreCase = true) }
+    }
 }

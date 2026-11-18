@@ -1015,6 +1015,79 @@ interface MemoRuleDao {
     suspend fun deleteById(id: Long)
 }
 
+@Entity(
+    tableName = "own_reply_echo",
+    indices = [
+        Index(value = ["packageName", "conversationKey"]),
+        Index(value = ["sentAt"])
+    ]
+)
+data class OwnReplyEchoEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val packageName: String,
+    val conversationKey: String,
+    val normalizedText: String,
+    val sentAt: Long = System.currentTimeMillis()
+)
+
+@Dao
+interface OwnReplyEchoDao {
+    @Query("SELECT * FROM own_reply_echo WHERE packageName = :packageName AND sentAt >= :since ORDER BY sentAt DESC")
+    suspend fun recentByPkg(packageName: String, since: Long): List<OwnReplyEchoEntity>
+
+    @Insert
+    suspend fun insert(item: OwnReplyEchoEntity): Long
+
+    @Query("DELETE FROM own_reply_echo WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM own_reply_echo WHERE sentAt < :cutoff")
+    suspend fun deleteExpired(cutoff: Long)
+}
+
+@Entity(
+    tableName = "sender_avatars",
+    primaryKeys = ["packageName", "sender"]
+)
+data class SenderAvatarEntity(
+    val packageName: String,
+    val sender: String,
+    val icon: ByteArray,
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is SenderAvatarEntity) return false
+        return packageName == other.packageName &&
+            sender == other.sender &&
+            icon.contentEquals(other.icon) &&
+            updatedAt == other.updatedAt
+    }
+
+    override fun hashCode(): Int {
+        var result = packageName.hashCode()
+        result = 31 * result + sender.hashCode()
+        result = 31 * result + icon.contentHashCode()
+        result = 31 * result + updatedAt.hashCode()
+        return result
+    }
+}
+
+@Dao
+interface SenderAvatarDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(avatar: SenderAvatarEntity)
+
+    @Query("SELECT * FROM sender_avatars WHERE packageName = :packageName AND sender = :sender LIMIT 1")
+    suspend fun get(packageName: String, sender: String): SenderAvatarEntity?
+
+    @Query("SELECT * FROM sender_avatars WHERE packageName = :packageName")
+    suspend fun byPackage(packageName: String): List<SenderAvatarEntity>
+
+    @Query("DELETE FROM sender_avatars WHERE updatedAt < :cutoff")
+    suspend fun deleteOlderThan(cutoff: Long)
+}
+
 @Database(
     entities = [
         MessageEntity::class,
@@ -1032,9 +1105,11 @@ interface MemoRuleDao {
         TodoEntity::class,
         PendingAiAnalysisEntity::class,
         NoteEntity::class,
-        MemoRuleEntity::class
+        MemoRuleEntity::class,
+        OwnReplyEchoEntity::class,
+        SenderAvatarEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1051,6 +1126,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun pendingAiAnalysisDao(): PendingAiAnalysisDao
     abstract fun noteDao(): NoteDao
     abstract fun memoRuleDao(): MemoRuleDao
+    abstract fun ownReplyEchoDao(): OwnReplyEchoDao
+    abstract fun senderAvatarDao(): SenderAvatarDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -1318,6 +1395,39 @@ abstract class AppDatabase : RoomDatabase() {
                         `isEnabled` INTEGER NOT NULL DEFAULT 1,
                         `createdAt` INTEGER NOT NULL,
                         `source` TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `own_reply_echo` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `packageName` TEXT NOT NULL,
+                        `conversationKey` TEXT NOT NULL,
+                        `normalizedText` TEXT NOT NULL,
+                        `sentAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_own_reply_echo_packageName_conversationKey` ON `own_reply_echo` (`packageName`, `conversationKey`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_own_reply_echo_sentAt` ON `own_reply_echo` (`sentAt`)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `sender_avatars` (
+                        `packageName` TEXT NOT NULL,
+                        `sender` TEXT NOT NULL,
+                        `icon` BLOB NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`packageName`, `sender`)
                     )
                     """.trimIndent()
                 )

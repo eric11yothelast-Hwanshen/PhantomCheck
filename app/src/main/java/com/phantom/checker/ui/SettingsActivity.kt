@@ -2523,6 +2523,73 @@ fun FilterSettingsScreen(
                         }
                     }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    var myDisplayNames by remember { mutableStateOf(PhantomPrefs.getMyDisplayNames(appCtx).sorted()) }
+                    var newDisplayNameInput by remember { mutableStateOf("") }
+                    Text(
+                        text = "我的名稱（自我身分偵測）",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "群組通知寄件者命中任一名稱（不分大小寫）時標記為自己傳送，不重複警示也不計入統計",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    if (myDisplayNames.isNotEmpty()) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            myDisplayNames.forEach { displayName ->
+                                FilterChip(
+                                    selected = true,
+                                    onClick = {
+                                        val updated = myDisplayNames.filterNot { it.equals(displayName, ignoreCase = true) }.toSet()
+                                        PhantomPrefs.setMyDisplayNames(appCtx, updated)
+                                        myDisplayNames = updated.sorted()
+                                    },
+                                    label = { Text(displayName) },
+                                    trailingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Clear,
+                                            contentDescription = "移除 $displayName",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = newDisplayNameInput,
+                            onValueChange = { newDisplayNameInput = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            placeholder = { Text("新增我的顯示名稱（如 Eric Chiu）") }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        val trimmedName = newDisplayNameInput.trim()
+                        val canAddName = trimmedName.isNotEmpty() &&
+                            myDisplayNames.none { it.equals(trimmedName, ignoreCase = true) }
+                        Button(
+                            onClick = {
+                                val updated = (myDisplayNames + trimmedName).toSet()
+                                PhantomPrefs.setMyDisplayNames(appCtx, updated)
+                                myDisplayNames = updated.sorted()
+                                newDisplayNameInput = ""
+                            },
+                            enabled = canAddName
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "新增名稱")
+                        }
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     OutlinedButton(
                         onClick = { showClearReadConfirm = true },
                         modifier = Modifier.fillMaxWidth(),

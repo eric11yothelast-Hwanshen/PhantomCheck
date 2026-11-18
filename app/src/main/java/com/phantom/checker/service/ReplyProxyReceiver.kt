@@ -122,6 +122,12 @@ class ReplyProxyReceiver : BroadcastReceiver() {
                                             null,
                                             null
                                         )
+                                        NotificationCollectorService.recordOwnReplyEcho(
+                                            ctx = appCtx,
+                                            packageName = session.packageName,
+                                            conversationKey = session.sender,
+                                            replyText = replyText
+                                        )
                                         AppDatabaseHolder.db(appCtx).messageDao().insert(
                                             com.phantom.checker.data.MessageEntity(
                                                 packageName = session.packageName,

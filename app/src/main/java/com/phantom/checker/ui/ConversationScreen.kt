@@ -892,6 +892,12 @@ fun ConversationScreen(
                                                                 null,
                                                                 null
                                                             )
+                                                            NotificationCollectorService.recordOwnReplyEcho(
+                                                                ctx = appCtx,
+                                                                packageName = packageName,
+                                                                conversationKey = conversationKey,
+                                                                replyText = textToSend
+                                                            )
                                                             AppDatabaseHolder.db(appCtx).messageDao().insert(
                                                                 MessageEntity(
                                                                     packageName = packageName,

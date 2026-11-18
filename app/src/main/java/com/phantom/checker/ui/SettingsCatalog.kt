@@ -63,6 +63,7 @@ object SettingsCatalog {
         SettingSearchItem("notif_digit_variance", "notif", "數字微變視為同一則更新", "對監控類通知將僅數字變動視為同 key 更新並節流", listOf("數字微變", "節流", "電量", "流量")),
         SettingSearchItem("notif_reply_proxy", "notif", "通知欄連續快速回覆", "透過 AI 助手回覆後於通知欄保留對話輸入框，可連續回覆多則", listOf("連續回覆", "快速回覆", "代理回覆", "通知欄回覆", "reply")),
         SettingSearchItem("notif_reply_proxy_timeout", "notif", "回覆通知閒置自動收起", "設定代理回覆通知閒置多久後自動收起（15 / 30 / 60 分鐘或不自動收起）", listOf("連續回覆", "逾時", "自動收起", "閒置", "回覆通知")),
+        SettingSearchItem("notif_my_display_names", "notif", "我的名稱（自我身分偵測）", "設定自己在群組通知中的顯示名稱，命中時標記為自己傳送且不計入統計", listOf("我的名稱", "自我身分", "Eric Chiu", "自己回覆", "群組名稱", "isOwn")),
         SettingSearchItem("notif_clear_read", "notif", "清除已讀訊息", "永久刪除所有已讀訊息（保留未讀訊息）", listOf("清除已讀", "已讀", "刪除已讀", "清已讀")),
         SettingSearchItem("data_retention", "data", "訊息保留與清理", "訊息保留天數與最大保留則數上限", listOf("保留", "天數", "上限", "清理")),
         SettingSearchItem("data_muted_apps", "data", "App 靜音清單", "設定特定 App 完全不記錄或靜默記錄", listOf("靜音", "封鎖", "app", "略過")),
