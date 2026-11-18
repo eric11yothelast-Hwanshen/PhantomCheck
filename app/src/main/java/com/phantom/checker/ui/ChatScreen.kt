@@ -1790,9 +1790,9 @@ fun ChatAssistantTab(
                                 if (triggered) {
                                     scope.launch {
                                         val target = if (drawerState.requireOffset() > -drawerWidthPx * 0.5f) {
-                                            ChatDrawerValue.Open
+                                            1f
                                         } else {
-                                            ChatDrawerValue.Closed
+                                            0f
                                         }
                                         drawerState.animateTo(target)
                                     }
@@ -1804,9 +1804,9 @@ fun ChatAssistantTab(
                                 if (triggered) {
                                     scope.launch {
                                         val target = if (drawerState.requireOffset() > -drawerWidthPx * 0.5f) {
-                                            ChatDrawerValue.Open
+                                            1f
                                         } else {
-                                            ChatDrawerValue.Closed
+                                            0f
                                         }
                                         drawerState.animateTo(target)
                                     }
