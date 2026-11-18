@@ -75,7 +75,7 @@ object AppUpdateHelper {
         try {
             client.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful) {
-                    val code = resp.code()
+                    val code = resp.code
                     val msg = when (code) {
                         403, 429 -> "GitHub API 請求次數已達上限，請稍後再試或前往 GitHub 查看。"
                         404 -> "找不到發佈資訊，請前往 GitHub 查看。"
@@ -83,7 +83,7 @@ object AppUpdateHelper {
                     }
                     return@withContext UpdateCheckResult.Error(msg)
                 }
-                val body = resp.body()?.string().orEmpty()
+                val body = resp.body?.string().orEmpty()
                 if (body.isBlank()) {
                     return@withContext UpdateCheckResult.Error("GitHub 回傳內容為空，請稍後再試。")
                 }
