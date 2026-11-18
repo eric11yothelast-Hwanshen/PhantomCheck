@@ -1143,4 +1143,33 @@ object PhantomPrefs {
     fun setAiTagFailureNotifEnabled(ctx: Context, enabled: Boolean) {
         prefs(ctx).edit().putBoolean("ai_tag_failure_notif_enabled", enabled).apply()
     }
+
+    /** 自動檢查更新開關（預設開） */
+    fun isUpdateAutoCheckEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("update_auto_check_enabled", true)
+
+    fun setUpdateAutoCheckEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("update_auto_check_enabled", enabled).apply()
+    }
+
+    fun getUpdateLastCheckDay(ctx: Context): String =
+        prefs(ctx).getString("update_last_check_day", "").orEmpty()
+
+    fun setUpdateLastCheckDay(ctx: Context, day: String) {
+        prefs(ctx).edit().putString("update_last_check_day", day).apply()
+    }
+
+    fun getUpdateLastPromptKey(ctx: Context): String =
+        prefs(ctx).getString("update_last_prompt_key", "").orEmpty()
+
+    fun setUpdateLastPromptKey(ctx: Context, key: String) {
+        prefs(ctx).edit().putString("update_last_prompt_key", key).apply()
+    }
+
+    fun getUpdateLastNotifiedKey(ctx: Context): String =
+        prefs(ctx).getString("update_last_notified_key", "").orEmpty()
+
+    fun setUpdateLastNotifiedKey(ctx: Context, key: String) {
+        prefs(ctx).edit().putString("update_last_notified_key", key).apply()
+    }
 }

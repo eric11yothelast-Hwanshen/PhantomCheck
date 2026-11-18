@@ -152,12 +152,14 @@ import com.phantom.checker.service.StatsForegroundService
 import com.phantom.checker.ui.components.LiquidGlassTabBar
 import com.phantom.checker.ui.components.LiquidGlassTabBarItem
 import com.phantom.checker.ui.components.pressableScale
+import com.phantom.checker.util.AppUpdateHelper
 import com.phantom.checker.util.MessageExporter
 import com.phantom.checker.util.MuteMode
 import com.phantom.checker.util.PhantomPrefs
 import com.phantom.checker.util.ShareCardReportData
 import com.phantom.checker.util.StatsShareCardGenerator
 import com.phantom.checker.util.TabBarDisplayMode
+import com.phantom.checker.util.UpdateCheckResult
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -414,6 +416,7 @@ private fun PhantomCheckApp(
 
     var tabBarDisplayMode by remember { mutableStateOf(PhantomPrefs.getTabBarDisplayMode(appCtx)) }
     var tabBarVisible by remember { mutableStateOf(true) }
+    var pendingUpdateDialog by remember { mutableStateOf<UpdateCheckResult.UpdateAvailable?>(null) }
     LaunchedEffect(selectedTab, tabBarDisplayMode) {
         tabBarVisible = true
     }
@@ -451,6 +454,14 @@ private fun PhantomCheckApp(
                     PhantomPrefs.setOnboardingStep(appCtx, OnboardingStep.PERMISSION.index)
                 }
                 refreshTrigger++
+                if (PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)) {
+                    scope.launch {
+                        val found = AppUpdateHelper.checkAndNotifyIfNeeded(appCtx)
+                        if (found != null) {
+                            pendingUpdateDialog = found
+                        }
+                    }
+                }
             }
         }
         lifecycleOwner?.lifecycle?.addObserver(observer)
@@ -650,6 +661,37 @@ private fun PhantomCheckApp(
             lastLoadedRefreshTrigger = refreshTrigger
         }
         isLoading = false
+    }
+
+    pendingUpdateDialog?.let { update ->
+        AlertDialog(
+            onDismissRequest = { pendingUpdateDialog = null },
+            title = { Text("發現新版本") },
+            text = {
+                Text(
+                    "已推出新版本 v${update.latestVersion}（發佈於 ${update.publishedDate}）\n\n" +
+                        "不想再收到更新提醒？可至 設定 → 關於 關閉自動檢查更新。"
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingUpdateDialog = null
+                        ctx.startActivity(
+                            Intent(ctx, SettingsActivity::class.java)
+                                .putExtra("highlight_card_key", "about")
+                        )
+                    }
+                ) {
+                    Text("前往下載")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingUpdateDialog = null }) {
+                    Text("稍後再說")
+                }
+            }
+        )
     }
 
     // 長按 App 動作對話框（釘選最愛／靜音或解除靜音／刪除此 App 所有訊息）

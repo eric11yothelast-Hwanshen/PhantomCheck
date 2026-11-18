@@ -3454,6 +3454,17 @@ private fun AboutSettingsCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(8.dp))
+        var updateAutoCheck by remember { mutableStateOf(PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)) }
+        SettingSwitchRow(
+            title = "自動檢查更新",
+            subtitle = "開啟 App 時自動檢查 GitHub 最新版本，每天最多提示一次",
+            checked = updateAutoCheck,
+            onCheckedChange = {
+                updateAutoCheck = it
+                PhantomPrefs.setUpdateAutoCheckEnabled(appCtx, it)
+            }
+        )
+        Spacer(Modifier.height(8.dp))
         OutlinedButton(
             onClick = {
                 if (!isCheckingUpdate) {

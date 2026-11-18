@@ -1,11 +1,20 @@
 package com.phantom.checker.util
 
 import android.app.DownloadManager
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Environment
 import androidx.core.content.FileProvider
+import com.phantom.checker.R
+import com.phantom.checker.service.NotifIds
+import com.phantom.checker.ui.SettingsActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -15,6 +24,9 @@ import java.io.File
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 sealed interface UpdateCheckResult {
@@ -172,6 +184,98 @@ object AppUpdateHelper {
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
+        }
+    }
+
+    private const val UPDATE_CHANNEL_ID = "app_updates"
+
+    private fun isNetworkAvailable(ctx: Context): Boolean {
+        return try {
+            val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+            val net = cm.activeNetwork ?: return false
+            val caps = cm.getNetworkCapabilities(net) ?: return false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * 每日最多自動檢查一次 GitHub 最新版本：
+     * - 關閉開關、今日已檢查、或無網路時直接跳過（失敗靜默）
+     * - 發現新版本時發送每日每版本一次通知，並回傳 UpdateAvailable 供前端每日每版本一次彈窗
+     */
+    suspend fun checkAndNotifyIfNeeded(ctx: Context): UpdateCheckResult.UpdateAvailable? {
+        val appCtx = ctx.applicationContext
+        if (!PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)) return null
+        val today = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+        if (PhantomPrefs.getUpdateLastCheckDay(appCtx) == today) return null
+        if (!isNetworkAvailable(appCtx)) return null
+
+        return when (val res = checkLatestRelease(appCtx)) {
+            is UpdateCheckResult.UpdateAvailable -> {
+                PhantomPrefs.setUpdateLastCheckDay(appCtx, today)
+                val key = "${res.latestVersion}|$today"
+                if (PhantomPrefs.getUpdateLastNotifiedKey(appCtx) != key) {
+                    postUpdateAvailableNotification(appCtx, res)
+                    PhantomPrefs.setUpdateLastNotifiedKey(appCtx, key)
+                }
+                if (PhantomPrefs.getUpdateLastPromptKey(appCtx) != key) {
+                    PhantomPrefs.setUpdateLastPromptKey(appCtx, key)
+                    res
+                } else {
+                    null
+                }
+            }
+            is UpdateCheckResult.UpToDate,
+            is UpdateCheckResult.Error -> {
+                PhantomPrefs.setUpdateLastCheckDay(appCtx, today)
+                null
+            }
+        }
+    }
+
+    private fun postUpdateAvailableNotification(
+        ctx: Context,
+        update: UpdateCheckResult.UpdateAvailable
+    ) {
+        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+        if (nm.getNotificationChannel(UPDATE_CHANNEL_ID) == null) {
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    UPDATE_CHANNEL_ID,
+                    "版本更新",
+                    NotificationManager.IMPORTANCE_DEFAULT
+                ).apply {
+                    description = "偵測到新版本發佈時提醒（每天最多一次）"
+                }
+            )
+        }
+        val intent = Intent(ctx, SettingsActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("highlight_card_key", "about")
+        }
+        val pi = PendingIntent.getActivity(
+            ctx,
+            NotifIds.UPDATE_AVAILABLE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notif = Notification.Builder(ctx, UPDATE_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_phantom)
+            .setContentTitle("幻訊有新版本 v${update.latestVersion}")
+            .setContentText("發佈於 ${update.publishedDate}・點擊前往下載。可至設定關閉自動檢查更新。")
+            .setStyle(
+                Notification.BigTextStyle().bigText(
+                    "已推出新版本 v${update.latestVersion}（發佈於 ${update.publishedDate}），點擊前往設定 → 關於下載更新。可至設定關閉自動檢查更新。"
+                )
+            )
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+        try {
+            nm.notify(NotifIds.UPDATE_AVAILABLE, notif)
+        } catch (_: SecurityException) {
         }
     }
 }
