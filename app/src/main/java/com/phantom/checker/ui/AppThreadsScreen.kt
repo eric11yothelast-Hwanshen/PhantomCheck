@@ -369,6 +369,11 @@ fun AppThreadsScreen(
         )
     }
 
+    val glassState = remember { HazeState() }
+    var showThreadSearch by remember { mutableStateOf(false) }
+    var threadSearchQuery by remember { mutableStateOf("") }
+
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             if (isMultiSelectMode) {
@@ -528,10 +533,6 @@ fun AppThreadsScreen(
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
-        val glassState = remember { HazeState() }
-        var showThreadSearch by remember { mutableStateOf(false) }
-        var threadSearchQuery by remember { mutableStateOf("") }
-
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -591,68 +592,68 @@ fun AppThreadsScreen(
                                     selectedConversationKeys = setOf(thread.conversationKey)
                                 }
                             )
-                        }
                     }
                 }
             }
-
-            val tq = threadSearchQuery.trim()
-            val matchedThreads = remember(threads, tq) {
-                if (tq.isEmpty()) emptyList()
-                else threads.filter {
-                    it.displayTitle.contains(tq, ignoreCase = true) ||
-                        it.lastPreview.contains(tq, ignoreCase = true)
-                }
-            }
-            PhantomFullScreenSearchOverlay(
-                visible = showThreadSearch,
-                query = threadSearchQuery,
-                onQueryChange = { threadSearchQuery = it },
-                onDismiss = { showThreadSearch = false },
-                placeholder = "搜尋 $appLabel 寄件者或最新訊息…",
-                resultsContent = {
-                    if (tq.isEmpty()) {
-                        item(key = "thread_search_hint") {
-                            Text(
-                                text = "輸入寄件者或內容關鍵字搜尋此 App 對話。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(8.dp)
-                            )
-                        }
-                    } else if (matchedThreads.isEmpty()) {
-                        item(key = "thread_search_empty") {
-                            Text(
-                                text = "找不到符合「$tq」的對話。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(8.dp)
-                            )
-                        }
-                    } else {
-                        items(matchedThreads, key = { "sr_${it.conversationKey}" }) { thread ->
-                            SenderThreadCard(
-                                thread = thread,
-                                glassState = glassState,
-                                onClick = {
-                                    showThreadSearch = false
-                                    ctx.startActivity(
-                                        ConversationActivity.createIntent(
-                                            ctx = ctx,
-                                            packageName = packageName,
-                                            appLabel = appLabel,
-                                            conversationKey = thread.conversationKey,
-                                            displayTitle = thread.displayTitle
-                                        )
-                                    )
-                                },
-                                onLongClick = {}
-                            )
-                        }
-                    }
-                }
-            )
         }
+    }
+
+    val tq = threadSearchQuery.trim()
+    val matchedThreads = remember(threads, tq) {
+        if (tq.isEmpty()) emptyList()
+        else threads.filter {
+            it.displayTitle.contains(tq, ignoreCase = true) ||
+                it.lastPreview.contains(tq, ignoreCase = true)
+        }
+    }
+    PhantomFullScreenSearchOverlay(
+        visible = showThreadSearch,
+        query = threadSearchQuery,
+        onQueryChange = { threadSearchQuery = it },
+        onDismiss = { showThreadSearch = false },
+        placeholder = "搜尋 $appLabel 寄件者或最新訊息…",
+        resultsContent = {
+            if (tq.isEmpty()) {
+                item(key = "thread_search_hint") {
+                    Text(
+                        text = "輸入寄件者或內容關鍵字搜尋此 App 對話。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            } else if (matchedThreads.isEmpty()) {
+                item(key = "thread_search_empty") {
+                    Text(
+                        text = "找不到符合「$tq」的對話。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            } else {
+                items(matchedThreads, key = { "sr_${it.conversationKey}" }) { thread ->
+                    SenderThreadCard(
+                        thread = thread,
+                        glassState = glassState,
+                        onClick = {
+                            showThreadSearch = false
+                            ctx.startActivity(
+                                ConversationActivity.createIntent(
+                                    ctx = ctx,
+                                    packageName = packageName,
+                                    appLabel = appLabel,
+                                    conversationKey = thread.conversationKey,
+                                    displayTitle = thread.displayTitle
+                                )
+                            )
+                        },
+                        onLongClick = {}
+                    )
+                }
+            }
+        }
+    )
     }
 }
 

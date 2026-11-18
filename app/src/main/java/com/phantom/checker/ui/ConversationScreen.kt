@@ -584,6 +584,11 @@ fun ConversationScreen(
         )
     }
 
+    val glassState = remember { HazeState() }
+    var showConvSearch by remember { mutableStateOf(false) }
+    var convSearchQuery by remember { mutableStateOf("") }
+
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             if (isMultiSelectMode) {
@@ -763,10 +768,6 @@ fun ConversationScreen(
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
-        val glassState = remember { HazeState() }
-        var showConvSearch by remember { mutableStateOf(false) }
-        var convSearchQuery by remember { mutableStateOf("") }
-
         PhantomBackgroundBox(
             layer = com.phantom.checker.util.BackgroundLayer.CONVERSATION,
             glassState = glassState,
@@ -909,59 +910,59 @@ fun ConversationScreen(
                             }
                         }
                     }
-                }
             }
         }
+        }
+    }
 
-        val cq = convSearchQuery.trim()
-        val matchedConvMsgs = remember(messages, cq) {
-            if (cq.isEmpty()) emptyList()
-            else messages.filter {
-                it.content.contains(cq, ignoreCase = true) || it.sender.contains(cq, ignoreCase = true)
-            }
+    val cq = convSearchQuery.trim()
+    val matchedConvMsgs = remember(messages, cq) {
+        if (cq.isEmpty()) emptyList()
+        else messages.filter {
+            it.content.contains(cq, ignoreCase = true) || it.sender.contains(cq, ignoreCase = true)
         }
-        PhantomFullScreenSearchOverlay(
-            visible = showConvSearch,
-            query = convSearchQuery,
-            onQueryChange = { convSearchQuery = it },
-            onDismiss = { showConvSearch = false },
-            placeholder = "搜尋與 $displayTitle 的對話內容…",
-            resultsContent = {
-                if (cq.isEmpty()) {
-                    item(key = "conv_search_hint") {
-                        Text(
-                            text = "輸入關鍵字搜尋此對話中的所有訊息。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(8.dp)
-                        )
-                    }
-                } else if (matchedConvMsgs.isEmpty()) {
-                    item(key = "conv_search_empty") {
-                        Text(
-                            text = "找不到符合「$cq」的訊息。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(8.dp)
-                        )
-                    }
-                } else {
-                    items(matchedConvMsgs, key = { "csr_${it.id}" }) { msg ->
-                        ChatBubbleItem(
-                            message = msg,
-                            glassState = glassState,
-                            tags = msgTagsMap[msg.id].orEmpty(),
-                            onClick = {
-                                showConvSearch = false
-                                ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
-                            },
-                            onLongClick = {}
-                        )
-                    }
+    }
+    PhantomFullScreenSearchOverlay(
+        visible = showConvSearch,
+        query = convSearchQuery,
+        onQueryChange = { convSearchQuery = it },
+        onDismiss = { showConvSearch = false },
+        placeholder = "搜尋與 $displayTitle 的對話內容…",
+        resultsContent = {
+            if (cq.isEmpty()) {
+                item(key = "conv_search_hint") {
+                    Text(
+                        text = "輸入關鍵字搜尋此對話中的所有訊息。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            } else if (matchedConvMsgs.isEmpty()) {
+                item(key = "conv_search_empty") {
+                    Text(
+                        text = "找不到符合「$cq」的訊息。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(8.dp)
+                    )
+                }
+            } else {
+                items(matchedConvMsgs, key = { "csr_${it.id}" }) { msg ->
+                    ChatBubbleItem(
+                        message = msg,
+                        glassState = glassState,
+                        tags = msgTagsMap[msg.id].orEmpty(),
+                        onClick = {
+                            showConvSearch = false
+                            ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
+                        },
+                        onLongClick = {}
+                    )
                 }
             }
-        )
         }
+    )
     }
 }
 
