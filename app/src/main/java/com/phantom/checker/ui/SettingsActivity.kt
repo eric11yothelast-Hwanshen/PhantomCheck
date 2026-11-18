@@ -376,6 +376,7 @@ fun FilterSettingsScreen(
     var expandShizuku by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "shizuku_advanced")) }
     var expandIntel by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "intel")) }
     var expandPersonalization by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "personalization")) }
+    var expandStats by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "stats")) }
     var expandAbout by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "about")) }
 
     // 個人化設定
@@ -385,6 +386,7 @@ fun FilterSettingsScreen(
     var summaryDefaultCollapsed by remember { mutableStateOf(PhantomPrefs.isSummaryDefaultCollapsed(appCtx)) }
     var cardStackEffectEnabled by remember { mutableStateOf(PhantomPrefs.isCardStackEffectEnabled(appCtx)) }
     var use24HourFormat by remember { mutableStateOf(PhantomPrefs.is24HourFormat(appCtx)) }
+    var visibleStatsCards by remember { mutableStateOf(PhantomPrefs.getVisibleStatsCards(appCtx)) }
 
     // 設定頁搜尋狀態（本地即時過濾 + AI 語意導覽）
     var searchQuery by remember { mutableStateOf("") }
@@ -492,6 +494,7 @@ fun FilterSettingsScreen(
                 dailySummaryNotifEnabled = PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
                 summaryDefaultCollapsed = PhantomPrefs.isSummaryDefaultCollapsed(appCtx)
                 cardStackEffectEnabled = PhantomPrefs.isCardStackEffectEnabled(appCtx)
+                visibleStatsCards = PhantomPrefs.getVisibleStatsCards(appCtx)
                 hapticEnabled = PhantomPrefs.isHapticFeedbackEnabled(appCtx)
                 ShizukuManager.refreshState(appCtx)
             }
@@ -742,13 +745,14 @@ fun FilterSettingsScreen(
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
         ) { padding ->
             val allCardKeys = remember {
-                listOf("quick", "personalization", "ai", "notif", "data", "appearance", "shizuku", "intel", "about")
+                listOf("quick", "personalization", "stats", "ai", "notif", "data", "appearance", "shizuku", "intel", "about")
             }
             LaunchedEffect(initialHighlightCardKey) {
                 val key = initialHighlightCardKey ?: return@LaunchedEffect
                 when (key) {
                     "quick" -> expandQuick = true
                     "personalization" -> expandPersonalization = true
+                    "stats" -> expandStats = true
                     "ai" -> expandAi = true
                     "notif" -> expandNotif = true
                     "data" -> expandData = true
@@ -814,6 +818,7 @@ fun FilterSettingsScreen(
                         val targetCards = matchedItems.map { it.cardKey }.toSet()
                         if ("quick" in targetCards) expandQuick = true
                         if ("personalization" in targetCards) expandPersonalization = true
+                        if ("stats" in targetCards) expandStats = true
                         if ("ai" in targetCards) expandAi = true
                         if ("notif" in targetCards) expandNotif = true
                         if ("data" in targetCards) expandData = true
@@ -1446,6 +1451,51 @@ fun FilterSettingsScreen(
                                     ThemePreferences.setCardBgAlphaPercent(appCtx, pct)
                                 },
                                 valueRange = 15f..100f
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 1.6 統計
+            if ("stats" in visibleCardKeys) {
+                item(key = "card_stats") {
+                    CollapsibleSettingsCard(
+                        title = "統計",
+                        expanded = expandStats || ("stats" in highlightedCardKeys),
+                        highlighted = "stats" in highlightedCardKeys,
+                        onToggle = {
+                            expandStats = !expandStats
+                            PhantomPrefs.setSettingsCardExpanded(appCtx, "stats", expandStats)
+                        },
+                        glassState = glassState,
+                        modifier = Modifier.onGloballyPositioned { coords ->
+                            cardBounds["stats"] = coords.boundsInRoot()
+                        }
+                    ) {
+                        Text(
+                            text = "統計頁卡片顯示自訂",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "勾選要在統計分頁顯示的圖表與統計卡片（分享圖卡、省 token 提示與每週摘要維持常駐）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        PhantomPrefs.STATS_CARD_OPTIONS.forEachIndexed { idx, option ->
+                            if (idx > 0) {
+                                HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                            }
+                            SettingSwitchRow(
+                                title = option.title,
+                                subtitle = option.subtitle,
+                                checked = option.key in visibleStatsCards,
+                                onCheckedChange = { checked ->
+                                    PhantomPrefs.setStatsCardVisible(appCtx, option.key, checked)
+                                    visibleStatsCards = PhantomPrefs.getVisibleStatsCards(appCtx)
+                                }
                             )
                         }
                     }

@@ -469,6 +469,15 @@ interface MessageDao {
     )
     suspend fun countByHourSince(sinceTs: Long): List<HourCountRow>
 
+    @Query(
+        "SELECT strftime('%Y%m%d', timestamp / 1000, 'unixepoch', 'localtime') AS dayKey, COUNT(*) AS cnt " +
+            "FROM messages WHERE isOwn = 0 AND timestamp >= :sinceTs AND riskLabel IN ('suspicious', 'scam') GROUP BY dayKey"
+    )
+    suspend fun riskyCountByDaySince(sinceTs: Long): List<DayCountRow>
+
+    @Query("SELECT COUNT(*) FROM messages WHERE isOwn = 0 AND isRead = 0")
+    suspend fun totalUnreadCount(): Int
+
     @Query("SELECT EXISTS(SELECT 1 FROM messages WHERE isOwn = 0 AND timestamp >= :minTs AND timestamp <= :maxTs AND dedupKey = :dedupKey)")
     suspend fun existsByDedupKeyInWindow(dedupKey: String, minTs: Long, maxTs: Long): Boolean
 
@@ -843,10 +852,18 @@ interface UserTagRuleDao {
     suspend fun deleteById(id: Long)
 }
 
+data class TodoCompletionRow(
+    val total: Int,
+    val done: Int
+)
+
 @Dao
 interface TodoDao {
     @Query("SELECT * FROM todos WHERE isDone = 0 ORDER BY dueAt ASC, id ASC")
     suspend fun pendingTodos(): List<TodoEntity>
+
+    @Query("SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN isDone = 1 THEN 1 ELSE 0 END), 0) AS done FROM todos")
+    suspend fun completionStats(): TodoCompletionRow
 
     @Query("SELECT * FROM todos ORDER BY isDone ASC, dueAt ASC, id DESC")
     suspend fun all(): List<TodoEntity>

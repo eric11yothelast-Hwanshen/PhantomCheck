@@ -295,19 +295,30 @@ private data class DayCountUi(
     val count: Int
 )
 
+private data class DailyAppRankUi(
+    val packageName: String,
+    val appLabel: String,
+    val count: Int
+)
+
 private data class StatsUiState(
     val latestSummary: AiSummaryEntity? = null,
     val latestWeeklySummary: AiSummaryEntity? = null,
     val weeklyCounts: List<DayCountUi> = emptyList(),
+    val weeklyRiskCounts: List<DayCountUi> = emptyList(),
     val safeCount: Int = 0,
     val suspiciousCount: Int = 0,
     val scamCount: Int = 0,
     val topRiskyApps: List<AppRiskRow> = emptyList(),
+    val dailyTopApps: List<DailyAppRankUi> = emptyList(),
     val rawAppGroups: List<AppGroupRow> = emptyList(),
     val todayAiTagCounts: List<AiTagCountRow> = emptyList(),
     val todayHourlyCounts: List<Int> = List(24) { 0 },
     val harassmentCount: Int = 0,
-    val totalMessageCount: Int = 0
+    val totalMessageCount: Int = 0,
+    val unreadTotalCount: Int = 0,
+    val todoTotalCount: Int = 0,
+    val todoDoneCount: Int = 0
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -437,6 +448,7 @@ private fun PhantomCheckApp(
     }
 
     var tabBarDisplayMode by remember { mutableStateOf(PhantomPrefs.getTabBarDisplayMode(appCtx)) }
+    var visibleStatsCards by remember { mutableStateOf(PhantomPrefs.getVisibleStatsCards(appCtx)) }
     var tabBarVisible by remember { mutableStateOf(true) }
     var pendingUpdateDialog by remember { mutableStateOf<UpdateCheckResult.UpdateAvailable?>(null) }
     LaunchedEffect(selectedTab, tabBarDisplayMode) {
@@ -469,6 +481,7 @@ private fun PhantomCheckApp(
                 favoritePackages = PhantomPrefs.getFavoriteApps(appCtx)
                 mutedPackages = PhantomPrefs.getMutedApps(appCtx)
                 tabBarDisplayMode = PhantomPrefs.getTabBarDisplayMode(appCtx)
+                visibleStatsCards = PhantomPrefs.getVisibleStatsCards(appCtx)
                 val completedNow = PhantomPrefs.isOnboardingCompleted(appCtx)
                 if (onboardingCompleted && !completedNow) {
                     onboardingCompleted = false
@@ -629,6 +642,7 @@ private fun PhantomCheckApp(
                         }
                         val sevenDaysAgo = cal.timeInMillis
                         val countsByDayKey = dao.countByDaySince(sevenDaysAgo).associate { it.dayKey to it.cnt }
+                        val riskByDayKey = dao.riskyCountByDaySince(sevenDaysAgo).associate { it.dayKey to it.cnt }
                         val dayFormat = SimpleDateFormat("M/d", Locale.getDefault())
                         val dayKeyFormat = SimpleDateFormat("yyyyMMdd", Locale.US)
                         val weekly = (0..6).map { offset ->
@@ -640,6 +654,17 @@ private fun PhantomCheckApp(
                             DayCountUi(
                                 label = dayFormat.format(dayCal.time),
                                 count = countsByDayKey[key] ?: 0
+                            )
+                        }
+                        val weeklyRisk = (0..6).map { offset ->
+                            val dayCal = Calendar.getInstance().apply {
+                                timeInMillis = sevenDaysAgo
+                                add(Calendar.DAY_OF_YEAR, offset)
+                            }
+                            val key = dayKeyFormat.format(dayCal.time)
+                            DayCountUi(
+                                label = dayFormat.format(dayCal.time),
+                                count = riskByDayKey[key] ?: 0
                             )
                         }
                         val hourly = IntArray(24)
@@ -666,21 +691,46 @@ private fun PhantomCheckApp(
                         }
                         val topRisky = dao.topRiskyApps()
                         val rawGroups = dao.groupByApp()
+                        val labelByPkg = rawGroups.associate { it.packageName to it.appLabel.ifBlank { it.packageName } }
+                        val dailyTopApps = dao.todayCountsByApp(startOfDay)
+                            .sortedByDescending { it.cnt }
+                            .take(5)
+                            .map { row ->
+                                val resolvedLabel = labelByPkg[row.packageName] ?: try {
+                                    appCtx.packageManager.getApplicationLabel(
+                                        appCtx.packageManager.getApplicationInfo(row.packageName, 0)
+                                    ).toString()
+                                } catch (_: Exception) {
+                                    row.packageName
+                                }
+                                DailyAppRankUi(
+                                    packageName = row.packageName,
+                                    appLabel = resolvedLabel,
+                                    count = row.cnt
+                                )
+                            }
+                        val unreadTotal = dao.totalUnreadCount()
+                        val todoCompletion = db.todoDao().completionStats()
                         val aiTagCounts = db.tagDao().todayAiTagCounts(startOfDay)
                         val weeklySummary = db.aiSummaryDao().latestWeekly()
                         statsState = StatsUiState(
                             latestSummary = summary,
                             latestWeeklySummary = weeklySummary,
                             weeklyCounts = weekly,
+                            weeklyRiskCounts = weeklyRisk,
                             safeCount = safe,
                             suspiciousCount = suspicious,
                             scamCount = scam,
                             topRiskyApps = topRisky,
+                            dailyTopApps = dailyTopApps,
                             rawAppGroups = rawGroups,
                             todayAiTagCounts = aiTagCounts,
                             todayHourlyCounts = hourly.toList(),
                             harassmentCount = harassmentCnt,
-                            totalMessageCount = safe + suspicious + scam
+                            totalMessageCount = safe + suspicious + scam,
+                            unreadTotalCount = unreadTotal,
+                            todoTotalCount = todoCompletion.total,
+                            todoDoneCount = todoCompletion.done
                         )
                     }
                 }
@@ -1564,6 +1614,7 @@ private fun PhantomCheckApp(
                     MainTab.STATS -> StatsTab(
                         state = statsState,
                         glassState = glassState,
+                        visibleCards = visibleStatsCards,
                         onSummaryGenerated = { refreshTrigger++ },
                         onShowMessage = { msg ->
                             scope.launch { snackbarHostState.showSnackbar(msg) }
@@ -3943,6 +3994,7 @@ private fun NoteEditorDialog(
 private fun StatsTab(
     state: StatsUiState,
     glassState: HazeState,
+    visibleCards: Set<String> = PhantomPrefs.DEFAULT_VISIBLE_STATS_CARDS,
     onSummaryGenerated: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
@@ -4081,7 +4133,8 @@ private fun StatsTab(
             }
         }
         // 每日 AI 摘要玻璃卡
-        item {
+        if ("stats_summary" in visibleCards) {
+        item(key = "stats_summary") {
             var dailyExpanded by remember { mutableStateOf(PhantomPrefs.isDailySummaryExpanded(appCtx)) }
             val summary = state.latestSummary
             PhantomGlassCard(
@@ -4290,6 +4343,7 @@ private fun StatsTab(
                     }
                 }
             }
+        }
         }
 
         // 本週 AI 摘要報告（每週日 22:00 自動生成＋手動生成＋歷史展開）
@@ -4581,7 +4635,8 @@ private fun StatsTab(
         }
 
         // 本週 7 日訊息量簡易 Bar Chart（純 Compose Canvas）
-        item {
+        if ("stats_weekly_bar" in visibleCards) {
+        item(key = "stats_weekly_bar") {
             val barColor = MaterialTheme.colorScheme.primary
             val trackColor = MaterialTheme.colorScheme.surfaceVariant
             PhantomGlassCard(
@@ -4650,9 +4705,11 @@ private fun StatsTab(
                 }
             }
         }
+        }
 
         // 風險分布三色計數卡
-        item {
+        if ("stats_risk_dist" in visibleCards) {
+        item(key = "stats_risk_dist") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -4680,10 +4737,11 @@ private fun StatsTab(
                 )
             }
         }
+        }
 
         // 今日 AI 智慧標記分布
-        if (state.todayAiTagCounts.isNotEmpty()) {
-            item {
+        if ("stats_ai_tags" in visibleCards && state.todayAiTagCounts.isNotEmpty()) {
+            item(key = "stats_ai_tags") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "今日 AI 智慧標記",
@@ -4709,7 +4767,8 @@ private fun StatsTab(
         }
 
         // 今日每小時分布（Task J1：純 Canvas 24 小時 mini bar）
-        item {
+        if ("stats_hourly" in visibleCards) {
+        item(key = "stats_hourly") {
             val hourBarColor = MaterialTheme.colorScheme.secondary
             val hourTrackColor = MaterialTheme.colorScheme.surfaceVariant
             PhantomGlassCard(
@@ -4773,9 +4832,97 @@ private fun StatsTab(
                 }
             }
         }
+        }
+
+        // 今日 App 訊息量排行榜 Top 5（#218）
+        if ("stats_daily_top_apps" in visibleCards) {
+            item(key = "stats_daily_top_apps") {
+                val barColor = MaterialTheme.colorScheme.primary
+                val trackColor = MaterialTheme.colorScheme.surfaceVariant
+                PhantomGlassCard(
+                    glassState = glassState,
+                    modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 20.dp,
+                    contentPadding = 14.dp
+                ) {
+                    Text(
+                        text = "今日 App 訊息量排行榜 Top 5",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    if (state.dailyTopApps.isEmpty()) {
+                        Text(
+                            text = "今日尚無收到任何訊息",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        val maxCnt = (state.dailyTopApps.maxOfOrNull { it.count } ?: 1).coerceAtLeast(1)
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            state.dailyTopApps.forEachIndexed { idx, app ->
+                                val ratio = (app.count.toFloat() / maxCnt.toFloat()).coerceIn(0f, 1f)
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "${idx + 1}.",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        AppIconImage(
+                                            packageName = app.packageName,
+                                            contentDescription = app.appLabel,
+                                            size = 24.dp
+                                        )
+                                        Text(
+                                            text = app.appLabel,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = "${app.count} 則",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    Canvas(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(6.dp)
+                                    ) {
+                                        val r = CornerRadius(3.dp.toPx(), 3.dp.toPx())
+                                        drawRoundRect(
+                                            color = trackColor,
+                                            size = size,
+                                            cornerRadius = r
+                                        )
+                                        if (ratio > 0f) {
+                                            drawRoundRect(
+                                                color = barColor,
+                                                size = Size(size.width * ratio, size.height),
+                                                cornerRadius = r
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // 騷擾佔比（Task J2：行銷 + 垃圾通知 / 總訊息，Canvas arc）
-        item {
+        if ("stats_harassment" in visibleCards) {
+        item(key = "stats_harassment") {
             val total = state.totalMessageCount.coerceAtLeast(0)
             val harass = state.harassmentCount.coerceIn(0, total.coerceAtLeast(0))
             val ratio = if (total > 0) harass.toFloat() / total.toFloat() else 0f
@@ -4839,9 +4986,11 @@ private fun StatsTab(
                 }
             }
         }
+        }
 
         // Top 5 高風險 App 清單
-        item {
+        if ("stats_top_risky" in visibleCards) {
+        item(key = "stats_top_risky") {
             PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
@@ -4906,6 +5055,301 @@ private fun StatsTab(
                     modifier = Modifier.align(Alignment.End)
                 ) {
                     Text("查看詐騙警示中心")
+                }
+            }
+        }
+        }
+
+        // 7 日風險趨勢折線圖（#218）
+        if ("stats_risk_trend" in visibleCards) {
+            item(key = "stats_risk_trend") {
+                val lineColor = MaterialTheme.colorScheme.error
+                val gridColor = MaterialTheme.colorScheme.surfaceVariant
+                PhantomGlassCard(
+                    glassState = glassState,
+                    modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 20.dp,
+                    contentPadding = 14.dp
+                ) {
+                    Text(
+                        text = "7 日風險趨勢折線（疑似＋詐騙）",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    val points = state.weeklyRiskCounts
+                    val maxRisk = (points.maxOfOrNull { it.count } ?: 1).coerceAtLeast(1)
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp)
+                    ) {
+                        if (points.isEmpty()) return@Canvas
+                        val padV = 10.dp.toPx()
+                        val usableH = (size.height - padV * 2).coerceAtLeast(1f)
+                        val slotW = size.width / points.size
+                        // 參考底線
+                        drawLine(
+                            color = gridColor,
+                            start = Offset(0f, size.height - padV),
+                            end = Offset(size.width, size.height - padV),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                        val coords = points.mapIndexed { idx, d ->
+                            val x = idx * slotW + slotW / 2f
+                            val y = (size.height - padV) - (d.count.toFloat() / maxRisk.toFloat()) * usableH
+                            Offset(x, y)
+                        }
+                        for (i in 0 until coords.lastIndex) {
+                            drawLine(
+                                color = lineColor,
+                                start = coords[i],
+                                end = coords[i + 1],
+                                strokeWidth = 2.5.dp.toPx(),
+                                cap = StrokeCap.Round
+                            )
+                        }
+                        coords.forEach { pt ->
+                            drawCircle(
+                                color = lineColor,
+                                radius = 4.dp.toPx(),
+                                center = pt
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceAround
+                    ) {
+                        points.forEach { day ->
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "${day.count}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (day.count > 0) lineColor else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = day.label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 未讀 / 已讀比例環形（#218）
+        if ("stats_unread_ratio" in visibleCards) {
+            item(key = "stats_unread_ratio") {
+                val total = state.totalMessageCount.coerceAtLeast(0)
+                val unread = state.unreadTotalCount.coerceIn(0, total.coerceAtLeast(0))
+                val read = (total - unread).coerceAtLeast(0)
+                val ratio = if (total > 0) unread.toFloat() / total.toFloat() else 0f
+                val pct = (ratio * 100f).toInt()
+                val arcTrack = MaterialTheme.colorScheme.surfaceVariant
+                val arcColor = MaterialTheme.colorScheme.primary
+                PhantomGlassCard(
+                    glassState = glassState,
+                    modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 20.dp,
+                    contentPadding = 14.dp
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.size(72.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val strokeW = 8.dp.toPx()
+                                drawArc(
+                                    color = arcTrack,
+                                    startAngle = -90f,
+                                    sweepAngle = 360f,
+                                    useCenter = false,
+                                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                                )
+                                if (ratio > 0f) {
+                                    drawArc(
+                                        color = arcColor,
+                                        startAngle = -90f,
+                                        sweepAngle = 360f * ratio,
+                                        useCenter = false,
+                                        style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "$pct%",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "未讀 / 已讀比例",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = "未讀 $unread 則 · 已讀 $read 則（共 $total 則）",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 各 App 訊息佔比橫條前 8（#218）
+        if ("stats_app_share" in visibleCards) {
+            item(key = "stats_app_share") {
+                val top8 = state.rawAppGroups.sortedByDescending { it.cnt }.take(8)
+                val totalAll = state.rawAppGroups.sumOf { it.cnt }.coerceAtLeast(1)
+                val barColor = MaterialTheme.colorScheme.tertiary
+                val trackColor = MaterialTheme.colorScheme.surfaceVariant
+                PhantomGlassCard(
+                    glassState = glassState,
+                    modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 20.dp,
+                    contentPadding = 14.dp
+                ) {
+                    Text(
+                        text = "各 App 訊息佔比 Top 8",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    if (top8.isEmpty()) {
+                        Text(
+                            text = "目前尚無訊息紀錄",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            top8.forEach { row ->
+                                val ratio = (row.cnt.toFloat() / totalAll.toFloat()).coerceIn(0f, 1f)
+                                val pct = (ratio * 100f).toInt()
+                                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        AppIconImage(
+                                            packageName = row.packageName,
+                                            contentDescription = row.appLabel,
+                                            size = 22.dp
+                                        )
+                                        Text(
+                                            text = row.appLabel.ifBlank { row.packageName },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = "${row.cnt} 則 ($pct%)",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Canvas(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(5.dp)
+                                    ) {
+                                        val r = CornerRadius(2.5.dp.toPx(), 2.5.dp.toPx())
+                                        drawRoundRect(color = trackColor, size = size, cornerRadius = r)
+                                        if (ratio > 0f) {
+                                            drawRoundRect(
+                                                color = barColor,
+                                                size = Size(size.width * ratio, size.height),
+                                                cornerRadius = r
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 待辦完成率環形（#218）
+        if ("stats_todo_done" in visibleCards) {
+            item(key = "stats_todo_done") {
+                val total = state.todoTotalCount.coerceAtLeast(0)
+                val done = state.todoDoneCount.coerceIn(0, total.coerceAtLeast(0))
+                val ratio = if (total > 0) done.toFloat() / total.toFloat() else 0f
+                val pct = (ratio * 100f).toInt()
+                val arcTrack = MaterialTheme.colorScheme.surfaceVariant
+                val arcColor = MaterialTheme.colorScheme.tertiary
+                PhantomGlassCard(
+                    glassState = glassState,
+                    modifier = Modifier.fillMaxWidth(),
+                    cornerRadius = 20.dp,
+                    contentPadding = 14.dp
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.size(72.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val strokeW = 8.dp.toPx()
+                                drawArc(
+                                    color = arcTrack,
+                                    startAngle = -90f,
+                                    sweepAngle = 360f,
+                                    useCenter = false,
+                                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                                )
+                                if (ratio > 0f) {
+                                    drawArc(
+                                        color = arcColor,
+                                        startAngle = -90f,
+                                        sweepAngle = 360f * ratio,
+                                        useCenter = false,
+                                        style = Stroke(width = strokeW, cap = StrokeCap.Round)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "$pct%",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "待辦完成率",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = if (total == 0) "尚無待辦事項" else "$done / $total 項待辦已完成",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
         }
