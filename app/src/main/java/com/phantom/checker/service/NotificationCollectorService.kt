@@ -1154,7 +1154,11 @@ class NotificationCollectorService : NotificationListenerService() {
             if (clean.isEmpty()) return
 
             val matchedRule = try {
-                val rules = cachedActiveMemoRules(db)
+                val rules = cachedActiveMemoRules(db).filterNot {
+                    it.action == MemoRuleEntity.ACTION_NEVER &&
+                        it.packageName.isNullOrBlank() &&
+                        it.sender.isNullOrBlank()
+                }
                 com.phantom.checker.util.MemoRuleEngine.match(
                     rules = rules,
                     packageName = msg.packageName,

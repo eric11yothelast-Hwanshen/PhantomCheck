@@ -3362,7 +3362,7 @@ private fun NotesTab(
                     }
                 }
                 Text(
-                    text = "AI 啟用時以語意判斷相似訊息，未啟用時僅字面匹配",
+                    text = "AI 啟用時以語意判斷相似訊息（含關鍵字條件）；AI 未啟用時不產生自動記事",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -616,16 +616,20 @@ object AiClient {
             val activeMemoRules = memoRules.filter { it.isEnabled && MemoRuleEngine.isValid(it) }.sortedBy { it.id }.take(10)
             if (activeMemoRules.isNotEmpty()) {
                 base.appendLine("【記事/待辦規則】")
-                base.appendLine("含「關鍵字」的定義＝語意上屬於同類訊息即視為命中（同寄件者場景、同類內容如驗證碼／OTP／帳單通知、同主題的相似說法），無須字面完全包含；命中「永不記事」規則時 memo 必須留空字串 \"\"；「一律記事」或「一律待辦」規則亦同理以語意命中。")
+                base.appendLine("語意命中定義：含「關鍵字」條件時，應依整則規則的語意與使用場景判斷是否屬於同類訊息（同寄件者場景、同服務類型、同主題意圖），不得僅因字面包含關鍵字就機械套用。")
+                base.appendLine("反例：若規則為「關鍵字：Gogolook 驗證碼 → 永不記事」，只排除與 Gogolook 驗證碼語意相似的訊息；銀行 OTP、網購取貨驗證碼等不同服務的驗證碼訊息仍應正常產生記事，不得因字面含「驗證碼」而跳過。")
+                base.appendLine("動作處理：語意命中「永不記事」時 memo 必須留空字串 \"\"；未語意命中時不得因字面含關鍵字而留空；「一律待辦」「一律記事」同理依規則語意套用。")
                 activeMemoRules.forEach { r ->
-                    val cond = MemoRuleEngine.formatConditionSummary(r)
+                    val pkg = r.packageName?.trim()?.takeIf { it.isNotEmpty() } ?: "不限"
+                    val snd = r.sender?.trim()?.takeIf { it.isNotEmpty() } ?: "不限"
+                    val kw = r.keyword?.trim()?.takeIf { it.isNotEmpty() } ?: "無"
                     val act = when (r.action) {
                         MemoRuleEntity.ACTION_NEVER -> "永不記事"
                         MemoRuleEntity.ACTION_TODO -> "一律待辦"
                         MemoRuleEntity.ACTION_NOTE -> "一律記事"
                         else -> r.action
                     }
-                    base.appendLine("- $cond → $act")
+                    base.appendLine("- id=${r.id} | App=$pkg | 寄件者=$snd | 關鍵字=$kw | 動作=$act")
                 }
             }
         }
@@ -706,7 +710,7 @@ object AiClient {
         } else {
             ""
         }
-        val cacheKey = sha256("$content|autoTag=$enableAutoTag|autoMemo=$autoMemo|memoV3=${if (autoMemo) 1 else 0}|$tagSig|$ruleSig|$memoRuleSig")
+        val cacheKey = sha256("$content|autoTag=$enableAutoTag|autoMemo=$autoMemo|memoV4=${if (autoMemo) 1 else 0}|$tagSig|$ruleSig|$memoRuleSig")
         val now = System.currentTimeMillis()
         if (!bypassCache) {
             synchronized(riskCache) {
