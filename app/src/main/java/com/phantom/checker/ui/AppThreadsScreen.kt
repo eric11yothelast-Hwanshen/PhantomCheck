@@ -592,6 +592,7 @@ fun AppThreadsScreen(
                                     selectedConversationKeys = setOf(thread.conversationKey)
                                 }
                             )
+                        }
                     }
                 }
             }
