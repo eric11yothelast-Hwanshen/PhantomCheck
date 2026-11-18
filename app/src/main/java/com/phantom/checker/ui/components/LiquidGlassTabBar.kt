@@ -90,24 +90,36 @@ fun LiquidGlassTabBar(
         val currentSelectedTabIndex by rememberUpdatedState(selectedTabIndex)
         val currentOnSelect by rememberUpdatedState(onSelect)
         var isDragging by remember { mutableStateOf(false) }
+        var dragIndex by remember { mutableFloatStateOf(selectedTabIndex.toFloat()) }
         var dragVelocityIndex by remember { mutableFloatStateOf(0f) }
-        var dragSnapJob by remember { mutableStateOf<Job?>(null) }
         // S51：速度改用 Compose VelocityTracker（uptimeMillis 毫秒 Long，無 Float 精度損失）——
         // 舊法以 System.nanoTime().toFloat() 算時間差，開機奈秒數（約 10^14）轉 Float 後精度只有 8~16ms，
         // dt 常為 0 被硬補 → 瞬時速度暴增 → fling 投影永遠夾到第一個或最後一個分頁。
         val velocityTracker = remember { VelocityTracker() }
         val dropletTop = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
         val dropletBottom = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
-        val sheenColor = Color.White.copy(alpha = 0.35f)
+        val sheenColor = remember { Color.White.copy(alpha = 0.35f) }
+        val rimColor = remember { Color.White.copy(alpha = 0.3f) }
+        val dropletColors = remember(dropletTop, dropletBottom) { listOf(dropletTop, dropletBottom) }
+        val sheenColors = remember(sheenColor) { listOf(sheenColor, Color.Transparent) }
+        val dropletPath = remember { Path() }
+        val rimStroke = remember(density) { Stroke(width = with(density) { 1.dp.toPx() }) }
+        val brushCache = remember(dropletColors, sheenColors) {
+            object {
+                var lastTop = Float.NaN
+                var lastBottom = Float.NaN
+                var lastHalfH = Float.NaN
+                var dropletBrush: Brush? = null
+                var sheenBrush: Brush? = null
+            }
+        }
         val animatedIndex = remember { Animatable(selectedTabIndex.toFloat()) }
+        val dropletSpring = remember { spring<Float>(dampingRatio = 0.8f, stiffness = 600f) }
         LaunchedEffect(selectedTabIndex) {
             if (animatedIndex.targetValue != selectedTabIndex.toFloat()) {
                 animatedIndex.animateTo(
                     selectedTabIndex.toFloat(),
-                    spring(
-                        dampingRatio = 0.78f,
-                        stiffness = Spring.StiffnessMediumLow,
-                    ),
+                    dropletSpring,
                 )
             }
         }
@@ -119,7 +131,7 @@ fun LiquidGlassTabBar(
         ) {
             if (tabCount <= 0) return@Canvas
             val tabWidthPx = barWidth.toPx() / tabCount
-            val index = animatedIndex.value
+            val index = if (isDragging) dragIndex else animatedIndex.value
             val velocity = if (isDragging) dragVelocityIndex else animatedIndex.velocity
             val centerX = tabWidthPx * (index + 0.5f)
             // S50：水滴貼合內容——標準高 56dp、縮小模式 44dp
@@ -134,38 +146,47 @@ fun LiquidGlassTabBar(
             val right = centerX + halfWidth
             val top = centerY - halfHeight
             val bottom = centerY + halfHeight
-            val path = Path().apply {
-                moveTo(left, centerY)
-                cubicTo(left, top, left + halfWidth * 0.6f, top, centerX, top)
-                cubicTo(right - halfWidth * 0.6f, top, right, top, right, centerY)
-                cubicTo(right, bottom, right - halfWidth * 0.6f, bottom, centerX, bottom)
-                cubicTo(left + halfWidth * 0.6f, bottom, left, bottom, left, centerY)
-                close()
-            }
-            val dropletTopC = dropletTop
-            val dropletBottomC = dropletBottom
-            drawPath(
-                path = path,
-                brush = Brush.verticalGradient(
-                    colors = listOf(dropletTopC, dropletBottomC),
+            dropletPath.rewind()
+            dropletPath.moveTo(left, centerY)
+            dropletPath.cubicTo(left, top, left + halfWidth * 0.6f, top, centerX, top)
+            dropletPath.cubicTo(right - halfWidth * 0.6f, top, right, top, right, centerY)
+            dropletPath.cubicTo(right, bottom, right - halfWidth * 0.6f, bottom, centerX, bottom)
+            dropletPath.cubicTo(left + halfWidth * 0.6f, bottom, left, bottom, left, centerY)
+            dropletPath.close()
+
+            if (brushCache.dropletBrush == null ||
+                brushCache.lastTop != top ||
+                brushCache.lastBottom != bottom ||
+                brushCache.lastHalfH != halfHeight
+            ) {
+                brushCache.lastTop = top
+                brushCache.lastBottom = bottom
+                brushCache.lastHalfH = halfHeight
+                brushCache.dropletBrush = Brush.verticalGradient(
+                    colors = dropletColors,
                     startY = top,
                     endY = bottom,
-                ),
+                )
+                brushCache.sheenBrush = Brush.verticalGradient(
+                    colors = sheenColors,
+                    startY = top,
+                    endY = top + halfHeight,
+                )
+            }
+            drawPath(
+                path = dropletPath,
+                brush = brushCache.dropletBrush!!,
             )
             // 玻璃高光：水滴上緣一道細微的白色漸層
             drawPath(
-                path = path,
-                brush = Brush.verticalGradient(
-                    colors = listOf(sheenColor, Color.Transparent),
-                    startY = top,
-                    endY = top + halfHeight,
-                ),
+                path = dropletPath,
+                brush = brushCache.sheenBrush!!,
             )
             // 玻璃外緣 rim：同一條 path 描一圈細白邊
             drawPath(
-                path = path,
-                color = Color.White.copy(alpha = 0.3f),
-                style = Stroke(width = 1.dp.toPx()),
+                path = dropletPath,
+                color = rimColor,
+                style = rimStroke,
             )
         }
         Row(
@@ -178,47 +199,51 @@ fun LiquidGlassTabBar(
                     if (tabCount <= 0) return@pointerInput
                     detectHorizontalDragGestures(
                         onDragStart = { _ ->
+                            dragIndex = animatedIndex.value
                             isDragging = true
                             dragVelocityIndex = 0f
                             velocityTracker.resetTracking()
                         },
                         onDragEnd = {
+                            val releaseIndex = dragIndex
                             isDragging = false
                             // fling：以放手速度（px/秒 → 每秒索引數）投影目標分頁；慢速直接吸附最近分頁
                             val indexVelocity = velocityTracker.calculateVelocity().x / tabWidthPx
-                            val projected = animatedIndex.value + indexVelocity * 0.25f
+                            val projected = releaseIndex + indexVelocity * 0.25f
                             val target = if (abs(indexVelocity) < 1f) {
-                                animatedIndex.value.roundToInt()
+                                releaseIndex.roundToInt()
                             } else {
                                 projected.roundToInt().coerceIn(0, tabCount - 1)
                             }
                             dragVelocityIndex = 0f
                             scope.launch {
+                                animatedIndex.snapTo(releaseIndex)
                                 animatedIndex.animateTo(
                                     target.toFloat(),
-                                    spring(
-                                        dampingRatio = 0.78f,
-                                        stiffness = Spring.StiffnessMediumLow,
-                                    ),
+                                    dropletSpring,
                                 )
                             }
                             if (target != currentSelectedTabIndex) currentOnSelect(target)
                         },
                         onDragCancel = {
+                            val cancelIndex = dragIndex
                             isDragging = false
                             dragVelocityIndex = 0f
+                            scope.launch {
+                                animatedIndex.snapTo(cancelIndex)
+                                animatedIndex.animateTo(
+                                    currentSelectedTabIndex.toFloat(),
+                                    dropletSpring,
+                                )
+                            }
                         },
                         onHorizontalDrag = { change, _ ->
                             change.consume()
                             velocityTracker.addPosition(change.uptimeMillis, change.position)
                             dragVelocityIndex = velocityTracker.calculateVelocity().x / tabWidthPx
                             val x = change.position.x
-                            val targetIndex = (x / tabWidthPx - 0.5f)
+                            dragIndex = (x / tabWidthPx - 0.5f)
                                 .coerceIn(0f, (tabCount - 1).toFloat())
-                            // Animatable.value 不可直接賦值（val）；snapTo 為 suspend——
-                            // 取消前一個跟手 snap 再 launch，保持水滴即時跟隨
-                            dragSnapJob?.cancel()
-                            dragSnapJob = scope.launch { animatedIndex.snapTo(targetIndex) }
                         },
                     )
                 }
