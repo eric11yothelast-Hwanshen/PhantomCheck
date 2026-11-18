@@ -118,6 +118,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.text.style.TextDecoration
@@ -345,6 +346,7 @@ private fun PhantomCheckApp(
     val assistantSnackbarHostState = remember { SnackbarHostState() }
 
     var selectedTab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(MainTab.MESSAGES) }
+    val saveableStateHolder = rememberSaveableStateHolder()
     var showSearchBar by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var searchRiskFilter by remember { mutableStateOf(SearchRiskFilter.ALL) }
@@ -1490,6 +1492,7 @@ private fun PhantomCheckApp(
                 }
             }
 
+            saveableStateHolder.SaveableStateProvider(selectedTab.name) {
                 when (selectedTab) {
                     MainTab.MESSAGES -> MessagesHomeTab(
                         todayCount = todayCount,
@@ -1639,6 +1642,7 @@ private fun PhantomCheckApp(
                         }
                     )
                 }
+            }
             }
         }
     }
