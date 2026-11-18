@@ -2,6 +2,32 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.8.0] - 2026-11-18
+
+### 新增
+- **訊息卡片堆疊效果與個人化開關（#212）**：
+  - `Components.kt` 新增 `StackedAppCard` 包裝層（維持 `ui/components/` 零改動），依未讀／訊息數量於主卡後方繪製 0／1／2 層 `surfaceVariant` 視覺堆疊（支援捲動微幅視差、點擊 140ms 收合回饋、靜音半透明與緊湊模式層距減半）。
+  - 設定頁「個人化」新增「訊息卡片堆疊效果」`FluidSwitch` 開關（`card_stack_effect_enabled`，預設開啟）並同步寫入 `SettingsCatalog`。
+- **AI 助手側邊歷史抽屜與分頁切換行為設定（#215, #216）**：
+  - 拆除舊 `ModalBottomSheet`，改為於 `ChatScreen` 內容區自製 `AnchoredDraggableState` 左側抽屜（支援右滑開啟、左滑收回、`BackHandler` 優先關閉、40% 遮罩與 `LazyColumn` 流暢捲動）。
+  - 設定頁「AI 助手與分析」新增「切到 AI 助手時接續上次對話」開關（`ai_chat_tab_behavior`，預設開啟新對話，可切換為自動接續最近會話）並同步寫入 `SettingsCatalog`。
+- **記事規則懸浮視窗與關鍵字 AI 語意判斷（#217）**：
+  - 移除 `NotesTab` 內嵌規則區塊，改於右上角配置 `Tune` 按鈕（48dp＋規則數角標）展開懸浮玻璃規則面板（保留手動新增、自然語言解析確認卡、啟停與刪除）。
+  - `AiClient.buildSystemPrompt` 升級為語意同類比對指示（`riskCache` key 由 `memoV2` 升至 `memoV3`），`MemoRuleEngine` 保留字面 `contains` 作為未啟用 AI／離線降級方案。
+- **統計頁排行榜、統計設定分類、卡片自訂與 4 張新圖表（#218）**：
+  - 新增「今日 App 訊息量排行榜 Top 5」卡片（`todayCountsByApp`＋相對量橫條），並於設定頁「個人化」之後新增獨立「統計」分類卡片（12 張統計卡可個別勾選顯示／隱藏，`PhantomPrefs` `StringSet` 持久化並全數接入 `SettingsCatalog`）。
+  - 新增「7 日風險趨勢折線」、「未讀／已讀比例環形」、「各 App 佔比橫條 Top 8」與「待辦完成率環形」4 張純 Compose `Canvas` 圖表（Room 維持 v14 零 migration，僅新增唯讀 `@Query`）。
+- **記事桌面小工具（#219）**：
+  - 新增 `NotesWidgetProvider`（2x2，支援縮放至 4x2、`goAsync()`、`PendingIntent.FLAG_IMMUTABLE`、`updateAllIfChanged` 差異更新），顯示總筆數與最近 5 則記事（置頂優先、36 字截斷＋相對時間），點擊直達 App 記事分頁；全庫 `noteDao()` 新增／編輯／刪除／釘選與自動備忘錄寫入點即時同步刷新。
+
+### 變更與修正
+- **我的最愛橫列角標與未讀排序修復（#213）**：
+  - `MessageDao` 新增 `unreadCountsByApp()`（排除 `isOwn`），`AppGroupUi` 與我的最愛角標改用真實未讀數（0 隱藏、>99 顯示 `99+`），同步修正 `HomeSortOrder.UNREAD` 排序基準。
+- **AI 助手輸入列鍵盤遮擋修復（#214）**：
+  - 於 `MainTab.ASSISTANT` 內容層單一位置補上 `consumeWindowInsets(padding).imePadding()`（避免 double lift），並於鍵盤彈出且清單貼底時平滑捲動至最新訊息。
+- **發佈準備與依賴版本稽核（#220）**：
+  - 版號更新：`versionCode` 26、`versionName` `"2.8.0"`；完成全依賴穩定版稽核並同步 `CHANGELOG.md` 與 `README.md`。
+
 ## [2.7.0] - 2026-11-18
 
 ### 新增
