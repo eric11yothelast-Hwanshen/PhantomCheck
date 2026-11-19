@@ -2497,7 +2497,8 @@ private fun MessagesHomeTab(
                         CenterFocusCardStack(
                             items = appGroups,
                             key = { it.packageName },
-                            modifier = Modifier.fillParentMaxSize()
+                            modifier = Modifier.fillParentMaxSize(),
+                            edgeGap = 6.dp
                         ) { app ->
                             val isMuted = app.packageName in mutedPackages
                             val isFirstApp = app.packageName == appGroups.firstOrNull()?.packageName
@@ -3914,7 +3915,8 @@ private fun NotesTab(
                             CenterFocusCardStack(
                                 items = notes,
                                 key = { it.id },
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize(),
+                                edgeGap = 6.dp
                             ) { note ->
                                 NoteCardItem(
                                     note = note,

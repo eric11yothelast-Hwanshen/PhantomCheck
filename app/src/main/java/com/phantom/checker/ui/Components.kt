@@ -403,7 +403,7 @@ fun <T> CenterFocusCardStack(
     exposure: Dp = 40.dp,
     scaleStep: Float = 0.04f,
     edgeFade: Dp = 40.dp,
-    edgeGap: Dp = 4.dp,
+    edgeGap: Dp = 6.dp,
     cardShape: Shape = RoundedCornerShape(20.dp),
     focusShadowBoost: Dp = 6.dp,
     cardContent: @Composable (T) -> Unit
@@ -440,6 +440,13 @@ fun <T> CenterFocusCardStack(
         val leadingPaddingPx = with(density) { leadingPaddingDp.toPx() }
         val trailingPaddingDp = (viewportHeightDp - exposure - leadingPaddingDp).coerceAtLeast(0.dp)
         val maxIndexFloat = (items.size - 1).coerceAtLeast(0).toFloat()
+        val maxPitchPx = (0.98f * cardHeightPx).coerceAtLeast(exposurePx)
+        val isShortList = if (maxIndexFloat > 0f) {
+            val neededPitchPx = (viewportHeightPx - 2f * edgeGapPx - cardHeightPx) / maxIndexFloat
+            neededPitchPx > maxPitchPx
+        } else {
+            false
+        }
 
         val decaySpec = rememberSplineBasedDecay<Float>()
         val flingBehavior = remember(listState, decaySpec) {
@@ -481,7 +488,7 @@ fun <T> CenterFocusCardStack(
                             val focusFloat = (firstIdx.toFloat() + firstOff / exposurePx)
                                 .coerceIn(0f, maxIndexFloat)
 
-                            val anchorPx = if (maxIndexFloat <= 0f) {
+                            val anchorPx = if (maxIndexFloat <= 0f || isShortList) {
                                 topAnchorPx
                             } else {
                                 val zone = minOf(1.5f, maxIndexFloat / 2f).coerceAtLeast(0.0001f)
@@ -490,6 +497,22 @@ fun <T> CenterFocusCardStack(
                                 val tailProgress = (distFromTail / zone).coerceIn(0f, 1f)
                                 val pTail = 1f - tailProgress
                                 lerp(lerp(topAnchorPx, centerAnchorPx, headProgress), bottomAnchorPx, pTail)
+                            }
+
+                            val pAbove = if (maxIndexFloat <= 0f || isShortList) {
+                                exposurePx
+                            } else {
+                                maxOf(exposurePx, anchorPx / maxOf(focusFloat, 0.0001f))
+                                    .coerceAtMost(maxPitchPx)
+                            }
+                            val pBelow = if (maxIndexFloat <= 0f || isShortList) {
+                                exposurePx
+                            } else {
+                                val belowSpan = viewportHeightPx - edgeGapPx - anchorPx - cardHeightPx
+                                maxOf(
+                                    exposurePx,
+                                    belowSpan / maxOf(maxIndexFloat - focusFloat, 0.0001f)
+                                ).coerceAtMost(maxPitchPx)
                             }
 
                             val u = index.toFloat() - focusFloat
@@ -507,7 +530,8 @@ fun <T> CenterFocusCardStack(
                             shape = cardShape
                             shadowElevation = focusShadowBoostPx * eased
 
-                            val visualTopPx = anchorPx + u * exposurePx
+                            val effectivePitchPx = if (u < 0f) pAbove else pBelow
+                            val visualTopPx = anchorPx + u * effectivePitchPx
                             val measuredOffset = listState.layoutInfo.visibleItemsInfo
                                 .firstOrNull { it.index == index }
                                 ?.offset
