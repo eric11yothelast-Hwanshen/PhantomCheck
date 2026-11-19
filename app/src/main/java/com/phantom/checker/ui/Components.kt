@@ -119,7 +119,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindow
+import androidx.compose.ui.window.DialogWindowProvider
 import com.phantom.checker.ui.components.GlassCard
 import com.phantom.checker.ui.components.glassSource
 import com.phantom.checker.ui.components.glassSurface
@@ -367,7 +367,7 @@ fun PhantomGlassCard(
 /**
  * #243 中央聚焦垂直滾輪堆疊（Vertical Center-Focused Card Stack）。
  *
- * 以 VerticalPager + PageSize.FillParentSize 實作「可滾動的分頁容器」：
+ * 以 VerticalPager + PageSize.Fill 實作「可滾動的分頁容器」：
  * - 每張卡片佔滿一個分頁高度，焦點卡片永遠位於容器垂直正中央，
  *   保持 scale = 1.0f、alpha = 1.0f 且 zIndex 最高，完整顯示內容。
  * - 上下兩側卡片依距離 q 對稱錯開（peekPx = 卡片高度 * peekRatio），
@@ -375,7 +375,7 @@ fun PhantomGlassCard(
  *   形成上下對稱的立體卡片輪盤。
  * - 距離超過 maxVisibleDistance 的卡片 alpha = 0f 隱藏，不會擠成一團。
  * - 鬆手自動吸附回正中央（Pager 原生 snap 行為），第一張與最後一張
- *   卡片同樣可捲動至正中央（FillParentSize 天然置中，無需 contentPadding）。
+ *   卡片同樣可捲動至正中央（PageSize.Fill 天然置中，無需 contentPadding）。
  * - 滾動高度由分頁容器提供（嚴禁寫死在靜態 Box 中）。
  */
 @Composable
@@ -392,7 +392,7 @@ fun <T> CenterFocusCardStack(
     VerticalPager(
         state = pagerState,
         modifier = modifier,
-        pageSize = PageSize.FillParentSize,
+        pageSize = PageSize.Fill,
         pageSpacing = 0.dp,
         beyondViewportPageCount = 2
     ) { page ->
@@ -456,7 +456,7 @@ fun PhantomDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         val view = LocalView.current
-        val window = (view.parent as? DialogWindow)?.window
+        val window = (view.parent as? DialogWindowProvider)?.window
         SideEffect {
             window?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
         }
