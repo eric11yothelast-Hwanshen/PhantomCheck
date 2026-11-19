@@ -260,3 +260,9 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 - 協作規則與角色分工：[AGENTS.md](AGENTS.md)
 - 貢獻指南與 PR 流程：[CONTRIBUTING.md](CONTRIBUTING.md)
 - 本地開發環境設定：[docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md)
+
+---
+
+## 授權
+
+本專案採用 [GPL-3.0](LICENSE) 授權：任何人可自由使用、修改與散布，惟衍生作品必須以相同條款開源並保留本聲明。
