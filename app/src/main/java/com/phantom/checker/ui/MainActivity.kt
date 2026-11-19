@@ -2996,7 +2996,10 @@ private fun NotesTodoRow(
             Text(
                 text = "${statusBadge}到期：${PhantomPrefs.formatMessageTime(ctx, todo.dueAt, includeDate = true)}$repeatTag",
                 style = MaterialTheme.typography.labelSmall,
-                color = if (isOverdue) overdueColor else MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (isOverdue) overdueColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
             if (todo.isDone && todo.completedAt != null) {
                 Text(

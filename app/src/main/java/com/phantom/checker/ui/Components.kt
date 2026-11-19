@@ -373,16 +373,20 @@ fun PhantomGlassCard(
 }
 
 /**
- * #270 中央聚焦垂直滾輪堆疊（Vertical Center-Focused Card Stack）：
+ * #270 / #276 中央聚焦垂直滾輪堆疊（Vertical Center-Focused Card Stack）：
  * - 以 LazyColumn + LazyListState(cacheWindow = LazyLayoutCacheWindow(behindFraction = 1f, aheadFraction = 0.5f))
  *   + rememberSnapFlingBehavior(snapPosition = SnapPosition.Start) 實作連續慣性滑動與單調統一吸附（s_i = i * exposure）。
  * - 使用 remember { LazyListState(...) } 不保存捲動位置，每次進頁自第 0 張開始。
+ * - 裁切層唯一性（A1）：唯一 clipToBounds 只允許在最外層 BoxWithConstraints，內部焦點容器與單卡插槽不得再疊加 clipToBounds。
+ * - 上方卡片組合與繪製（A2）：透過對稱的 top/bottom contentPadding（leadingPaddingDp ≥ 3 * exposure 且與 trailingPaddingDp 互補，
+ *   維持總捲動區間 [0, (n-1)*exposure] 不變），確保焦點上方 2~3 張卡片位於 LazyColumn visibleItemsInfo 內並穩定繪製。
  * - native item 高度 = exposure（40.dp），內部卡片以 wrapContentHeight(unbounded = true) + requiredHeight(effectiveCardHeight)
  *   （92.dp；fontScale ≥ 1.3f 時 104.dp）繪製完整高度。
- * - 頂／中／底三態錨點以 pHead = smoothstep(focusFloat / 1.5f) 與 pTail = 1f - smoothstep(max(0f, (n-1) - focusFloat) / 1.5f)
- *   經 lerp(lerp(topAnchorPx, centerAnchorPx, pHead), bottomAnchorPx, pTail) 連續內插，嚴禁布林跳變。
+ * - 頂／中／底三態錨點（B2/C1）：zone = min(1.5f, maxIndexFloat / 2f)，以線性 lerp 過渡：
+ *   headProgress = (focusFloat / zone).coerceIn(0f, 1f)，tailProgress = ((maxIndexFloat - focusFloat) / zone).coerceIn(0f, 1f)，
+ *   anchor = lerp(lerp(topAnchorPx, centerAnchorPx, headProgress), bottomAnchorPx, 1f - tailProgress)，嚴禁布林跳變或雙區重疊。
  * - scale = (1f - scaleStep * |u|).coerceAtLeast(0.82f)，pivot = TransformOrigin(0.5f, 0f) 頂緣對齊消除深層累積誤差。
- * - 移除固定可見層數限制，viewport 內 alpha 一律 1f，僅對超出 viewport 邊界部分以 edgeFade 像素距離線性淡出。
+ * - viewport 內 alpha 一律 1f，僅對真正超出容器上下邊界的部分以 edgeFade 像素距離線性淡出。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -420,7 +424,12 @@ fun <T> CenterFocusCardStack(
         val topAnchorPx = gapPx
         val centerAnchorPx = ((viewportHeightPx - cardHeightPx) / 2f).coerceAtLeast(topAnchorPx)
         val bottomAnchorPx = (viewportHeightPx - cardHeightPx - gapPx).coerceAtLeast(topAnchorPx)
-        val trailingPaddingDp = (viewportHeightDp - exposure).coerceAtLeast(0.dp)
+        val leadingPaddingDp = maxOf(
+            (viewportHeightDp - effectiveCardHeight) / 2f,
+            exposure * 3f
+        ).coerceAtMost((viewportHeightDp - exposure).coerceAtLeast(0.dp))
+        val leadingPaddingPx = with(density) { leadingPaddingDp.toPx() }
+        val trailingPaddingDp = (viewportHeightDp - exposure - leadingPaddingDp).coerceAtLeast(0.dp)
         val maxIndexFloat = (items.size - 1).coerceAtLeast(0).toFloat()
 
         val flingBehavior = rememberSnapFlingBehavior(
@@ -432,7 +441,7 @@ fun <T> CenterFocusCardStack(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             flingBehavior = flingBehavior,
-            contentPadding = PaddingValues(bottom = trailingPaddingDp),
+            contentPadding = PaddingValues(top = leadingPaddingDp, bottom = trailingPaddingDp),
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             itemsIndexed(items, key = { _, item -> key(item) }) { index, item ->
@@ -459,12 +468,12 @@ fun <T> CenterFocusCardStack(
                             val anchorPx = if (maxIndexFloat <= 0f) {
                                 topAnchorPx
                             } else {
-                                val tHead = (focusFloat / 1.5f).coerceIn(0f, 1f)
-                                val pHead = tHead * tHead * (3f - 2f * tHead)
+                                val zone = minOf(1.5f, maxIndexFloat / 2f).coerceAtLeast(0.0001f)
+                                val headProgress = (focusFloat / zone).coerceIn(0f, 1f)
                                 val distFromTail = (maxIndexFloat - focusFloat).coerceAtLeast(0f)
-                                val tTail = (distFromTail / 1.5f).coerceIn(0f, 1f)
-                                val pTail = 1f - (tTail * tTail * (3f - 2f * tTail))
-                                lerp(lerp(topAnchorPx, centerAnchorPx, pHead), bottomAnchorPx, pTail)
+                                val tailProgress = (distFromTail / zone).coerceIn(0f, 1f)
+                                val pTail = 1f - tailProgress
+                                lerp(lerp(topAnchorPx, centerAnchorPx, headProgress), bottomAnchorPx, pTail)
                             }
 
                             val u = index.toFloat() - focusFloat
@@ -481,7 +490,7 @@ fun <T> CenterFocusCardStack(
                                 ?.toFloat()
                             val nativeOffsetPx = measuredOffset
                                 ?: ((index - firstIdx).toFloat() * exposurePx - firstOff)
-                            translationY = visualTopPx - nativeOffsetPx
+                            translationY = visualTopPx - (leadingPaddingPx + nativeOffsetPx)
 
                             val visualHeightPx = cardHeightPx * s
                             val visualBottomPx = visualTopPx + visualHeightPx
