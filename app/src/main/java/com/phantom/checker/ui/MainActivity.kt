@@ -2441,6 +2441,7 @@ private fun MessagesHomeTab(
                                 glassState = glassState,
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .height(112.dp)
                                     .alpha(if (isMuted) 0.5f else 1f)
                                     .pressableScale()
                                     .combinedClickable(

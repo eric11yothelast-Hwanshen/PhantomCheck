@@ -88,6 +88,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -367,69 +368,97 @@ fun PhantomGlassCard(
 /**
  * #243 中央聚焦垂直滾輪堆疊（Vertical Center-Focused Card Stack）。
  *
- * 以 VerticalPager + PageSize.Fill 實作「可滾動的分頁容器」：
- * - 每張卡片佔滿一個分頁高度，焦點卡片永遠位於容器垂直正中央，
- *   保持 scale = 1.0f、alpha = 1.0f 且 zIndex 最高，完整顯示內容。
- * - 上下兩側卡片依距離 q 對稱錯開（peekPx = 卡片高度 * peekRatio），
- *   並逐步縮小（|q|=1 → 0.92f、|q|=2 → 0.84f），壓在焦點卡片後方，
- *   形成上下對稱的立體卡片輪盤。
- * - 距離超過 maxVisibleDistance 的卡片 alpha = 0f 隱藏，不會擠成一團。
- * - 鬆手自動吸附回正中央（Pager 原生 snap 行為），第一張與最後一張
- *   卡片同樣可捲動至正中央（PageSize.Fill 天然置中，無需 contentPadding）。
- * - 滾動高度由分頁容器提供（嚴禁寫死在靜態 Box 中）。
+ * #249 重構版「中央聚焦垂直滾輪堆疊」：
+ * - 固定卡片高度（預設 112.dp），搭配 PageSize.Fixed(cardHeight + exposure)。
+ * - 頂部對齊模式（scroll = 0）：第 0 張貼齊容器頂部 topGap = 10.dp，zIndex 最高，
+ *   下方每層等距露出 exposure = 24.dp、縮放遞減 scaleStep = 0.06f，n >= maxVisibleLayers 隱藏。
+ * - 中央置頂模式（|scrollOffset| 過半後完成）：焦點卡置於容器垂直正中，上下對稱露出 24.dp。
+ * - 兩模式以滾動進度 f ∈ [0, 1] 連續內插，所有位移與縮放僅經 graphicsLayer，不觸發重組。
  */
 @Composable
 fun <T> CenterFocusCardStack(
     items: List<T>,
     key: (T) -> Any,
     modifier: Modifier = Modifier,
-    peekRatio: Float = 0.78f,
-    maxVisibleDistance: Float = 2f,
+    cardHeight: Dp = 112.dp,
+    exposure: Dp = 24.dp,
+    scaleStep: Float = 0.06f,
+    topGap: Dp = 10.dp,
+    maxVisibleLayers: Int = 4,
+    @Suppress("UNUSED_PARAMETER") peekRatio: Float = 0.78f,
+    @Suppress("UNUSED_PARAMETER") maxVisibleDistance: Float = 2f,
     cardContent: @Composable (T) -> Unit
 ) {
     if (items.isEmpty()) return
     val pagerState = rememberPagerState(initialPage = 0) { items.size }
-    VerticalPager(
-        state = pagerState,
-        modifier = modifier,
-        pageSize = PageSize.Fill,
-        pageSpacing = 0.dp,
-        beyondViewportPageCount = 2
-    ) { page ->
-        var cardHeightPx by remember(page) { mutableStateOf(0f) }
-        // zIndex 必須隨焦點動態變化：距離中央越近 zIndex 越高，確保焦點卡片在最上層
-        val pageZ by remember(page) {
-            derivedStateOf {
-                val q = (page - pagerState.currentPage - pagerState.currentPageOffsetFraction).let { -it }
-                1000f - kotlin.math.abs(q)
-            }
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .zIndex(pageZ)
-                .graphicsLayer {
-                    // q > 0：位於焦點上方的卡片；q < 0：位於焦點下方
-                    val q = (page - pagerState.currentPage - pagerState.currentPageOffsetFraction).let { -it }
-                    val distance = kotlin.math.abs(q)
-                    val viewportH = size.height.toFloat()
-                    val peekPx = if (cardHeightPx > 0f) cardHeightPx * peekRatio else viewportH * 0.24f
-                    // 對稱上下錯開：距中央 peek * |q|（利用分頁容器本身高度換算回聚焦點附近）
-                    translationY = q * (viewportH - peekPx)
-                    // 逐步縮小：0.92f / 0.84f，超過 2 張維持最小比例
-                    val shrink = (0.08f * distance.coerceAtMost(maxVisibleDistance))
-                    scaleX = 1f - shrink
-                    scaleY = 1f - shrink
-                    // 距離超過 2 張隱藏，避免列表上下兩端擠成一團
-                    alpha = (1f - (distance - maxVisibleDistance).coerceAtLeast(0f)).coerceIn(0f, 1f)
+    val density = LocalDensity.current
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp
+    val effectiveMaxLayers = if (screenHeightDp < 640) minOf(maxVisibleLayers, 3) else maxVisibleLayers
+    val pageSizeDp = cardHeight + exposure
+
+    BoxWithConstraints(modifier = modifier) {
+        val viewportHeightDp = maxHeight
+        val viewportHeightPx = with(density) { viewportHeightDp.toPx() }
+        val cardHeightPx = with(density) { cardHeight.toPx() }
+        val exposurePx = with(density) { exposure.toPx() }
+        val pageHeightPx = cardHeightPx + exposurePx
+        val topGapPx = with(density) { topGap.toPx() }
+        val centerTopPx = ((viewportHeightPx - cardHeightPx) / 2f).coerceAtLeast(topGapPx)
+        val bottomPaddingDp = (viewportHeightDp - pageSizeDp).coerceAtLeast(0.dp)
+
+        VerticalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            pageSize = PageSize.Fixed(pageSizeDp),
+            pageSpacing = 0.dp,
+            contentPadding = PaddingValues(bottom = bottomPaddingDp),
+            beyondViewportPageCount = 2,
+            key = { page -> items.getOrNull(page)?.let(key) ?: page }
+        ) { page ->
+            val pageZ by remember(page) {
+                derivedStateOf {
+                    val d = page - (pagerState.currentPage + pagerState.currentPageOffsetFraction)
+                    1000f - kotlin.math.abs(d)
                 }
-        ) {
+            }
             Box(
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .onGloballyPositioned { coords -> cardHeightPx = coords.size.height.toFloat() }
+                    .fillMaxWidth()
+                    .height(pageSizeDp)
+                    .zIndex(pageZ)
+                    .graphicsLayer {
+                        val scrollPos = pagerState.currentPage + pagerState.currentPageOffsetFraction
+                        val d = page - scrollPos
+                        val absD = kotlin.math.abs(d)
+
+                        val t = (scrollPos / 0.5f).coerceIn(0f, 1f)
+                        val f = t * t * (3f - 2f * t)
+
+                        val clampedD = absD.coerceAtMost(effectiveMaxLayers.toFloat())
+                        val s = (1f - scaleStep * clampedD).coerceAtLeast(0.5f)
+                        scaleX = s
+                        scaleY = s
+
+                        val anchorTop = topGapPx + (centerTopPx - topGapPx) * f
+                        val targetVisualTop = if (d >= 0f) {
+                            anchorTop + cardHeightPx + d * exposurePx - cardHeightPx * s
+                        } else {
+                            anchorTop + d * exposurePx
+                        }
+                        val nativeTop = d * pageHeightPx
+                        translationY = targetVisualTop - cardHeightPx * (1f - s) / 2f - nativeTop
+
+                        alpha = (effectiveMaxLayers.toFloat() - absD).coerceIn(0f, 1f)
+                    }
             ) {
-                cardContent(items[page])
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(cardHeight)
+                        .align(Alignment.TopCenter)
+                ) {
+                    cardContent(items[page])
+                }
             }
         }
     }
