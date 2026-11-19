@@ -2428,7 +2428,7 @@ private fun MessagesHomeTab(
                     }
                 }
                 else -> if (layoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER) {
-                    // #243 中央聚焦垂直滾輪堆疊：VerticalPager 可滾動分頁容器，焦點卡片恆在正中央
+                    // #263 中央聚焦垂直滾輪堆疊 v3：LazyColumn 連續慣性滾輪，頂／中／底連續插值、44dp 露出帶
                     item(key = "home_center_stack") {
                         CenterFocusCardStack(
                             items = appGroups,
@@ -2442,8 +2442,7 @@ private fun MessagesHomeTab(
                             PhantomGlassCard(
                                 glassState = glassState,
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(112.dp)
+                                    .fillMaxSize()
                                     .alpha(if (isMuted) 0.5f else 1f)
                                     .pressableScale()
                                     .combinedClickable(
@@ -2451,12 +2450,12 @@ private fun MessagesHomeTab(
                                         onLongClick = { onLongPressApp(app) }
                                     ),
                                 cornerRadius = 20.dp,
-                                contentPadding = if (isCompactCard) 8.dp else 12.dp,
+                                contentPadding = if (isCompactCard) 8.dp else 10.dp,
                                 overlapOpaqueBoost = true
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.Top
                                 ) {
                                     Box {
                                         AppIconImage(
@@ -3030,12 +3029,14 @@ private fun NoteCardItem(
             runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull()
         }
     }
+    val density = LocalDensity.current
+    val stackCardHeight = if (density.fontScale >= 1.3f) 128.dp else 112.dp
     val isAuto = note.source == NoteEntity.SOURCE_AUTO
     PhantomGlassCard(
         glassState = glassState,
         modifier = Modifier
             .fillMaxWidth()
-            .then(if (overlapOpaque) Modifier.height(112.dp) else Modifier)
+            .then(if (overlapOpaque) Modifier.height(stackCardHeight) else Modifier)
             .then(
                 if (isAuto) {
                     Modifier.combinedClickable(
@@ -3051,7 +3052,7 @@ private fun NoteCardItem(
                 }
             ),
         cornerRadius = 18.dp,
-        contentPadding = if (overlapOpaque) 12.dp else 14.dp,
+        contentPadding = if (overlapOpaque) 10.dp else 14.dp,
         overlapOpaqueBoost = overlapOpaque
     ) {
         Row(
@@ -3689,7 +3690,7 @@ private fun NotesTab(
                             }
                         }
                         PhantomPrefs.NoteCardLayoutMode.CENTER -> {
-                            // 中央堆疊：共用新版 CenterFocusCardStack（初始貼頂、滑動置中、24dp 等距）
+                            // #263 中央堆疊 v3：共用 CenterFocusCardStack（零留白、44dp 露出帶、單行預覽）
                             CenterFocusCardStack(
                                 items = notes,
                                 key = { it.id },
@@ -3698,7 +3699,7 @@ private fun NotesTab(
                                 NoteCardItem(
                                     note = note,
                                     glassState = glassState,
-                                    contentMaxLines = 2,
+                                    contentMaxLines = 1,
                                     overlapOpaque = true,
                                     onOpenMessageDetail = onOpenMessageDetail,
                                     onEdit = onEditNote,

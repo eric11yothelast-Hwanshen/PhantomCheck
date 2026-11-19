@@ -39,7 +39,12 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.gestures.snapping.SnapPosition
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -74,6 +79,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import com.phantom.checker.util.BackgroundImageHelper
@@ -81,6 +87,7 @@ import com.phantom.checker.util.BackgroundLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -104,6 +111,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.lerp
 import com.phantom.checker.data.AppGroupRow
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.data.MessageTagCrossRef
@@ -112,9 +120,6 @@ import android.graphics.drawable.ColorDrawable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.zIndex
-import androidx.compose.foundation.pager.PageSize
-import androidx.compose.foundation.pager.VerticalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
@@ -366,14 +371,13 @@ fun PhantomGlassCard(
 }
 
 /**
- * #243 中央聚焦垂直滾輪堆疊（Vertical Center-Focused Card Stack）。
- *
- * #249 重構版「中央聚焦垂直滾輪堆疊」：
- * - 固定卡片高度（預設 112.dp），搭配 PageSize.Fixed(cardHeight + exposure)。
- * - 頂部對齊模式（scroll = 0）：第 0 張貼齊容器頂部 topGap = 10.dp，zIndex 最高，
- *   下方每層等距露出 exposure = 24.dp、縮放遞減 scaleStep = 0.06f，n >= maxVisibleLayers 隱藏。
- * - 中央置頂模式（|scrollOffset| 過半後完成）：焦點卡置於容器垂直正中，上下對稱露出 24.dp。
- * - 兩模式以滾動進度 f ∈ [0, 1] 連續內插，所有位移與縮放僅經 graphicsLayer，不觸發重組。
+ * #263 中央聚焦垂直滾輪堆疊 v3（Vertical Center-Focused Card Stack）：
+ * - 以 LazyColumn + rememberLazyListState() + rememberSnapFlingBehavior 實作連續慣性滑動與平滑吸附。
+ * - native item 高度 = exposure（44.dp），內部卡片以完整 effectiveCardHeight（112.dp；fontScale ≥ 1.3f 時 128.dp）繪製。
+ * - 頂／中／底三態錨點以 pHead = smoothstep(focusFloat / 1.5f) 與 pTail = 1f - smoothstep(max(0f, (n-1) - focusFloat) / 1.5f)
+ *   經 lerp(lerp(topAnchorPx, centerAnchorPx, pHead), bottomAnchorPx, pTail) 連續內插，嚴禁布林跳變。
+ * - scale = (1f - scaleStep * |u|).coerceAtLeast(0.75f)，pivot = TransformOrigin(0.5f, 0f) 頂緣對齊消除深層累積誤差。
+ * - 移除固定可見層數限制，viewport 內 alpha 一律 1f，僅對超出 viewport 邊界部分以 edgeFade 像素距離線性淡出。
  */
 @Composable
 fun <T> CenterFocusCardStack(
@@ -381,83 +385,112 @@ fun <T> CenterFocusCardStack(
     key: (T) -> Any,
     modifier: Modifier = Modifier,
     cardHeight: Dp = 112.dp,
-    exposure: Dp = 24.dp,
-    scaleStep: Float = 0.06f,
-    topGap: Dp = 10.dp,
-    maxVisibleLayers: Int = 4,
-    @Suppress("UNUSED_PARAMETER") peekRatio: Float = 0.78f,
-    @Suppress("UNUSED_PARAMETER") maxVisibleDistance: Float = 2f,
+    exposure: Dp = 44.dp,
+    scaleStep: Float = 0.035f,
+    edgeFade: Dp = 44.dp,
     cardContent: @Composable (T) -> Unit
 ) {
     if (items.isEmpty()) return
-    val pagerState = rememberPagerState(initialPage = 0) { items.size }
+    val listState = rememberLazyListState()
+    val flingBehavior = rememberSnapFlingBehavior(
+        lazyListState = listState,
+        snapPosition = SnapPosition.Start
+    )
     val density = LocalDensity.current
-    val screenHeightDp = LocalConfiguration.current.screenHeightDp
-    val effectiveMaxLayers = if (screenHeightDp < 640) minOf(maxVisibleLayers, 3) else maxVisibleLayers
-    val pageSizeDp = cardHeight + exposure
+    val effectiveCardHeight = if (density.fontScale >= 1.3f && cardHeight < 128.dp) 128.dp else cardHeight
+    val topOrigin = remember { TransformOrigin(0.5f, 0f) }
 
-    BoxWithConstraints(modifier = modifier) {
+    BoxWithConstraints(modifier = modifier.clipToBounds()) {
         val viewportHeightDp = maxHeight
         val viewportHeightPx = with(density) { viewportHeightDp.toPx() }
-        val cardHeightPx = with(density) { cardHeight.toPx() }
-        val exposurePx = with(density) { exposure.toPx() }
-        val pageHeightPx = cardHeightPx + exposurePx
-        val topGapPx = with(density) { topGap.toPx() }
-        val centerTopPx = ((viewportHeightPx - cardHeightPx) / 2f).coerceAtLeast(topGapPx)
-        val bottomPaddingDp = (viewportHeightDp - pageSizeDp).coerceAtLeast(0.dp)
+        val cardHeightPx = with(density) { effectiveCardHeight.toPx() }
+        val exposurePx = with(density) { exposure.toPx() }.coerceAtLeast(1f)
+        val fadeWindowPx = with(density) { edgeFade.toPx() }.coerceAtLeast(1f)
+        val gapPx = with(density) { 8.dp.toPx() }
 
-        VerticalPager(
-            state = pagerState,
+        val topAnchorPx = gapPx
+        val centerAnchorPx = ((viewportHeightPx - cardHeightPx) / 2f).coerceAtLeast(topAnchorPx)
+        val bottomAnchorPx = (viewportHeightPx - cardHeightPx - gapPx).coerceAtLeast(topAnchorPx)
+        val trailingPaddingDp = (viewportHeightDp - exposure).coerceAtLeast(0.dp)
+        val itemCount = items.size
+        val maxIndexFloat = (itemCount - 1).coerceAtLeast(0).toFloat()
+
+        LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
-            pageSize = PageSize.Fixed(pageSizeDp),
-            pageSpacing = 0.dp,
-            contentPadding = PaddingValues(bottom = bottomPaddingDp),
-            beyondViewportPageCount = 2,
-            key = { page -> items.getOrNull(page)?.let(key) ?: page }
-        ) { page ->
-            val pageZ by remember(page) {
-                derivedStateOf {
-                    val d = page - (pagerState.currentPage + pagerState.currentPageOffsetFraction)
-                    1000f - kotlin.math.abs(d)
-                }
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(pageSizeDp)
-                    .zIndex(pageZ)
-                    .graphicsLayer {
-                        val scrollPos = pagerState.currentPage + pagerState.currentPageOffsetFraction
-                        val d = page - scrollPos
-                        val absD = kotlin.math.abs(d)
-
-                        val t = (scrollPos / 0.5f).coerceIn(0f, 1f)
-                        val f = t * t * (3f - 2f * t)
-
-                        val clampedD = absD.coerceAtMost(effectiveMaxLayers.toFloat())
-                        val s = (1f - scaleStep * clampedD).coerceAtLeast(0.5f)
-                        scaleX = s
-                        scaleY = s
-
-                        val anchorTop = topGapPx + (centerTopPx - topGapPx) * f
-                        val targetVisualTop = if (d >= 0f) {
-                            anchorTop + cardHeightPx + d * exposurePx - cardHeightPx * s
-                        } else {
-                            anchorTop + d * exposurePx
-                        }
-                        val nativeTop = d * pageHeightPx
-                        translationY = targetVisualTop - cardHeightPx * (1f - s) / 2f - nativeTop
-
-                        alpha = (effectiveMaxLayers.toFloat() - absD).coerceIn(0f, 1f)
+            flingBehavior = flingBehavior,
+            contentPadding = PaddingValues(bottom = trailingPaddingDp),
+            verticalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            itemsIndexed(items, key = { _, item -> key(item) }) { index, item ->
+                val itemZ by remember(index, listState, exposurePx, maxIndexFloat) {
+                    derivedStateOf {
+                        val focusFloat = (
+                            listState.firstVisibleItemIndex.toFloat() +
+                                (listState.firstVisibleItemScrollOffset.toFloat() / exposurePx)
+                            ).coerceIn(0f, maxIndexFloat)
+                        1000f - kotlin.math.abs(index.toFloat() - focusFloat)
                     }
-            ) {
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(cardHeight)
-                        .align(Alignment.TopCenter)
+                        .height(exposure)
+                        .zIndex(itemZ)
+                        .graphicsLayer {
+                            val firstIdx = listState.firstVisibleItemIndex
+                            val firstOff = listState.firstVisibleItemScrollOffset.toFloat()
+                            val focusFloat = (firstIdx.toFloat() + (firstOff / exposurePx))
+                                .coerceIn(0f, maxIndexFloat)
+
+                            val tHead = (focusFloat / 1.5f).coerceIn(0f, 1f)
+                            val pHead = tHead * tHead * (3f - 2f * tHead)
+
+                            val anchorPx = if (maxIndexFloat <= 0f) {
+                                topAnchorPx
+                            } else {
+                                val distFromTail = (maxIndexFloat - focusFloat).coerceAtLeast(0f)
+                                val tTail = (distFromTail / 1.5f).coerceIn(0f, 1f)
+                                val pTail = 1f - (tTail * tTail * (3f - 2f * tTail))
+                                lerp(lerp(topAnchorPx, centerAnchorPx, pHead), bottomAnchorPx, pTail)
+                            }
+
+                            val u = index.toFloat() - focusFloat
+                            val absU = kotlin.math.abs(u)
+                            val s = (1f - scaleStep * absU).coerceAtLeast(0.75f)
+                            transformOrigin = topOrigin
+                            scaleX = s
+                            scaleY = s
+
+                            val visualTopPx = anchorPx + u * exposurePx
+                            val measuredOffset = listState.layoutInfo.visibleItemsInfo
+                                .firstOrNull { it.index == index }
+                                ?.offset
+                                ?.toFloat()
+                            val nativeOffsetPx = measuredOffset
+                                ?: ((index - firstIdx).toFloat() * exposurePx - firstOff)
+                            translationY = visualTopPx - nativeOffsetPx
+
+                            val visualHeightPx = cardHeightPx * s
+                            val visualBottomPx = visualTopPx + visualHeightPx
+                            val overflowTopPx = (-visualTopPx).coerceAtLeast(0f)
+                            val overflowBottomPx = (visualBottomPx - viewportHeightPx).coerceAtLeast(0f)
+                            val overflowPx = maxOf(overflowTopPx, overflowBottomPx)
+                            alpha = if (overflowPx <= 0f) {
+                                1f
+                            } else {
+                                (1f - overflowPx / fadeWindowPx).coerceIn(0f, 1f)
+                            }
+                        }
                 ) {
-                    cardContent(items[page])
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(effectiveCardHeight)
+                            .align(Alignment.TopCenter)
+                    ) {
+                        cardContent(item)
+                    }
                 }
             }
         }
