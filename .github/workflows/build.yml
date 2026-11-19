@@ -26,7 +26,17 @@ jobs:
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
 
       - name: Build Debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon
+        id: build
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleDebug --no-daemon 2>&1 | tee build.log
+        continue-on-error: true
+
+      - name: Expose build errors
+        if: steps.build.outcome == 'failure'
+        run: |
+          grep -E "^e: |error: " build.log | head -100 | while IFS= read -r line; do echo "::error::${line}"; done
+          exit 1
 
       - name: Upload Debug APK
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
