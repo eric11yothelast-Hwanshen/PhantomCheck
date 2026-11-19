@@ -102,16 +102,10 @@ class SmsAutoReplyReceiver : BroadcastReceiver() {
             isSelfTemplate ||
             !TW_MOBILE_REGEX.matches(sender)
 
+        if (shouldSkipReply) return
+
         CoroutineScope(Dispatchers.IO).launch {
-            val db = AppDatabaseHolder.db(ctx)
-            db.messageDao().insert(
-                com.phantom.checker.data.MessageEntity(
-                    packageName = "sms", appLabel = "簡訊",
-                    sender = sender, conversationKey = sender, content = body,
-                    timestamp = System.currentTimeMillis()
-                )
-            )
-            if (!shouldSkipReply && canReplyAndRecord(ctx, sender)) {
+            if (canReplyAndRecord(ctx, sender)) {
                 android.telephony.SmsManager.getDefault().sendTextMessage(
                     sender, null, AutoReplyConfig.smsTemplate, null, null
                 )
