@@ -205,6 +205,10 @@ private const val PAGE_SIZE = 100
 private const val MAX_BATCH_SELECT = 100
 
 class MainActivity : ComponentActivity() {
+    companion object {
+        private val hasAutoCheckedUpdateThisProcess = java.util.concurrent.atomic.AtomicBoolean(false)
+    }
+
     private val requestedTabState = mutableStateOf<MainTab?>(null)
     private val requestedEditTodoIdState = mutableStateOf<Long?>(null)
 
@@ -513,7 +517,9 @@ private fun PhantomCheckApp(
                     PhantomPrefs.setOnboardingStep(appCtx, OnboardingStep.PERMISSION.index)
                 }
                 refreshTrigger++
-                if (PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)) {
+                if (PhantomPrefs.isUpdateAutoCheckEnabled(appCtx) &&
+                    MainActivity.hasAutoCheckedUpdateThisProcess.compareAndSet(false, true)
+                ) {
                     scope.launch {
                         val found = AppUpdateHelper.checkAndNotifyIfNeeded(appCtx)
                         if (found != null) {

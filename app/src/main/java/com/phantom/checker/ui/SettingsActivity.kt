@@ -3834,7 +3834,7 @@ private fun AboutSettingsCard(
         }
         SettingSwitchRow(
             title = "自動檢查更新",
-            subtitle = "開啟 App 時自動檢查 GitHub 最新版本，每天最多提示一次",
+            subtitle = "每次開啟 App 時自動檢查 GitHub 最新版本並提示；通知欄提醒每天最多一次",
             checked = updateAutoCheck,
             onCheckedChange = {
                 updateAutoCheck = it

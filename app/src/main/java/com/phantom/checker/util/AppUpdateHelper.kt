@@ -201,37 +201,27 @@ object AppUpdateHelper {
     }
 
     /**
-     * 每日最多自動檢查一次 GitHub 最新版本：
-     * - 關閉開關、今日已檢查、或無網路時直接跳過（失敗靜默）
-     * - 發現新版本時發送每日每版本一次通知，並回傳 UpdateAvailable 供前端每日每版本一次彈窗
+     * 每次開啟 App 自動檢查一次 GitHub 最新版本：
+     * - 關閉開關或無網路時直接跳過（失敗靜默，不標記已檢查）
+     * - 發現新版本時發送每日每版本最多一次通知，並每次回傳 UpdateAvailable 供前端彈窗提示
      */
     suspend fun checkAndNotifyIfNeeded(ctx: Context): UpdateCheckResult.UpdateAvailable? {
         val appCtx = ctx.applicationContext
         if (!PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)) return null
-        val today = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
-        if (PhantomPrefs.getUpdateLastCheckDay(appCtx) == today) return null
         if (!isNetworkAvailable(appCtx)) return null
 
         return when (val res = checkLatestRelease(appCtx)) {
             is UpdateCheckResult.UpdateAvailable -> {
-                PhantomPrefs.setUpdateLastCheckDay(appCtx, today)
+                val today = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
                 val key = "${res.latestVersion}|$today"
                 if (PhantomPrefs.getUpdateLastNotifiedKey(appCtx) != key) {
                     postUpdateAvailableNotification(appCtx, res)
                     PhantomPrefs.setUpdateLastNotifiedKey(appCtx, key)
                 }
-                if (PhantomPrefs.getUpdateLastPromptKey(appCtx) != key) {
-                    PhantomPrefs.setUpdateLastPromptKey(appCtx, key)
-                    res
-                } else {
-                    null
-                }
+                res
             }
             is UpdateCheckResult.UpToDate,
-            is UpdateCheckResult.Error -> {
-                PhantomPrefs.setUpdateLastCheckDay(appCtx, today)
-                null
-            }
+            is UpdateCheckResult.Error -> null
         }
     }
 
