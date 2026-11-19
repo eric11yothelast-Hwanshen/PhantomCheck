@@ -687,7 +687,7 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putBoolean(KEY_DEFAULT_APP_CAT_SEEDED, seeded).apply()
     }
 
-    /** 預設自然語言 AI 規則是否已建立 */
+    /** 舊版內建個人化預設 AI 規則是否已清除 */
     fun isPresetAiRulesPurged(ctx: Context): Boolean =
         prefs(ctx).getBoolean(KEY_PRESET_AI_RULES_PURGED, false)
 
