@@ -2000,9 +2000,14 @@ private fun MessagesHomeTab(
             }
     }
 
+    val homeSettingsVersion by PhantomSettingsBus.version.collectAsState()
+    val layoutMode = remember(homeSettingsVersion) { PhantomPrefs.getHomeCardLayoutMode(ctx) }
+    val isOverlapMode = activeFilter == MessageFilter.All &&
+        layoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER
+
     Column(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(if (isOverlapMode) 8.dp else 12.dp)
     ) {
         AnimatedVisibility(visible = offlineRetryEnabled && pendingRetryCount > 0) {
             PhantomGlassCard(
@@ -2377,14 +2382,10 @@ private fun MessagesHomeTab(
         }
 
         // 可捲動訊息清單區
-        val homeSettingsVersion by PhantomSettingsBus.version.collectAsState()
-        val layoutMode = remember(homeSettingsVersion) { PhantomPrefs.getHomeCardLayoutMode(ctx) }
         val isCompactCard = remember(homeSettingsVersion) {
             PhantomPrefs.getCardDensity(ctx) == com.phantom.checker.util.CardDensity.COMPACT
         }
         val is24h = remember(homeSettingsVersion) { PhantomPrefs.is24HourFormat(ctx) }
-        val isOverlapMode = activeFilter == MessageFilter.All &&
-            layoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER
         val listSpacing = if (activeFilter == MessageFilter.All) {
             if (layoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER) 0.dp else 12.dp
         } else {
@@ -3802,7 +3803,7 @@ private fun NotesTab(
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(if (noteLayout == PhantomPrefs.NoteCardLayoutMode.CENTER) 4.dp else 8.dp))
 
             // 3. 記事內容：依排列模式（一般條列 / 往下露頂部 / 中央堆疊）填滿剩餘高度；
             //    待辦收起時此容器(weight(1f))自動向上延伸，釋放滑動視野

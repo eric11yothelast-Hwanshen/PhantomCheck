@@ -1,6 +1,7 @@
 package com.phantom.checker.ui
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -41,8 +42,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.gestures.snapping.SnapLayoutInfoProvider
 import androidx.compose.foundation.gestures.snapping.SnapPosition
-import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.gestures.snapping.snapFlingBehavior
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -81,6 +83,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -398,6 +401,9 @@ fun <T> CenterFocusCardStack(
     exposure: Dp = 40.dp,
     scaleStep: Float = 0.04f,
     edgeFade: Dp = 40.dp,
+    edgeGap: Dp = 4.dp,
+    cardShape: Shape = RoundedCornerShape(20.dp),
+    focusShadowBoost: Dp = 6.dp,
     cardContent: @Composable (T) -> Unit
 ) {
     if (items.isEmpty()) return
@@ -419,11 +425,12 @@ fun <T> CenterFocusCardStack(
         val cardHeightPx = with(density) { effectiveCardHeight.toPx() }
         val exposurePx = with(density) { exposure.toPx() }.coerceAtLeast(1f)
         val fadeWindowPx = with(density) { edgeFade.toPx() }.coerceAtLeast(1f)
-        val gapPx = with(density) { 8.dp.toPx() }
+        val edgeGapPx = with(density) { edgeGap.toPx() }
+        val focusShadowBoostPx = with(density) { focusShadowBoost.toPx() }.coerceAtLeast(0f)
 
-        val topAnchorPx = gapPx
+        val topAnchorPx = edgeGapPx
         val centerAnchorPx = ((viewportHeightPx - cardHeightPx) / 2f).coerceAtLeast(topAnchorPx)
-        val bottomAnchorPx = (viewportHeightPx - cardHeightPx - gapPx).coerceAtLeast(topAnchorPx)
+        val bottomAnchorPx = (viewportHeightPx - cardHeightPx - edgeGapPx).coerceAtLeast(topAnchorPx)
         val leadingPaddingDp = maxOf(
             (viewportHeightDp - effectiveCardHeight) / 2f,
             exposure * 3f
@@ -432,10 +439,17 @@ fun <T> CenterFocusCardStack(
         val trailingPaddingDp = (viewportHeightDp - exposure - leadingPaddingDp).coerceAtLeast(0.dp)
         val maxIndexFloat = (items.size - 1).coerceAtLeast(0).toFloat()
 
-        val flingBehavior = rememberSnapFlingBehavior(
-            lazyListState = listState,
-            snapPosition = SnapPosition.Start
-        )
+        val decaySpec = rememberSplineBasedDecay<Float>()
+        val flingBehavior = remember(listState, decaySpec) {
+            snapFlingBehavior(
+                snapLayoutInfoProvider = SnapLayoutInfoProvider(listState, SnapPosition.Start),
+                decayAnimationSpec = decaySpec,
+                snapAnimationSpec = spring(
+                    dampingRatio = 0.85f,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
+        }
 
         LazyColumn(
             state = listState,
@@ -478,10 +492,18 @@ fun <T> CenterFocusCardStack(
 
                             val u = index.toFloat() - focusFloat
                             val absU = kotlin.math.abs(u)
-                            val s = (1f - scaleStep * absU).coerceAtLeast(0.82f)
+                            val closeness = (1f - absU).coerceIn(0f, 1f)
+                            val eased = FastOutSlowInEasing.transform(closeness)
+                            val s = if (absU <= 1f) {
+                                lerp(0.94f, 1f, eased)
+                            } else {
+                                (0.94f - scaleStep * (absU - 1f)).coerceAtLeast(0.82f)
+                            }
                             transformOrigin = topOrigin
                             scaleX = s
                             scaleY = s
+                            shape = cardShape
+                            shadowElevation = focusShadowBoostPx * eased
 
                             val visualTopPx = anchorPx + u * exposurePx
                             val measuredOffset = listState.layoutInfo.visibleItemsInfo
