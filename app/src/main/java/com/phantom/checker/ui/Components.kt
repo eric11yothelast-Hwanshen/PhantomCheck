@@ -34,17 +34,21 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.gestures.snapping.SnapLayoutInfoProvider
 import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import kotlin.math.roundToInt
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -392,10 +396,6 @@ fun <T> CenterFocusCardStack(
 ) {
     if (items.isEmpty()) return
     val listState = rememberLazyListState()
-    val flingBehavior = rememberSnapFlingBehavior(
-        lazyListState = listState,
-        snapPosition = SnapPosition.Start
-    )
     val density = LocalDensity.current
     val effectiveCardHeight = if (density.fontScale >= 1.3f && cardHeight < 128.dp) 128.dp else cardHeight
     val topOrigin = remember { TransformOrigin(0.5f, 0f) }
@@ -411,9 +411,105 @@ fun <T> CenterFocusCardStack(
         val topAnchorPx = gapPx
         val centerAnchorPx = ((viewportHeightPx - cardHeightPx) / 2f).coerceAtLeast(topAnchorPx)
         val bottomAnchorPx = (viewportHeightPx - cardHeightPx - gapPx).coerceAtLeast(topAnchorPx)
-        val trailingPaddingDp = (viewportHeightDp - exposure).coerceAtLeast(0.dp)
+        val trailingPaddingDp = effectiveCardHeight + 8.dp
         val itemCount = items.size
         val maxIndexFloat = (itemCount - 1).coerceAtLeast(0).toFloat()
+
+        fun anchorFor(focusFloat: Float): Float {
+            if (maxIndexFloat <= 0f) return topAnchorPx
+            val clamped = focusFloat.coerceIn(0f, maxIndexFloat)
+            val tHead = (clamped / 1.5f).coerceIn(0f, 1f)
+            val pHead = tHead * tHead * (3f - 2f * tHead)
+            val distFromTail = (maxIndexFloat - clamped).coerceAtLeast(0f)
+            val tTail = (distFromTail / 1.5f).coerceIn(0f, 1f)
+            val pTail = 1f - (tTail * tTail * (3f - 2f * tTail))
+            return lerp(lerp(topAnchorPx, centerAnchorPx, pHead), bottomAnchorPx, pTail)
+        }
+
+        fun anchorFor(index: Int): Float = anchorFor(index.toFloat())
+
+        val tailScrollPx = (maxIndexFloat * exposurePx - bottomAnchorPx).coerceAtLeast(0f)
+        val transitionZonePx = minOf(1.5f * exposurePx, (tailScrollPx / 2f).coerceAtLeast(1f))
+
+        fun resolveFocusFloat(firstIdx: Int, firstOff: Float): Float {
+            if (maxIndexFloat <= 0f) return 0f
+            val scrollPx = (firstIdx.toFloat() * exposurePx + firstOff).coerceAtLeast(0f)
+            if (tailScrollPx <= 0f) {
+                return (scrollPx / exposurePx).coerceIn(0f, maxIndexFloat)
+            }
+            val tH = (scrollPx / transitionZonePx).coerceIn(0f, 1f)
+            val sH = tH * tH * (3f - 2f * tH)
+            val distTailPx = (tailScrollPx - scrollPx).coerceAtLeast(0f)
+            val tT = (distTailPx / transitionZonePx).coerceIn(0f, 1f)
+            val sT = 1f - (tT * tT * (3f - 2f * tT))
+            val effectiveAnchorPx = lerp(lerp(0f, centerAnchorPx, sH), bottomAnchorPx, sT)
+            return ((scrollPx + effectiveAnchorPx) / exposurePx).coerceIn(0f, maxIndexFloat)
+        }
+
+        val snapPosition = remember(topAnchorPx, centerAnchorPx, bottomAnchorPx, maxIndexFloat) {
+            SnapPosition { _, _, _, _, itemIndex, _ ->
+                anchorFor(itemIndex).roundToInt()
+            }
+        }
+        val baseSnapProvider = remember(listState, snapPosition) {
+            SnapLayoutInfoProvider(
+                lazyListState = listState,
+                snapPosition = snapPosition
+            )
+        }
+        val snapLayoutInfoProvider = remember(
+            baseSnapProvider,
+            listState,
+            topAnchorPx,
+            centerAnchorPx,
+            bottomAnchorPx,
+            maxIndexFloat,
+            itemCount
+        ) {
+            object : SnapLayoutInfoProvider {
+                override fun calculateApproachOffset(velocity: Float, decayOffset: Float): Float =
+                    baseSnapProvider.calculateApproachOffset(velocity, decayOffset)
+
+                override fun calculateSnapOffset(velocity: Float): Float {
+                    val visibleItems = listState.layoutInfo.visibleItemsInfo
+                    if (visibleItems.isEmpty()) return 0f
+                    val lastItem = visibleItems.lastOrNull { it.index == itemCount - 1 }
+                    if (lastItem != null) {
+                        val lastTarget = anchorFor(itemCount - 1)
+                        if (lastItem.offset.toFloat() <= lastTarget && velocity >= 0f) {
+                            return lastItem.offset.toFloat() - lastTarget
+                        }
+                    }
+                    var distanceBefore = Float.NEGATIVE_INFINITY
+                    var distanceAfter = Float.POSITIVE_INFINITY
+                    for (i in visibleItems.indices) {
+                        val item = visibleItems[i]
+                        val targetAnchor = anchorFor(item.index)
+                        val distance = item.offset.toFloat() - targetAnchor
+                        if (distance <= 0f && distance > distanceBefore) {
+                            distanceBefore = distance
+                        }
+                        if (distance >= 0f && distance < distanceAfter) {
+                            distanceAfter = distance
+                        }
+                    }
+                    val velocityThresholdPx = with(density) { 400.dp.toPx() }
+                    val chosen = when {
+                        kotlin.math.abs(velocity) < velocityThresholdPx -> {
+                            if (kotlin.math.abs(distanceBefore) <= kotlin.math.abs(distanceAfter)) {
+                                distanceBefore
+                            } else {
+                                distanceAfter
+                            }
+                        }
+                        velocity > 0f -> if (distanceAfter.isFinite()) distanceAfter else distanceBefore
+                        else -> if (distanceBefore.isFinite()) distanceBefore else distanceAfter
+                    }
+                    return if (chosen.isFinite()) chosen else 0f
+                }
+            }
+        }
+        val flingBehavior = rememberSnapFlingBehavior(snapLayoutInfoProvider)
 
         LazyColumn(
             state = listState,
@@ -423,12 +519,20 @@ fun <T> CenterFocusCardStack(
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             itemsIndexed(items, key = { _, item -> key(item) }) { index, item ->
-                val itemZ by remember(index, listState, exposurePx, maxIndexFloat) {
+                val itemZ by remember(
+                    index,
+                    listState,
+                    exposurePx,
+                    maxIndexFloat,
+                    topAnchorPx,
+                    centerAnchorPx,
+                    bottomAnchorPx
+                ) {
                     derivedStateOf {
-                        val focusFloat = (
-                            listState.firstVisibleItemIndex.toFloat() +
-                                (listState.firstVisibleItemScrollOffset.toFloat() / exposurePx)
-                            ).coerceIn(0f, maxIndexFloat)
+                        val focusFloat = resolveFocusFloat(
+                            firstIdx = listState.firstVisibleItemIndex,
+                            firstOff = listState.firstVisibleItemScrollOffset.toFloat()
+                        )
                         1000f - kotlin.math.abs(index.toFloat() - focusFloat)
                     }
                 }
@@ -440,20 +544,8 @@ fun <T> CenterFocusCardStack(
                         .graphicsLayer {
                             val firstIdx = listState.firstVisibleItemIndex
                             val firstOff = listState.firstVisibleItemScrollOffset.toFloat()
-                            val focusFloat = (firstIdx.toFloat() + (firstOff / exposurePx))
-                                .coerceIn(0f, maxIndexFloat)
-
-                            val tHead = (focusFloat / 1.5f).coerceIn(0f, 1f)
-                            val pHead = tHead * tHead * (3f - 2f * tHead)
-
-                            val anchorPx = if (maxIndexFloat <= 0f) {
-                                topAnchorPx
-                            } else {
-                                val distFromTail = (maxIndexFloat - focusFloat).coerceAtLeast(0f)
-                                val tTail = (distFromTail / 1.5f).coerceIn(0f, 1f)
-                                val pTail = 1f - (tTail * tTail * (3f - 2f * tTail))
-                                lerp(lerp(topAnchorPx, centerAnchorPx, pHead), bottomAnchorPx, pTail)
-                            }
+                            val focusFloat = resolveFocusFloat(firstIdx, firstOff)
+                            val anchorPx = anchorFor(focusFloat)
 
                             val u = index.toFloat() - focusFloat
                             val absU = kotlin.math.abs(u)
@@ -486,7 +578,8 @@ fun <T> CenterFocusCardStack(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(effectiveCardHeight)
+                            .wrapContentHeight(align = Alignment.Top, unbounded = true)
+                            .requiredHeight(effectiveCardHeight)
                             .align(Alignment.TopCenter)
                     ) {
                         cardContent(item)
