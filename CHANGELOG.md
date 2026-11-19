@@ -2,6 +2,15 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.15.0] - 2026-11-19
+
+### 變更與修正
+- **中央堆疊 v4 修正（#276 / PR #277）**：
+  - 修復滑動時焦點上方卡片被裁切／快甩後缺繪：改採對稱 `contentPadding`（`leading >= 3 * exposure` 且與 `trailing` 互補，總捲動區間 `(n - 1) * 40.dp` 與吸附手感不變），確保焦點上方 2~3 張卡片原生落入 `visibleItemsInfo` 穩定組合繪製、露出頂帶可辨識 App 圖示與名稱；唯一 `clipToBounds` 僅保留於最外層堆疊容器（我的最愛下緣至底部導覽上緣）。
+  - 初始貼頂與線性過渡：`firstVisibleItemIndex == 0` 且 `offset == 0` 時錨點 `8.dp` 貼頂零留白；頭尾過渡由 `smoothstep` 改為線性 `lerp`（以 `zone` 正規化），連續單調無布林切換。
+  - 記事短清單幾何修正：過渡區寬度改為動態 `zone = min(1.5f, (n - 1) / 2f)`，根治 `n <= 4` 時頭尾過渡區重疊造成第 2 則記事沉底；記事頁續用共用堆疊元件、容器高度由 `BoxWithConstraints` 動態計算。
+  - 待辦事項到期副標單行：`NotesTodoRow` 到期資訊 `Text` 新增 `maxLines = 1`、`softWrap = false` 與 `TextOverflow.Ellipsis`，不再被右側按鈕擠成兩行（展開／收合兩狀態同時生效）。
+
 ## [2.14.0] - 2026-11-19
 
 ### 變更與修正
