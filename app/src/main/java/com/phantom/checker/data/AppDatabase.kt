@@ -10,7 +10,9 @@ import kotlinx.coroutines.flow.Flow
     indices = [
         Index(value = ["packageName"]),
         Index(value = ["timestamp"]),
-        Index(value = ["packageName", "conversationKey"])
+        Index(value = ["packageName", "conversationKey"]),
+        Index(value = ["isOwn", "timestamp"]),
+        Index(value = ["isOwn", "isRead"])
     ]
 )
 data class MessageEntity(
@@ -110,7 +112,8 @@ data class UserTagRuleEntity(
     tableName = "todos",
     indices = [
         Index(value = ["isDone", "dueAt"]),
-        Index(value = ["dueAt"])
+        Index(value = ["dueAt"]),
+        Index(value = ["relatedMessageId"])
     ]
 )
 data class TodoEntity(
@@ -210,7 +213,10 @@ data class ChatMessageEntity(
     }
 }
 
-@Entity(tableName = "intel_cache")
+@Entity(
+    tableName = "intel_cache",
+    indices = [Index(value = ["checkedAt"])]
+)
 data class IntelCacheEntity(
     @PrimaryKey val cacheKey: String,
     val isHit: Boolean,
@@ -554,10 +560,10 @@ interface MessageDao {
     suspend fun deleteAll()
 
     @Query("DELETE FROM messages WHERE timestamp < :before AND riskLabel != 'scam'")
-    suspend fun prune(before: Long)
+    suspend fun prune(before: Long): Int
 
     @Query("DELETE FROM messages WHERE riskLabel != 'scam' AND id NOT IN (SELECT id FROM messages ORDER BY timestamp DESC LIMIT :keepCount)")
-    suspend fun deleteOlderThanCount(keepCount: Int)
+    suspend fun deleteOlderThanCount(keepCount: Int): Int
 
     @Query("SELECT id FROM messages WHERE id IN (:ids) AND riskLabel != 'scam'")
     suspend fun nonScamIdsFrom(ids: List<Long>): List<Long>
@@ -1047,7 +1053,8 @@ interface OwnReplyEchoDao {
 
 @Entity(
     tableName = "sender_avatars",
-    primaryKeys = ["packageName", "sender"]
+    primaryKeys = ["packageName", "sender"],
+    indices = [Index(value = ["updatedAt"])]
 )
 data class SenderAvatarEntity(
     val packageName: String,
@@ -1086,6 +1093,25 @@ interface SenderAvatarDao {
 
     @Query("DELETE FROM sender_avatars WHERE updatedAt < :cutoff")
     suspend fun deleteOlderThan(cutoff: Long)
+
+    @Query("SELECT COUNT(*) FROM sender_avatars")
+    suspend fun count(): Int
+
+    @Query(
+        """
+        DELETE FROM sender_avatars
+        WHERE rowid NOT IN (
+            SELECT rowid FROM sender_avatars
+            ORDER BY updatedAt DESC
+            LIMIT :maxRows
+        )
+        """
+    )
+    suspend fun pruneToMaxRows(maxRows: Int = MAX_ROWS)
+
+    companion object {
+        const val MAX_ROWS = 300
+    }
 }
 
 @Database(
@@ -1109,7 +1135,7 @@ interface SenderAvatarDao {
         OwnReplyEchoEntity::class,
         SenderAvatarEntity::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1431,6 +1457,16 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+            }
+        }
+
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_messages_isOwn_timestamp` ON `messages` (`isOwn`, `timestamp`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_messages_isOwn_isRead` ON `messages` (`isOwn`, `isRead`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_todos_relatedMessageId` ON `todos` (`relatedMessageId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sender_avatars_updatedAt` ON `sender_avatars` (`updatedAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_intel_cache_checkedAt` ON `intel_cache` (`checkedAt`)")
             }
         }
     }

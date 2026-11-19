@@ -728,6 +728,9 @@ class NotificationCollectorService : NotificationListenerService() {
             if (nowMs % 20L == 0L) {
                 avatarDao.deleteOlderThan(nowMs - 30L * 24L * 60L * 60L * 1000L)
             }
+            if (avatarDao.count() > com.phantom.checker.data.SenderAvatarDao.MAX_ROWS) {
+                avatarDao.pruneToMaxRows(com.phantom.checker.data.SenderAvatarDao.MAX_ROWS)
+            }
         } catch (_: Exception) {
         }
     }
@@ -1575,7 +1578,8 @@ object AppDatabaseHolder {
                 AppDatabase.MIGRATION_12_13,
                 AppDatabase.MIGRATION_13_14,
                 AppDatabase.MIGRATION_14_15,
-                AppDatabase.MIGRATION_15_16
+                AppDatabase.MIGRATION_15_16,
+                AppDatabase.MIGRATION_16_17
             ).addCallback(object : androidx.room.RoomDatabase.Callback() {
                 override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                     super.onOpen(db)

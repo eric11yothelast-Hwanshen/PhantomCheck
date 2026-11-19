@@ -65,17 +65,22 @@ class RetentionWorker(
         val db = AppDatabaseHolder.db(applicationContext)
         val dao = db.messageDao()
         val tagDao = db.tagDao()
+        var deletedRows = 0
 
         db.withTransaction {
             if (days > 0) {
                 val cutoff = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(days.toLong())
-                dao.prune(cutoff)
+                deletedRows += dao.prune(cutoff)
             }
             if (maxCount > 0) {
-                dao.deleteOlderThanCount(maxCount)
+                deletedRows += dao.deleteOlderThanCount(maxCount)
             }
             tagDao.deleteOrphanCrossRefs()
+            val intelCutoff = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(72)
+            db.intelDao().pruneCache(intelCutoff)
         }
+
+        DbMaintenance.runIfThrottledAndNeeded(applicationContext, deletedRows)
 
         return Result.success()
     }

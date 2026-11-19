@@ -13,6 +13,10 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.text.format.Formatter
+import androidx.work.WorkManager
+import com.phantom.checker.service.DbMaintenance
+import kotlinx.coroutines.flow.first
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -665,6 +669,7 @@ fun FilterSettingsScreen(
                                     db.tagDao().deleteCrossRefsForReadMessages()
                                     db.messageDao().deleteReadMessages()
                                 }
+                                DbMaintenance.enqueueVacuum(appCtx)
                                 StatsForegroundService.startOrRefresh(appCtx)
                             }
                             showClearReadConfirm = false
@@ -699,6 +704,7 @@ fun FilterSettingsScreen(
                                     db.tagDao().deleteAllCrossRefs()
                                     db.messageDao().deleteAll()
                                 }
+                                DbMaintenance.enqueueVacuum(appCtx)
                                 StatsForegroundService.startOrRefresh(appCtx)
                             }
                             showDeleteAllConfirm = false
@@ -2896,6 +2902,77 @@ fun FilterSettingsScreen(
                                 label = { Text(RetentionConfig.labelForMaxCount(cnt)) }
                             )
                         }
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+
+                    // 儲存空間明細（唯讀）＋ 手動壓縮資料庫
+                    var storageStats by remember { mutableStateOf<DbMaintenance.StorageStats?>(null) }
+                    var isVacuuming by remember { mutableStateOf(false) }
+                    LaunchedEffect(expandData) {
+                        if (expandData) {
+                            storageStats = withContext(Dispatchers.IO) {
+                                DbMaintenance.measureStorageStats(appCtx)
+                            }
+                        }
+                    }
+                    Text("儲存空間明細", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Spacer(Modifier.height(4.dp))
+                    val statsSnapshot = storageStats
+                    if (statsSnapshot == null) {
+                        Text(
+                            text = "計算中…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        Text(
+                            text = "資料庫（含 WAL/SHM）：${Formatter.formatShortFileSize(appCtx, statsSnapshot.dbBytes)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "背景圖片目錄：${Formatter.formatShortFileSize(appCtx, statsSnapshot.backgroundsBytes)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "快取目錄：${Formatter.formatShortFileSize(appCtx, statsSnapshot.cacheBytes)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "合計：${Formatter.formatShortFileSize(appCtx, statsSnapshot.totalBytes)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                isVacuuming = true
+                                val (beforeBytes, afterBytes, updatedStats) = withContext(Dispatchers.IO) {
+                                    val before = DbMaintenance.measureDatabaseBytes(appCtx)
+                                    val workId = DbMaintenance.enqueueVacuum(appCtx)
+                                    WorkManager.getInstance(appCtx)
+                                        .getWorkInfoByIdFlow(workId)
+                                        .first { it?.state?.isFinished == true }
+                                    val after = DbMaintenance.measureDatabaseBytes(appCtx)
+                                    val refreshed = DbMaintenance.measureStorageStats(appCtx)
+                                    Triple(before, after, refreshed)
+                                }
+                                storageStats = updatedStats
+                                isVacuuming = false
+                                snackbarHostState.showSnackbar(
+                                    "資料庫壓縮完成：${Formatter.formatShortFileSize(appCtx, beforeBytes)} → ${Formatter.formatShortFileSize(appCtx, afterBytes)}"
+                                )
+                            }
+                        },
+                        enabled = !isVacuuming,
+                        modifier = Modifier.fillMaxWidth().pressableScale()
+                    ) {
+                        Text(if (isVacuuming) "壓縮中…" else "立即壓縮資料庫")
                     }
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
 
