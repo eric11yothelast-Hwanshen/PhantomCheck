@@ -41,14 +41,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.gestures.snapping.SnapLayoutInfoProvider
 import androidx.compose.foundation.gestures.snapping.SnapPosition
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import kotlin.math.roundToInt
+import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -376,13 +374,17 @@ fun PhantomGlassCard(
 
 /**
  * #263 中央聚焦垂直滾輪堆疊 v3（Vertical Center-Focused Card Stack）：
- * - 以 LazyColumn + rememberLazyListState() + rememberSnapFlingBehavior 實作連續慣性滑動與平滑吸附。
- * - native item 高度 = exposure（44.dp），內部卡片以完整 effectiveCardHeight（112.dp；fontScale ≥ 1.3f 時 128.dp）繪製。
+ * - 以 LazyColumn + LazyListState(cacheWindow = LazyLayoutCacheWindow(behindFraction = 1f, aheadFraction = 0.5f))
+ *   + rememberSnapFlingBehavior(snapPosition = SnapPosition.Start) 實作連續慣性滑動與單調統一吸附（s_i = i * exposure）。
+ * - 使用 remember { LazyListState(...) } 不保存捲動位置，每次進頁自第 0 張開始。
+ * - native item 高度 = exposure（44.dp），內部卡片以 wrapContentHeight(unbounded = true) + requiredHeight(effectiveCardHeight)
+ *   （112.dp；fontScale ≥ 1.3f 時 128.dp）繪製完整高度。
  * - 頂／中／底三態錨點以 pHead = smoothstep(focusFloat / 1.5f) 與 pTail = 1f - smoothstep(max(0f, (n-1) - focusFloat) / 1.5f)
  *   經 lerp(lerp(topAnchorPx, centerAnchorPx, pHead), bottomAnchorPx, pTail) 連續內插，嚴禁布林跳變。
  * - scale = (1f - scaleStep * |u|).coerceAtLeast(0.75f)，pivot = TransformOrigin(0.5f, 0f) 頂緣對齊消除深層累積誤差。
  * - 移除固定可見層數限制，viewport 內 alpha 一律 1f，僅對超出 viewport 邊界部分以 edgeFade 像素距離線性淡出。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun <T> CenterFocusCardStack(
     items: List<T>,
@@ -395,7 +397,14 @@ fun <T> CenterFocusCardStack(
     cardContent: @Composable (T) -> Unit
 ) {
     if (items.isEmpty()) return
-    val listState = rememberLazyListState()
+    val listState = remember {
+        LazyListState(
+            cacheWindow = LazyLayoutCacheWindow(
+                behindFraction = 1f,
+                aheadFraction = 0.5f
+            )
+        )
+    }
     val density = LocalDensity.current
     val effectiveCardHeight = if (density.fontScale >= 1.3f && cardHeight < 128.dp) 128.dp else cardHeight
     val topOrigin = remember { TransformOrigin(0.5f, 0f) }
@@ -411,112 +420,13 @@ fun <T> CenterFocusCardStack(
         val topAnchorPx = gapPx
         val centerAnchorPx = ((viewportHeightPx - cardHeightPx) / 2f).coerceAtLeast(topAnchorPx)
         val bottomAnchorPx = (viewportHeightPx - cardHeightPx - gapPx).coerceAtLeast(topAnchorPx)
-        val trailingPaddingDp = effectiveCardHeight + 8.dp
-        val itemCount = items.size
-        val maxIndexFloat = (itemCount - 1).coerceAtLeast(0).toFloat()
+        val trailingPaddingDp = (viewportHeightDp - exposure).coerceAtLeast(0.dp)
+        val maxIndexFloat = (items.size - 1).coerceAtLeast(0).toFloat()
 
-        fun anchorFor(focusFloat: Float): Float {
-            if (maxIndexFloat <= 0f) return topAnchorPx
-            val clamped = focusFloat.coerceIn(0f, maxIndexFloat)
-            val tHead = (clamped / 1.5f).coerceIn(0f, 1f)
-            val pHead = tHead * tHead * (3f - 2f * tHead)
-            val distFromTail = (maxIndexFloat - clamped).coerceAtLeast(0f)
-            val tTail = (distFromTail / 1.5f).coerceIn(0f, 1f)
-            val pTail = 1f - (tTail * tTail * (3f - 2f * tTail))
-            return lerp(lerp(topAnchorPx, centerAnchorPx, pHead), bottomAnchorPx, pTail)
-        }
-
-        fun anchorFor(index: Int): Float = anchorFor(index.toFloat())
-
-        val tailScrollPx = (maxIndexFloat * exposurePx - bottomAnchorPx).coerceAtLeast(0f)
-        val transitionZonePx = minOf(1.5f * exposurePx, (tailScrollPx / 2f).coerceAtLeast(1f))
-
-        fun resolveFocusFloat(firstIdx: Int, firstOff: Float): Float {
-            if (maxIndexFloat <= 0f) return 0f
-            val scrollPx = (firstIdx.toFloat() * exposurePx + firstOff).coerceAtLeast(0f)
-            if (tailScrollPx <= 0f) {
-                return (scrollPx / exposurePx).coerceIn(0f, maxIndexFloat)
-            }
-            val tH = (scrollPx / transitionZonePx).coerceIn(0f, 1f)
-            val sH = tH * tH * (3f - 2f * tH)
-            val distTailPx = (tailScrollPx - scrollPx).coerceAtLeast(0f)
-            val tT = (distTailPx / transitionZonePx).coerceIn(0f, 1f)
-            val sT = 1f - (tT * tT * (3f - 2f * tT))
-            val effectiveAnchorPx = lerp(lerp(0f, centerAnchorPx, sH), bottomAnchorPx, sT)
-            return ((scrollPx + effectiveAnchorPx) / exposurePx).coerceIn(0f, maxIndexFloat)
-        }
-
-        val snapPosition = remember(topAnchorPx, centerAnchorPx, bottomAnchorPx, maxIndexFloat) {
-            object : SnapPosition {
-                override fun position(
-                    layoutSize: Int,
-                    itemSize: Int,
-                    beforeContentPadding: Int,
-                    afterContentPadding: Int,
-                    itemIndex: Int,
-                    itemCount: Int
-                ): Int = anchorFor(itemIndex).roundToInt()
-            }
-        }
-        val baseSnapProvider = remember(listState, snapPosition) {
-            SnapLayoutInfoProvider(
-                lazyListState = listState,
-                snapPosition = snapPosition
-            )
-        }
-        val snapLayoutInfoProvider = remember(
-            baseSnapProvider,
-            listState,
-            topAnchorPx,
-            centerAnchorPx,
-            bottomAnchorPx,
-            maxIndexFloat,
-            itemCount
-        ) {
-            object : SnapLayoutInfoProvider {
-                override fun calculateApproachOffset(velocity: Float, decayOffset: Float): Float =
-                    baseSnapProvider.calculateApproachOffset(velocity, decayOffset)
-
-                override fun calculateSnapOffset(velocity: Float): Float {
-                    val visibleItems = listState.layoutInfo.visibleItemsInfo
-                    if (visibleItems.isEmpty()) return 0f
-                    val lastItem = visibleItems.lastOrNull { it.index == itemCount - 1 }
-                    if (lastItem != null) {
-                        val lastTarget = anchorFor(itemCount - 1)
-                        if (lastItem.offset.toFloat() <= lastTarget && velocity >= 0f) {
-                            return lastItem.offset.toFloat() - lastTarget
-                        }
-                    }
-                    var distanceBefore = Float.NEGATIVE_INFINITY
-                    var distanceAfter = Float.POSITIVE_INFINITY
-                    for (i in visibleItems.indices) {
-                        val item = visibleItems[i]
-                        val targetAnchor = anchorFor(item.index)
-                        val distance = item.offset.toFloat() - targetAnchor
-                        if (distance <= 0f && distance > distanceBefore) {
-                            distanceBefore = distance
-                        }
-                        if (distance >= 0f && distance < distanceAfter) {
-                            distanceAfter = distance
-                        }
-                    }
-                    val velocityThresholdPx = with(density) { 400.dp.toPx() }
-                    val chosen = when {
-                        kotlin.math.abs(velocity) < velocityThresholdPx -> {
-                            if (kotlin.math.abs(distanceBefore) <= kotlin.math.abs(distanceAfter)) {
-                                distanceBefore
-                            } else {
-                                distanceAfter
-                            }
-                        }
-                        velocity > 0f -> if (distanceAfter.isFinite()) distanceAfter else distanceBefore
-                        else -> if (distanceBefore.isFinite()) distanceBefore else distanceAfter
-                    }
-                    return if (chosen.isFinite()) chosen else 0f
-                }
-            }
-        }
-        val flingBehavior = rememberSnapFlingBehavior(snapLayoutInfoProvider)
+        val flingBehavior = rememberSnapFlingBehavior(
+            lazyListState = listState,
+            snapPosition = SnapPosition.Start
+        )
 
         LazyColumn(
             state = listState,
@@ -526,20 +436,12 @@ fun <T> CenterFocusCardStack(
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
             itemsIndexed(items, key = { _, item -> key(item) }) { index, item ->
-                val itemZ by remember(
-                    index,
-                    listState,
-                    exposurePx,
-                    maxIndexFloat,
-                    topAnchorPx,
-                    centerAnchorPx,
-                    bottomAnchorPx
-                ) {
+                val itemZ by remember(index, listState, exposurePx, maxIndexFloat) {
                     derivedStateOf {
-                        val focusFloat = resolveFocusFloat(
-                            firstIdx = listState.firstVisibleItemIndex,
-                            firstOff = listState.firstVisibleItemScrollOffset.toFloat()
-                        )
+                        val focusFloat = (
+                            listState.firstVisibleItemIndex.toFloat() +
+                                listState.firstVisibleItemScrollOffset.toFloat() / exposurePx
+                            ).coerceIn(0f, maxIndexFloat)
                         1000f - kotlin.math.abs(index.toFloat() - focusFloat)
                     }
                 }
@@ -551,8 +453,19 @@ fun <T> CenterFocusCardStack(
                         .graphicsLayer {
                             val firstIdx = listState.firstVisibleItemIndex
                             val firstOff = listState.firstVisibleItemScrollOffset.toFloat()
-                            val focusFloat = resolveFocusFloat(firstIdx, firstOff)
-                            val anchorPx = anchorFor(focusFloat)
+                            val focusFloat = (firstIdx.toFloat() + firstOff / exposurePx)
+                                .coerceIn(0f, maxIndexFloat)
+
+                            val anchorPx = if (maxIndexFloat <= 0f) {
+                                topAnchorPx
+                            } else {
+                                val tHead = (focusFloat / 1.5f).coerceIn(0f, 1f)
+                                val pHead = tHead * tHead * (3f - 2f * tHead)
+                                val distFromTail = (maxIndexFloat - focusFloat).coerceAtLeast(0f)
+                                val tTail = (distFromTail / 1.5f).coerceIn(0f, 1f)
+                                val pTail = 1f - (tTail * tTail * (3f - 2f * tTail))
+                                lerp(lerp(topAnchorPx, centerAnchorPx, pHead), bottomAnchorPx, pTail)
+                            }
 
                             val u = index.toFloat() - focusFloat
                             val absU = kotlin.math.abs(u)
