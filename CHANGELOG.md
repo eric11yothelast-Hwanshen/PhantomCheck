@@ -2,6 +2,33 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.12.0] - 2026-11-19
+
+### 新增
+- **訊息頁中央置頂堆疊重構（#249）**：
+  - 重構 `Components.kt` `CenterFocusCardStack`（v2）：固定卡片高度 `cardHeight = 112.dp`（訊息預覽 `maxLines = 1` + `Ellipsis`、App 圖示 `44.dp`、`contentPadding` `12.dp` / compact `8.dp`），`VerticalPager` 改採 `PageSize.Fixed(cardHeight + 24.dp)` 與動態底部 `contentPadding`（確保末卡可滑動至正中央）。
+  - 等距堆疊常數：`exposure = 24.dp`、`scaleStep = 0.06f`（第 n 層縮放 `1 - 0.06n`）、`maxVisibleLayers = 4`（螢幕高 `< 640dp` 時為 `3`，超過層數 `alpha` 歸零）。
+  - 頂部對齊（`scroll = 0`，第 0 張貼齊頂部 `topGap = 10.dp`、zIndex 最高）與中央對齊（`|scrollOffset| >= 0.5` 完成過渡、焦點卡置中且上下對稱）間以滾動進度 `f ∈ [0, 1]` 連續內插，全數僅經 `graphicsLayer` 計算不觸發重組；`MainActivity` 訊息區套用並保留一般條列、未讀分頁與點擊／長按手勢。
+- **記事頁共用中央置頂堆疊並移除「往下露頂部」模式（#250）**：
+  - 記事「中央堆疊」改共用新版 `CenterFocusCardStack`：`NoteCardItem` 固定高度 `112.dp`、內文 `maxLines = 2` + `Ellipsis`，將置頂／編輯／刪除改為右上角小圖示按鈕，底部不再露出按鈕排；待辦收合與逾期排序維持不變。
+  - 移除 `PhantomPrefs.NoteCardLayoutMode.PEEK_TOP`，`getNoteCardLayoutMode` 讀到舊值 `"peek_top"` 時自動遷移為 `CENTER`；`MainActivity` 刪除撲克牌式分支。
+  - `SettingsActivity` 與 `SettingsCatalog` 同步移除「往下露頂部／撲克牌」描述與關鍵字，`home_card_layout` 與 `notes_card_layout` 的 `valueLabels` 統一為 `["一般條列", "中央堆疊"]`（索引 `LIST → 0`、`CENTER → 1`）。
+- **AI 自動待辦智慧時間推斷與提前 30 分鐘提醒（#252）**：
+  - `AiClient.buildSystemPrompt` 注入系統時區當前時間，要求 AI 從訊息線索（如「明天 9 點」「週三晚」「10/28 前」「下週一到」）推算具體 `yyyy-MM-dd HH:mm` 填入 `todo_due`，無任何線索才留空。
+  - `NotificationCollectorService.saveAutoMemoIfPresent` 採 `parseStructuredDueAt(todoDue)`（過濾過去時間）→ `ClientTimeParser.parseNaturalReminderTime` 解析訊息內容 → `msg.timestamp + 2h` fallback 鏈（全程 `try/catch`）；有事件時間時套用 `REMINDER_LEAD_MINUTES = 30` 提前 30 分鐘提醒（若 `<= now` 則 `max(now + 5min, eventTime - 30min)`）。
+  - `ClientTimeParser` 補齊跨年 `MM/dd` 進位（如 12/31 收到 `1/2` 落在明年）；duplicate 待辦更新路徑同步套用該規則並在 `dueAt` 變更且 `> now` 時重排 `ReminderScheduler.scheduleTodo`。
+
+### 變更與修正
+- **記事置頂／取消置頂不再覆寫 `updatedAt`（#251）**：
+  - `MainActivity.onTogglePinNote` 更新 `NoteEntity` 時僅反轉 `pinned` 欄位，保留原 `updatedAt` 顯示時間，並維持 `NotesWidgetProvider.updateAllIfChanged` 同步刷新。
+- **深度分析與每日摘要模型切換 chip 分用途綁定並即時同步（#253）**：
+  - `MessageDetailActivity` 深度分析 chip 與 `MainActivity` `StatsTab` 每日摘要 chip 改以 `AiClient.getProfileForPurpose`（`DEEP_ANALYSIS` / `DAILY_SUMMARY`）顯示，選擇時寫入 `PhantomPrefs.setPurposeProfileId`＋`PhantomSettingsBus.notifyChanged()`（不再寫入全域 `setActiveProvider`），並隨 `PhantomSettingsBus.version` 與 `ON_RESUME` 重讀；空 key 檢查同步改為 `getProfileForPurpose`。
+  - `ChatScreen.AiProviderSwitcherChip` 新增 `label` 參數（預設 `"對話模型："`），深度分析顯示「深度分析模型：」、每日摘要顯示「每日摘要模型：」。
+- **每日與每週摘要準時性補強（#254）**：
+  - `DailySummaryPolicy` 與 `WeeklySummaryPolicy` 新增 `maybeCatchUp(ctx)`，於 `MainActivity.onCreate`、`BootReceiver` 與 `SettingsActivity` 儲存設定後檢查並立即補跑錯過之當日／當週摘要。
+  - `DailySummaryWorker` 失敗時改回傳 `Result.retry()`（`BackoffPolicy.EXPONENTIAL, 10min`，最多 3 次）不覆寫重試排程，成功或達上限後再重排明日。
+  - `WeeklySummaryPolicy.generateWeeklySummary` 新增 `anchorMs` 參數，以排程錨定週（`between(start, start + 7d)`）計算區間與 `weekKeyFor(anchorMs)`，避免 Doze 延遲至週一時誤抓新週；constraints 移除 `RequiresBatteryNotLow`、改為 `NetworkType.CONNECTED`。
+
 ## [2.11.0] - 2026-11-18
 
 ### 新增
