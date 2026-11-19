@@ -608,7 +608,7 @@ object AiClient {
                     base.appendLine("- ${r.ruleText} $targetStr".trim())
                 }
             }
-            base.appendLine("範例判斷：PChome 發送 P 幣或折扣碼＝必看；PChome 純新品推薦＝行銷。")
+            base.appendLine("範例判斷：購物平台發送點數或折扣碼＝必看；購物平台純新品推薦＝行銷。")
         }
 
         if (includeAutoMemo) {

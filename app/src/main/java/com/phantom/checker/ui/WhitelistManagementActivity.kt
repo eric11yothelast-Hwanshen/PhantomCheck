@@ -243,7 +243,7 @@ private fun WhitelistManagementSection(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         label = { Text(if (addModeSender) "寄件者名稱" else "白名單規則描述／關鍵字") },
-                        placeholder = { Text(if (addModeSender) "例如：台灣大哥大、玉山銀行" else "例如：官方帳單通知不是詐騙") }
+                        placeholder = { Text(if (addModeSender) "例如：電信公司、自己的銀行" else "例如：官方帳單通知不是詐騙") }
                     )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(

@@ -1471,7 +1471,7 @@ object AppDatabaseHolder {
             name = "必看",
             colorHex = "#4CAF50",
             sortOrder = 0,
-            aiHint = "個人通訊、到貨通知、驗證碼以外的帳務、優惠券/P幣/折扣碼、行程提醒等使用者需要行動或受益的訊息"
+            aiHint = "個人通訊、到貨通知、驗證碼以外的帳務、優惠券/點數回饋/折扣碼、行程提醒等使用者需要行動或受益的訊息"
         ),
         DefaultAiTagSpec(
             name = "行銷",
@@ -1581,7 +1581,7 @@ object AppDatabaseHolder {
                     super.onOpen(db)
                     seedDefaultAiTagsIfNeeded(appCtx, db)
                     seedAppCategoryTagsAndRulesIfNeeded(appCtx, db)
-                    seedDefaultAiRulesIfNeeded(appCtx, db)
+                    purgePresetAiRulesIfNeeded(appCtx, db)
                 }
             }).build().also { instance = it }
         }
@@ -1667,41 +1667,28 @@ object AppDatabaseHolder {
         }
     }
 
-    private fun seedDefaultAiRulesIfNeeded(
+    /**
+     * 舊版本曾內建與特定使用者相關的預設 AI 規則（電信白名單與購物標籤），
+     * 為使 App 保持通用，改為一次性清除這些由 App 自動寫入的預設規則；
+     * 不影響使用者自行新增的規則。
+     */
+    private fun purgePresetAiRulesIfNeeded(
         appCtx: Context,
         db: androidx.sqlite.db.SupportSQLiteDatabase
     ) {
-        if (PhantomPrefs.isDefaultAiRulesSeeded(appCtx)) return
+        if (PhantomPrefs.isPresetAiRulesPurged(appCtx)) return
+        val presetRuleTexts = listOf(
+            "台灣大哥大 twm5g.co 官方短連結的代收通知不是詐騙",
+            "PChome 含 P 幣或折扣碼的訊息標必看"
+        )
         try {
             db.beginTransaction()
             try {
-                val now = System.currentTimeMillis()
-                val whitelistText = "台灣大哥大 twm5g.co 官方短連結的代收通知不是詐騙"
-                val hasWl = db.query("SELECT COUNT(*) FROM ai_rules WHERE ruleText = ?", arrayOf(whitelistText))
-                    .use { c -> c.moveToFirst() && c.getInt(0) > 0 }
-                if (!hasWl) {
-                    db.execSQL(
-                        "INSERT INTO ai_rules (ruleText, targetTagId, kind, isEnabled, createdAt) VALUES (?, NULL, 'whitelist', 1, ?)",
-                        arrayOf<Any>(whitelistText, now)
-                    )
+                presetRuleTexts.forEach { ruleText ->
+                    db.execSQL("DELETE FROM ai_rules WHERE ruleText = ?", arrayOf<Any>(ruleText))
                 }
-
-                var mustSeeId: Long? = null
-                db.query("SELECT id FROM tags WHERE name = ? LIMIT 1", arrayOf("必看")).use { c ->
-                    if (c.moveToFirst()) mustSeeId = c.getLong(0)
-                }
-                val tagRuleText = "PChome 含 P 幣或折扣碼的訊息標必看"
-                val hasTagRule = db.query("SELECT COUNT(*) FROM ai_rules WHERE ruleText = ?", arrayOf(tagRuleText))
-                    .use { c -> c.moveToFirst() && c.getInt(0) > 0 }
-                if (!hasTagRule && mustSeeId != null) {
-                    db.execSQL(
-                        "INSERT INTO ai_rules (ruleText, targetTagId, kind, isEnabled, createdAt) VALUES (?, ?, 'tag', 1, ?)",
-                        arrayOf<Any>(tagRuleText, mustSeeId!!, now + 1)
-                    )
-                }
-
                 db.setTransactionSuccessful()
-                PhantomPrefs.setDefaultAiRulesSeeded(appCtx, true)
+                PhantomPrefs.setPresetAiRulesPurged(appCtx, true)
             } finally {
                 db.endTransaction()
             }

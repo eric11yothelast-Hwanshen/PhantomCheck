@@ -1218,9 +1218,9 @@ private fun AddAiRuleDialog(
                     placeholder = {
                         Text(
                             if (kind == AiRuleEntity.KIND_WHITELIST) {
-                                "例如：台灣大哥大 twm5g.co 官方短連結通知不是詐騙"
+                                "例如：電信公司官方短連結的代收通知不是詐騙"
                             } else {
-                                "例如：PChome 含 P 幣或折扣碼的訊息標記必看"
+                                "例如：購物網站含折扣碼的訊息標記必看"
                             }
                         )
                     }

@@ -124,7 +124,7 @@ object PhantomPrefs {
     private const val KEY_AI_AUTO_TAG_ENABLED = "ai_auto_tag_enabled"
     private const val KEY_DEFAULT_AI_TAGS_SEEDED = "default_ai_tags_seeded_v1"
     private const val KEY_DEFAULT_APP_CAT_SEEDED = "default_app_cat_seeded_v1"
-    private const val KEY_DEFAULT_AI_RULES_SEEDED = "default_ai_rules_seeded_v1"
+    private const val KEY_PRESET_AI_RULES_PURGED = "preset_ai_rules_purged_v1"
     private const val KEY_QUIET_HOURS_ENABLED = "quiet_hours_enabled"
     private const val KEY_QUIET_START_MIN = "quiet_hours_start_minute"
     private const val KEY_QUIET_END_MIN = "quiet_hours_end_minute"
@@ -688,11 +688,11 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     }
 
     /** 預設自然語言 AI 規則是否已建立 */
-    fun isDefaultAiRulesSeeded(ctx: Context): Boolean =
-        prefs(ctx).getBoolean(KEY_DEFAULT_AI_RULES_SEEDED, false)
+    fun isPresetAiRulesPurged(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_PRESET_AI_RULES_PURGED, false)
 
-    fun setDefaultAiRulesSeeded(ctx: Context, seeded: Boolean) {
-        prefs(ctx).edit().putBoolean(KEY_DEFAULT_AI_RULES_SEEDED, seeded).apply()
+    fun setPresetAiRulesPurged(ctx: Context, purged: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_PRESET_AI_RULES_PURGED, purged).apply()
     }
 
     /** 省 token 模式（override 層，不覆寫原開關值，預設關閉） */
@@ -1337,7 +1337,9 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     }
 
     private const val KEY_MY_DISPLAY_NAMES = "my_display_names"
-    val DEFAULT_MY_DISPLAY_NAMES: Set<String> = setOf("Eric Chiu")
+
+    /** 預設不帶任何名稱（通用原則：不內建與特定使用者相關的預設值） */
+    val DEFAULT_MY_DISPLAY_NAMES: Set<String> = emptySet()
 
     fun getMyDisplayNames(ctx: Context): Set<String> {
         val p = prefs(ctx)

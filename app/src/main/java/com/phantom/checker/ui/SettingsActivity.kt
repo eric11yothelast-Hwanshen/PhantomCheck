@@ -1102,7 +1102,11 @@ fun FilterSettingsScreen(
 
                     SettingSwitchRow(
                         title = "AI 風險分析",
-                        subtitle = "內文滿 10 字元且未命中過濾規則時自動評估風險",
+                        subtitle = if (tokenSaverEnabled) {
+                            "內文達 $aiMinTriggerLength 字元且未命中過濾規則時自動評估風險（可於 AI 與分析調整）；省 token 模式生效中：僅命中可疑特徵才分析"
+                        } else {
+                            "內文達 $aiMinTriggerLength 字元且未命中過濾規則時自動評估風險（觸發字數門檻可於 AI 與分析調整）"
+                        },
                         checked = aiRiskEnabled,
                         onCheckedChange = { checked ->
                             aiRiskEnabled = checked
@@ -1113,7 +1117,11 @@ fun FilterSettingsScreen(
 
                     SettingSwitchRow(
                         title = "每則訊息 AI 智慧掃描",
-                        subtitle = "AI 分析時自動指派「必看／行銷／垃圾通知」等標籤",
+                        subtitle = if (tokenSaverEnabled) {
+                            "AI 分析時自動指派「必看／行銷／垃圾通知」等標籤；省 token 模式生效中：已暫停"
+                        } else {
+                            "AI 分析時自動指派「必看／行銷／垃圾通知」等標籤"
+                        },
                         checked = aiAutoTagEnabled,
                         onCheckedChange = { checked ->
                             aiAutoTagEnabled = checked
@@ -1124,7 +1132,10 @@ fun FilterSettingsScreen(
 
                     SettingSwitchRow(
                         title = "每日 AI 摘要",
-                        subtitle = String.format(Locale.getDefault(), "排程時間：每日 %02d:%02d", summaryHour, summaryMinute),
+                        subtitle = buildString {
+                            append(String.format(Locale.getDefault(), "排程時間：每日 %02d:%02d", summaryHour, summaryMinute))
+                            if (tokenSaverEnabled) append("；省 token 模式生效中：已暫停")
+                        },
                         checked = dailySummaryEnabled,
                         onCheckedChange = { checked ->
                             dailySummaryEnabled = checked
@@ -2004,23 +2015,34 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     Text(
-                        text = "每日 AI 分析上限（今日已用 $todayAiUsage 次）",
+                        text = "每日 AI 額度上限（今日已用 $todayAiUsage 次）",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
                     Spacer(Modifier.height(6.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(0, 20, 50, 100).forEach { limit ->
+                        val presetLimits = listOf(0, 20, 50, 100)
+                        val visibleLimits = if (dailyAiLimit !in presetLimits && dailyAiLimit >= 0) {
+                            presetLimits + dailyAiLimit
+                        } else {
+                            presetLimits
+                        }
+                        visibleLimits.sorted().forEach { limit ->
                             FilterChip(
                                 selected = dailyAiLimit == limit,
                                 onClick = {
                                     dailyAiLimit = limit
                                     PhantomPrefs.setDailyAiLimit(appCtx, limit)
                                 },
-                                label = { Text(if (limit == 0) "不限" else "$limit 則") }
+                                label = { Text(if (limit == 0) "不限" else "$limit 次") }
                             )
                         }
                     }
+                    Text(
+                        text = "限制每日 AI 分析呼叫次數，0 為不限；亦可用 AI 助手以 10 次為步進調整（0–100 次）。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
 
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     Text(
@@ -2697,7 +2719,7 @@ fun FilterSettingsScreen(
                             onValueChange = { newDisplayNameInput = it },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
-                            placeholder = { Text("新增我的顯示名稱（如 Eric Chiu）") }
+                            placeholder = { Text("新增我的顯示名稱（如自己在群組中的名稱或暱稱）") }
                         )
                         Spacer(Modifier.width(8.dp))
                         val trimmedName = newDisplayNameInput.trim()
