@@ -612,7 +612,18 @@ object AiClient {
         }
 
         if (includeAutoMemo) {
-            base.appendLine("若訊息含值得備忘的資訊，請輸出 memo（繁體中文、40 字內、不含訊息原文照抄）、memo_type（\"todo\" 表示含明確行動或期限如繳費期限/取貨/會議/回診/待回覆事項；\"note\" 表示純資訊性備忘）與 todo_due（僅 memo_type=\"todo\" 且有明確時間時填 \"yyyy-MM-dd HH:mm\"，無法確定時間或 memo_type=\"note\" 時留空字串 \"\"）；無須備忘則 memo=\"\"、memo_type=\"note\"、todo_due=\"\"。")
+            val nowStr = try {
+                val zone = java.time.ZoneId.systemDefault()
+                val zdt = java.time.ZonedDateTime.now(zone)
+                val fmt = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm (EEEE)", java.util.Locale.TRADITIONAL_CHINESE)
+                "${zdt.format(fmt)} [${zone.id}]"
+            } catch (_: Exception) {
+                ""
+            }
+            if (nowStr.isNotEmpty()) {
+                base.appendLine("現在時間：$nowStr")
+            }
+            base.appendLine("若訊息含值得備忘的資訊，請輸出 memo（繁體中文、40 字內、不含訊息原文照抄）、memo_type（\"todo\" 表示含明確行動或期限如繳費期限/取貨/會議/回診/待回覆事項；\"note\" 表示純資訊性備忘）與 todo_due（僅 memo_type=\"todo\" 時填寫：請從訊息時間線索如「明天 9 點」「週三晚」「10/28 前」「下週一到」結合現在時間推算出具體日期時間，以系統時區（預設 Asia/Taipei）解析為 \"yyyy-MM-dd HH:mm\"；若無任何時間線索或 memo_type=\"note\" 才留空字串 \"\"）；無須備忘則 memo=\"\"、memo_type=\"note\"、todo_due=\"\"。")
             val activeMemoRules = memoRules.filter { it.isEnabled && MemoRuleEngine.isValid(it) }.sortedBy { it.id }.take(10)
             if (activeMemoRules.isNotEmpty()) {
                 base.appendLine("【記事/待辦規則】")

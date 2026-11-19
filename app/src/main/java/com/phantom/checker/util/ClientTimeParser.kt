@@ -132,7 +132,13 @@ object ClientTimeParser {
                 val mo = m.groupValues[1].toIntOrNull()
                 val d = m.groupValues[2].toIntOrNull()
                 if (mo != null && d != null) {
-                    parsedDate = runCatching { LocalDate.of(today.year, mo, d) }.getOrNull()
+                    var candidate = runCatching { LocalDate.of(today.year, mo, d) }.getOrNull()
+                    if (candidate != null && candidate.isBefore(today) &&
+                        java.time.temporal.ChronoUnit.DAYS.between(candidate, today) > 180
+                    ) {
+                        candidate = runCatching { LocalDate.of(today.year + 1, mo, d) }.getOrNull()
+                    }
+                    parsedDate = candidate
                     if (parsedDate != null) hasExplicitDate = true
                 }
             }

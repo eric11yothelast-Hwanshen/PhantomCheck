@@ -1235,6 +1235,7 @@ class NotificationCollectorService : NotificationListenerService() {
 
         private const val AUTO_MEMO_DEDUP_WINDOW_MS = 7L * 24L * 60L * 60L * 1000L
         private const val OWN_REPLY_ECHO_WINDOW_MS = 3L * 60L * 1000L
+        private const val REMINDER_LEAD_MINUTES = 30L
 
         internal fun stripOwnSenderPrefix(text: String, myNames: Set<String>): String? {
             val trimmed = text.trimStart()
@@ -1341,9 +1342,26 @@ class NotificationCollectorService : NotificationListenerService() {
                     val normCand = normalizeForSimilarity(cand.title)
                     normCand == normClean || diceBigramSimilarity(normCand, normClean) >= 0.9
                 }
-                val parsedDue = ClientTimeParser.parseStructuredDueAt(todoDue)
+                val eventTime: Long? = try {
+                    val structured = ClientTimeParser.parseStructuredDueAt(todoDue)?.takeIf { it > now }
+                    structured ?: when (
+                        val res = ClientTimeParser.parseNaturalReminderTime(null, msg.content, now)
+                    ) {
+                        is com.phantom.checker.util.NaturalTimeParseResult.Success -> res.epochMillis
+                        is com.phantom.checker.util.NaturalTimeParseResult.PastTime,
+                        com.phantom.checker.util.NaturalTimeParseResult.Unparseable -> null
+                    }
+                } catch (_: Exception) {
+                    null
+                }
+                val leadMs = REMINDER_LEAD_MINUTES * 60L * 1000L
+                val minFutureMs = 5L * 60L * 1000L
+                val computedDue: Long? = eventTime?.let { evt ->
+                    val leadDue = evt - leadMs
+                    if (leadDue <= now) maxOf(now + minFutureMs, leadDue) else leadDue
+                }
                 if (duplicateTodo != null) {
-                    val updatedDue = parsedDue ?: duplicateTodo.dueAt
+                    val updatedDue = computedDue ?: duplicateTodo.dueAt
                     db.todoDao().update(
                         duplicateTodo.copy(
                             title = clean,
@@ -1353,15 +1371,15 @@ class NotificationCollectorService : NotificationListenerService() {
                     )
                     val appCtx = ctx?.applicationContext
                     if (appCtx != null) {
-                        if (parsedDue != null && parsedDue > now && parsedDue != duplicateTodo.dueAt) {
-                            ReminderScheduler.scheduleTodo(appCtx, duplicateTodo.id, parsedDue)
+                        if (computedDue != null && computedDue > now && computedDue != duplicateTodo.dueAt) {
+                            ReminderScheduler.scheduleTodo(appCtx, duplicateTodo.id, computedDue)
                         }
                         ReminderWidgetProvider.updateAllIfChanged(appCtx)
                     }
                     return
                 }
 
-                val dueAt = parsedDue ?: (msg.timestamp + 2L * 60L * 60L * 1000L)
+                val dueAt = computedDue ?: (msg.timestamp + 2L * 60L * 60L * 1000L)
                 val newId = db.todoDao().insert(
                     TodoEntity(
                         title = clean,
