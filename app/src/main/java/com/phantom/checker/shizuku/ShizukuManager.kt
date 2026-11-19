@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
+import androidx.core.app.NotificationManagerCompat
 import com.phantom.checker.BuildConfig
+import com.phantom.checker.service.NotificationCollectorService
 import com.phantom.checker.service.StatsForegroundService
 import com.phantom.checker.util.PhantomPrefs
 import kotlinx.coroutines.CompletableDeferred
@@ -246,6 +248,18 @@ object ShizukuManager {
         } catch (e: Exception) {
             ShellResult(1, e.message ?: "執行失敗")
         }
+    }
+
+    suspend fun grantNotificationListener(ctx: Context): Boolean = withContext(Dispatchers.IO) {
+        val appCtx = ctx.applicationContext
+        val result = execCommand(
+            appCtx,
+            "cmd notification allow_listener ${appCtx.packageName}/${NotificationCollectorService::class.java.name}"
+        )
+        val granted = result.isSuccess &&
+            NotificationManagerCompat.getEnabledListenerPackages(appCtx).contains(appCtx.packageName)
+        refreshState(appCtx)
+        granted
     }
 
     private fun isShizukuInstalled(ctx: Context): Boolean {

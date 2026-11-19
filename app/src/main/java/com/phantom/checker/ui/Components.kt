@@ -126,6 +126,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.zIndex
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.Dialog
@@ -878,11 +880,25 @@ fun ExportCsvDialog(
 fun NotificationListenerGuideCard(
     onOpenSettings: () -> Unit,
     glassState: HazeState,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenAppDetails: (() -> Unit)? = null,
+    shizukuReady: Boolean = false,
+    onShizukuGrant: (() -> Unit)? = null,
+    onReportBounds: ((Rect) -> Unit)? = null
 ) {
+    val ctx = LocalContext.current
     Box(
         modifier = modifier
             .fillMaxWidth()
+            .then(
+                if (onReportBounds != null) {
+                    Modifier.onGloballyPositioned { coords ->
+                        onReportBounds(coords.boundsInRoot())
+                    }
+                } else {
+                    Modifier
+                }
+            )
             .animateContentSize(spring())
             .phantomGlassSurface(
                 state = glassState,
@@ -914,16 +930,29 @@ fun NotificationListenerGuideCard(
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
             Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = onOpenSettings,
-                modifier = Modifier.pressableScale(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError
-                )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("前往開啟通知存取權限")
+                Button(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.pressableScale(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("前往開啟通知存取權限")
+                }
             }
+            RestrictedSettingsTroubleshootSection(
+                onOpenAppDetails = {
+                    if (onOpenAppDetails != null) onOpenAppDetails()
+                    else openAppDetailsSettings(ctx)
+                },
+                shizukuReady = shizukuReady,
+                onShizukuGrant = { onShizukuGrant?.invoke() }
+            )
         }
     }
 }

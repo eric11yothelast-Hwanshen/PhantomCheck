@@ -177,6 +177,7 @@ import com.phantom.checker.service.NotificationCollectorService
 import com.phantom.checker.service.ReminderScheduler
 import com.phantom.checker.service.RetentionPolicy
 import com.phantom.checker.service.StatsForegroundService
+import com.phantom.checker.shizuku.ShizukuManager
 import com.phantom.checker.ui.components.LiquidGlassTabBar
 import com.phantom.checker.ui.components.LiquidGlassTabBarItem
 import com.phantom.checker.ui.components.pressableScale
@@ -449,11 +450,30 @@ private fun PhantomCheckApp(
     var hasPostNotifications by remember {
         mutableStateOf(isPostNotificationsGranted(appCtx))
     }
+    val needsPostPrompt = remember {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !isPostNotificationsGranted(appCtx)
+    }
+    var postNotificationPromptDone by remember { mutableStateOf(!needsPostPrompt) }
+    val shizukuState by ShizukuManager.state.collectAsState()
+
+    LaunchedEffect(onboardingStep, onboardingCompleted, postNotificationPromptDone) {
+        if (!onboardingCompleted && postNotificationPromptDone) {
+            selectedTab = when (onboardingStep) {
+                OnboardingStep.AI_ASSISTANT -> MainTab.ASSISTANT
+                OnboardingStep.NOTES_TAB,
+                OnboardingStep.MEMO_RULES,
+                OnboardingStep.TODO_AND_BATCH -> MainTab.NOTES
+                OnboardingStep.STATS_AND_SUMMARY -> MainTab.STATS
+                else -> MainTab.MESSAGES
+            }
+        }
+    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasPostNotifications = granted
+        postNotificationPromptDone = true
         if (granted) {
             StatsForegroundService.startOrRefresh(appCtx)
         }
@@ -461,6 +481,7 @@ private fun PhantomCheckApp(
 
     // Android 13+ 啟動時主動請求 POST_NOTIFICATIONS 權限
     LaunchedEffect(Unit) {
+        ShizukuManager.init(appCtx)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasPostNotifications) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -1489,10 +1510,24 @@ private fun PhantomCheckApp(
             if (!isListenerEnabled) {
                 Spacer(Modifier.height(8.dp))
                 NotificationListenerGuideCard(
-                    onOpenSettings = {
-                        ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    onOpenSettings = { openNotificationListenerSettings(ctx) },
+                    glassState = glassState,
+                    onOpenAppDetails = { openAppDetailsSettings(ctx) },
+                    shizukuReady = shizukuState.isReady,
+                    onShizukuGrant = {
+                        scope.launch {
+                            val ok = ShizukuManager.grantNotificationListener(appCtx)
+                            if (ok) {
+                                isListenerEnabled = true
+                                snackbarHostState.showSnackbar("已透過 Shizuku 開啟通知存取權限")
+                            } else {
+                                snackbarHostState.showSnackbar("Shizuku 授權失敗，請手動開啟")
+                            }
+                        }
                     },
-                    glassState = glassState
+                    onReportBounds = { rect ->
+                        targetBounds = targetBounds + (OnboardingTargets.NOTIFICATION_GUIDE to rect)
+                    }
                 )
             }
 
@@ -1609,7 +1644,7 @@ private fun PhantomCheckApp(
                             messageSheetTarget = msg
                         },
                         onOpenNotificationAccess = {
-                            ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                            openNotificationListenerSettings(ctx)
                         },
                         onReportBounds = { key, rect ->
                             targetBounds = targetBounds + (key to rect)
@@ -1658,6 +1693,9 @@ private fun PhantomCheckApp(
                         },
                         onShowMessage = { msg ->
                             scope.launch { snackbarHostState.showSnackbar(msg) }
+                        },
+                        onReportBounds = { key, rect ->
+                            targetBounds = targetBounds + (key to rect)
                         }
                     )
                     MainTab.STATS -> StatsTab(
@@ -1766,7 +1804,8 @@ private fun PhantomCheckApp(
             )
         }
 
-        if (!onboardingCompleted) {
+        if (!onboardingCompleted && postNotificationPromptDone) {
+            val hasAnyAppRows = appGroups.isNotEmpty()
             OnboardingOverlay(
                 step = onboardingStep,
                 isListenerEnabled = isListenerEnabled,
@@ -1774,8 +1813,20 @@ private fun PhantomCheckApp(
                 oemAutostartConfirmed = oemAutostartConfirmed,
                 targetBounds = targetBounds,
                 glassState = glassState,
-                onOpenNotificationSettings = {
-                    ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                hasAnyAppRows = hasAnyAppRows,
+                onOpenNotificationSettings = { openNotificationListenerSettings(ctx) },
+                onOpenAppDetails = { openAppDetailsSettings(ctx) },
+                shizukuReady = shizukuState.isReady,
+                onShizukuGrant = {
+                    scope.launch {
+                        val ok = ShizukuManager.grantNotificationListener(appCtx)
+                        if (ok) {
+                            isListenerEnabled = true
+                            snackbarHostState.showSnackbar("已透過 Shizuku 開啟通知存取權限")
+                        } else {
+                            snackbarHostState.showSnackbar("Shizuku 授權失敗，請手動開啟")
+                        }
+                    }
                 },
                 onOpenBatterySettings = {
                     openBatteryOptimizationSettings(ctx)
@@ -1793,7 +1844,8 @@ private fun PhantomCheckApp(
                     onboardingStep = when (onboardingStep) {
                         OnboardingStep.PERMISSION -> OnboardingStep.HOME_APP
                         OnboardingStep.HOME_APP -> OnboardingStep.LONG_PRESS
-                        OnboardingStep.LONG_PRESS -> OnboardingStep.SWIPE_DELETE
+                        OnboardingStep.LONG_PRESS ->
+                            if (hasAnyAppRows) OnboardingStep.SWIPE_DELETE else OnboardingStep.FILTER_CHIPS
                         OnboardingStep.SWIPE_DELETE -> OnboardingStep.QUICK_REPLY
                         OnboardingStep.QUICK_REPLY -> OnboardingStep.MULTI_SELECT
                         OnboardingStep.MULTI_SELECT -> OnboardingStep.FILTER_CHIPS
@@ -2111,7 +2163,11 @@ private fun MessagesHomeTab(
                         }
                         IconButton(
                             onClick = onOpenSettings,
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier
+                                .size(48.dp)
+                                .onGloballyPositioned { coords ->
+                                    onReportBounds(OnboardingTargets.SETTINGS_GEAR, coords.boundsInRoot())
+                                }
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Settings,
@@ -2444,6 +2500,7 @@ private fun MessagesHomeTab(
                             modifier = Modifier.fillParentMaxSize()
                         ) { app ->
                             val isMuted = app.packageName in mutedPackages
+                            val isFirstApp = app.packageName == appGroups.firstOrNull()?.packageName
                             val timeText = remember(app.lastTs, is24h) {
                                 PhantomPrefs.formatMessageTime(ctx, app.lastTs, includeDate = true)
                             }
@@ -2451,6 +2508,15 @@ private fun MessagesHomeTab(
                                 glassState = glassState,
                                 modifier = Modifier
                                     .fillMaxSize()
+                                    .then(
+                                        if (isFirstApp) {
+                                            Modifier.onGloballyPositioned { coords ->
+                                                onReportBounds(OnboardingTargets.FIRST_APP_ROW, coords.boundsInRoot())
+                                            }
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
                                     .alpha(if (isMuted) 0.5f else 1f)
                                     .pressableScale()
                                     .combinedClickable(
@@ -3342,7 +3408,8 @@ private fun NotesTab(
     initialEditTodoId: Long? = null,
     onConsumedEditTodoId: () -> Unit = {},
     onOpenMessageDetail: (Long) -> Unit,
-    onShowMessage: (String) -> Unit
+    onShowMessage: (String) -> Unit,
+    onReportBounds: (String, Rect) -> Unit = { _, _ -> }
 ) {
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
@@ -3579,7 +3646,11 @@ private fun NotesTab(
                 Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                     IconButton(
                         onClick = { showMemoRulesPanel = !showMemoRulesPanel },
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier
+                            .size(48.dp)
+                            .onGloballyPositioned { coords ->
+                                onReportBounds(OnboardingTargets.MEMO_RULES_AREA, coords.boundsInRoot())
+                            }
                     ) {
                         Icon(
                             imageVector = TuneIcon,
@@ -3652,6 +3723,9 @@ private fun NotesTab(
                         onClick = {
                             editingTodo = null
                             showTodoEditor = true
+                        },
+                        modifier = Modifier.onGloballyPositioned { coords ->
+                            onReportBounds(OnboardingTargets.TODO_ADD, coords.boundsInRoot())
                         }
                     ) {
                         Icon(

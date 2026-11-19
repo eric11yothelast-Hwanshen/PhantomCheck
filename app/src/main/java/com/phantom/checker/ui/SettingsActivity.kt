@@ -39,7 +39,11 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -297,7 +301,11 @@ class SettingsActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+private val SETTINGS_CARD_ORDER = listOf(
+    "quick", "personalization", "stats", "ai", "notif", "data", "appearance", "shizuku", "intel", "about"
+)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun FilterSettingsScreen(
     onBack: () -> Unit,
@@ -398,42 +406,62 @@ fun FilterSettingsScreen(
     var aiMatchedIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var aiSearchNote by remember { mutableStateOf<String?>(null) }
 
-    // 設定頁高亮導覽狀態（0 = 未顯示，1..6 = 對應步驟）
+    // 設定頁高亮導覽狀態（0 = 未顯示，1..8 = 對應步驟）
     var tourStepIndex by remember {
         mutableIntStateOf(if (PhantomPrefs.isSettingsTourCompleted(appCtx)) 0 else 1)
     }
     val cardBounds = remember { mutableStateMapOf<String, Rect>() }
     val listState = rememberLazyListState()
+    val whitelistBringIntoViewRequester = remember { BringIntoViewRequester() }
 
     LaunchedEffect(tourStepIndex) {
-        if (tourStepIndex in 1..6) {
-            when (tourStepIndex) {
-                1 -> {
+        if (tourStepIndex in 1..SettingsTourStep.entries.size) {
+            if (searchQuery.isNotEmpty() || aiMatchedIds.isNotEmpty()) {
+                searchQuery = ""
+                aiMatchedIds = emptyList()
+                aiSearchNote = null
+            }
+            val step = SettingsTourStep.fromIndex(tourStepIndex)
+            when (step) {
+                SettingsTourStep.QUICK -> {
                     expandQuick = true
                     PhantomPrefs.setSettingsCardExpanded(appCtx, "quick", true)
                 }
-                2 -> {
+                SettingsTourStep.PERSONALIZATION -> {
+                    expandPersonalization = true
+                    PhantomPrefs.setSettingsCardExpanded(appCtx, "personalization", true)
+                }
+                SettingsTourStep.AI -> {
                     expandAi = true
                     PhantomPrefs.setSettingsCardExpanded(appCtx, "ai", true)
                 }
-                3 -> {
+                SettingsTourStep.NOTIF -> {
                     expandNotif = true
                     PhantomPrefs.setSettingsCardExpanded(appCtx, "notif", true)
                 }
-                4 -> {
+                SettingsTourStep.DATA,
+                SettingsTourStep.WHITELIST -> {
                     expandData = true
                     PhantomPrefs.setSettingsCardExpanded(appCtx, "data", true)
                 }
-                5 -> {
+                SettingsTourStep.APPEARANCE -> {
                     expandAppearance = true
                     PhantomPrefs.setSettingsCardExpanded(appCtx, "appearance", true)
                 }
-                6 -> {
+                SettingsTourStep.SHIZUKU -> {
                     expandShizuku = true
                     PhantomPrefs.setSettingsCardExpanded(appCtx, "shizuku_advanced", true)
                 }
             }
-            listState.animateScrollToItem(tourStepIndex - 1)
+            val scrollIdx = SETTINGS_CARD_ORDER.indexOf(step.scrollCardKey)
+            if (scrollIdx >= 0) {
+                listState.animateScrollToItem(scrollIdx)
+            }
+            withFrameNanos { }
+            if (step == SettingsTourStep.WHITELIST) {
+                whitelistBringIntoViewRequester.bringIntoView()
+                withFrameNanos { }
+            }
         }
     }
 
@@ -803,9 +831,7 @@ fun FilterSettingsScreen(
             },
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
         ) { padding ->
-            val allCardKeys = remember {
-                listOf("quick", "personalization", "stats", "ai", "notif", "data", "appearance", "shizuku", "intel", "about")
-            }
+            val allCardKeys = SETTINGS_CARD_ORDER
             LaunchedEffect(initialHighlightCardKey) {
                 val key = initialHighlightCardKey ?: return@LaunchedEffect
                 when (key) {
@@ -2808,6 +2834,7 @@ fun FilterSettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .pressableScale()
+                            .bringIntoViewRequester(whitelistBringIntoViewRequester)
                             .onGloballyPositioned { coords ->
                                 cardBounds["whitelist"] = coords.boundsInRoot()
                             }
@@ -3002,7 +3029,7 @@ fun FilterSettingsScreen(
                         Spacer(Modifier.height(6.dp))
                         Button(
                             onClick = {
-                                ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                                openNotificationListenerSettings(ctx)
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -4356,54 +4383,63 @@ private fun AppThrottlePickerDialog(
 private enum class SettingsTourStep(
     val index: Int,
     val cardKey: String,
+    val scrollCardKey: String,
     val title: String,
     val description: String
 ) {
     QUICK(
         index = 1,
         cardKey = "quick",
+        scrollCardKey = "quick",
         title = "快速設定與省 Token",
         description = "最常用的核心開關都集中於此，包含「省 token 模式」、常駐統計通知與快速操作；你可以直接點擊洞內開關立即試用。"
     ),
     PERSONALIZATION(
         index = 2,
         cardKey = "personalization",
+        scrollCardKey = "personalization",
         title = "個人化、玻璃強度與背景圖片",
         description = "調整卡片密度、時間格式、首頁排序與篩選欄，並可自訂全域／AI 聊天／對話頁三層背景圖片與液態玻璃強度。"
     ),
     AI(
         index = 3,
         cardKey = "ai",
+        scrollCardKey = "ai",
         title = "AI 用途模型與雙模型路由",
         description = "管理多 Provider API Key 與 7 種 AI 用途模型，並可開啟「雙模型信心路由」（先打輕量模型，高信心直接採用、不確定才升級主模型）進一步省 token。"
     ),
     NOTIF(
         index = 4,
         cardKey = "notif",
+        scrollCardKey = "notif",
         title = "訊息與通知",
         description = "設定勿擾時段、即時關鍵字提醒、重複通知節流秒數、滑動刪除與點擊開啟行為，並可使用「清除已讀訊息」。"
     ),
     DATA(
         index = 5,
         cardKey = "data",
+        scrollCardKey = "data",
         title = "資料管理與自訂標籤",
         description = "管理 App 靜音清單、自訂標籤規則、訊息保留天數與則數上限、CSV 匯出，也可隨時重播新手或設定教學。"
     ),
     WHITELIST(
         index = 6,
         cardKey = "whitelist",
+        scrollCardKey = "data",
         title = "白名單管理卡",
         description = "依 App 分組收合檢視所有寄件者／內容白名單，支援手動新增（防重複）、開關啟停與確認刪除；AI 助手也會同步讀取這份清單。"
     ),
     APPEARANCE(
         index = 7,
         cardKey = "appearance",
+        scrollCardKey = "appearance",
         title = "外觀、卡片底色與保活",
         description = "切換深淺主題、Material You 動態取色、分頁欄模式，以及「卡片底色模式」（跟隨玻璃強度／透明模式滑桿／深色底），並檢查電池最佳化與前景保活狀態。"
     ),
     SHIZUKU(
         index = 8,
         cardKey = "shizuku",
+        scrollCardKey = "shizuku",
         title = "Shizuku 進階",
         description = "進階使用者可透過 Shizuku 進行系統級保活強化、權限補齊與連線診斷；未安裝時可略過不影響一般功能。"
     );
