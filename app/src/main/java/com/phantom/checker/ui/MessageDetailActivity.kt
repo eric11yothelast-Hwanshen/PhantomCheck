@@ -80,8 +80,10 @@ import com.phantom.checker.service.StatsForegroundService
 import com.phantom.checker.shizuku.ShizukuKeepAlive
 import com.phantom.checker.shizuku.ShizukuManager
 import com.phantom.checker.ui.components.pressableScale
+import com.phantom.checker.util.AiPurpose
 import com.phantom.checker.util.OtpDetector
 import com.phantom.checker.util.PhantomPrefs
+import com.phantom.checker.util.PhantomSettingsBus
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -140,13 +142,16 @@ fun MessageDetailScreen(
     var deepAnalyzeJob by remember { mutableStateOf<Job?>(null) }
     var deepAnalysisMarkdown by remember { mutableStateOf<String?>(null) }
     var deepAnalysisError by remember { mutableStateOf<String?>(null) }
-    var profiles by remember { mutableStateOf(AiClient.getProfiles(appCtx)) }
-    var activeProfile by remember { mutableStateOf(AiClient.getActiveProfile(appCtx)) }
+    val settingsVersion by PhantomSettingsBus.version.collectAsState()
+    var resumeRefreshTrigger by remember { mutableIntStateOf(0) }
+    val profiles = remember(settingsVersion, resumeRefreshTrigger) { AiClient.getProfiles(appCtx) }
+    var activeProfile by remember(settingsVersion, resumeRefreshTrigger) {
+        mutableStateOf(AiClient.getProfileForPurpose(appCtx, AiPurpose.DEEP_ANALYSIS))
+    }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showReminderPicker by remember { mutableStateOf(false) }
     var showNeverMemoDialog by remember { mutableStateOf(false) }
     var hasNeverMemoRule by remember { mutableStateOf(false) }
-    var resumeRefreshTrigger by remember { mutableIntStateOf(0) }
 
     val lifecycleOwner = ctx as? LifecycleOwner
     DisposableEffect(lifecycleOwner) {
@@ -566,11 +571,13 @@ fun MessageDetailScreen(
                             AiProviderSwitcherChip(
                                 profiles = profiles,
                                 activeProfile = activeProfile,
+                                label = "深度分析模型：",
                                 onSelectProfile = { selected ->
-                                    AiClient.setActiveProvider(appCtx, selected.id)
+                                    PhantomPrefs.setPurposeProfileId(appCtx, AiPurpose.DEEP_ANALYSIS.id, selected.id)
+                                    PhantomSettingsBus.notifyChanged()
                                     activeProfile = selected
                                     scope.launch {
-                                        snackbarHostState.showSnackbar("已切換模型：${selected.name}・${selected.model}")
+                                        snackbarHostState.showSnackbar("已切換深度分析模型：${selected.name}・${selected.model}")
                                     }
                                 }
                             )
@@ -582,7 +589,7 @@ fun MessageDetailScreen(
                                 OutlinedButton(
                                     onClick = {
                                         if (isDeepAnalyzing) return@OutlinedButton
-                                        if (AiClient.getActiveProfile(appCtx) == null) {
+                                        if (AiClient.getProfileForPurpose(appCtx, AiPurpose.DEEP_ANALYSIS) == null) {
                                             deepAnalysisError = "尚未設定 AI Provider API Key，請至設定頁配置"
                                             return@OutlinedButton
                                         }

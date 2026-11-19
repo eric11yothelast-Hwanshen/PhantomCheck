@@ -4844,7 +4844,8 @@ fun AiProviderSwitcherChip(
     profiles: List<AiProviderProfile>,
     activeProfile: AiProviderProfile?,
     onSelectProfile: (AiProviderProfile) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    label: String = "對話模型："
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -4867,7 +4868,7 @@ fun AiProviderSwitcherChip(
                 onClick = { expanded = true },
                 label = {
                     Text(
-                        text = "對話模型：${current.name}・${current.model} ▾",
+                        text = "$label${current.name}・${current.model} ▾",
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis

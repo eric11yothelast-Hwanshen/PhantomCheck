@@ -4439,8 +4439,24 @@ private fun StatsTab(
     var showExportDialog by remember { mutableStateOf(false) }
     var showHistoryDialog by remember { mutableStateOf(false) }
     var summaryHistory by remember { mutableStateOf(listOf<AiSummaryEntity>()) }
-    val profiles = remember { AiClient.getProfiles(appCtx) }
-    var activeProfile by remember { mutableStateOf(AiClient.getActiveProfile(appCtx)) }
+    val statsSettingsVersion by PhantomSettingsBus.version.collectAsState()
+    var statsResumeTrigger by remember { mutableIntStateOf(0) }
+    val statsLifecycleOwner = ctx as? LifecycleOwner
+    DisposableEffect(statsLifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                statsResumeTrigger++
+            }
+        }
+        statsLifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose {
+            statsLifecycleOwner?.lifecycle?.removeObserver(observer)
+        }
+    }
+    val profiles = remember(statsSettingsVersion, statsResumeTrigger) { AiClient.getProfiles(appCtx) }
+    var activeProfile by remember(statsSettingsVersion, statsResumeTrigger) {
+        mutableStateOf(AiClient.getProfileForPurpose(appCtx, com.phantom.checker.util.AiPurpose.DAILY_SUMMARY))
+    }
 
     if (showExportDialog) {
         ExportCsvDialog(
@@ -4686,10 +4702,12 @@ private fun StatsTab(
                     AiProviderSwitcherChip(
                         profiles = profiles,
                         activeProfile = activeProfile,
+                        label = "每日摘要模型：",
                         onSelectProfile = { selected ->
-                            AiClient.setActiveProvider(appCtx, selected.id)
+                            PhantomPrefs.setPurposeProfileId(appCtx, com.phantom.checker.util.AiPurpose.DAILY_SUMMARY.id, selected.id)
+                            PhantomSettingsBus.notifyChanged()
                             activeProfile = selected
-                            onShowMessage("已切換模型：${selected.name}・${selected.model}")
+                            onShowMessage("已切換每日摘要模型：${selected.name}・${selected.model}")
                         }
                     )
                     Spacer(Modifier.height(4.dp))
