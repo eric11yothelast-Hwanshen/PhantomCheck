@@ -206,7 +206,7 @@ private const val MAX_BATCH_SELECT = 100
 
 class MainActivity : ComponentActivity() {
     companion object {
-        private val hasAutoCheckedUpdateThisProcess = java.util.concurrent.atomic.AtomicBoolean(false)
+        internal val hasAutoCheckedUpdateThisProcess = java.util.concurrent.atomic.AtomicBoolean(false)
     }
 
     private val requestedTabState = mutableStateOf<MainTab?>(null)
