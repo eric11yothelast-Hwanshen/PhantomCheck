@@ -2,6 +2,19 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.13.0] - 2026-11-19
+
+### 新增
+- **訊息／記事中央堆疊 v3（#263 / PR #264）**：
+  - 零留白與全卡填滿：採動態層數、`8.dp` 邊距與動態 `contentPadding`（`bottom = viewport - exposure`），確保全項目可達且消除底部留白。
+  - 連續慣性滑動：改用 `LazyColumn`＋`LazyListState`（`cacheWindow 1.0/0.5`）＋`SnapPosition.Start` 統一單調吸附，移除一次一張限制，`rememberSnapFlingBehavior` 支援快滑跨多張後平滑吸附。
+  - 連續 lerp 過渡與視覺參數：頂／中／底三態錨點 smoothstep 連續插值，根治第 0 張與頭段瞬移；露出 `44.dp`、頂緣 pivot `scaleStep = 0.035f` 遞減，viewport 內維持不透明並於邊緣像素淡出。
+
+### 變更與修正
+- **SMS 雙路徑重複記錄修正（PR #268）**：
+  - `SmsAutoReplyReceiver` 專職自動回覆並移除 `db.messageDao().insert` 寫入，簡訊記錄統一由通知攔截路徑（`NotificationCollectorService`）單一記錄與 SHA-256 `dedupKey` 去重；時段判斷、敏感關鍵字、`TW_MOBILE_REGEX`、4 小時冷卻與每日 3 封上限等自動回覆行為維持不變（`shouldSkipReply` 提前 return 省去多餘協程排程）。
+  - 附註：issue #106 待實機驗證後關閉。
+
 ## [2.12.0] - 2026-11-19
 
 ### 新增
