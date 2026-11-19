@@ -1262,7 +1262,6 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     /** 記事分頁卡片排列模式（獨立於首頁，不互相衝突） */
     enum class NoteCardLayoutMode(val key: String, val label: String) {
         LIST("list", "一般條列"),
-        PEEK_TOP("peek_top", "往下露頂部"),
         CENTER("center", "中央堆疊")
     }
 
@@ -1270,7 +1269,10 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
 
     fun getNoteCardLayoutMode(ctx: Context): NoteCardLayoutMode {
         val raw = prefs(ctx).getString(KEY_NOTE_CARD_LAYOUT_MODE, null)
-        return NoteCardLayoutMode.entries.firstOrNull { it.key == raw } ?: NoteCardLayoutMode.LIST
+        return when (raw) {
+            "peek_top" -> NoteCardLayoutMode.CENTER
+            else -> NoteCardLayoutMode.entries.firstOrNull { it.key == raw } ?: NoteCardLayoutMode.LIST
+        }
     }
 
     fun setNoteCardLayoutMode(ctx: Context, mode: NoteCardLayoutMode) {

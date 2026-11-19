@@ -1239,7 +1239,7 @@ fun FilterSettingsScreen(
 
                         Text("記事卡片排列模式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         Text(
-                            text = "獨立設定記事分頁的卡片排列（不影響首頁）：一般條列、往下露頂部（撲克牌式）或中央堆疊滾輪",
+                            text = "獨立設定記事分頁的卡片排列（不影響首頁）：一般條列或中央堆疊滾輪",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

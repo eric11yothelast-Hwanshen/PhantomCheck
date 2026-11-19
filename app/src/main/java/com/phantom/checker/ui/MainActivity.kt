@@ -3033,6 +3033,7 @@ private fun NoteCardItem(
         glassState = glassState,
         modifier = Modifier
             .fillMaxWidth()
+            .then(if (overlapOpaque) Modifier.height(112.dp) else Modifier)
             .then(
                 if (isAuto) {
                     Modifier.combinedClickable(
@@ -3048,7 +3049,7 @@ private fun NoteCardItem(
                 }
             ),
         cornerRadius = 18.dp,
-        contentPadding = 14.dp,
+        contentPadding = if (overlapOpaque) 12.dp else 14.dp,
         overlapOpaqueBoost = overlapOpaque
     ) {
         Row(
@@ -3127,16 +3128,57 @@ private fun NoteCardItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Column(horizontalAlignment = Alignment.End) {
-                TextButton(onClick = { onTogglePin(note) }) {
-                    Text(if (note.pinned) "取消置頂" else "置頂")
-                }
-                Row {
-                    TextButton(onClick = { onEdit(note) }) {
-                        Text("編輯")
+            if (overlapOpaque) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { onTogglePin(note) },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = if (note.pinned) "取消置頂" else "置頂",
+                            tint = if (note.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
-                    TextButton(onClick = { onDelete(note) }) {
-                        Text("刪除", color = MaterialTheme.colorScheme.error)
+                    IconButton(
+                        onClick = { onEdit(note) },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "編輯",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = { onDelete(note) },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "刪除",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+            } else {
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = { onTogglePin(note) }) {
+                        Text(if (note.pinned) "取消置頂" else "置頂")
+                    }
+                    Row {
+                        TextButton(onClick = { onEdit(note) }) {
+                            Text("編輯")
+                        }
+                        TextButton(onClick = { onDelete(note) }) {
+                            Text("刪除", color = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }
@@ -3644,52 +3686,8 @@ private fun NotesTab(
                                 }
                             }
                         }
-                        PhantomPrefs.NoteCardLayoutMode.PEEK_TOP -> {
-                            // 撲克牌式往下露頂部堆疊：可自然滾動，鬆手吸附回頂端聚焦卡
-                            val deckListState = rememberLazyListState()
-                            val deckPeekPx = with(LocalDensity.current) { 52.dp.toPx() }
-                            val deckSnapProvider = remember(deckListState) {
-                                SnapLayoutInfoProvider(deckListState, SnapPosition.Start)
-                            }
-                            LazyColumn(
-                                state = deckListState,
-                                modifier = Modifier.fillMaxSize(),
-                                flingBehavior = rememberSnapFlingBehavior(deckSnapProvider),
-                                verticalArrangement = Arrangement.spacedBy(0.dp),
-                                contentPadding = PaddingValues(bottom = 96.dp)
-                            ) {
-                                itemsIndexed(notes, key = { _, n -> n.id }) { idx, note ->
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .zIndex((notes.size - idx).toFloat())
-                                            .graphicsLayer {
-                                                val visible = deckListState.layoutInfo.visibleItemsInfo
-                                                val first = visible.firstOrNull() ?: return@graphicsLayer
-                                                val own = visible.firstOrNull { it.index == idx }
-                                                    ?: return@graphicsLayer
-                                                // 以第一張可見卡為錨點，往下錯開 deckPeekPx，支援變高卡片
-                                                translationY = first.offset +
-                                                    (idx - first.index) * deckPeekPx - own.offset
-                                            }
-                                    ) {
-                                        NoteCardItem(
-                                            note = note,
-                                            glassState = glassState,
-                                            contentMaxLines = 6,
-                                            overlapOpaque = true,
-                                            onOpenMessageDetail = onOpenMessageDetail,
-                                            onEdit = onEditNote,
-                                            onDelete = onDeleteNote,
-                                            onTogglePin = onTogglePinNote,
-                                            onAutoNoteLongPress = onAutoNoteLongPress
-                                        )
-                                    }
-                                }
-                            }
-                        }
                         PhantomPrefs.NoteCardLayoutMode.CENTER -> {
-                            // 中央堆疊：焦點記事在容器正中央完整顯示，上下對稱縮小堆疊
+                            // 中央堆疊：共用新版 CenterFocusCardStack（初始貼頂、滑動置中、24dp 等距）
                             CenterFocusCardStack(
                                 items = notes,
                                 key = { it.id },
@@ -3698,7 +3696,7 @@ private fun NotesTab(
                                 NoteCardItem(
                                     note = note,
                                     glassState = glassState,
-                                    contentMaxLines = 6,
+                                    contentMaxLines = 2,
                                     overlapOpaque = true,
                                     onOpenMessageDetail = onOpenMessageDetail,
                                     onEdit = onEditNote,

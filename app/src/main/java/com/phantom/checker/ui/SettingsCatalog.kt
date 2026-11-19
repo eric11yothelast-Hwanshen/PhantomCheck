@@ -84,7 +84,7 @@ object SettingsCatalog {
         SettingSearchItem("personal_filters", "personalization", "首頁篩選欄顯示項目", "自訂首頁篩選欄是否顯示星標、詐騙、已過濾與標籤按鈕", listOf("個人化", "篩選", "filter", "星標", "標籤", "隱藏")),
         SettingSearchItem("personal_summary_collapse", "personalization", "摘要卡預設收合", "控制每日與本週 AI 摘要卡是否預設收合為單行預覽", listOf("個人化", "摘要", "收合", "展開", "折疊")),
         SettingSearchItem("personal_home_card_layout", "personalization", "首頁卡片排列模式", "切換首頁 App 卡片為一般條列或中央堆疊（焦點卡片在正中央、上下對稱縮小堆疊的垂直滾輪）", listOf("堆疊", "條列", "卡片排列", "中央堆疊", "滾輪", "重疊", "個人化")),
-        SettingSearchItem("personal_notes_card_layout", "personalization", "記事卡片排列模式", "獨立設定記事分頁卡片排列：一般條列、往下露頂部（撲克牌式）或中央堆疊滾輪（不影響首頁）", listOf("記事", "備忘錄", "卡片排列", "堆疊", "撲克牌", "滾輪", "中央堆疊")),
+        SettingSearchItem("personal_notes_card_layout", "personalization", "記事卡片排列模式", "獨立設定記事分頁卡片排列：一般條列或中央堆疊滾輪（不影響首頁）", listOf("記事", "備忘錄", "卡片排列", "堆疊", "滾輪", "中央堆疊")),
         SettingSearchItem("personal_notes_todo_collapsed", "personalization", "記事分頁待辦事項收合", "收起記事分頁上方的待辦事項區，僅顯示最快到期的未完成待辦以節省空間", listOf("待辦", "收合", "收起", "展開", "待辦事項")),
         SettingSearchItem("personal_home_filter_chips", "personalization", "首頁篩選標籤列收合", "將首頁頂部「全部／未讀」等篩選標籤收合成單行，點箭頭可展開（不與記事分頁共用）", listOf("篩選", "標籤", "chip", "收合", "未讀", "換行")),
         SettingSearchItem("personal_time_format", "personalization", "時間顯示格式（12 / 24 小時制）", "切換訊息與對話的時間顯示格式", listOf("個人化", "時間", "12小時", "24小時", "am", "pm")),
@@ -369,10 +369,10 @@ object SettingsCatalog {
             id = "notes_card_layout",
             title = "記事卡片排列模式",
             min = 0,
-            max = 2,
+            max = 1,
             step = 1,
             unit = "模式",
-            valueLabels = listOf("一般條列", "往下露頂部", "中央堆疊")
+            valueLabels = listOf("一般條列", "中央堆疊")
         )
     )
 
@@ -391,8 +391,7 @@ object SettingsCatalog {
             }
             "notes_card_layout" -> when (PhantomPrefs.getNoteCardLayoutMode(appCtx)) {
                 PhantomPrefs.NoteCardLayoutMode.LIST -> 0
-                PhantomPrefs.NoteCardLayoutMode.PEEK_TOP -> 1
-                PhantomPrefs.NoteCardLayoutMode.CENTER -> 2
+                PhantomPrefs.NoteCardLayoutMode.CENTER -> 1
             }
             else -> null
         }
@@ -418,7 +417,7 @@ object SettingsCatalog {
             )
             "notes_card_layout" -> PhantomPrefs.setNoteCardLayoutMode(
                 appCtx,
-                PhantomPrefs.NoteCardLayoutMode.entries[target]
+                if (target == 1) PhantomPrefs.NoteCardLayoutMode.CENTER else PhantomPrefs.NoteCardLayoutMode.LIST
             )
             else -> return null
         }
