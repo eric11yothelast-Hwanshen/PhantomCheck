@@ -3339,8 +3339,7 @@ private fun NotesTab(
             withContext(Dispatchers.IO) {
                 db.noteDao().update(
                     n.copy(
-                        pinned = !n.pinned,
-                        updatedAt = System.currentTimeMillis()
+                        pinned = !n.pinned
                     )
                 )
                 com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx)
