@@ -23,7 +23,9 @@ class BootReceiver : BroadcastReceiver() {
         val appCtx = ctx.applicationContext
         AutoReplyConfig.load(appCtx)
         DailySummaryPolicy.schedule(appCtx)
+        DailySummaryPolicy.maybeCatchUp(appCtx)
         WeeklySummaryPolicy.schedule(appCtx)
+        WeeklySummaryPolicy.maybeCatchUp(appCtx)
         RetentionPolicy.scheduleOrUpdate(appCtx)
         KeepAlivePolicy.scheduleAll(appCtx)
         StatsForegroundService.startOrRefresh(appCtx, force = true)

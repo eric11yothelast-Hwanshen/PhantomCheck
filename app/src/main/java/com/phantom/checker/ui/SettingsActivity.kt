@@ -1051,6 +1051,7 @@ fun FilterSettingsScreen(
                             tokenSaverEnabled = checked
                             PhantomPrefs.setTokenSaverEnabled(appCtx, checked)
                             DailySummaryPolicy.schedule(appCtx)
+                            DailySummaryPolicy.maybeCatchUp(appCtx)
                         }
                     )
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -1103,6 +1104,7 @@ fun FilterSettingsScreen(
                             dailySummaryEnabled = checked
                             PhantomPrefs.setDailySummaryEnabled(appCtx, checked)
                             DailySummaryPolicy.schedule(appCtx)
+                            DailySummaryPolicy.maybeCatchUp(appCtx)
                         }
                     )
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -2085,6 +2087,7 @@ fun FilterSettingsScreen(
                                         summaryMinute = m
                                         PhantomPrefs.setDailySummaryTime(appCtx, h, m)
                                         DailySummaryPolicy.schedule(appCtx)
+                            DailySummaryPolicy.maybeCatchUp(appCtx)
                                     },
                                     summaryHour,
                                     summaryMinute,

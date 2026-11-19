@@ -1,6 +1,7 @@
 package com.phantom.checker.service
 
 import android.content.Context
+import androidx.work.BackoffPolicy
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -10,6 +11,9 @@ import com.phantom.checker.data.AiSummaryEntity
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.util.PhantomPrefs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -25,15 +29,23 @@ class DailySummaryWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
-        try {
-            if (PhantomPrefs.isEffectiveDailySummaryEnabled(applicationContext)) {
-                DailySummaryPolicy.generateTodaySummary(applicationContext)
-            }
-        } finally {
-            // #246 OneTimeWork 自我重新排程：無論成敗都錨定下一次精確時刻，避免排程漂移
+        if (!PhantomPrefs.isEffectiveDailySummaryEnabled(applicationContext)) {
             DailySummaryPolicy.schedule(applicationContext)
+            return Result.success()
         }
-        return Result.success()
+        val genResult = DailySummaryPolicy.generateTodaySummary(applicationContext)
+        if (genResult.isSuccess) {
+            // #246 OneTimeWork 自我重新排程：錨定下一次精確時刻，避免排程漂移
+            DailySummaryPolicy.schedule(applicationContext)
+            return Result.success()
+        }
+        // 失敗時最多重試 3 次（backoff <= 30 分鐘），超過上限再重新排程明日
+        return if (runAttemptCount < 3) {
+            Result.retry()
+        } else {
+            DailySummaryPolicy.schedule(applicationContext)
+            Result.failure()
+        }
     }
 }
 
@@ -54,6 +66,7 @@ object DailySummaryPolicy {
         // 改用 OneTimeWorkRequest 指向下一個精確 HH:mm，執行後由 Worker 自行排下一次
         val request = OneTimeWorkRequestBuilder<DailySummaryWorker>()
             .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.MINUTES)
             .build()
 
         workManager.enqueueUniqueWork(
@@ -61,6 +74,45 @@ object DailySummaryPolicy {
             ExistingWorkPolicy.REPLACE,
             request
         )
+    }
+
+    /**
+     * #254 錯過補跑：若已啟用每日摘要、現在時間已過今日排程 HH:mm、且今日尚無摘要，
+     * 立即以 REPLACE 排入短延遲 OneTimeWork 補跑。
+     */
+    fun maybeCatchUp(ctx: Context) {
+        val appCtx = ctx.applicationContext
+        if (!PhantomPrefs.isEffectiveDailySummaryEnabled(appCtx)) return
+        if (!isPastScheduledTimeToday(appCtx)) return
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val db = AppDatabaseHolder.db(appCtx)
+                if (db.aiSummaryDao().byDate(todayDateKey()) != null) return@launch
+                val request = OneTimeWorkRequestBuilder<DailySummaryWorker>()
+                    .setInitialDelay(3, TimeUnit.SECONDS)
+                    .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.MINUTES)
+                    .build()
+                WorkManager.getInstance(appCtx).enqueueUniqueWork(
+                    UNIQUE_WORK_NAME,
+                    ExistingWorkPolicy.REPLACE,
+                    request
+                )
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private fun isPastScheduledTimeToday(appCtx: Context): Boolean {
+        val hour = PhantomPrefs.getDailySummaryHour(appCtx)
+        val minute = PhantomPrefs.getDailySummaryMinute(appCtx)
+        val now = Calendar.getInstance()
+        val todayTarget = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, minute)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        return !now.before(todayTarget)
     }
 
     /** 計算距離下一個排程時刻（今日 HH:mm，已過則明日同時刻）的毫秒數 */

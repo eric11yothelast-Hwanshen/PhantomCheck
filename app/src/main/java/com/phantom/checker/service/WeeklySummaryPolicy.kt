@@ -8,15 +8,20 @@ import android.content.Intent
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.phantom.checker.R
 import com.phantom.checker.data.AiSummaryEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.ui.stripMarkdown
 import com.phantom.checker.util.PhantomPrefs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -25,7 +30,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * 每週日 22:00 自動生成當週訊息統計與風險趨勢 AI 摘要的排程 Worker。
- * 不受省 token 模式限制，並遵循系統低電量省電限制。
+ * 不受省 token 模式限制，並以排程錨定週計算區間避免延遲跨週失真。
  */
 class WeeklySummaryWorker(
     appContext: Context,
@@ -33,9 +38,16 @@ class WeeklySummaryWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
+        val anchorMs = inputData.getLong(WeeklySummaryPolicy.KEY_ANCHOR_MS, 0L)
+            .takeIf { it > 0L }
+            ?: WeeklySummaryPolicy.latestScheduledSundayMillis()
         try {
             if (AiClient.getActiveProfile(applicationContext) != null) {
-                WeeklySummaryPolicy.generateWeeklySummary(applicationContext, fromSchedule = true)
+                WeeklySummaryPolicy.generateWeeklySummary(
+                    ctx = applicationContext,
+                    fromSchedule = true,
+                    anchorMs = anchorMs
+                )
             }
         } finally {
             // #246 OneTimeWork 自我重新排程：錨定下一個週日 22:00，避免排程漂移
@@ -49,6 +61,7 @@ object WeeklySummaryPolicy {
     private const val UNIQUE_WORK_NAME = "phantom_weekly_ai_summary"
     private const val WEEKLY_SUMMARY_NOTIF_ID = NotifIds.WEEKLY_SUMMARY
     const val WEEKLY_KEY_OFFSET = 1_000_000_000L
+    internal const val KEY_ANCHOR_MS = "weekly_anchor_ms"
 
     fun schedule(ctx: Context) {
         val appCtx = ctx.applicationContext
@@ -69,13 +82,14 @@ object WeeklySummaryPolicy {
         val initialDelayMs = (target.timeInMillis - now.timeInMillis).coerceAtLeast(60_000L)
 
         val constraints = Constraints.Builder()
-            .setRequiresBatteryNotLow(true)
+            .setRequiredNetworkType(NetworkType.CONNECTED)
             .build()
 
         // OneTimeWorkRequest 指向下一個週日 22:00，執行後由 Worker 自行排下一次
         val request = OneTimeWorkRequestBuilder<WeeklySummaryWorker>()
             .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
             .setConstraints(constraints)
+            .setInputData(workDataOf(KEY_ANCHOR_MS to target.timeInMillis))
             .build()
 
         workManager.enqueueUniqueWork(
@@ -85,26 +99,78 @@ object WeeklySummaryPolicy {
         )
     }
 
-    fun startOfCurrentWeekMillis(): Long {
+    /** 最近一個已過（或正值）的週日 22:00 排程時刻 */
+    fun latestScheduledSundayMillis(nowMs: Long = System.currentTimeMillis()): Long {
+        val cal = Calendar.getInstance().apply {
+            timeInMillis = nowMs
+            firstDayOfWeek = Calendar.MONDAY
+            set(Calendar.DAY_OF_WEEK, Calendar.SUNDAY)
+            set(Calendar.HOUR_OF_DAY, 22)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            if (timeInMillis > nowMs) {
+                add(Calendar.WEEK_OF_YEAR, -1)
+            }
+        }
+        return cal.timeInMillis
+    }
+
+    /**
+     * #254 錯過補跑：若最近一次週日 22:00 已過，且該排程錨定週尚無週摘要，立即補跑一次。
+     */
+    fun maybeCatchUp(ctx: Context) {
+        val appCtx = ctx.applicationContext
+        val anchorMs = latestScheduledSundayMillis()
+        val anchorWeekKey = weekKeyFor(anchorMs)
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                if (AiClient.getActiveProfile(appCtx) == null) return@launch
+                val db = AppDatabaseHolder.db(appCtx)
+                if (db.aiSummaryDao().byDate(anchorWeekKey) != null) return@launch
+                val constraints = Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+                val request = OneTimeWorkRequestBuilder<WeeklySummaryWorker>()
+                    .setInitialDelay(3, TimeUnit.SECONDS)
+                    .setConstraints(constraints)
+                    .setInputData(workDataOf(KEY_ANCHOR_MS to anchorMs))
+                    .build()
+                WorkManager.getInstance(appCtx).enqueueUniqueWork(
+                    UNIQUE_WORK_NAME,
+                    ExistingWorkPolicy.REPLACE,
+                    request
+                )
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    fun startOfWeekMillis(anchorMs: Long = System.currentTimeMillis()): Long {
         return Calendar.getInstance().apply {
+            timeInMillis = anchorMs
             firstDayOfWeek = Calendar.MONDAY
             set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
-            if (timeInMillis > System.currentTimeMillis()) {
+            if (timeInMillis > anchorMs) {
                 add(Calendar.WEEK_OF_YEAR, -1)
             }
         }.timeInMillis
     }
 
-    fun currentWeekKey(): Long {
-        val startMs = startOfCurrentWeekMillis()
+    fun startOfCurrentWeekMillis(): Long = startOfWeekMillis(System.currentTimeMillis())
+
+    fun weekKeyFor(anchorMs: Long): Long {
+        val startMs = startOfWeekMillis(anchorMs)
         val fmt = SimpleDateFormat("yyyyMMdd", Locale.US)
         val ymd = fmt.format(Date(startMs)).toLongOrNull() ?: 0L
         return WEEKLY_KEY_OFFSET + ymd
     }
+
+    fun currentWeekKey(): Long = weekKeyFor(System.currentTimeMillis())
 
     fun formatWeekLabel(dateKey: Long): String {
         val raw = (dateKey - WEEKLY_KEY_OFFSET).coerceAtLeast(0L).toString()
@@ -117,7 +183,8 @@ object WeeklySummaryPolicy {
 
     suspend fun generateWeeklySummary(
         ctx: Context,
-        fromSchedule: Boolean = false
+        fromSchedule: Boolean = false,
+        anchorMs: Long = System.currentTimeMillis()
     ): Result<AiSummaryEntity> {
         val appCtx = ctx.applicationContext
         AiClient.init(appCtx)
@@ -125,10 +192,11 @@ object WeeklySummaryPolicy {
             return Result.failure(IllegalStateException("尚未設定 AI Provider API Key"))
         }
 
-        val weekStartMs = startOfCurrentWeekMillis()
+        val weekStartMs = startOfWeekMillis(anchorMs)
+        val weekEndMs = weekStartMs + TimeUnit.DAYS.toMillis(7)
         val prevWeekStartMs = weekStartMs - TimeUnit.DAYS.toMillis(7)
         val db = AppDatabaseHolder.db(appCtx)
-        val weekMessages = db.messageDao().since(weekStartMs)
+        val weekMessages = db.messageDao().between(weekStartMs, weekEndMs)
 
         if (weekMessages.isEmpty()) {
             return Result.failure(IllegalStateException("本週尚無訊息可供摘要"))
@@ -170,7 +238,7 @@ object WeeklySummaryPolicy {
         }
 
         val entity = AiSummaryEntity(
-            date = currentWeekKey(),
+            date = weekKeyFor(anchorMs),
             summary = summaryText,
             generatedAt = System.currentTimeMillis()
         )
