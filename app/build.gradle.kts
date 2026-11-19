@@ -20,8 +20,8 @@ android {
         applicationId = "com.phantom.checker"
         minSdk = 26
         targetSdk = 36
-        versionCode = 35
-        versionName = "2.17.0"
+        versionCode = 36
+        versionName = "2.18.0"
 
         buildConfigField("String", "MISTRAL_API_KEY", "\"${localProps.getProperty("mistral.apiKey", "")}\"")
         buildConfigField("String", "MISTRAL_BASE_URL", "\"${localProps.getProperty("mistral.baseUrl", "")}\"")

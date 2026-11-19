@@ -2,7 +2,7 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
-## [Unreleased]
+## [2.18.0] - 2026-11-19
 
 ### 修正
 - **移除內建個人化預設與設定頁衝突文案（#292 / PR #293）**：
