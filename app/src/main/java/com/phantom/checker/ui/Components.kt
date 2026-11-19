@@ -447,8 +447,15 @@ fun <T> CenterFocusCardStack(
         }
 
         val snapPosition = remember(topAnchorPx, centerAnchorPx, bottomAnchorPx, maxIndexFloat) {
-            SnapPosition { _, _, _, _, itemIndex, _ ->
-                anchorFor(itemIndex).roundToInt()
+            object : SnapPosition {
+                override fun position(
+                    layoutSize: Int,
+                    itemSize: Int,
+                    beforeContentPadding: Int,
+                    afterContentPadding: Int,
+                    itemIndex: Int,
+                    itemCount: Int
+                ): Int = anchorFor(itemIndex).roundToInt()
             }
         }
         val baseSnapProvider = remember(listState, snapPosition) {
