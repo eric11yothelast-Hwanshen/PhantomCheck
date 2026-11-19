@@ -2,6 +2,16 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [Unreleased]
+
+### 修正
+- **移除內建個人化預設與設定頁衝突文案（#292 / PR #293）**：
+  - `PhantomPrefs.DEFAULT_MY_DISPLAY_NAMES` 改為空集合，未設定時不預帶任何預設顯示名稱；`isMyDisplayName` 與自我身分偵測於空集合時不再誤判。
+  - 移除 `NotificationCollectorService` 內建個人化 AI 規則自動寫入（`seedDefaultAiRulesIfNeeded`），並新增一次性清除機制 `purgePresetAiRulesIfNeeded`（以 `preset_ai_rules_purged_v1` 標記僅刪除舊版自動寫入的兩條預設規則，保留使用者自建規則，資料庫 schema 不變）；同時將 AI prompt 與管理頁範例文案去品牌化。
+  - 快速設定「AI 風險分析」副標改為動態引用 `aiMinTriggerLength` 字數門檻，不再寫死 10 字元。
+  - 「每日 AI 額度上限」標題與 `SettingsCatalog.NUMERIC_SPECS` 單位統一為「次」，chip 支援顯示並選中非預設值（0–100 次、步進 10 次）。
+  - 省 token 模式生效時，「每則訊息 AI 智慧掃描」與「每日 AI 摘要」副標顯示「已暫停」，「AI 風險分析」副標提示「僅命中可疑特徵才分析」。
+
 ## [2.17.0] - 2026-11-19
 
 ### 新增
