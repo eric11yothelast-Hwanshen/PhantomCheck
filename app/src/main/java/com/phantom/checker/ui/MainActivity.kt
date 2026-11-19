@@ -2428,7 +2428,7 @@ private fun MessagesHomeTab(
                     }
                 }
                 else -> if (layoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER) {
-                    // #263 中央聚焦垂直滾輪堆疊 v3：LazyColumn 連續慣性滾輪，頂／中／底連續插值、44dp 露出帶
+                    // #270 中央聚焦垂直滾輪堆疊：92dp 緊湊卡高、40dp 露出帶、12dp 內距三段式佈局
                     item(key = "home_center_stack") {
                         CenterFocusCardStack(
                             items = appGroups,
@@ -2450,12 +2450,14 @@ private fun MessagesHomeTab(
                                         onLongClick = { onLongPressApp(app) }
                                     ),
                                 cornerRadius = 20.dp,
-                                contentPadding = if (isCompactCard) 8.dp else 10.dp,
+                                contentPadding = 12.dp,
                                 overlapOpaqueBoost = true
                             ) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.Top
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .fillMaxHeight(),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Box {
                                         AppIconImage(
@@ -2474,7 +2476,13 @@ private fun MessagesHomeTab(
                                         }
                                     }
                                     Spacer(Modifier.width(12.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight(),
+                                        verticalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        // 第一段：標題列
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -2540,7 +2548,7 @@ private fun MessagesHomeTab(
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
-                                        Spacer(Modifier.height(4.dp))
+                                        // 第二段：單行訊息預覽
                                         Text(
                                             text = app.lastPreview.ifBlank { "共 ${app.totalCount} 則訊息" },
                                             style = MaterialTheme.typography.bodySmall,
@@ -2548,9 +2556,34 @@ private fun MessagesHomeTab(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
-                                        if (app.latestTags.isNotEmpty()) {
-                                            Spacer(Modifier.height(6.dp))
-                                            MessageTagChipRow(tags = app.latestTags)
+                                        // 第三段（底部 40dp 露出帶）：App 名稱＋未讀數＋分類標籤列
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = buildString {
+                                                    append(app.appLabel)
+                                                    when {
+                                                        isMuted -> append(" · 靜音")
+                                                        app.unreadTodayCount > 0 -> append(" · 未讀 ${app.unreadTodayCount}")
+                                                        app.todayCount > 0 -> append(" · 今日 ${app.todayCount}")
+                                                        else -> append(" · ${app.totalCount} 則")
+                                                    }
+                                                },
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false)
+                                            )
+                                            if (app.latestTags.isNotEmpty()) {
+                                                MessageTagChipRow(
+                                                    tags = app.latestTags,
+                                                    maxShow = 2
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -3029,14 +3062,14 @@ private fun NoteCardItem(
             runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull()
         }
     }
-    val density = LocalDensity.current
-    val stackCardHeight = if (density.fontScale >= 1.3f) 128.dp else 112.dp
     val isAuto = note.source == NoteEntity.SOURCE_AUTO
+    val timeText = remember(note.updatedAt) {
+        PhantomPrefs.formatMessageTime(ctx, note.updatedAt, includeDate = true)
+    }
     PhantomGlassCard(
         glassState = glassState,
         modifier = Modifier
-            .fillMaxWidth()
-            .then(if (overlapOpaque) Modifier.height(stackCardHeight) else Modifier)
+            .then(if (overlapOpaque) Modifier.fillMaxSize() else Modifier.fillMaxWidth())
             .then(
                 if (isAuto) {
                     Modifier.combinedClickable(
@@ -3051,126 +3084,228 @@ private fun NoteCardItem(
                     Modifier
                 }
             ),
-        cornerRadius = 18.dp,
-        contentPadding = if (overlapOpaque) 10.dp else 14.dp,
+        cornerRadius = if (overlapOpaque) 20.dp else 18.dp,
+        contentPadding = if (overlapOpaque) 12.dp else 14.dp,
         overlapOpaqueBoost = overlapOpaque
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top
-        ) {
-            if (accentColor != null) {
-                Box(
+        if (overlapOpaque) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (accentColor != null) {
+                    Box(
+                        modifier = Modifier
+                            .width(4.dp)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(accentColor)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                }
+                Column(
                     modifier = Modifier
-                        .width(4.dp)
-                        .height(44.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(accentColor)
-                )
-                Spacer(Modifier.width(10.dp))
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.SpaceBetween
                 ) {
-                    if (note.pinned) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(6.dp)
-                        ) {
-                            Text(
-                                text = "置頂",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                    if (isAuto) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            shape = RoundedCornerShape(6.dp)
-                        ) {
-                            Text(
-                                text = "自動",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                    val appLabel = note.relatedAppLabel
-                    if (!appLabel.isNullOrBlank()) {
+                    // 第一段：標題列（時間＋精簡操作鈕）
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = appLabel,
+                            text = timeText,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = { onTogglePin(note) },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Star,
+                                    contentDescription = if (note.pinned) "取消置頂" else "置頂",
+                                    tint = if (note.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onEdit(note) },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "編輯",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onDelete(note) },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "刪除",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                    // 第二段：單行記事預覽
+                    Text(
+                        text = note.content,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    // 第三段（底部 40dp 露出帶）：置頂／自動／來源 App 標籤列
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (note.pinned) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "置頂",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        if (isAuto) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "自動",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        val appLabel = note.relatedAppLabel
+                        if (!appLabel.isNullOrBlank()) {
+                            Text(
+                                text = appLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                        } else if (!note.pinned && !isAuto) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "記事",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                     }
                 }
-                if (note.pinned || isAuto || !note.relatedAppLabel.isNullOrBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                }
-                Text(
-                    text = note.content,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = contentMaxLines,
-                    overflow = if (contentMaxLines == Int.MAX_VALUE) {
-                        TextOverflow.Clip
-                    } else {
-                        TextOverflow.Ellipsis
-                    }
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = PhantomPrefs.formatMessageTime(ctx, note.updatedAt, includeDate = true),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
-            if (overlapOpaque) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = { onTogglePin(note) },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = if (note.pinned) "取消置頂" else "置頂",
-                            tint = if (note.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                    IconButton(
-                        onClick = { onEdit(note) },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "編輯",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
-                    IconButton(
-                        onClick = { onDelete(note) },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "刪除",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top
+            ) {
+                if (accentColor != null) {
+                    Box(
+                        modifier = Modifier
+                            .width(4.dp)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(accentColor)
+                    )
+                    Spacer(Modifier.width(10.dp))
                 }
-            } else {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (note.pinned) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "置頂",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        if (isAuto) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "自動",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        val appLabel = note.relatedAppLabel
+                        if (!appLabel.isNullOrBlank()) {
+                            Text(
+                                text = appLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    if (note.pinned || isAuto || !note.relatedAppLabel.isNullOrBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                    }
+                    Text(
+                        text = note.content,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = contentMaxLines,
+                        overflow = if (contentMaxLines == Int.MAX_VALUE) {
+                            TextOverflow.Clip
+                        } else {
+                            TextOverflow.Ellipsis
+                        }
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = timeText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Column(horizontalAlignment = Alignment.End) {
                     TextButton(onClick = { onTogglePin(note) }) {
                         Text(if (note.pinned) "取消置頂" else "置頂")
@@ -3690,7 +3825,7 @@ private fun NotesTab(
                             }
                         }
                         PhantomPrefs.NoteCardLayoutMode.CENTER -> {
-                            // #263 中央堆疊 v3：共用 CenterFocusCardStack（零留白、44dp 露出帶、單行預覽）
+                            // #270 中央堆疊：共用 CenterFocusCardStack（92dp 緊湊卡高、40dp 露出帶、單行預覽）
                             CenterFocusCardStack(
                                 items = notes,
                                 key = { it.id },

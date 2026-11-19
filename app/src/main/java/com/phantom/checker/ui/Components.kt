@@ -373,15 +373,15 @@ fun PhantomGlassCard(
 }
 
 /**
- * #263 中央聚焦垂直滾輪堆疊 v3（Vertical Center-Focused Card Stack）：
+ * #270 中央聚焦垂直滾輪堆疊（Vertical Center-Focused Card Stack）：
  * - 以 LazyColumn + LazyListState(cacheWindow = LazyLayoutCacheWindow(behindFraction = 1f, aheadFraction = 0.5f))
  *   + rememberSnapFlingBehavior(snapPosition = SnapPosition.Start) 實作連續慣性滑動與單調統一吸附（s_i = i * exposure）。
  * - 使用 remember { LazyListState(...) } 不保存捲動位置，每次進頁自第 0 張開始。
- * - native item 高度 = exposure（44.dp），內部卡片以 wrapContentHeight(unbounded = true) + requiredHeight(effectiveCardHeight)
- *   （112.dp；fontScale ≥ 1.3f 時 128.dp）繪製完整高度。
+ * - native item 高度 = exposure（40.dp），內部卡片以 wrapContentHeight(unbounded = true) + requiredHeight(effectiveCardHeight)
+ *   （92.dp；fontScale ≥ 1.3f 時 104.dp）繪製完整高度。
  * - 頂／中／底三態錨點以 pHead = smoothstep(focusFloat / 1.5f) 與 pTail = 1f - smoothstep(max(0f, (n-1) - focusFloat) / 1.5f)
  *   經 lerp(lerp(topAnchorPx, centerAnchorPx, pHead), bottomAnchorPx, pTail) 連續內插，嚴禁布林跳變。
- * - scale = (1f - scaleStep * |u|).coerceAtLeast(0.75f)，pivot = TransformOrigin(0.5f, 0f) 頂緣對齊消除深層累積誤差。
+ * - scale = (1f - scaleStep * |u|).coerceAtLeast(0.82f)，pivot = TransformOrigin(0.5f, 0f) 頂緣對齊消除深層累積誤差。
  * - 移除固定可見層數限制，viewport 內 alpha 一律 1f，僅對超出 viewport 邊界部分以 edgeFade 像素距離線性淡出。
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -390,10 +390,10 @@ fun <T> CenterFocusCardStack(
     items: List<T>,
     key: (T) -> Any,
     modifier: Modifier = Modifier,
-    cardHeight: Dp = 112.dp,
-    exposure: Dp = 44.dp,
-    scaleStep: Float = 0.035f,
-    edgeFade: Dp = 44.dp,
+    cardHeight: Dp = 92.dp,
+    exposure: Dp = 40.dp,
+    scaleStep: Float = 0.04f,
+    edgeFade: Dp = 40.dp,
     cardContent: @Composable (T) -> Unit
 ) {
     if (items.isEmpty()) return
@@ -406,7 +406,7 @@ fun <T> CenterFocusCardStack(
         )
     }
     val density = LocalDensity.current
-    val effectiveCardHeight = if (density.fontScale >= 1.3f && cardHeight < 128.dp) 128.dp else cardHeight
+    val effectiveCardHeight = if (density.fontScale >= 1.3f && cardHeight < 104.dp) 104.dp else cardHeight
     val topOrigin = remember { TransformOrigin(0.5f, 0f) }
 
     BoxWithConstraints(modifier = modifier.clipToBounds()) {
@@ -469,7 +469,7 @@ fun <T> CenterFocusCardStack(
 
                             val u = index.toFloat() - focusFloat
                             val absU = kotlin.math.abs(u)
-                            val s = (1f - scaleStep * absU).coerceAtLeast(0.75f)
+                            val s = (1f - scaleStep * absU).coerceAtLeast(0.82f)
                             transformOrigin = topOrigin
                             scaleX = s
                             scaleY = s
