@@ -374,9 +374,9 @@ fun PhantomGlassCard(
 
 /**
  * #263 中央聚焦垂直滾輪堆疊 v3（Vertical Center-Focused Card Stack）：
- * - 以 LazyColumn + LazyListState(cacheWindow = LazyLayoutCacheWindow(behindFraction = 1f, aheadFraction = 0.5f))
+ * - 以 LazyColumn(cacheWindow = LazyLayoutCacheWindow(behindFraction = 1f, aheadFraction = 0.5f))
  *   + rememberSnapFlingBehavior(snapPosition = SnapPosition.Start) 實作連續慣性滑動與單調統一吸附（s_i = i * exposure）。
- * - 使用 remember { LazyListState(...) } 不保存捲動位置，每次進頁自第 0 張開始。
+ * - 使用 remember { LazyListState() } 不保存捲動位置，每次進頁自第 0 張開始。
  * - native item 高度 = exposure（44.dp），內部卡片以 wrapContentHeight(unbounded = true) + requiredHeight(effectiveCardHeight)
  *   （112.dp；fontScale ≥ 1.3f 時 128.dp）繪製完整高度。
  * - 頂／中／底三態錨點以 pHead = smoothstep(focusFloat / 1.5f) 與 pTail = 1f - smoothstep(max(0f, (n-1) - focusFloat) / 1.5f)
@@ -384,7 +384,6 @@ fun PhantomGlassCard(
  * - scale = (1f - scaleStep * |u|).coerceAtLeast(0.75f)，pivot = TransformOrigin(0.5f, 0f) 頂緣對齊消除深層累積誤差。
  * - 移除固定可見層數限制，viewport 內 alpha 一律 1f，僅對超出 viewport 邊界部分以 edgeFade 像素距離線性淡出。
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun <T> CenterFocusCardStack(
     items: List<T>,
@@ -397,14 +396,7 @@ fun <T> CenterFocusCardStack(
     cardContent: @Composable (T) -> Unit
 ) {
     if (items.isEmpty()) return
-    val listState = remember {
-        LazyListState(
-            cacheWindow = LazyLayoutCacheWindow(
-                behindFraction = 1f,
-                aheadFraction = 0.5f
-            )
-        )
-    }
+    val listState = remember { LazyListState() }
     val density = LocalDensity.current
     val effectiveCardHeight = if (density.fontScale >= 1.3f && cardHeight < 128.dp) 128.dp else cardHeight
     val topOrigin = remember { TransformOrigin(0.5f, 0f) }
@@ -433,7 +425,11 @@ fun <T> CenterFocusCardStack(
             modifier = Modifier.fillMaxSize(),
             flingBehavior = flingBehavior,
             contentPadding = PaddingValues(bottom = trailingPaddingDp),
-            verticalArrangement = Arrangement.spacedBy(0.dp)
+            verticalArrangement = Arrangement.spacedBy(0.dp),
+            cacheWindow = LazyLayoutCacheWindow(
+                behindFraction = 1f,
+                aheadFraction = 0.5f
+            )
         ) {
             itemsIndexed(items, key = { _, item -> key(item) }) { index, item ->
                 val itemZ by remember(index, listState, exposurePx, maxIndexFloat) {
