@@ -239,7 +239,9 @@ internal suspend fun buildRagSystemPrompt(
     ctx: Context,
     query: String,
     overrideLimit: Int? = null,
-    sessionId: Long? = null
+    sessionId: Long? = null,
+    memoryDegradeFactor: Float = 1.0f,
+    recordMemoryUsage: Boolean = true
 ): RagPromptBuildResult {
     val db = AppDatabaseHolder.db(ctx)
     val dao = db.messageDao()
@@ -469,6 +471,20 @@ internal suspend fun buildRagSystemPrompt(
         }
         if (alertKeywordsList.isNotEmpty()) {
             appendLine("【提醒關鍵字】${alertKeywordsList.joinToString("、")}")
+        }
+        // #314 A3 注入檢索：純確定性 top-K 評分、敏感記憶（privacyTier=sensitive）硬排除、命中更新 lastUsedAt/useCount
+        val memoryPrompt = runCatching {
+            com.phantom.checker.data.MemoryEngine.buildMemoryInjectionBlock(
+                ctx = ctx,
+                db = db,
+                userQuery = query,
+                degradeFactor = memoryDegradeFactor,
+                recordHitUsage = recordMemoryUsage,
+                nowMs = now
+            )
+        }.getOrNull()
+        if (memoryPrompt != null && memoryPrompt.promptBlock.isNotBlank()) {
+            appendLine(memoryPrompt.promptBlock)
         }
 
         // ===== 2. RAG 訊息區（舊→新固定順序，或「情境摘要＋增量新訊息」） =====

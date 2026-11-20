@@ -438,9 +438,17 @@ fun ChatAssistantTab(
 
             val initialRagLimit = PhantomPrefs.getEffectiveChatRagMessageLimit(appCtx)
             val ragBuild = withContext(Dispatchers.IO) {
-                buildRagSystemPrompt(appCtx, query, overrideLimit = initialRagLimit, sessionId = sessionId)
+                buildRagSystemPrompt(
+                    ctx = appCtx,
+                    query = query,
+                    overrideLimit = initialRagLimit,
+                    sessionId = sessionId,
+                    memoryDegradeFactor = 1.0f,
+                    recordMemoryUsage = true
+                )
             }
 
+            var retryDegradeStep = 0
             val result = AiClient.chatAssistant(
                 systemPrompt = ragBuild.prompt,
                 history = history,
@@ -450,8 +458,21 @@ fun ChatAssistantTab(
                 imageDataUri = attachedImage?.dataUri,
                 promptCacheKey = "phantom_chat_session_$sessionId",
                 onRebuildSystemPromptForRetry = { reducedLimit ->
+                    retryDegradeStep++
+                    val memFactor = when {
+                        retryDegradeStep == 1 -> 0.5f
+                        retryDegradeStep == 2 -> 0.25f
+                        else -> 0.0f
+                    }
                     withContext(Dispatchers.IO) {
-                        buildRagSystemPrompt(appCtx, query, overrideLimit = reducedLimit, sessionId = sessionId).prompt
+                        buildRagSystemPrompt(
+                            ctx = appCtx,
+                            query = query,
+                            overrideLimit = reducedLimit,
+                            sessionId = sessionId,
+                            memoryDegradeFactor = memFactor,
+                            recordMemoryUsage = false
+                        ).prompt
                     }
                 }
             )
