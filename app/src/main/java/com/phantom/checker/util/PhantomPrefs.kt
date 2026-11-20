@@ -1317,6 +1317,55 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putBoolean(KEY_MEMORY_FILTER_CHIPS_COLLAPSED, collapsed).apply()
     }
 
+    /** #328 記憶×防詐交叉檢查總開關（預設開啟；關閉時風險分析行為與 v3.0.0 完全一致） */
+    private const val KEY_ANTI_FRAUD_CROSS_CHECK = "anti_fraud_cross_check_enabled"
+
+    fun isAntiFraudCrossCheckEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_ANTI_FRAUD_CROSS_CHECK, true)
+
+    fun setAntiFraudCrossCheckEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_ANTI_FRAUD_CROSS_CHECK, enabled).apply()
+    }
+
+    /** #328 每週自動彙總之待確認「防詐免疫」記憶草稿（一律需使用者確認卡核准才寫入 memories） */
+    private const val KEY_PENDING_SCAM_IMMUNITY_SUBJECT = "pending_scam_immunity_subject"
+    private const val KEY_PENDING_SCAM_IMMUNITY_CONTENT = "pending_scam_immunity_content"
+    private const val KEY_PENDING_SCAM_IMMUNITY_UPDATED_AT = "pending_scam_immunity_updated_at"
+
+    data class PendingScamImmunityDraft(
+        val subject: String,
+        val content: String,
+        val updatedAtMs: Long
+    )
+
+    fun getPendingScamImmunityDraft(ctx: Context): PendingScamImmunityDraft? {
+        val p = prefs(ctx)
+        val subj = p.getString(KEY_PENDING_SCAM_IMMUNITY_SUBJECT, null)?.trim().orEmpty()
+        val content = p.getString(KEY_PENDING_SCAM_IMMUNITY_CONTENT, null)?.trim().orEmpty()
+        if (subj.isEmpty() || content.isEmpty()) return null
+        return PendingScamImmunityDraft(
+            subject = subj,
+            content = content,
+            updatedAtMs = p.getLong(KEY_PENDING_SCAM_IMMUNITY_UPDATED_AT, 0L)
+        )
+    }
+
+    fun savePendingScamImmunityDraft(ctx: Context, subject: String, content: String, nowMs: Long = System.currentTimeMillis()) {
+        prefs(ctx).edit()
+            .putString(KEY_PENDING_SCAM_IMMUNITY_SUBJECT, subject.trim())
+            .putString(KEY_PENDING_SCAM_IMMUNITY_CONTENT, content.trim())
+            .putLong(KEY_PENDING_SCAM_IMMUNITY_UPDATED_AT, nowMs)
+            .apply()
+    }
+
+    fun clearPendingScamImmunityDraft(ctx: Context) {
+        prefs(ctx).edit()
+            .remove(KEY_PENDING_SCAM_IMMUNITY_SUBJECT)
+            .remove(KEY_PENDING_SCAM_IMMUNITY_CONTENT)
+            .remove(KEY_PENDING_SCAM_IMMUNITY_UPDATED_AT)
+            .apply()
+    }
+
     data class StatsCardOption(val key: String, val title: String, val subtitle: String, val defaultVisible: Boolean)
 
     val STATS_CARD_OPTIONS: List<StatsCardOption> = listOf(

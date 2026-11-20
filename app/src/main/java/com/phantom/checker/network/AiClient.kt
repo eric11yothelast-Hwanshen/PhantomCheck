@@ -669,7 +669,10 @@ object AiClient {
     data class BatchAnalyzeItem(
         val messageId: Long,
         val sender: String,
-        val content: String
+        val content: String,
+        val packageName: String = "",
+        val appLabel: String = "",
+        val timestampMs: Long = System.currentTimeMillis()
     )
 
     private fun buildSystemPrompt(
@@ -677,7 +680,8 @@ object AiClient {
         rules: List<AiRuleEntity>,
         enableAutoTag: Boolean,
         includeAutoMemo: Boolean = false,
-        memoRules: List<MemoRuleEntity> = emptyList()
+        memoRules: List<MemoRuleEntity> = emptyList(),
+        antiFraudContextBlock: String = ""
     ): String {
         val base = StringBuilder()
         base.appendLine("你是防詐與訊息分類引擎。分析使用者收到的訊息，判斷是否為詐騙/釣魚。")
@@ -759,6 +763,10 @@ object AiClient {
             }
         }
 
+        if (antiFraudContextBlock.isNotBlank()) {
+            base.appendLine(antiFraudContextBlock)
+        }
+
         base.appendLine("只輸出一個 JSON 物件，不得使用 markdown 圍欄，不得附加任何說明文字或註解。")
         val memoSchemaPart = if (includeAutoMemo) ", \"memo\": \"\", \"memo_type\": \"note|todo\", \"todo_due\": \"\"" else ""
         if (activeTags.isNotEmpty()) {
@@ -813,9 +821,24 @@ object AiClient {
         context: Context? = null,
         bypassCache: Boolean = false,
         rules: List<AiRuleEntity> = emptyList(),
-        memoRules: List<MemoRuleEntity> = emptyList()
+        memoRules: List<MemoRuleEntity> = emptyList(),
+        packageName: String = "",
+        appLabel: String = "",
+        timestampMs: Long = System.currentTimeMillis()
     ): AiAnalysisResult? = try {
-        analyzeMessageOrThrow(sender, content, tags, enableAutoTag, context, bypassCache, rules, memoRules)
+        analyzeMessageOrThrow(
+            sender = sender,
+            content = content,
+            tags = tags,
+            enableAutoTag = enableAutoTag,
+            context = context,
+            bypassCache = bypassCache,
+            rules = rules,
+            memoRules = memoRules,
+            packageName = packageName,
+            appLabel = appLabel,
+            timestampMs = timestampMs
+        )
     } catch (e: CancellationException) {
         throw e
     } catch (_: Exception) {
@@ -830,7 +853,10 @@ object AiClient {
         context: Context? = null,
         bypassCache: Boolean = false,
         rules: List<AiRuleEntity> = emptyList(),
-        memoRules: List<MemoRuleEntity> = emptyList()
+        memoRules: List<MemoRuleEntity> = emptyList(),
+        packageName: String = "",
+        appLabel: String = "",
+        timestampMs: Long = System.currentTimeMillis()
     ): AiAnalysisResult? = withContext(Dispatchers.IO) {
         val activeTags = if (enableAutoTag) tags.filter { it.isAiManaged }.sortedBy { it.id } else emptyList()
         val activeRules = rules.filter { it.isEnabled }.sortedBy { it.id }.take(20)
@@ -843,8 +869,15 @@ object AiClient {
         } else {
             ""
         }
-        val cacheKey = sha256("$content|autoTag=$enableAutoTag|autoMemo=$autoMemo|memoV4=${if (autoMemo) 1 else 0}|$tagSig|$ruleSig|$memoRuleSig")
+        val antiFraudEnabled = context != null && PhantomPrefs.isAntiFraudCrossCheckEnabled(context)
         val now = System.currentTimeMillis()
+        val antiFraudVerSig = if (antiFraudEnabled && context != null) {
+            val db = com.phantom.checker.service.AppDatabaseHolder.db(context)
+            "|afv=${com.phantom.checker.data.MemoryEngine.getAntiFraudCacheVersion(context, db, now)}|snd=${sender.trim()}|pkg=$packageName"
+        } else {
+            ""
+        }
+        val cacheKey = sha256("$content|autoTag=$enableAutoTag|autoMemo=$autoMemo|memoV4=${if (autoMemo) 1 else 0}|$tagSig|$ruleSig|$memoRuleSig$antiFraudVerSig")
         if (!bypassCache) {
             synchronized(riskCache) {
                 val cached = riskCache.get(cacheKey)
@@ -857,7 +890,29 @@ object AiClient {
         val profile = getProfileForPurpose(context, AiPurpose.MESSAGE_ANALYSIS)
             ?: throw IllegalStateException("尚未設定 AI Provider API Key")
         val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
-        val systemPrompt = buildSystemPrompt(activeTags, activeRules, enableAutoTag, includeAutoMemo = autoMemo, memoRules = activeMemoRules)
+        val antiFraudBlock = if (antiFraudEnabled && context != null) {
+            val db = com.phantom.checker.service.AppDatabaseHolder.db(context)
+            com.phantom.checker.data.MemoryEngine.buildAntiFraudPromptBlock(
+                ctx = context,
+                db = db,
+                sender = sender,
+                content = content,
+                packageName = packageName,
+                appLabel = appLabel,
+                timestampMs = timestampMs,
+                nowMs = now
+            )
+        } else {
+            ""
+        }
+        val systemPrompt = buildSystemPrompt(
+            tags = activeTags,
+            rules = activeRules,
+            enableAutoTag = enableAutoTag,
+            includeAutoMemo = autoMemo,
+            memoRules = activeMemoRules,
+            antiFraudContextBlock = antiFraudBlock
+        )
         val safeSender = sanitizeForPrompt(sender)
         val safeContent = sanitizeForPrompt(content)
 
@@ -1103,7 +1158,10 @@ object AiClient {
                     enableAutoTag = enableAutoTag,
                     context = context,
                     rules = rules,
-                    memoRules = memoRules
+                    memoRules = memoRules,
+                    packageName = single.packageName,
+                    appLabel = single.appLabel,
+                    timestampMs = single.timestampMs
                 )
                 BatchAnalysisOutcome.Success(if (res != null) mapOf(single.messageId to res) else emptyMap())
             } catch (e: CancellationException) {
@@ -1126,7 +1184,30 @@ object AiClient {
                 ?: return@withContext BatchAnalysisOutcome.PermanentFailure("尚未設定 AI Provider API Key")
             val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
             val autoMemo = context != null && PhantomPrefs.isAiAutoMemoEnabled(context)
-            val singlePrompt = buildSystemPrompt(activeTags, activeRules, enableAutoTag, includeAutoMemo = autoMemo, memoRules = activeMemoRules)
+            val antiFraudBlock = if (context != null && PhantomPrefs.isAntiFraudCrossCheckEnabled(context)) {
+                val db = com.phantom.checker.service.AppDatabaseHolder.db(context)
+                val first = batchItems.first()
+                val combinedContent = batchItems.joinToString(" ") { it.content }
+                com.phantom.checker.data.MemoryEngine.buildAntiFraudPromptBlock(
+                    ctx = context,
+                    db = db,
+                    sender = first.sender,
+                    content = combinedContent,
+                    packageName = first.packageName,
+                    appLabel = first.appLabel,
+                    timestampMs = first.timestampMs
+                )
+            } else {
+                ""
+            }
+            val singlePrompt = buildSystemPrompt(
+                tags = activeTags,
+                rules = activeRules,
+                enableAutoTag = enableAutoTag,
+                includeAutoMemo = autoMemo,
+                memoRules = activeMemoRules,
+                antiFraudContextBlock = antiFraudBlock
+            )
             val memoSchemaPart = if (autoMemo) ", \"memo\": \"\", \"memo_type\": \"note|todo\", \"todo_due\": \"\"" else ""
             val batchSystemPrompt = buildString {
                 appendLine(singlePrompt)

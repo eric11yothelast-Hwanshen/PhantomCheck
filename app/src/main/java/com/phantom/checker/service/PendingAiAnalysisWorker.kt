@@ -76,7 +76,10 @@ class PendingAiAnalysisWorker(
                 AiClient.BatchAnalyzeItem(
                     messageId = msg.id,
                     sender = msg.sender,
-                    content = msg.content
+                    content = msg.content,
+                    packageName = msg.packageName,
+                    appLabel = msg.appLabel,
+                    timestampMs = msg.timestamp
                 )
             }
             when (

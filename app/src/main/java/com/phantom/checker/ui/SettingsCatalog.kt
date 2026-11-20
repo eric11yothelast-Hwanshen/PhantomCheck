@@ -116,6 +116,7 @@ object SettingsCatalog {
         SettingSearchItem("assistant_verbosity", "memory_assistant", "AI 助手回答詳細度", "切換 AI 助手回答篇幅為精簡、適中或詳細", listOf("詳細度", "精簡", "適中", "詳細", "篇幅", "長短", "回答長度", "verbosity")),
         SettingSearchItem("assistant_avatar", "memory_assistant", "AI 助手頭像", "從相簿選圖、圓形裁切並降採樣儲存為 AI 助手頭像，或重設為預設圖示", listOf("頭像", "大頭貼", "照片", "圖片", "圓形裁切", "avatar", "自訂助手")),
         SettingSearchItem("memory_privacy_tier_info", "memory_assistant", "記憶庫隱私分級說明", "一般記憶可參與本地檢索注入；標為「🔒 敏感」的記憶在任何對外 AI 請求皆由程式碼硬性排除，100% 僅留存本機", listOf("隱私", "敏感", "分級", "外送", "安全", "sensitive", "記憶隱私")),
+        SettingSearchItem("ai_anti_fraud_cross_check", "memory_assistant", "記憶 × 防詐交叉檢查", "結合本機通訊錄與一般記憶做離線矛盾比對（熟人冒充、情境破綻、防詐免疫），絕不外送原始通訊錄或敏感記憶", listOf("防詐", "交叉檢查", "熟人冒充", "通訊錄", "矛盾", "免疫", "記憶防詐")),
         SettingSearchItem("update_auto_check", "about", "自動檢查更新", "每次開啟 App 時自動檢查 GitHub 最新版本並提示；通知欄提醒每天最多一次", listOf("檢查更新", "更新", "版本", "自動更新", "update")),
         SettingSearchItem("about_section", "about", "關於", "應用程式名稱、版本號、作者、GitHub 倉庫、第三方元件與隱私說明", listOf("版本", "作者", "關於", "about", "version", "檢查更新", "更新", "update", "下載"))
     )
@@ -136,6 +137,7 @@ object SettingsCatalog {
         "ai_daily_summary",
         "ai_daily_summary_notif",
         "memory_chat_capture",
+        "ai_anti_fraud_cross_check",
         "notif_persistent_icons",
         "notif_ongoing",
         "notif_quiet_hours",
@@ -182,6 +184,7 @@ object SettingsCatalog {
             "ai_daily_summary" -> PhantomPrefs.isDailySummaryEnabled(appCtx)
             "ai_daily_summary_notif" -> PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
             "memory_chat_capture" -> PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
+            "ai_anti_fraud_cross_check" -> PhantomPrefs.isAntiFraudCrossCheckEnabled(appCtx)
             "notif_persistent_icons" -> PhantomPrefs.isPersistentNotifShowIcons(appCtx)
             "notif_ongoing" -> PhantomPrefs.isRecordOngoingEnabled(appCtx)
             "notif_quiet_hours" -> PhantomPrefs.isQuietHoursEnabled(appCtx)
@@ -256,6 +259,7 @@ object SettingsCatalog {
             }
             "ai_daily_summary_notif" -> PhantomPrefs.setDailySummaryNotifEnabled(appCtx, enabled)
             "memory_chat_capture" -> PhantomPrefs.setMemoryChatCaptureEnabled(appCtx, enabled)
+            "ai_anti_fraud_cross_check" -> PhantomPrefs.setAntiFraudCrossCheckEnabled(appCtx, enabled)
             "notif_persistent_icons" -> {
                 PhantomPrefs.setPersistentNotifShowIcons(appCtx, enabled)
                 StatsForegroundService.startOrRefresh(appCtx, force = true)

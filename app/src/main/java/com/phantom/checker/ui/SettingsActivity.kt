@@ -376,6 +376,19 @@ fun FilterSettingsScreen(
 
     // #315 B4 記憶庫與 AI 助手設定
     var memoryChatCaptureEnabled by remember { mutableStateOf(PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)) }
+    var antiFraudCrossCheckEnabled by remember { mutableStateOf(PhantomPrefs.isAntiFraudCrossCheckEnabled(appCtx)) }
+    var contactsPermissionGranted by remember { mutableStateOf(com.phantom.checker.util.ContactContext.hasContactsPermission(appCtx)) }
+    val contactsPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        contactsPermissionGranted = granted
+        com.phantom.checker.util.ContactContext.invalidateCache()
+        Toast.makeText(
+            ctx,
+            if (granted) "已授予通訊錄讀取權限（僅於本機離線比對熟人冒充，絕不外送）" else "未授予通訊錄權限，將自動降級為純記憶庫比對",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
     var memoryNormalTopK by remember { mutableIntStateOf(PhantomPrefs.getMemoryNormalTopK(appCtx)) }
     var memoryNormalPerItemChars by remember { mutableIntStateOf(PhantomPrefs.getMemoryNormalPerItemChars(appCtx)) }
     var memorySaverTopK by remember { mutableIntStateOf(PhantomPrefs.getMemorySaverTopK(appCtx)) }
@@ -575,6 +588,8 @@ fun FilterSettingsScreen(
             summaryHour = PhantomPrefs.getDailySummaryHour(appCtx)
             summaryMinute = PhantomPrefs.getDailySummaryMinute(appCtx)
             memoryChatCaptureEnabled = PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
+            antiFraudCrossCheckEnabled = PhantomPrefs.isAntiFraudCrossCheckEnabled(appCtx)
+            contactsPermissionGranted = com.phantom.checker.util.ContactContext.hasContactsPermission(appCtx)
             memoryNormalTopK = PhantomPrefs.getMemoryNormalTopK(appCtx)
             memoryNormalPerItemChars = PhantomPrefs.getMemoryNormalPerItemChars(appCtx)
             memorySaverTopK = PhantomPrefs.getMemorySaverTopK(appCtx)
@@ -633,6 +648,7 @@ fun FilterSettingsScreen(
                 dailySummaryEnabled = PhantomPrefs.isDailySummaryEnabled(appCtx)
                 dailySummaryNotifEnabled = PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
                 memoryChatCaptureEnabled = PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
+                antiFraudCrossCheckEnabled = PhantomPrefs.isAntiFraudCrossCheckEnabled(appCtx)
                 memoryNormalTopK = PhantomPrefs.getMemoryNormalTopK(appCtx)
                 memoryNormalPerItemChars = PhantomPrefs.getMemoryNormalPerItemChars(appCtx)
                 memorySaverTopK = PhantomPrefs.getMemorySaverTopK(appCtx)
@@ -2367,6 +2383,45 @@ fun FilterSettingsScreen(
                             PhantomSettingsBus.notifyChanged()
                         }
                     )
+                    Spacer(Modifier.height(6.dp))
+                    SettingSwitchRow(
+                        title = "記憶 × 防詐交叉檢查",
+                        subtitle = "離線比對本機通訊錄與一般記憶（熟人冒充、情境矛盾、防詐免疫），絕不外送原始通訊錄或敏感記憶；關閉時行為與 v3.0.0 完全一致",
+                        checked = antiFraudCrossCheckEnabled,
+                        onCheckedChange = { checked ->
+                            antiFraudCrossCheckEnabled = checked
+                            PhantomPrefs.setAntiFraudCrossCheckEnabled(appCtx, checked)
+                            PhantomSettingsBus.notifyChanged()
+                        }
+                    )
+                    if (antiFraudCrossCheckEnabled) {
+                        Spacer(Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (contactsPermissionGranted) {
+                                    "通訊錄權限：已授權（僅本機離線比對，不外送）"
+                                } else {
+                                    "通訊錄權限：未授權（目前降級為純記憶庫比對）"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (!contactsPermissionGranted) {
+                                TextButton(
+                                    onClick = {
+                                        contactsPermLauncher.launch(android.Manifest.permission.READ_CONTACTS)
+                                    }
+                                ) {
+                                    Text("授予權限")
+                                }
+                            }
+                        }
+                    }
                     Spacer(Modifier.height(4.dp))
                     Text(
                         text = "• 確認卡保護：所有 AI 記憶寫入皆標示為「AI 推測（inferred）」，必須經您點擊確認卡才會寫入；若與同主題（subject）既有記憶衝突，絕不自動覆蓋，會提供「更新記憶／保留原樣」雙選項或移至「記憶」分頁衝突區裁定。\n• 刪除安全保護：任何記憶刪除動作一律彈出勾選確認卡，絕不自動執行。",

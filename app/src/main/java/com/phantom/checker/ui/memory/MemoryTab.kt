@@ -413,6 +413,7 @@ internal fun MemoryTab(
     val isSearchVisible = isSearchExpanded || searchQuery.isNotEmpty()
     var filterChipsCollapsed by remember { mutableStateOf(PhantomPrefs.isMemoryFilterChipsCollapsed(ctx)) }
     val chipShape = RoundedCornerShape(8.dp)
+    var pendingImmunityDraft by remember { mutableStateOf(PhantomPrefs.getPendingScamImmunityDraft(appCtx)) }
 
     LaunchedEffect(isSearchExpanded) {
         if (isSearchExpanded) {
@@ -760,6 +761,73 @@ internal fun MemoryTab(
         }
 
         Spacer(Modifier.height(8.dp))
+
+        // #328 每週詐騙免疫自動彙總待確認卡（一律須使用者確認才寫入 memories）
+        pendingImmunityDraft?.let { draft ->
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "🛡️ 每週防詐免疫彙總建議（待確認）",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    Text(
+                        text = draft.content,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = {
+                                PhantomPrefs.clearPendingScamImmunityDraft(appCtx)
+                                pendingImmunityDraft = null
+                                onShowMessage("已略過本次防詐免疫彙總")
+                            }
+                        ) {
+                            Text("略過")
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    MemoryEngine.writeMemoryWithConflictDetection(
+                                        db = db,
+                                        category = MemoryEntity.CATEGORY_SCAM_IMMUNITY,
+                                        subject = draft.subject,
+                                        content = draft.content,
+                                        layer = MemoryEntity.LAYER_LONG_TERM,
+                                        privacyTier = MemoryEntity.PRIVACY_NORMAL,
+                                        confidence = MemoryEntity.CONFIDENCE_INFERRED,
+                                        sourceType = MemoryEntity.SOURCE_NOTIFICATION,
+                                        sourceRef = "每週詐騙手法彙總"
+                                    )
+                                    PhantomPrefs.clearPendingScamImmunityDraft(appCtx)
+                                    pendingImmunityDraft = null
+                                    onShowMessage("已寫入「防詐免疫」長期記憶")
+                                }
+                            }
+                        ) {
+                            Text("確認寫入免疫記憶")
+                        }
+                    }
+                }
+            }
+        }
 
         val showConflicts = selectedFilter == MemoryFilterChip.ALL || selectedFilter == MemoryFilterChip.CONFLICT
         val showLongTerm = selectedFilter == MemoryFilterChip.ALL || selectedFilter == MemoryFilterChip.LONG_TERM

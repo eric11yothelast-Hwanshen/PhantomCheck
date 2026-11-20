@@ -40,6 +40,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -453,9 +454,83 @@ private fun ScamDetailDialog(
     }
     var showSuspendConfirm by remember { mutableStateOf(false) }
     var showWhitelistFlow by remember { mutableStateOf(false) }
+    var showImmunityConfirm by remember { mutableStateOf(false) }
+    val initialImmunityDraft = remember(message.id) {
+        com.phantom.checker.data.MemoryEngine.buildScamImmunityDraftFromMessage(message)
+    }
+    var immunitySubject by remember(message.id) { mutableStateOf(initialImmunityDraft.first) }
+    var immunityContent by remember(message.id) { mutableStateOf(initialImmunityDraft.second) }
     val shizukuReady = remember {
         ShizukuManager.init(appCtx)
         ShizukuManager.state.value.isReady && message.packageName != appCtx.packageName
+    }
+
+    if (showImmunityConfirm) {
+        AlertDialog(
+            onDismissRequest = { showImmunityConfirm = false },
+            title = { Text("🛡️ 確認加入防詐免疫記憶") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "此摘要將寫入「防詐免疫（長期記憶／推測）」並於日後遇到金錢、催促或驗證碼訊息時優先提醒 AI 辨識類似手法。確認後可隨時於記憶分頁編輯或刪除。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = immunitySubject,
+                        onValueChange = { immunitySubject = it },
+                        label = { Text("手法主題") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = immunityContent,
+                        onValueChange = { immunityContent = it },
+                        label = { Text("話術與風險特徵摘要") },
+                        minLines = 2,
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = immunitySubject.isNotBlank() && immunityContent.isNotBlank(),
+                    onClick = {
+                        scope.launch {
+                            val db = AppDatabaseHolder.db(appCtx)
+                            val sourceRef = com.phantom.checker.data.MemoryEngine.formatNotificationSourceRef(
+                                messageId = message.id,
+                                appLabel = message.appLabel,
+                                sender = message.sender,
+                                timestampMs = message.timestamp,
+                                timeFormatted = fullTimeText
+                            )
+                            com.phantom.checker.data.MemoryEngine.writeMemoryWithConflictDetection(
+                                db = db,
+                                category = com.phantom.checker.data.MemoryEntity.CATEGORY_SCAM_IMMUNITY,
+                                subject = immunitySubject.trim(),
+                                content = immunityContent.trim(),
+                                layer = com.phantom.checker.data.MemoryEntity.LAYER_LONG_TERM,
+                                privacyTier = com.phantom.checker.data.MemoryEntity.PRIVACY_NORMAL,
+                                confidence = com.phantom.checker.data.MemoryEntity.CONFIDENCE_INFERRED,
+                                sourceType = com.phantom.checker.data.MemoryEntity.SOURCE_NOTIFICATION,
+                                sourceRef = sourceRef
+                            )
+                            showImmunityConfirm = false
+                            Toast.makeText(ctx, "已加入防詐免疫記憶（可至記憶頁管理）", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text("確認寫入記憶")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showImmunityConfirm = false }) {
+                    Text("取消")
+                }
+            }
+        )
     }
 
     if (showWhitelistFlow) {
@@ -630,6 +705,13 @@ private fun ScamDetailDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("加入白名單（這不是詐騙）")
+                }
+
+                OutlinedButton(
+                    onClick = { showImmunityConfirm = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("🛡️ 加入防詐免疫記憶")
                 }
 
                 if (shizukuReady) {

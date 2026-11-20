@@ -485,7 +485,10 @@ class NotificationCollectorService : NotificationListenerService() {
                     item = AiClient.BatchAnalyzeItem(
                         messageId = id,
                         sender = title,
-                        content = text
+                        content = text,
+                        packageName = pkg,
+                        appLabel = appLabel,
+                        timestampMs = now
                     )
                 )
             }

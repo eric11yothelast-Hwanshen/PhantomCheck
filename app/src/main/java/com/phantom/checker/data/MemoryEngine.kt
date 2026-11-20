@@ -9,6 +9,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.service.AppDatabaseHolder
+import com.phantom.checker.util.ContactContext
 import com.phantom.checker.util.PhantomPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -35,12 +36,19 @@ object MemoryEngine {
         MemoryEntity.CATEGORY_PREFERENCE,
         MemoryEntity.CATEGORY_ROUTINE,
         MemoryEntity.CATEGORY_RELATIONSHIP,
+        MemoryEntity.CATEGORY_SCAM_IMMUNITY,
         MemoryEntity.CATEGORY_OTHER
     )
 
     private val PUNCT_AND_SPACE_REGEX = Regex("""[\p{P}\p{S}\s]+""")
     private val CJK_CHAR_REGEX = Regex("""[\u4E00-\u9FFF]""")
     private val WORD_TOKEN_REGEX = Regex("""[a-zA-Z0-9]{2,}|[\u4E00-\u9FFF]{2,}""")
+
+    private val MONEY_URGENCY_OTP_KEYWORDS = listOf(
+        "借錢", "急用", "轉帳", "轉賬", "匯款", "驗證碼", "otp", "認證碼", "動態密碼",
+        "馬上", "立刻", "緊急", "凍結", "刷卡", "扣款", "包裹", "異常", "補件",
+        "解除分期", "投資", "獲利", "提領", "客服", "點數", "罰單", "催繳"
+    )
 
     fun normalizeCategory(raw: String?): String {
         val clean = raw?.trim()?.lowercase(Locale.ROOT).orEmpty()
@@ -54,6 +62,7 @@ object MemoryEngine {
         MemoryEntity.CATEGORY_PREFERENCE -> "偏好"
         MemoryEntity.CATEGORY_ROUTINE -> "習慣"
         MemoryEntity.CATEGORY_RELATIONSHIP -> "關係"
+        MemoryEntity.CATEGORY_SCAM_IMMUNITY -> "防詐免疫"
         else -> "其他"
     }
 
@@ -655,6 +664,179 @@ object MemoryEngine {
         db.memoRuleDao().deleteById(ruleId)
         com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
     }
+
+    // ==================== #328 記憶 × 防詐三件套 ====================
+
+    fun containsMoneyUrgencyOtpKeyword(text: String): Boolean {
+        val lower = text.lowercase(Locale.ROOT)
+        return MONEY_URGENCY_OTP_KEYWORDS.any { lower.contains(it) }
+    }
+
+    /**
+     * 計算記憶庫與通訊錄版本戳記，供 AiClient.analyzeMessage 的 riskCache key 納入，
+     * 確保新增免疫記憶、人物記憶或通訊錄授權變更後，不被 24h 舊快取遮蔽。
+     */
+    suspend fun getAntiFraudCacheVersion(
+        ctx: Context,
+        db: AppDatabase,
+        nowMs: Long = System.currentTimeMillis()
+    ): String = withContext(Dispatchers.IO) {
+        val normals = db.memoryDao().activeNormalMemoriesForPrompt(nowMs)
+            .filter { it.privacyTier == MemoryEntity.PRIVACY_NORMAL && it.status == MemoryEntity.STATUS_ACTIVE }
+        val maxUpdated = normals.maxOfOrNull { it.updatedAt } ?: 0L
+        val contactGen = ContactContext.getCacheGeneration()
+        val hasContacts = if (ContactContext.hasContactsPermission(ctx)) 1 else 0
+        val saver = if (PhantomPrefs.isTokenSaverEnabled(ctx)) 1 else 0
+        "${normals.size}:$maxUpdated:$contactGen:$hasContacts:$saver"
+    }
+
+    /**
+     * 組裝注入風險分析 systemPrompt 的【個人矛盾情報】【個人近期活動摘要】【防詐免疫紀錄】區塊（#328）。
+     *
+     * 隱私鐵律：
+     * - 嚴格雙重排除 privacyTier == sensitive（B1 語意零回退）。
+     * - 原始通訊錄絕不外送，僅送 ContactContext 產出之匿名結論字串。
+     * - 總開關關閉時直接回傳空字串，行為與 token 用量與 v3.0.0 完全一致。
+     * - 省 token 模式預算減半。
+     */
+    suspend fun buildAntiFraudPromptBlock(
+        ctx: Context,
+        db: AppDatabase,
+        sender: String,
+        content: String,
+        packageName: String = "",
+        appLabel: String = "",
+        timestampMs: Long = System.currentTimeMillis(),
+        nowMs: Long = System.currentTimeMillis()
+    ): String = withContext(Dispatchers.IO) {
+        if (!PhantomPrefs.isAntiFraudCrossCheckEnabled(ctx)) return@withContext ""
+        lazyArchiveExpiredShortTerm(db, nowMs)
+
+        // 雙重硬排除 sensitive 與過期短期記憶（靜態可驗證）
+        val normalMemories = db.memoryDao().activeNormalMemoriesForPrompt(nowMs)
+            .filter { mem ->
+                mem.privacyTier == MemoryEntity.PRIVACY_NORMAL &&
+                    mem.status == MemoryEntity.STATUS_ACTIVE &&
+                    (mem.layer != MemoryEntity.LAYER_SHORT_TERM || mem.expiresAt == null || mem.expiresAt > nowMs)
+            }
+
+        val tokenSaver = PhantomPrefs.isTokenSaverEnabled(ctx)
+        val signalBudgetTokens = if (tokenSaver) 75 else 150
+        val activityBudgetTokens = if (tokenSaver) 100 else 200
+        val activityTopK = if (tokenSaver) 3 else 6
+        val perItemCap = if (tokenSaver) 40 else 65
+
+        val personMemories = normalMemories.filter { it.category == MemoryEntity.CATEGORY_PERSON }
+        val contradictionSignals = ContactContext.evaluateContradictionSignals(
+            ctx = ctx,
+            sender = sender,
+            content = content,
+            packageName = packageName,
+            appLabel = appLabel,
+            timestampMs = timestampMs,
+            normalPersonMemories = personMemories,
+            maxTokens = signalBudgetTokens
+        )
+
+        val queryLower = "$sender $content".trim().lowercase(Locale.ROOT)
+        val queryTerms = extractQueryTerms("$sender $content")
+
+        // B. 情境矛盾交叉檢查：schedule / routine / preference 類 normal tier 記憶 top ≤6（省 token ≤3）
+        val contextCategories = setOf(
+            MemoryEntity.CATEGORY_SCHEDULE,
+            MemoryEntity.CATEGORY_ROUTINE,
+            MemoryEntity.CATEGORY_PREFERENCE
+        )
+        val rankedActivity = normalMemories
+            .filter { it.category in contextCategories }
+            .map { mem -> mem to scoreMemory(mem, queryTerms, queryLower, nowMs) }
+            .sortedWith(
+                compareByDescending<Pair<MemoryEntity, Double>> { it.second }
+                    .thenByDescending { it.first.updatedAt }
+            )
+            .take(activityTopK)
+
+        val activityLines = mutableListOf<String>()
+        var activityTokens = 0
+        for ((mem, _) in rankedActivity) {
+            if (mem.privacyTier != MemoryEntity.PRIVACY_NORMAL) continue
+            val catTag = categoryLabel(mem.category)
+            val safeSubj = AiClient.sanitizeForPrompt(mem.subject.replace("\n", " ").trim()).take(16)
+            val safeContent = AiClient.sanitizeForPrompt(mem.content.replace("\n", " ").trim()).take(perItemCap)
+            val line = "- [$catTag] $safeSubj：$safeContent"
+            val lineTok = estimateMemoryTokens(line)
+            if (activityTokens + lineTok > activityBudgetTokens && activityLines.isNotEmpty()) break
+            if (activityTokens + lineTok <= activityBudgetTokens || activityLines.isEmpty()) {
+                activityLines.add(line)
+                activityTokens += lineTok
+            }
+        }
+
+        // C. 個人化詐騙免疫紀錄：金錢／催促／驗證碼類訊息優先帶入 scam_immunity top-1
+        val immunityLine = if (containsMoneyUrgencyOtpKeyword(content)) {
+            normalMemories
+                .filter { it.category == MemoryEntity.CATEGORY_SCAM_IMMUNITY && it.privacyTier == MemoryEntity.PRIVACY_NORMAL }
+                .map { mem -> mem to scoreMemory(mem, queryTerms, queryLower, nowMs) }
+                .sortedWith(
+                    compareByDescending<Pair<MemoryEntity, Double>> { it.second }
+                        .thenByDescending { it.first.updatedAt }
+                )
+                .firstOrNull()
+                ?.first
+                ?.let { mem ->
+                    val safeSubj = AiClient.sanitizeForPrompt(mem.subject.replace("\n", " ").trim()).take(18)
+                    val safeContent = AiClient.sanitizeForPrompt(mem.content.replace("\n", " ").trim()).take(perItemCap)
+                    "- [防詐免疫] $safeSubj：$safeContent"
+                }
+        } else {
+            null
+        }
+
+        if (contradictionSignals.isBlank() && activityLines.isEmpty() && immunityLine == null) {
+            return@withContext ""
+        }
+
+        buildString {
+            if (contradictionSignals.isNotBlank()) {
+                appendLine("【個人矛盾情報（本機離線比對結論）】")
+                appendLine(contradictionSignals)
+            }
+            if (activityLines.isNotEmpty()) {
+                appendLine("【個人近期活動摘要】")
+                activityLines.forEach { appendLine(it) }
+            }
+            if (immunityLine != null) {
+                appendLine("【曾遇過之詐騙免疫紀錄】")
+                appendLine(immunityLine)
+            }
+            append(
+                "防詐交叉判讀要求：若訊息與上述個人矛盾情報衝突（例如陌生帳號冒充熟人且急迫借錢／要驗證碼、慣用 App 或聯絡時段異常），" +
+                    "或與個人近期活動摘要出現邏輯破綻（例如未曾訂購卻稱包裹異常、刷卡失敗、臨時改約），或吻合曾遇過之詐騙免疫手法，" +
+                    "必須顯著升高 risk_score 並在 risk_reason 中明確指出矛盾或破綻。"
+            )
+        }.trim()
+    }
+
+    /** 從單則詐騙訊息濃縮為「防詐免疫」記憶草稿（App、話術特徵、風險理由），供確認卡預填 */
+    fun buildScamImmunityDraftFromMessage(msg: MessageEntity): Pair<String, String> {
+        val appName = msg.appLabel.trim().ifEmpty { msg.packageName.ifEmpty { "通知" } }
+        val lower = msg.content.lowercase(Locale.ROOT)
+        val matchedTactics = MONEY_URGENCY_OTP_KEYWORDS.filter { lower.contains(it) }.distinct().take(4)
+        val tacticPart = if (matchedTactics.isNotEmpty()) {
+            "關鍵話術：${matchedTactics.joinToString("、")}"
+        } else {
+            "風險分數 ${msg.riskScore}"
+        }
+        val reasonPart = msg.riskReason.replace("\n", " ").trim().take(60)
+        val subject = "${appName} 詐騙手法"
+        val content = buildString {
+            append("來源 $appName；$tacticPart")
+            if (reasonPart.isNotEmpty()) {
+                append("；特徵：$reasonPart")
+            }
+        }.take(140)
+        return subject to content
+    }
 }
 
 /**
@@ -682,6 +864,80 @@ object MemoryExpiryPolicy {
     fun schedule(ctx: Context) {
         val appCtx = ctx.applicationContext
         val request = PeriodicWorkRequestBuilder<MemoryExpiryWorker>(1, TimeUnit.DAYS)
+            .build()
+        WorkManager.getInstance(appCtx).enqueueUniquePeriodicWork(
+            UNIQUE_WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
+    }
+}
+
+/**
+ * #328 每週定期彙總近 30 天詐騙訊息手法，產出「防詐免疫」待確認草稿。
+ * 鐵律：不直接寫入 memories 表，而是存入 PhantomPrefs 待確認草稿，由使用者於記憶頁確認卡核准後才落庫。
+ */
+class ScamImmunitySummaryWorker(
+    appContext: Context,
+    workerParams: WorkerParameters
+) : CoroutineWorker(appContext, workerParams) {
+
+    override suspend fun doWork(): Result {
+        return try {
+            val appCtx = applicationContext
+            if (!PhantomPrefs.isAntiFraudCrossCheckEnabled(appCtx)) {
+                return Result.success()
+            }
+            val db = AppDatabaseHolder.db(appCtx)
+            val now = System.currentTimeMillis()
+            val since30d = now - TimeUnit.DAYS.toMillis(30)
+            val recentScams = db.messageDao().scams().filter { it.timestamp >= since30d }
+            if (recentScams.isEmpty()) {
+                return Result.success()
+            }
+            val topApps = recentScams
+                .groupBy { it.appLabel.ifBlank { it.packageName }.ifBlank { "未知App" } }
+                .entries
+                .sortedByDescending { it.value.size }
+                .take(3)
+                .joinToString("、") { "${it.key}(${it.value.size}則)" }
+
+            val tacticKeywords = listOf(
+                "驗證碼", "OTP", "借錢", "匯款", "轉帳", "包裹異常", "刷卡失敗",
+                "投資", "解除分期", "帳戶凍結", "罰單", "客服", "點數"
+            )
+            val hitTactics = tacticKeywords.filter { kw ->
+                recentScams.any { m ->
+                    m.content.contains(kw, ignoreCase = true) || m.riskReason.contains(kw, ignoreCase = true)
+                }
+            }.take(5)
+
+            val summary = buildString {
+                append("近 30 天攔截 ${recentScams.size} 則高風險詐騙，主要來源：$topApps")
+                if (hitTactics.isNotEmpty()) {
+                    append("；常見手法關鍵詞：${hitTactics.joinToString("、")}")
+                }
+            }.take(160)
+
+            PhantomPrefs.savePendingScamImmunityDraft(
+                ctx = appCtx,
+                subject = "近 30 天曾遇過之詐騙手法彙總",
+                content = summary,
+                nowMs = now
+            )
+            Result.success()
+        } catch (_: Exception) {
+            Result.success()
+        }
+    }
+}
+
+object ScamImmunityPolicy {
+    private const val UNIQUE_WORK_NAME = "phantom_scam_immunity_weekly"
+
+    fun schedule(ctx: Context) {
+        val appCtx = ctx.applicationContext
+        val request = PeriodicWorkRequestBuilder<ScamImmunitySummaryWorker>(7, TimeUnit.DAYS)
             .build()
         WorkManager.getInstance(appCtx).enqueueUniquePeriodicWork(
             UNIQUE_WORK_NAME,
