@@ -490,10 +490,14 @@ private fun PhantomCheckApp(
         if (!onboardingCompleted && postNotificationPromptDone) {
             selectedTab = when (onboardingStep) {
                 OnboardingStep.AI_ASSISTANT -> MainTab.ASSISTANT
+                OnboardingStep.MEMORY_TAB,
+                OnboardingStep.SCAM_IMMUNITY,
+                OnboardingStep.CONTACTS_BINDING -> MainTab.MEMORY
                 OnboardingStep.NOTES_TAB,
-                OnboardingStep.MEMO_RULES,
-                OnboardingStep.TODO_AND_BATCH -> MainTab.NOTES
-                OnboardingStep.STATS_AND_SUMMARY -> MainTab.STATS
+                OnboardingStep.TODO_AND_BATCH,
+                OnboardingStep.CALENDAR_SUGGESTION -> MainTab.NOTES
+                OnboardingStep.PARTNER_TAB,
+                OnboardingStep.BRIEFING_PROACTIVE -> MainTab.PARTNER
                 else -> MainTab.MESSAGES
             }
         }
@@ -1481,9 +1485,11 @@ private fun PhantomCheckApp(
                                     val tabLabel = if (tab == MainTab.PARTNER) partnerTabLabel else tab.title
                                     val targetKey = when (tab) {
                                         MainTab.ASSISTANT -> OnboardingTargets.AI_ASSISTANT_TAB
+                                        MainTab.MEMORY -> OnboardingTargets.MEMORY_TAB
                                         MainTab.NOTES -> OnboardingTargets.NOTES_TAB
                                         MainTab.STATS -> OnboardingTargets.STATS_TAB
-                                        MainTab.MESSAGES, MainTab.MEMORY, MainTab.PARTNER -> null
+                                        MainTab.PARTNER -> OnboardingTargets.PARTNER_TAB
+                                        MainTab.MESSAGES -> null
                                     }
                                     val itemModifier = if (targetKey != null) {
                                         Modifier
@@ -1949,17 +1955,19 @@ private fun PhantomCheckApp(
                         OnboardingStep.SWIPE_DELETE -> OnboardingStep.QUICK_REPLY
                         OnboardingStep.QUICK_REPLY -> OnboardingStep.MULTI_SELECT
                         OnboardingStep.MULTI_SELECT -> OnboardingStep.FILTER_CHIPS
-                        OnboardingStep.FILTER_CHIPS -> OnboardingStep.AI_ASSISTANT
-                        OnboardingStep.AI_ASSISTANT -> OnboardingStep.NOTES_TAB
-                        OnboardingStep.NOTES_TAB -> OnboardingStep.MEMO_RULES
-                        OnboardingStep.MEMO_RULES -> OnboardingStep.NOTED_TODOED_SOURCE
-                        OnboardingStep.NOTED_TODOED_SOURCE -> OnboardingStep.STATS_AND_SUMMARY
-                        OnboardingStep.STATS_AND_SUMMARY -> OnboardingStep.TAGS_AND_RULES
-                        OnboardingStep.TAGS_AND_RULES -> OnboardingStep.TODO_AND_BATCH
-                        OnboardingStep.TODO_AND_BATCH -> OnboardingStep.APPEARANCE_AND_BG
-                        OnboardingStep.APPEARANCE_AND_BG -> OnboardingStep.KEEP_ALIVE
-                        OnboardingStep.KEEP_ALIVE -> OnboardingStep.SEARCH_PILL
-                        OnboardingStep.SEARCH_PILL -> OnboardingStep.DONE
+                        OnboardingStep.FILTER_CHIPS -> OnboardingStep.SEARCH_PILL
+                        OnboardingStep.SEARCH_PILL -> OnboardingStep.AI_ASSISTANT
+                        OnboardingStep.AI_ASSISTANT -> OnboardingStep.MEMORY_TAB
+                        OnboardingStep.MEMORY_TAB -> OnboardingStep.SCAM_IMMUNITY
+                        OnboardingStep.SCAM_IMMUNITY -> OnboardingStep.CONTACTS_BINDING
+                        OnboardingStep.CONTACTS_BINDING -> OnboardingStep.NOTES_TAB
+                        OnboardingStep.NOTES_TAB -> OnboardingStep.TODO_AND_BATCH
+                        OnboardingStep.TODO_AND_BATCH -> OnboardingStep.CALENDAR_SUGGESTION
+                        OnboardingStep.CALENDAR_SUGGESTION -> OnboardingStep.TAGS_AND_RULES
+                        OnboardingStep.TAGS_AND_RULES -> OnboardingStep.PARTNER_TAB
+                        OnboardingStep.PARTNER_TAB -> OnboardingStep.BRIEFING_PROACTIVE
+                        OnboardingStep.BRIEFING_PROACTIVE -> OnboardingStep.KEEP_ALIVE
+                        OnboardingStep.KEEP_ALIVE -> OnboardingStep.DONE
                         OnboardingStep.DONE -> {
                             PhantomPrefs.setOnboardingCompleted(appCtx, true)
                             onboardingCompleted = true

@@ -512,6 +512,8 @@ fun FilterSettingsScreen(
                     expandQuick = true
                     PhantomPrefs.setSettingsCardExpanded(appCtx, "quick", true)
                 }
+                SettingsTourStep.PERMISSION_HUB,
+                SettingsTourStep.ASSISTANT_HUB -> Unit
                 SettingsTourStep.PERSONALIZATION -> {
                     expandPersonalization = true
                     PhantomPrefs.setSettingsCardExpanded(appCtx, "personalization", true)
@@ -5271,50 +5273,64 @@ private enum class SettingsTourStep(
         title = "快速設定與省 Token",
         description = "最常用的核心開關都集中於此，包含「省 token 模式」、常駐統計通知與快速操作；你可以直接點擊洞內開關立即試用。"
     ),
-    PERSONALIZATION(
+    PERMISSION_HUB(
         index = 2,
+        cardKey = "permission_hub",
+        scrollCardKey = "permission_hub",
+        title = "權限授予中心（除 Shizuku）",
+        description = "集中檢視並快速授予通知存取、簡訊、通訊錄、日曆、精確鬧鐘、電池優化與使用情況權限；返回自動即時刷新狀態。"
+    ),
+    ASSISTANT_HUB(
+        index = 3,
+        cardKey = "assistant_hub",
+        scrollCardKey = "assistant_hub",
+        title = "AI 夥伴與主動推播中心",
+        description = "獨立設定頁集中收納早晚簡報、主動推播主題與上限勿擾、畫像卡、外部搜尋端點 BYOK、通訊錄整合與連結應用程式中心。"
+    ),
+    PERSONALIZATION(
+        index = 4,
         cardKey = "personalization",
         scrollCardKey = "personalization",
         title = "個人化、玻璃強度與背景圖片",
         description = "調整卡片密度、時間格式、首頁排序與篩選欄，並可自訂全域／AI 聊天／對話頁三層背景圖片與液態玻璃強度。"
     ),
     AI(
-        index = 3,
+        index = 5,
         cardKey = "ai",
         scrollCardKey = "ai",
         title = "AI 用途模型與雙模型路由",
-        description = "管理多 Provider API Key 與 7 種 AI 用途模型，並可開啟「雙模型信心路由」（先打輕量模型，高信心直接採用、不確定才升級主模型）進一步省 token。"
+        description = "管理多 Provider API Key 與各用途模型（含簡報與畫像卡），並可開啟「雙模型信心路由」進一步省 token。"
     ),
     NOTIF(
-        index = 4,
+        index = 6,
         cardKey = "notif",
         scrollCardKey = "notif",
         title = "訊息與通知",
         description = "設定勿擾時段、即時關鍵字提醒、重複通知節流秒數、滑動刪除與點擊開啟行為，並可使用「清除已讀訊息」。"
     ),
     DATA(
-        index = 5,
+        index = 7,
         cardKey = "data",
         scrollCardKey = "data",
         title = "資料管理與自訂標籤",
         description = "管理 App 靜音清單、自訂標籤規則、訊息保留天數與則數上限、CSV 匯出，也可隨時重播新手或設定教學。"
     ),
     WHITELIST(
-        index = 6,
+        index = 8,
         cardKey = "whitelist",
         scrollCardKey = "data",
         title = "白名單管理卡",
         description = "依 App 分組收合檢視所有寄件者／內容白名單，支援手動新增（防重複）、開關啟停與確認刪除；AI 助手也會同步讀取這份清單。"
     ),
     APPEARANCE(
-        index = 7,
+        index = 9,
         cardKey = "appearance",
         scrollCardKey = "appearance",
         title = "外觀、卡片底色與保活",
         description = "切換深淺主題、Material You 動態取色、分頁欄模式，以及「卡片底色模式」（跟隨玻璃強度／透明模式滑桿／深色底），並檢查電池最佳化與前景保活狀態。"
     ),
     SHIZUKU(
-        index = 8,
+        index = 10,
         cardKey = "shizuku",
         scrollCardKey = "shizuku",
         title = "Shizuku 進階",

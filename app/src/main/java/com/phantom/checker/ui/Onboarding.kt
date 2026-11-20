@@ -71,10 +71,12 @@ object OnboardingTargets {
     const val FILTER_CHIPS = "filter_chips"
     const val SELECT_BUTTON = "select_button"
     const val AI_ASSISTANT_TAB = "ai_assistant_tab"
+    const val MEMORY_TAB = "memory_tab"
     const val NOTES_TAB = "notes_tab"
     const val MEMO_RULES_AREA = "memo_rules_area"
     const val TODO_ADD = "todo_add"
     const val STATS_TAB = "stats_tab"
+    const val PARTNER_TAB = "partner_tab"
     const val SEARCH_PILL = "search_pill"
 }
 
@@ -86,17 +88,19 @@ enum class OnboardingStep(val index: Int) {
     QUICK_REPLY(5),
     MULTI_SELECT(6),
     FILTER_CHIPS(7),
-    AI_ASSISTANT(8),
-    NOTES_TAB(9),
-    MEMO_RULES(10),
-    NOTED_TODOED_SOURCE(11),
-    STATS_AND_SUMMARY(12),
-    TAGS_AND_RULES(13),
+    SEARCH_PILL(8),
+    AI_ASSISTANT(9),
+    MEMORY_TAB(10),
+    SCAM_IMMUNITY(11),
+    CONTACTS_BINDING(12),
+    NOTES_TAB(13),
     TODO_AND_BATCH(14),
-    APPEARANCE_AND_BG(15),
-    KEEP_ALIVE(16),
-    SEARCH_PILL(17),
-    DONE(18);
+    CALENDAR_SUGGESTION(15),
+    TAGS_AND_RULES(16),
+    PARTNER_TAB(17),
+    BRIEFING_PROACTIVE(18),
+    KEEP_ALIVE(19),
+    DONE(20);
 
     companion object {
         fun fromIndex(index: Int): OnboardingStep =
@@ -312,14 +316,16 @@ fun OnboardingOverlay(
             OnboardingStep.MULTI_SELECT -> OnboardingTargets.SELECT_BUTTON
             OnboardingStep.FILTER_CHIPS,
             OnboardingStep.TAGS_AND_RULES -> OnboardingTargets.FILTER_CHIPS
-            OnboardingStep.AI_ASSISTANT -> OnboardingTargets.AI_ASSISTANT_TAB
-            OnboardingStep.NOTES_TAB,
-            OnboardingStep.NOTED_TODOED_SOURCE -> OnboardingTargets.NOTES_TAB
-            OnboardingStep.MEMO_RULES -> OnboardingTargets.MEMO_RULES_AREA
-            OnboardingStep.TODO_AND_BATCH -> OnboardingTargets.TODO_ADD
-            OnboardingStep.STATS_AND_SUMMARY -> OnboardingTargets.STATS_TAB
-            OnboardingStep.APPEARANCE_AND_BG -> OnboardingTargets.SETTINGS_GEAR
             OnboardingStep.SEARCH_PILL -> OnboardingTargets.SEARCH_PILL
+            OnboardingStep.AI_ASSISTANT -> OnboardingTargets.AI_ASSISTANT_TAB
+            OnboardingStep.MEMORY_TAB,
+            OnboardingStep.SCAM_IMMUNITY,
+            OnboardingStep.CONTACTS_BINDING -> OnboardingTargets.MEMORY_TAB
+            OnboardingStep.NOTES_TAB,
+            OnboardingStep.CALENDAR_SUGGESTION -> OnboardingTargets.NOTES_TAB
+            OnboardingStep.TODO_AND_BATCH -> OnboardingTargets.TODO_ADD
+            OnboardingStep.PARTNER_TAB,
+            OnboardingStep.BRIEFING_PROACTIVE -> OnboardingTargets.PARTNER_TAB
             else -> null
         }
         if (requiredTarget != null && targetBounds.isNotEmpty() && !targetBounds.containsKey(requiredTarget)) {
@@ -370,14 +376,16 @@ fun OnboardingOverlay(
             OnboardingStep.FILTER_CHIPS,
             OnboardingStep.TAGS_AND_RULES -> targetBounds[OnboardingTargets.FILTER_CHIPS]
             OnboardingStep.AI_ASSISTANT -> targetBounds[OnboardingTargets.AI_ASSISTANT_TAB]
+            OnboardingStep.MEMORY_TAB,
+            OnboardingStep.SCAM_IMMUNITY,
+            OnboardingStep.CONTACTS_BINDING -> targetBounds[OnboardingTargets.MEMORY_TAB]
             OnboardingStep.NOTES_TAB,
-            OnboardingStep.NOTED_TODOED_SOURCE -> targetBounds[OnboardingTargets.NOTES_TAB]
-            OnboardingStep.MEMO_RULES -> targetBounds[OnboardingTargets.MEMO_RULES_AREA]
+            OnboardingStep.CALENDAR_SUGGESTION -> targetBounds[OnboardingTargets.NOTES_TAB]
             OnboardingStep.TODO_AND_BATCH -> targetBounds[OnboardingTargets.TODO_ADD]
-            OnboardingStep.STATS_AND_SUMMARY -> targetBounds[OnboardingTargets.STATS_TAB]
-            OnboardingStep.APPEARANCE_AND_BG -> targetBounds[OnboardingTargets.SETTINGS_GEAR]
+            OnboardingStep.PARTNER_TAB,
+            OnboardingStep.BRIEFING_PROACTIVE -> targetBounds[OnboardingTargets.PARTNER_TAB]
+            OnboardingStep.KEEP_ALIVE -> targetBounds[OnboardingTargets.SETTINGS_GEAR]
             OnboardingStep.SEARCH_PILL,
-            OnboardingStep.KEEP_ALIVE,
             OnboardingStep.DONE -> null
         }
         target?.let {
@@ -519,40 +527,46 @@ fun OnboardingOverlay(
                             "在篩選或搜尋清單點右上角「選取」，可一次批次標記已讀、星標或刪除多則訊息。"
                     OnboardingStep.FILTER_CHIPS ->
                         "步驟 ${step.index} / $totalSteps・固定表頭與分類篩選" to
-                            "頂部統計卡、分類篩選列與我的最愛列固定於上方，下方訊息清單可獨立捲動；可依未讀、星標、詐騙、已過濾、已記事、已待辦、App 分類或 AI 標籤快速過濾。"
-                    OnboardingStep.AI_ASSISTANT ->
-                        "步驟 ${step.index} / $totalSteps・AI 助手" to
-                            "切換到「AI 助手」分頁，支援自然語言查訊、建立自動記事規則、常用快速指令、昨日簡報與截圖圖片分析。"
-                    OnboardingStep.NOTES_TAB ->
-                        "步驟 ${step.index} / $totalSteps・記事與自動備忘錄" to
-                            "切換到「記事」分頁可管理備忘與待辦（支援優先級、重複提醒與編輯）；開啟「自動備忘錄」後，AI 分析訊息時會自動擷取繳費、取貨與約定事項寫入。"
-                    OnboardingStep.MEMO_RULES ->
-                        "步驟 ${step.index} / $totalSteps・自動記事規則" to
-                            "在「記事」分頁的「自動記事規則」管理卡，可手動或以自然語言設定哪些寄件者、App 或關鍵字要自動記為記事／待辦，或永遠不要自動加入。"
-                    OnboardingStep.NOTED_TODOED_SOURCE ->
-                        "步驟 ${step.index} / $totalSteps・已記事／已待辦與來源回溯" to
-                            "首頁「已記事／已待辦」篩選標籤可快速找出已建立備忘的訊息；待辦列可點來源圖示回到原訊息，訊息詳情頁也能一鍵「不再自動記事／待辦」。"
-                    OnboardingStep.STATS_AND_SUMMARY ->
-                        "步驟 ${step.index} / $totalSteps・統計、摘要與離線佇列" to
-                            "「統計」分頁整合每日／每週 AI 摘要、訊息趨勢圖表與詐騙警示入口；斷網未分析的訊息會顯示離線補佇列橫幅並在連線後自動補齊。"
-                    OnboardingStep.TAGS_AND_RULES ->
-                        "步驟 ${step.index} / $totalSteps・標籤、VIP 與 AI 規則" to
-                            "在「設定 → 標籤與 AI 規則」可設定零 token App 分類、自然語言白名單與 VIP 寄件者；AI 卡另提供觸發字數門檻與分發失敗通知開關。"
-                    OnboardingStep.TODO_AND_BATCH ->
-                        "步驟 ${step.index} / $totalSteps・待辦提醒與批次管理" to
-                            "在「記事」分頁可手動「+」新增與編輯待辦提醒（含每日／每週重複與逾期標示）；訊息與搜尋清單同樣支援批次管理。"
-                    OnboardingStep.APPEARANCE_AND_BG ->
-                        "步驟 ${step.index} / $totalSteps・背景圖片、外觀與分用途模型" to
-                            "在「設定 → 外觀與保活」可自訂全域／AI 聊天／對話頁三層背景圖片與卡片底色模式；「多 Provider AI 設定」可為對話、分析與摘要分別指定模型。"
-                    OnboardingStep.KEEP_ALIVE ->
-                        "步驟 ${step.index} / $totalSteps・保活設定" to
-                            "完成以下三項檢查，讓幻訊在背景穩定接收與分析通知："
+                            "頂部統計卡、分類篩選列與我的最愛列固定於上方，下方訊息清單可獨立捲動；可依未讀、星標、詐騙、已記事、已待辦或 AI 標籤快速過濾。"
                     OnboardingStep.SEARCH_PILL ->
                         "步驟 ${step.index} / $totalSteps・下拉搜尋" to
                             "頂部把手可下拉或點擊開啟全畫面訊息搜尋，支援即時文字搜尋訊息／待辦／備忘錄，以及 AI 語意搜尋。"
+                    OnboardingStep.AI_ASSISTANT ->
+                        "步驟 ${step.index} / $totalSteps・AI 助手與跨 App 行動卡" to
+                            "切換到「AI 助手」分頁，支援自然語言查訊、查詢本機日曆空檔、截圖分析，以及「確認後執行」郵件／導航／鬧鐘行動卡。"
+                    OnboardingStep.MEMORY_TAB ->
+                        "步驟 ${step.index} / $totalSteps・個人記憶庫與畫像卡" to
+                            "「記憶」分頁集中管理長期與短期記憶、頂部「我對你的瞭解」畫像卡，以及衝突版本裁定；標記「🔒 敏感」的記憶絕不外送 AI。"
+                    OnboardingStep.SCAM_IMMUNITY ->
+                        "步驟 ${step.index} / $totalSteps・防詐免疫記憶專區" to
+                            "切換上方「防詐免疫」篩選標籤即可檢視曾記錄的詐騙話術特徵，並可直接點「查看來源訊息」跳轉原始通知詳情。"
+                    OnboardingStep.CONTACTS_BINDING ->
+                        "步驟 ${step.index} / $totalSteps・通訊錄暱稱綁定與 VIP 信任圈" to
+                            "在「設定 → AI 夥伴與主動推播」可進行純本機暱稱綁定本名、零 token 關係單位匯入與 VIP 信任圈同步，原始通訊錄絕不外送 AI。"
+                    OnboardingStep.NOTES_TAB ->
+                        "步驟 ${step.index} / $totalSteps・記事與自動備忘錄" to
+                            "切換到「記事」分頁可管理備忘與自動記事規則；開啟「自動備忘錄」後，AI 分析訊息時會自動擷取待辦與重點事項。"
+                    OnboardingStep.TODO_AND_BATCH ->
+                        "步驟 ${step.index} / $totalSteps・待辦提醒與批次管理" to
+                            "在「記事」分頁可手動「+」新增與編輯待辦提醒（含每日／每週重複與逾期標示）；訊息與搜尋清單同樣支援批次管理。"
+                    OnboardingStep.CALENDAR_SUGGESTION ->
+                        "步驟 ${step.index} / $totalSteps・行程分流與日曆建議卡" to
+                            "啟用本機日曆整合後，訂位、看診、會議等行程類通知會優先顯示「📅 加入日曆」建議卡（含撞期檢查），不再誤入待辦／記事。"
+                    OnboardingStep.TAGS_AND_RULES ->
+                        "步驟 ${step.index} / $totalSteps・標籤、VIP 與 AI 規則" to
+                            "在「設定 → 資料管理」可設定零 token App 分類、自然語言白名單與備忘規則（明確指定的備忘規則優先於行程分流）。"
+                    OnboardingStep.PARTNER_TAB ->
+                        "步驟 ${step.index} / $totalSteps・AI 夥伴個人分頁" to
+                            "底部最右側是以你為助手命名的「AI 夥伴」分頁，展示大頭像、陪伴天數、親密度等級、近 7 天動態與個性風格快捷切換。"
+                    OnboardingStep.BRIEFING_PROACTIVE ->
+                        "步驟 ${step.index} / $totalSteps・早晚簡報與主動推播" to
+                            "在「AI 夥伴與主動推播」設定頁可自訂早晚簡報時段（預設 08:45／22:25）、零 token 變動偵測、每日上限與獨立勿擾時段。"
+                    OnboardingStep.KEEP_ALIVE ->
+                        "步驟 ${step.index} / $totalSteps・保活與權限授予中心" to
+                            "完成以下三項檢查，或前往「設定 → 權限授予中心」集中一鍵管理所有系統權限，讓幻訊在背景穩定運行："
                     OnboardingStep.DONE ->
                         "步驟 ${step.index} / $totalSteps・你學會了！" to
-                            "已掌握四大主分頁（訊息、AI 助手、記事、統計）、下拉搜尋、快速回覆、自動記事規則與已記事／已待辦篩選、背景外觀與保活設定。"
+                            "已掌握六大分頁（訊息、AI 助手、記憶、記事、統計、AI 夥伴）、防詐免疫、行程日曆分流、早晚簡報與權限授予中心，開始體驗吧！"
                 }
 
                 Text(
