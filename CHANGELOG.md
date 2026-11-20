@@ -19,6 +19,7 @@
 
 - **省 token 快捷開關（#315 / PR #319）**：AI 助手頁頂列新增省 token 快捷開關 chip 與 `Info` 資訊按鈕，透過 `PhantomSettingsBus` 與設定頁 100% 雙向即時同步；彈窗逐條對照 `PhantomPrefs.isEffective*` 實際行為。
 - **Safe Browsing key 改 BYOK（#316 / PR #318，行為變更）**：移除 `BuildConfig.SAFE_BROWSING_API_KEY`／`local.properties` fallback 路徑，統一僅設定頁 `EncryptedSharedPreferences` 輸入；未設定時誠實跳過該源且 UI 提示一致，release 建置後已無 `SAFE_BROWSING_API_KEY` 欄位殘留。
+- **聊天時間格式固定 Locale.US（#316 / PR #320）**：`CHAT_TIME_FORMATTER` 以 `DateTimeFormatter.ofPattern("MM/dd HH:mm", Locale.US)` 建立，zh-TW 顯示逐字不變，其他系統地區不再出現非 ASCII 數字漂移。
 - **教學 auto-skip 雙條件（#316 / PR #320）**：新手教學 auto-skip 延遲 400ms 後仍需 bounds 已量測且目標仍缺席，才自動跳步，避免極慢機型在分頁切換進行中誤跳。
 - **Safe Browsing 卡過時文案移除（#316 / PR #320）**：「Key 狀態：已於 App 加密儲存（優先於 BuildConfig）」改為「Key 狀態：已於 App 加密儲存」，並移除不可達的「Key 狀態：已從 local.properties 注入」分支（`getSafeBrowsingKeySource` 僅回傳 EncryptedPrefs／NONE）。
 
