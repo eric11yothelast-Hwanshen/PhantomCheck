@@ -353,7 +353,8 @@ internal suspend fun buildRagSystemPrompt(
         "字體", "玻璃", "震動", "觸覺", "節流", "額度", "筆數", "訊息數", "閱讀", "載入",
         "保活", "權限", "通知", "省 token", "省電", "防詐情報", "shizuku", "自動回覆",
         "匯出", "清除", "靜音", "關鍵字", "勿擾", "密度", "排序", "篩選", "時間格式",
-        "12小時", "24小時", "分頁列", "setting", "token", "rag", "quota", "limit", "throttle"
+        "12小時", "24小時", "分頁列", "setting", "token", "rag", "quota", "limit", "throttle",
+        "記憶", "助手名字", "改名", "個性", "風格", "語氣", "詳細度", "頭像", "大頭貼", "隱私分級"
     ).any { lowerQ.contains(it) }
 
     var ragTextForSummary: String? = null

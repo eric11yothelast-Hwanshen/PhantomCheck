@@ -107,6 +107,15 @@ object SettingsCatalog {
         SettingSearchItem("bg_scrim", "personalization", "背景暗色遮罩強度", "調整背景圖片上的暗色遮罩透明度以確保文字可讀性", listOf("個人化", "背景", "遮罩", "scrim", "暗度", "對比")),
         SettingSearchItem("glass_strength", "personalization", "玻璃卡片強度", "調整液態玻璃卡片的表面不透明度與視覺強度", listOf("個人化", "玻璃", "強度", "毛玻璃", "透明", "glass")),
         SettingSearchItem("appearance_card_bg", "appearance", "卡片底色模式", "選擇跟隨玻璃強度、透明模式（0–100% 滑桿）或深色底", listOf("卡片", "底色", "背景", "透明", "深色", "黑底", "外觀")),
+        SettingSearchItem("memory_chat_capture", "memory_assistant", "聊天記憶擷取", "允許 AI 在對話中擷取個人事實、人物、行程與偏好並彈出確認卡（確認後才寫入，衝突時提供雙版本裁定）", listOf("記憶", "記憶庫", "擷取", "聊天記憶", "自動記憶", "memory", "確認卡")),
+        SettingSearchItem("memory_normal_top_k", "memory_assistant", "記憶注入筆數（正常模式）", "設定正常模式下每次 AI 對話注入的相關記憶筆數上限（1–8 筆，預設 8 筆，總預算 ≤250 tokens）", listOf("記憶", "注入", "筆數", "topk", "正常模式", "記憶預算", "記憶筆數")),
+        SettingSearchItem("memory_normal_per_item_chars", "memory_assistant", "記憶單筆截斷字數（正常模式）", "設定正常模式下每筆注入記憶的預覽截斷字數（30–120 字，預設 70 字 ≈ 50 tokens）", listOf("記憶", "字數", "截斷", "單筆", "token", "記憶長度")),
+        SettingSearchItem("memory_saver_top_k", "memory_assistant", "記憶注入筆數（省 token 模式）", "獨立設定省 token 模式下每次 AI 對話注入的記憶筆數上限（1–4 筆，預設 4 筆，總預算 ≤120 tokens，與正常模式互不覆寫）", listOf("記憶", "省 token", "省電", "注入", "筆數", "省token記憶")),
+        SettingSearchItem("assistant_custom_name", "memory_assistant", "AI 助手名字", "自訂 AI 助手顯示稱呼與對話身分（預設「幻訊」）", listOf("助手名字", "名字", "稱呼", "改名", "自訂助手", "幻訊", "name")),
+        SettingSearchItem("assistant_personality", "memory_assistant", "AI 助手個性與風格", "選擇內建個性（預設／簡潔專業／親切詳細／嚴謹防詐顧問）或輸入完全自訂個性描述", listOf("個性", "風格", "語氣", "人設", "簡潔", "親切", "嚴謹", "自訂助手", "persona")),
+        SettingSearchItem("assistant_verbosity", "memory_assistant", "AI 助手回答詳細度", "切換 AI 助手回答篇幅為精簡、適中或詳細", listOf("詳細度", "精簡", "適中", "詳細", "篇幅", "長短", "回答長度", "verbosity")),
+        SettingSearchItem("assistant_avatar", "memory_assistant", "AI 助手頭像", "從相簿選圖、圓形裁切並降採樣儲存為 AI 助手頭像，或重設為預設圖示", listOf("頭像", "大頭貼", "照片", "圖片", "圓形裁切", "avatar", "自訂助手")),
+        SettingSearchItem("memory_privacy_tier_info", "memory_assistant", "記憶庫隱私分級說明", "一般記憶可參與本地檢索注入；標為「🔒 敏感」的記憶在任何對外 AI 請求皆由程式碼硬性排除，100% 僅留存本機", listOf("隱私", "敏感", "分級", "外送", "安全", "sensitive", "記憶隱私")),
         SettingSearchItem("update_auto_check", "about", "自動檢查更新", "每次開啟 App 時自動檢查 GitHub 最新版本並提示；通知欄提醒每天最多一次", listOf("檢查更新", "更新", "版本", "自動更新", "update")),
         SettingSearchItem("about_section", "about", "關於", "應用程式名稱、版本號、作者、GitHub 倉庫、第三方元件與隱私說明", listOf("版本", "作者", "關於", "about", "version", "檢查更新", "更新", "update", "下載"))
     )
@@ -126,6 +135,7 @@ object SettingsCatalog {
         "ai_chat_tab_behavior",
         "ai_daily_summary",
         "ai_daily_summary_notif",
+        "memory_chat_capture",
         "notif_persistent_icons",
         "notif_ongoing",
         "notif_quiet_hours",
@@ -171,6 +181,7 @@ object SettingsCatalog {
             "ai_chat_tab_behavior" -> PhantomPrefs.isAiChatTabContinue(appCtx)
             "ai_daily_summary" -> PhantomPrefs.isDailySummaryEnabled(appCtx)
             "ai_daily_summary_notif" -> PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
+            "memory_chat_capture" -> PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
             "notif_persistent_icons" -> PhantomPrefs.isPersistentNotifShowIcons(appCtx)
             "notif_ongoing" -> PhantomPrefs.isRecordOngoingEnabled(appCtx)
             "notif_quiet_hours" -> PhantomPrefs.isQuietHoursEnabled(appCtx)
@@ -244,6 +255,7 @@ object SettingsCatalog {
                 DailySummaryPolicy.schedule(appCtx)
             }
             "ai_daily_summary_notif" -> PhantomPrefs.setDailySummaryNotifEnabled(appCtx, enabled)
+            "memory_chat_capture" -> PhantomPrefs.setMemoryChatCaptureEnabled(appCtx, enabled)
             "notif_persistent_icons" -> {
                 PhantomPrefs.setPersistentNotifShowIcons(appCtx, enabled)
                 StatsForegroundService.startOrRefresh(appCtx, force = true)
@@ -373,6 +385,30 @@ object SettingsCatalog {
             step = 1,
             unit = "模式",
             valueLabels = listOf("一般條列", "中央堆疊")
+        ),
+        NumericSettingSpec(
+            id = "memory_normal_top_k",
+            title = "記憶注入筆數（正常模式）",
+            min = PhantomPrefs.MIN_MEMORY_NORMAL_TOP_K,
+            max = PhantomPrefs.MAX_MEMORY_NORMAL_TOP_K,
+            step = 1,
+            unit = "筆"
+        ),
+        NumericSettingSpec(
+            id = "memory_normal_per_item_chars",
+            title = "記憶單筆截斷字數（正常模式）",
+            min = PhantomPrefs.MIN_MEMORY_NORMAL_PER_ITEM_CHARS,
+            max = PhantomPrefs.MAX_MEMORY_NORMAL_PER_ITEM_CHARS,
+            step = 10,
+            unit = "字"
+        ),
+        NumericSettingSpec(
+            id = "memory_saver_top_k",
+            title = "記憶注入筆數（省 token 模式）",
+            min = PhantomPrefs.MIN_MEMORY_SAVER_TOP_K,
+            max = PhantomPrefs.MAX_MEMORY_SAVER_TOP_K,
+            step = 1,
+            unit = "筆"
         )
     )
 
@@ -393,6 +429,9 @@ object SettingsCatalog {
                 PhantomPrefs.NoteCardLayoutMode.LIST -> 0
                 PhantomPrefs.NoteCardLayoutMode.CENTER -> 1
             }
+            "memory_normal_top_k" -> PhantomPrefs.getMemoryNormalTopK(appCtx)
+            "memory_normal_per_item_chars" -> PhantomPrefs.getMemoryNormalPerItemChars(appCtx)
+            "memory_saver_top_k" -> PhantomPrefs.getMemorySaverTopK(appCtx)
             else -> null
         }
     }
@@ -419,6 +458,9 @@ object SettingsCatalog {
                 appCtx,
                 if (target == 1) PhantomPrefs.NoteCardLayoutMode.CENTER else PhantomPrefs.NoteCardLayoutMode.LIST
             )
+            "memory_normal_top_k" -> PhantomPrefs.setMemoryNormalTopK(appCtx, target)
+            "memory_normal_per_item_chars" -> PhantomPrefs.setMemoryNormalPerItemChars(appCtx, target)
+            "memory_saver_top_k" -> PhantomPrefs.setMemorySaverTopK(appCtx, target)
             else -> return null
         }
         PhantomSettingsBus.notifyChanged()
@@ -486,12 +528,21 @@ object SettingsCatalog {
             ?: return null
 
         val hasNumericIntentKeyword = listOf(
-            "載入", "閱讀", "筆數", "訊息數", "額度", "節流", "上限", "秒數",
+            "載入", "閱讀", "筆數", "訊息數", "額度", "節流", "上限", "秒數", "記憶",
             "單次", "rag", "limit", "quota", "throttle", "調", "改", "設"
         ).any { lower.contains(it) }
         if (!hasNumericIntentKeyword) return null
 
         val explicitRules: List<Pair<String, List<String>>> = listOf(
+            "memory_saver_top_k" to listOf(
+                "省 token 記憶", "省token記憶", "省電記憶", "saver_top_k"
+            ),
+            "memory_normal_top_k" to listOf(
+                "記憶注入筆數", "記憶筆數", "注入記憶筆數", "normal_top_k"
+            ),
+            "memory_normal_per_item_chars" to listOf(
+                "記憶單筆字數", "記憶截斷字數", "記憶字數"
+            ),
             "ai_chat_rag_limit" to listOf(
                 "單次閱讀", "閱讀訊息", "單次載入", "載入訊息", "載入筆數",
                 "閱讀筆數", "訊息數", "上下文", "chat_rag", "rag"

@@ -29,6 +29,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.core.content.ContextCompat
 import com.phantom.checker.util.AppUpdateHelper
+import com.phantom.checker.util.AssistantAvatarCircle
+import com.phantom.checker.util.AssistantAvatarCropDialog
+import com.phantom.checker.util.AssistantAvatarHelper
 import com.phantom.checker.util.BackgroundImageHelper
 import com.phantom.checker.util.BackgroundLayer
 import com.phantom.checker.util.UpdateCheckResult
@@ -306,7 +309,7 @@ class SettingsActivity : ComponentActivity() {
 }
 
 private val SETTINGS_CARD_ORDER = listOf(
-    "quick", "personalization", "stats", "ai", "notif", "data", "appearance", "shizuku", "intel", "about"
+    "quick", "personalization", "stats", "ai", "memory_assistant", "notif", "data", "appearance", "shizuku", "intel", "about"
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
@@ -371,6 +374,43 @@ fun FilterSettingsScreen(
     var summaryHour by remember { mutableIntStateOf(PhantomPrefs.getDailySummaryHour(appCtx)) }
     var summaryMinute by remember { mutableIntStateOf(PhantomPrefs.getDailySummaryMinute(appCtx)) }
 
+    // #315 B4 記憶庫與 AI 助手設定
+    var memoryChatCaptureEnabled by remember { mutableStateOf(PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)) }
+    var memoryNormalTopK by remember { mutableIntStateOf(PhantomPrefs.getMemoryNormalTopK(appCtx)) }
+    var memoryNormalPerItemChars by remember { mutableIntStateOf(PhantomPrefs.getMemoryNormalPerItemChars(appCtx)) }
+    var memorySaverTopK by remember { mutableIntStateOf(PhantomPrefs.getMemorySaverTopK(appCtx)) }
+    var assistantName by remember { mutableStateOf(PhantomPrefs.getAssistantName(appCtx)) }
+    var assistantPersonalityPreset by remember { mutableStateOf(PhantomPrefs.getAssistantPersonalityPreset(appCtx)) }
+    var assistantCustomPersonality by remember { mutableStateOf(PhantomPrefs.getAssistantCustomPersonality(appCtx)) }
+    var assistantVerbosity by remember { mutableStateOf(PhantomPrefs.getAssistantVerbosity(appCtx)) }
+    var assistantHasAvatar by remember { mutableStateOf(PhantomPrefs.hasAssistantAvatar(appCtx)) }
+    var assistantAvatarBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    var pendingAvatarCropUri by remember { mutableStateOf<Uri?>(null) }
+    var isSavingAvatar by remember { mutableStateOf(false) }
+
+    val avatarDocumentPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            pendingAvatarCropUri = uri
+        }
+    }
+    val avatarVisualPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            pendingAvatarCropUri = uri
+        }
+    }
+
+    LaunchedEffect(assistantHasAvatar, settingsVersion) {
+        assistantAvatarBitmap = if (assistantHasAvatar) {
+            AssistantAvatarHelper.loadAvatarBitmap(appCtx)
+        } else {
+            null
+        }
+    }
+
     // 資料與靜音管理
     var retentionDays by remember { mutableIntStateOf(RetentionConfig.getRetentionDays(appCtx)) }
     var retentionMaxCount by remember { mutableIntStateOf(PhantomPrefs.getRetentionMaxCount(appCtx)) }
@@ -382,9 +422,10 @@ fun FilterSettingsScreen(
     var showClearReadConfirm by remember { mutableStateOf(false) }
     var showDeleteAllConfirm by remember { mutableStateOf(false) }
 
-    // 六卡收合狀態
+    // 可收合卡狀態
     var expandQuick by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "quick")) }
     var expandAi by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "ai")) }
+    var expandMemoryAssistant by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "memory_assistant")) }
     var expandNotif by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "notif")) }
     var expandData by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "data")) }
     var expandAppearance by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "appearance")) }
@@ -533,6 +574,15 @@ fun FilterSettingsScreen(
             dailySummaryNotifEnabled = PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
             summaryHour = PhantomPrefs.getDailySummaryHour(appCtx)
             summaryMinute = PhantomPrefs.getDailySummaryMinute(appCtx)
+            memoryChatCaptureEnabled = PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
+            memoryNormalTopK = PhantomPrefs.getMemoryNormalTopK(appCtx)
+            memoryNormalPerItemChars = PhantomPrefs.getMemoryNormalPerItemChars(appCtx)
+            memorySaverTopK = PhantomPrefs.getMemorySaverTopK(appCtx)
+            assistantName = PhantomPrefs.getAssistantName(appCtx)
+            assistantPersonalityPreset = PhantomPrefs.getAssistantPersonalityPreset(appCtx)
+            assistantCustomPersonality = PhantomPrefs.getAssistantCustomPersonality(appCtx)
+            assistantVerbosity = PhantomPrefs.getAssistantVerbosity(appCtx)
+            assistantHasAvatar = PhantomPrefs.hasAssistantAvatar(appCtx)
             retentionDays = RetentionConfig.getRetentionDays(appCtx)
             retentionMaxCount = PhantomPrefs.getRetentionMaxCount(appCtx)
             cardDensity = PhantomPrefs.getCardDensity(appCtx)
@@ -582,9 +632,18 @@ fun FilterSettingsScreen(
                 chatRagLimit = PhantomPrefs.getChatRagMessageLimit(appCtx)
                 dailySummaryEnabled = PhantomPrefs.isDailySummaryEnabled(appCtx)
                 dailySummaryNotifEnabled = PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
+                memoryChatCaptureEnabled = PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
+                memoryNormalTopK = PhantomPrefs.getMemoryNormalTopK(appCtx)
+                memoryNormalPerItemChars = PhantomPrefs.getMemoryNormalPerItemChars(appCtx)
+                memorySaverTopK = PhantomPrefs.getMemorySaverTopK(appCtx)
+                assistantName = PhantomPrefs.getAssistantName(appCtx)
+                assistantPersonalityPreset = PhantomPrefs.getAssistantPersonalityPreset(appCtx)
+                assistantCustomPersonality = PhantomPrefs.getAssistantCustomPersonality(appCtx)
+                assistantVerbosity = PhantomPrefs.getAssistantVerbosity(appCtx)
+                assistantHasAvatar = PhantomPrefs.hasAssistantAvatar(appCtx)
                 summaryDefaultCollapsed = PhantomPrefs.isSummaryDefaultCollapsed(appCtx)
                 homeCardLayoutMode = PhantomPrefs.getHomeCardLayoutMode(appCtx)
-            noteCardLayoutMode = PhantomPrefs.getNoteCardLayoutMode(appCtx)
+                noteCardLayoutMode = PhantomPrefs.getNoteCardLayoutMode(appCtx)
                 visibleStatsCards = PhantomPrefs.getVisibleStatsCards(appCtx)
                 hapticEnabled = PhantomPrefs.isHapticFeedbackEnabled(appCtx)
                 ShizukuManager.refreshState(appCtx)
@@ -813,6 +872,38 @@ fun FilterSettingsScreen(
         )
     }
 
+    pendingAvatarCropUri?.let { cropUri ->
+        AssistantAvatarCropDialog(
+            uri = cropUri,
+            onDismiss = { pendingAvatarCropUri = null },
+            onLoadError = { errMsg ->
+                scope.launch { snackbarHostState.showSnackbar("頭像圖片載入失敗：$errMsg") }
+            },
+            onConfirmCrop = { zoomScale, offsetXNorm, offsetYNorm ->
+                pendingAvatarCropUri = null
+                if (isSavingAvatar) return@AssistantAvatarCropDialog
+                scope.launch {
+                    isSavingAvatar = true
+                    val res = AssistantAvatarHelper.saveAvatarFromUri(
+                        ctx = appCtx,
+                        uri = cropUri,
+                        zoomScale = zoomScale,
+                        offsetXNorm = offsetXNorm,
+                        offsetYNorm = offsetYNorm
+                    )
+                    isSavingAvatar = false
+                    res.onSuccess {
+                        assistantHasAvatar = true
+                        assistantAvatarBitmap = AssistantAvatarHelper.loadAvatarBitmap(appCtx)
+                        snackbarHostState.showSnackbar("已更新 AI 助手圓形頭像")
+                    }.onFailure { err ->
+                        snackbarHostState.showSnackbar("頭像儲存失敗：${err.message ?: "未知錯誤"}")
+                    }
+                }
+            }
+        )
+    }
+
     val glassState = remember { HazeState() }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -845,6 +936,7 @@ fun FilterSettingsScreen(
                     "personalization" -> expandPersonalization = true
                     "stats" -> expandStats = true
                     "ai" -> expandAi = true
+                    "memory_assistant" -> expandMemoryAssistant = true
                     "notif" -> expandNotif = true
                     "data" -> expandData = true
                     "appearance" -> expandAppearance = true
@@ -911,6 +1003,7 @@ fun FilterSettingsScreen(
                         if ("personalization" in targetCards) expandPersonalization = true
                         if ("stats" in targetCards) expandStats = true
                         if ("ai" in targetCards) expandAi = true
+                        if ("memory_assistant" in targetCards) expandMemoryAssistant = true
                         if ("notif" in targetCards) expandNotif = true
                         if ("data" in targetCards) expandData = true
                         if ("appearance" in targetCards) expandAppearance = true
@@ -2235,6 +2328,358 @@ fun FilterSettingsScreen(
                         modifier = Modifier.fillMaxWidth().pressableScale()
                     ) {
                         Text("詐騙警示中心")
+                    }
+                }
+            }
+            }
+
+            // 2.5 記憶庫與 AI 助手（#315 B4）
+            if ("memory_assistant" in visibleCardKeys) {
+            item(key = "card_memory_assistant") {
+                CollapsibleSettingsCard(
+                    title = "記憶庫與 AI 助手",
+                    expanded = expandMemoryAssistant || ("memory_assistant" in highlightedCardKeys),
+                    highlighted = "memory_assistant" in highlightedCardKeys,
+                    onToggle = {
+                        expandMemoryAssistant = !expandMemoryAssistant
+                        PhantomPrefs.setSettingsCardExpanded(appCtx, "memory_assistant", expandMemoryAssistant)
+                    },
+                    glassState = glassState,
+                    modifier = Modifier.onGloballyPositioned { coords ->
+                        cardBounds["memory_assistant"] = coords.boundsInRoot()
+                    }
+                ) {
+                    // (1) 記憶擷取與確認卡說明
+                    Text(
+                        text = "一、記憶擷取與確認機制",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    SettingSwitchRow(
+                        title = "聊天記憶擷取",
+                        subtitle = "允許 AI 在對話中提議記住人物、地點、行程、偏好與關係；一律先彈出確認卡，確認後才寫入",
+                        checked = memoryChatCaptureEnabled,
+                        onCheckedChange = { checked ->
+                            memoryChatCaptureEnabled = checked
+                            PhantomPrefs.setMemoryChatCaptureEnabled(appCtx, checked)
+                            PhantomSettingsBus.notifyChanged()
+                        }
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "• 確認卡保護：所有 AI 記憶寫入皆標示為「AI 推測（inferred）」，必須經您點擊確認卡才會寫入；若與同主題（subject）既有記憶衝突，絕不自動覆蓋，會提供「更新記憶／保留原樣」雙選項或移至「記憶」分頁衝突區裁定。\n• 刪除安全保護：任何記憶刪除動作一律彈出勾選確認卡，絕不自動執行。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+
+                    // (2) 注入預算（正常模式 vs 省 token 模式分開設定、互不覆寫）
+                    Text(
+                        text = "二、對話記憶注入預算（雙模式獨立保存）",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    val effectiveTopK = PhantomPrefs.getEffectiveMemoryInjectionTopK(appCtx)
+                    val effectiveBudget = PhantomPrefs.getEffectiveMemoryTotalTokenBudget(appCtx)
+                    Text(
+                        text = if (tokenSaverEnabled) {
+                            "目前生效模式：省 token 模式（上限 $effectiveTopK 筆／總預算 ≤$effectiveBudget tokens；正常模式設定值已安全保留不覆寫）"
+                        } else {
+                            "目前生效模式：正常模式（上限 $effectiveTopK 筆／總預算 ≤$effectiveBudget tokens）"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(8.dp))
+
+                    Text(
+                        text = "正常模式注入筆數（Top-K）：$memoryNormalTopK 筆（範圍 1–8，預設 8，總預算 ≤250 tokens）",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Slider(
+                        value = memoryNormalTopK.toFloat(),
+                        onValueChange = { raw ->
+                            val stepped = raw.roundToInt().coerceIn(
+                                PhantomPrefs.MIN_MEMORY_NORMAL_TOP_K,
+                                PhantomPrefs.MAX_MEMORY_NORMAL_TOP_K
+                            )
+                            if (stepped != memoryNormalTopK) {
+                                memoryNormalTopK = stepped
+                                PhantomPrefs.setMemoryNormalTopK(appCtx, stepped)
+                                PhantomSettingsBus.notifyChanged()
+                            }
+                        },
+                        valueRange = PhantomPrefs.MIN_MEMORY_NORMAL_TOP_K.toFloat()..PhantomPrefs.MAX_MEMORY_NORMAL_TOP_K.toFloat(),
+                        steps = (PhantomPrefs.MAX_MEMORY_NORMAL_TOP_K - PhantomPrefs.MIN_MEMORY_NORMAL_TOP_K - 1).coerceAtLeast(0)
+                    )
+
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "正常模式單筆預覽截斷字數：$memoryNormalPerItemChars 字（範圍 30–120 字，預設 70 字 ≈ 50 tokens）",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Slider(
+                        value = memoryNormalPerItemChars.toFloat(),
+                        onValueChange = { raw ->
+                            val stepped = ((raw / 10f).roundToInt() * 10).coerceIn(
+                                PhantomPrefs.MIN_MEMORY_NORMAL_PER_ITEM_CHARS,
+                                PhantomPrefs.MAX_MEMORY_NORMAL_PER_ITEM_CHARS
+                            )
+                            if (stepped != memoryNormalPerItemChars) {
+                                memoryNormalPerItemChars = stepped
+                                PhantomPrefs.setMemoryNormalPerItemChars(appCtx, stepped)
+                                PhantomSettingsBus.notifyChanged()
+                            }
+                        },
+                        valueRange = PhantomPrefs.MIN_MEMORY_NORMAL_PER_ITEM_CHARS.toFloat()..PhantomPrefs.MAX_MEMORY_NORMAL_PER_ITEM_CHARS.toFloat(),
+                        steps = 8
+                    )
+
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "省 token 模式注入筆數（Top-K）：$memorySaverTopK 筆（範圍 1–4，預設 4，單筆約 25 tokens，總預算 ≤120 tokens）",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Slider(
+                        value = memorySaverTopK.toFloat(),
+                        onValueChange = { raw ->
+                            val stepped = raw.roundToInt().coerceIn(
+                                PhantomPrefs.MIN_MEMORY_SAVER_TOP_K,
+                                PhantomPrefs.MAX_MEMORY_SAVER_TOP_K
+                            )
+                            if (stepped != memorySaverTopK) {
+                                memorySaverTopK = stepped
+                                PhantomPrefs.setMemorySaverTopK(appCtx, stepped)
+                                PhantomSettingsBus.notifyChanged()
+                            }
+                        },
+                        valueRange = PhantomPrefs.MIN_MEMORY_SAVER_TOP_K.toFloat()..PhantomPrefs.MAX_MEMORY_SAVER_TOP_K.toFloat(),
+                        steps = (PhantomPrefs.MAX_MEMORY_SAVER_TOP_K - PhantomPrefs.MIN_MEMORY_SAVER_TOP_K - 1).coerceAtLeast(0)
+                    )
+
+                    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+
+                    // (3) 自訂 AI 助手（名字、個性 preset + 自訂、詳細度、頭像）
+                    Text(
+                        text = "三、自訂 AI 助手（名字／個性／詳細度／頭像）",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(8.dp))
+
+                    // 頭像預覽與上傳／重設
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        AssistantAvatarCircle(
+                            avatarBitmap = assistantAvatarBitmap,
+                            assistantName = assistantName,
+                            size = 56.dp
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "AI 助手頭像（聊天頂部與回覆氣泡即時顯示）",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    enabled = !isSavingAvatar,
+                                    onClick = {
+                                        try {
+                                            avatarVisualPicker.launch(
+                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                            )
+                                        } catch (_: Exception) {
+                                            try {
+                                                avatarDocumentPicker.launch(arrayOf("image/*"))
+                                            } catch (_: Exception) {
+                                                scope.launch {
+                                                    snackbarHostState.showSnackbar("無法啟動系統圖片選擇器")
+                                                }
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Text(if (assistantHasAvatar) "更換頭像" else "上傳頭像")
+                                }
+                                if (assistantHasAvatar) {
+                                    OutlinedButton(
+                                        enabled = !isSavingAvatar,
+                                        onClick = {
+                                            AssistantAvatarHelper.removeAvatar(appCtx)
+                                            assistantHasAvatar = false
+                                            assistantAvatarBitmap = null
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("已重設為預設頭像")
+                                            }
+                                        }
+                                    ) {
+                                        Text("重設")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = assistantName,
+                            onValueChange = { next ->
+                                val clamped = next.take(PhantomPrefs.MAX_ASSISTANT_NAME_LENGTH)
+                                assistantName = clamped
+                                PhantomPrefs.setAssistantName(appCtx, clamped)
+                                PhantomSettingsBus.notifyChanged()
+                            },
+                            label = { Text("AI 助手名字（預設「幻訊」）") },
+                            placeholder = { Text(PhantomPrefs.DEFAULT_ASSISTANT_NAME) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (assistantName != PhantomPrefs.DEFAULT_ASSISTANT_NAME) {
+                            TextButton(
+                                onClick = {
+                                    assistantName = PhantomPrefs.DEFAULT_ASSISTANT_NAME
+                                    PhantomPrefs.setAssistantName(appCtx, PhantomPrefs.DEFAULT_ASSISTANT_NAME)
+                                    PhantomSettingsBus.notifyChanged()
+                                }
+                            ) {
+                                Text("重設")
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "個性與說話風格（Preset ＋ 自訂描述，注入預算 ≤120 tokens）",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        PhantomPrefs.AssistantPersonalityPreset.entries.forEach { preset ->
+                            FilterChip(
+                                selected = assistantPersonalityPreset == preset,
+                                onClick = {
+                                    assistantPersonalityPreset = preset
+                                    PhantomPrefs.setAssistantPersonalityPreset(appCtx, preset)
+                                    PhantomSettingsBus.notifyChanged()
+                                },
+                                label = { Text(preset.label) }
+                            )
+                        }
+                    }
+                    if (assistantPersonalityPreset != PhantomPrefs.AssistantPersonalityPreset.CUSTOM &&
+                        assistantPersonalityPreset.promptInstruction.isNotBlank()
+                    ) {
+                        Text(
+                            text = "Preset 風格：${assistantPersonalityPreset.promptInstruction}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = assistantCustomPersonality,
+                        onValueChange = { next ->
+                            val clamped = next.take(PhantomPrefs.MAX_ASSISTANT_CUSTOM_PERSONALITY_CHARS)
+                            assistantCustomPersonality = clamped
+                            PhantomPrefs.setAssistantCustomPersonality(appCtx, clamped)
+                            PhantomSettingsBus.notifyChanged()
+                        },
+                        label = {
+                            Text(
+                                if (assistantPersonalityPreset == PhantomPrefs.AssistantPersonalityPreset.CUSTOM) {
+                                    "自訂個性描述（${assistantCustomPersonality.length}/${PhantomPrefs.MAX_ASSISTANT_CUSTOM_PERSONALITY_CHARS} 字）"
+                                } else {
+                                    "補充自訂個性指令（選填，${assistantCustomPersonality.length}/${PhantomPrefs.MAX_ASSISTANT_CUSTOM_PERSONALITY_CHARS} 字）"
+                                }
+                            )
+                        },
+                        placeholder = { Text("例如：稱呼我為店長，回答金融訊息時特別標註金額與期限") },
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "回答詳細度",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PhantomPrefs.AssistantVerbosity.entries.forEach { verb ->
+                            FilterChip(
+                                selected = assistantVerbosity == verb,
+                                onClick = {
+                                    assistantVerbosity = verb
+                                    PhantomPrefs.setAssistantVerbosity(appCtx, verb)
+                                    PhantomSettingsBus.notifyChanged()
+                                },
+                                label = { Text(verb.label) }
+                            )
+                        }
+                    }
+                    Text(
+                        text = assistantVerbosity.promptInstruction,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+
+                    // (4) 隱私分級說明
+                    Text(
+                        text = "四、記憶庫隱私分級說明",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "• 一般（normal）：僅在本地關鍵字、分類或時間匹配時，依上方 Top-K 預算並經 sanitizeForPrompt 防注入處理後才注入 AI 助手對話。",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                text = "• 🔒 敏感（sensitive）：由 SQL 與檢索閘門雙重硬性排除，在任何對外 AI 請求（AI 助手對話、訊息深度分析、每日／每週摘要、設定語意搜尋）中 100% 絕不外送，僅供您於本機「記憶」分頁檢視與管理。",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }
