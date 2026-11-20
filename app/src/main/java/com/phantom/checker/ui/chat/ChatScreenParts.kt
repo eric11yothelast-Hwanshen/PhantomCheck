@@ -389,7 +389,7 @@ internal suspend fun buildRagSystemPrompt(
         if (PhantomPrefs.isMemoryChatCaptureEnabled(ctx)) {
             appendLine("長期/短期記憶庫操作指令（寫入或刪除前系統皆會彈出確認卡，絕不自動執行刪除）：")
             appendLine("- 查詢/列出記憶：{\"action\":\"memory_list\",\"layer\":\"all|long_term|short_term\",\"status\":\"active|conflict|archived|all\",\"query\":\"關鍵字(可選)\"}（或 action=\"memory_view\"）")
-            appendLine("- 新增記憶（當使用者要求記住個人事實、人物、地點、行程、偏好、習慣、關係時輸出）：{\"action\":\"memory_add\",\"category\":\"person|place|schedule|preference|routine|relationship|other\",\"subject\":\"主題鍵(如人物名/地點名/事項)\",\"content\":\"記憶內容\",\"layer\":\"long_term|short_term\",\"expiresDays\":7,\"privacyTier\":\"normal|sensitive\"}")
+            appendLine("- 新增記憶（當使用者要求記住個人事實、人物、地點、行程、偏好、習慣、關係、防詐免疫時輸出）：{\"action\":\"memory_add\",\"category\":\"person|place|schedule|preference|routine|relationship|scam_immunity|other\",\"subject\":\"主題鍵(如人物名/地點名/事項)\",\"content\":\"記憶內容\",\"layer\":\"long_term|short_term\",\"expiresDays\":7,\"privacyTier\":\"normal|sensitive\"}")
             appendLine("- 更新記憶：{\"action\":\"memory_update\",\"memoryId\":123,\"category\":\"person|place|schedule|preference|routine|relationship|other(可選)\",\"subject\":\"主題鍵(可選)\",\"content\":\"更新後內容\",\"layer\":\"long_term|short_term(可選)\",\"privacyTier\":\"normal|sensitive(可選)\"}")
             appendLine("- 刪除記憶（支援單筆 memoryId、依關鍵字 query、或依人物/主題 subject 批次，一律出確認卡）：{\"action\":\"memory_delete\",\"memoryId\":123,\"query\":\"關鍵字(可選)\",\"subject\":\"人物或主題(可選)\"}")
         }

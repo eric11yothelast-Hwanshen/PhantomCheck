@@ -232,6 +232,8 @@ val AutoAwesomeIcon: ImageVector by lazy {
 fun ChatAssistantTab(
     glassState: HazeState,
     onShowMessage: (String) -> Unit,
+    onShowActionMessage: ((String, String, () -> Unit) -> Unit)? = null,
+    onOpenMemoryWithFilter: ((String?) -> Unit)? = null,
     isSearchActive: Boolean = false,
     onToggleSearch: () -> Unit = {},
     onRefresh: () -> Unit = {},
@@ -4133,7 +4135,15 @@ fun ChatAssistantTab(
                                                         )
                                                     }
                                                     loadMessages(sid)
-                                                    onShowMessage("已更新記憶並封存舊版本")
+                                                    if (memWrite.category == com.phantom.checker.data.MemoryEntity.CATEGORY_SCAM_IMMUNITY &&
+                                                        onShowActionMessage != null && onOpenMemoryWithFilter != null
+                                                    ) {
+                                                        onShowActionMessage("已更新防詐免疫記憶", "查看") {
+                                                            onOpenMemoryWithFilter(com.phantom.checker.data.MemoryEntity.CATEGORY_SCAM_IMMUNITY)
+                                                        }
+                                                    } else {
+                                                        onShowMessage("已更新記憶並封存舊版本")
+                                                    }
                                                 }
                                             },
                                             modifier = Modifier.weight(1f)
@@ -4263,7 +4273,15 @@ fun ChatAssistantTab(
                                                         )
                                                     }
                                                     loadMessages(sid)
-                                                    onShowMessage("已寫入記憶庫")
+                                                    if (memWrite.category == com.phantom.checker.data.MemoryEntity.CATEGORY_SCAM_IMMUNITY &&
+                                                        onShowActionMessage != null && onOpenMemoryWithFilter != null
+                                                    ) {
+                                                        onShowActionMessage("已加入防詐免疫記憶", "查看") {
+                                                            onOpenMemoryWithFilter(com.phantom.checker.data.MemoryEntity.CATEGORY_SCAM_IMMUNITY)
+                                                        }
+                                                    } else {
+                                                        onShowMessage("已寫入記憶庫")
+                                                    }
                                                 }
                                             },
                                             modifier = Modifier.weight(1f)

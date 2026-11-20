@@ -105,6 +105,7 @@ private enum class MemoryFilterChip(val label: String) {
     ALL("全部"),
     LONG_TERM("長期"),
     SHORT_TERM("短期"),
+    SCAM_IMMUNITY("防詐免疫"),
     CONFLICT("衝突待確認"),
     ARCHIVED("已封存"),
     AUTO_MEMO("自動備忘錄"),
@@ -119,7 +120,9 @@ internal fun MemoryTab(
     glassState: HazeState,
     onOpenMessageDetail: (Long) -> Unit,
     onOpenMemorySettings: () -> Unit,
-    onShowMessage: (String) -> Unit
+    onShowMessage: (String) -> Unit,
+    initialFilterKey: String? = null,
+    onConsumedInitialFilter: () -> Unit = {}
 ) {
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
@@ -153,6 +156,7 @@ internal fun MemoryTab(
 
     // 各區塊展開/收合狀態（沿用 settings_collapsed_cards 持久化風格）
     var expandConflict by remember { mutableStateOf(PhantomPrefs.isMemorySectionExpanded(appCtx, "mem_conflict")) }
+    var expandScamImmunity by remember { mutableStateOf(PhantomPrefs.isMemorySectionExpanded(appCtx, "mem_scam_immunity")) }
     var expandLongTerm by remember { mutableStateOf(PhantomPrefs.isMemorySectionExpanded(appCtx, "mem_long_term")) }
     var expandShortTerm by remember { mutableStateOf(PhantomPrefs.isMemorySectionExpanded(appCtx, "mem_short_term")) }
     var expandArchived by remember { mutableStateOf(PhantomPrefs.isMemorySectionExpanded(appCtx, "mem_archived")) }
@@ -160,6 +164,31 @@ internal fun MemoryTab(
     var expandWhitelist by remember { mutableStateOf(PhantomPrefs.isMemorySectionExpanded(appCtx, "mem_whitelist")) }
     var expandTagRules by remember { mutableStateOf(PhantomPrefs.isMemorySectionExpanded(appCtx, "mem_tag_rules")) }
     var expandMemoRules by remember { mutableStateOf(PhantomPrefs.isMemorySectionExpanded(appCtx, "mem_memo_rules")) }
+
+    LaunchedEffect(initialFilterKey) {
+        when (initialFilterKey?.trim()?.lowercase()) {
+            MemoryEntity.CATEGORY_SCAM_IMMUNITY -> {
+                selectedFilter = MemoryFilterChip.SCAM_IMMUNITY
+                expandScamImmunity = true
+                onConsumedInitialFilter()
+            }
+            "conflict" -> {
+                selectedFilter = MemoryFilterChip.CONFLICT
+                expandConflict = true
+                onConsumedInitialFilter()
+            }
+            "long_term" -> {
+                selectedFilter = MemoryFilterChip.LONG_TERM
+                expandLongTerm = true
+                onConsumedInitialFilter()
+            }
+            "short_term" -> {
+                selectedFilter = MemoryFilterChip.SHORT_TERM
+                expandShortTerm = true
+                onConsumedInitialFilter()
+            }
+        }
+    }
 
     // 滑動展開列控制（單一展開）
     var revealedMemoryId by remember { mutableStateOf<Long?>(null) }
@@ -194,9 +223,17 @@ internal fun MemoryTab(
     val conflictMemories = remember(filteredMemories) {
         filteredMemories.filter { it.status == MemoryEntity.STATUS_CONFLICT }
     }
+    val scamImmunityMemories = remember(filteredMemories) {
+        filteredMemories.filter {
+            it.category == MemoryEntity.CATEGORY_SCAM_IMMUNITY &&
+                it.status != MemoryEntity.STATUS_ARCHIVED
+        }
+    }
     val longTermMemories = remember(filteredMemories) {
         filteredMemories.filter {
-            it.status == MemoryEntity.STATUS_ACTIVE && it.layer == MemoryEntity.LAYER_LONG_TERM
+            it.status == MemoryEntity.STATUS_ACTIVE &&
+                it.layer == MemoryEntity.LAYER_LONG_TERM &&
+                it.category != MemoryEntity.CATEGORY_SCAM_IMMUNITY
         }
     }
     val shortTermMemories = remember(filteredMemories, nowMs) {
@@ -262,14 +299,16 @@ internal fun MemoryTab(
     val visibleSelectableMemories = remember(
         selectedFilter,
         conflictMemories,
+        scamImmunityMemories,
         longTermMemories,
         shortTermMemories,
         archivedMemories
     ) {
         when (selectedFilter) {
-            MemoryFilterChip.ALL -> conflictMemories + longTermMemories + shortTermMemories + archivedMemories
+            MemoryFilterChip.ALL -> conflictMemories + scamImmunityMemories + longTermMemories + shortTermMemories + archivedMemories
             MemoryFilterChip.LONG_TERM -> longTermMemories
             MemoryFilterChip.SHORT_TERM -> shortTermMemories
+            MemoryFilterChip.SCAM_IMMUNITY -> scamImmunityMemories
             MemoryFilterChip.CONFLICT -> conflictMemories
             MemoryFilterChip.ARCHIVED -> archivedMemories
             else -> emptyList()
@@ -675,6 +714,7 @@ internal fun MemoryTab(
                             MemoryFilterChip.ALL -> filteredMemories.size
                             MemoryFilterChip.LONG_TERM -> longTermMemories.size
                             MemoryFilterChip.SHORT_TERM -> shortTermMemories.size
+                            MemoryFilterChip.SCAM_IMMUNITY -> scamImmunityMemories.size
                             MemoryFilterChip.CONFLICT -> conflictMemories.size
                             MemoryFilterChip.ARCHIVED -> archivedMemories.size
                             MemoryFilterChip.AUTO_MEMO -> autoNotes.size
@@ -830,6 +870,7 @@ internal fun MemoryTab(
         }
 
         val showConflicts = selectedFilter == MemoryFilterChip.ALL || selectedFilter == MemoryFilterChip.CONFLICT
+        val showScamImmunity = selectedFilter == MemoryFilterChip.ALL || selectedFilter == MemoryFilterChip.SCAM_IMMUNITY
         val showLongTerm = selectedFilter == MemoryFilterChip.ALL || selectedFilter == MemoryFilterChip.LONG_TERM
         val showShortTerm = selectedFilter == MemoryFilterChip.ALL || selectedFilter == MemoryFilterChip.SHORT_TERM
         val showArchived = selectedFilter == MemoryFilterChip.ALL || selectedFilter == MemoryFilterChip.ARCHIVED
@@ -1009,6 +1050,86 @@ internal fun MemoryTab(
                                                 }
                                             }
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 1.5 #335 防詐免疫記憶專區（category=scam_immunity，附來源訊息跳轉）
+                if (showScamImmunity && (scamImmunityMemories.isNotEmpty() || selectedFilter == MemoryFilterChip.SCAM_IMMUNITY)) {
+                    item(key = "section_scam_immunity") {
+                        CollapsibleMemorySectionCard(
+                            title = "🛡️ 防詐免疫（${scamImmunityMemories.size} 筆）",
+                            subtitle = "曾遇過的詐騙話術與免疫特徵；收到金錢、催促或驗證碼訊息時自動交叉比對",
+                            expanded = expandScamImmunity,
+                            glassState = glassState,
+                            onToggle = {
+                                expandScamImmunity = !expandScamImmunity
+                                PhantomPrefs.setMemorySectionExpanded(appCtx, "mem_scam_immunity", expandScamImmunity)
+                            }
+                        ) {
+                            if (scamImmunityMemories.isEmpty()) {
+                                Text(
+                                    text = "尚無防詐免疫記憶。可在詐騙中心點擊「加入防詐免疫」或於 AI 助手對話中新增。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    scamImmunityMemories.forEach { mem ->
+                                        MemoryItemCard(
+                                            memory = mem,
+                                            isBatchMode = isBatchMode,
+                                            isSelected = mem.id in selectedBatchIds,
+                                            isRevealed = revealedMemoryId == mem.id,
+                                            onReveal = { revealedMemoryId = mem.id },
+                                            onCollapse = { if (revealedMemoryId == mem.id) revealedMemoryId = null },
+                                            onToggleSelect = {
+                                                selectedBatchIds = if (mem.id in selectedBatchIds) {
+                                                    selectedBatchIds - mem.id
+                                                } else {
+                                                    selectedBatchIds + mem.id
+                                                }
+                                            },
+                                            onEdit = {
+                                                editingMemory = mem
+                                                showEditorDialog = true
+                                            },
+                                            onDelete = { pendingDeleteMemory = mem },
+                                            onTogglePrivacy = {
+                                                val nextTier = if (mem.privacyTier == MemoryEntity.PRIVACY_SENSITIVE) {
+                                                    MemoryEntity.PRIVACY_NORMAL
+                                                } else {
+                                                    MemoryEntity.PRIVACY_SENSITIVE
+                                                }
+                                                scope.launch {
+                                                    withContext(Dispatchers.IO) {
+                                                        db.memoryDao().update(
+                                                            mem.copy(
+                                                                privacyTier = nextTier,
+                                                                updatedAt = System.currentTimeMillis()
+                                                            )
+                                                        )
+                                                    }
+                                                    onShowMessage(
+                                                        if (nextTier == MemoryEntity.PRIVACY_SENSITIVE) {
+                                                            "已設為「敏感記憶」（僅本機保存，絕不加入 AI prompt）"
+                                                        } else {
+                                                            "已設為「一般記憶」（允許檢索注入 AI 對話）"
+                                                        }
+                                                    )
+                                                }
+                                            },
+                                            onArchiveOrRestore = {
+                                                scope.launch {
+                                                    MemoryEngine.archiveMemory(db, mem.id)
+                                                    onShowMessage("已封存該筆防詐免疫記憶")
+                                                }
+                                            },
+                                            onOpenMessageDetail = onOpenMessageDetail
+                                        )
                                     }
                                 }
                             }
@@ -1738,7 +1859,8 @@ private fun MemoryItemCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onTogglePrivacy: () -> Unit,
-    onArchiveOrRestore: () -> Unit
+    onArchiveOrRestore: () -> Unit,
+    onOpenMessageDetail: ((Long) -> Unit)? = null
 ) {
     val ctx = LocalContext.current
     val catLabel = MemoryEngine.categoryLabel(memory.category)
@@ -1911,6 +2033,24 @@ private fun MemoryItemCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+
+                // #335 若 provenance 對應特定通知訊息，提供直達 MessageDetailActivity 的「來源訊息」連結
+                val relatedMsgId = remember(memory.sourceRef) {
+                    MemoryEngine.extractRelatedMessageId(memory.sourceRef)
+                }
+                if (relatedMsgId != null && onOpenMessageDetail != null && !isBatchMode) {
+                    TextButton(
+                        onClick = { onOpenMessageDetail(relatedMsgId) },
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                        modifier = Modifier.heightIn(min = 32.dp)
+                    ) {
+                        Text(
+                            text = "查看來源訊息 #$relatedMsgId →",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
 
                 // 底部快捷動作列（切換隱私分級、封存/恢復）

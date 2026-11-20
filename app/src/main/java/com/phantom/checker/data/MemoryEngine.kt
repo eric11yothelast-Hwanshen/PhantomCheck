@@ -120,6 +120,14 @@ object MemoryEngine {
         return "通知 #$messageId｜$cleanApp・$cleanSender（$timeFormatted）"
     }
 
+    private val NOTIFICATION_SOURCE_ID_REGEX = Regex("""通知\s*#(\d+)""")
+
+    /** 從記憶 provenance（sourceRef）解析來源通知 messageId，供記憶頁直接跳轉 MessageDetailActivity */
+    fun extractRelatedMessageId(sourceRef: String?): Long? {
+        if (sourceRef.isNullOrBlank()) return null
+        return NOTIFICATION_SOURCE_ID_REGEX.find(sourceRef)?.groupValues?.getOrNull(1)?.toLongOrNull()
+    }
+
     fun formatChatSourceRef(sessionId: Long?, userSnippet: String, timeFormatted: String): String {
         val snippet = userSnippet.replace("\n", " ").trim().take(36)
         val sessionPart = sessionId?.let { "對話 #$it" } ?: "對話"

@@ -376,6 +376,7 @@ private fun PhantomCheckApp(
     val assistantSnackbarHostState = remember { SnackbarHostState() }
 
     var selectedTab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(MainTab.MESSAGES) }
+    var requestedMemoryFilter by remember { mutableStateOf<String?>(null) }
     val saveableStateHolder = rememberSaveableStateHolder()
     var showSearchBar by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -1692,6 +1693,23 @@ private fun PhantomCheckApp(
                                         )
                                     }
                                 },
+                                onShowActionMessage = { msg, actionLabel, onAction ->
+                                    scope.launch {
+                                        val res = assistantSnackbarHostState.showSnackbar(
+                                            message = msg,
+                                            actionLabel = actionLabel,
+                                            withDismissAction = true,
+                                            duration = SnackbarDuration.Short
+                                        )
+                                        if (res == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                            onAction()
+                                        }
+                                    }
+                                },
+                                onOpenMemoryWithFilter = { filterKey ->
+                                    requestedMemoryFilter = filterKey
+                                    selectedTab = MainTab.MEMORY
+                                },
                                 isSearchActive = showSearchBar,
                                 onToggleSearch = {
                                     showSearchBar = !showSearchBar
@@ -1721,7 +1739,9 @@ private fun PhantomCheckApp(
                         },
                         onShowMessage = { msg ->
                             scope.launch { snackbarHostState.showSnackbar(msg) }
-                        }
+                        },
+                        initialFilterKey = requestedMemoryFilter,
+                        onConsumedInitialFilter = { requestedMemoryFilter = null }
                     )
                     MainTab.NOTES -> NotesTab(
                         glassState = glassState,
