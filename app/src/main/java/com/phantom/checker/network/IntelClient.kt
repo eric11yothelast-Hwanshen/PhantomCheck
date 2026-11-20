@@ -425,7 +425,7 @@ object IntelClient {
                         return@withContext ProviderTestResult(
                             provider,
                             false,
-                            "未設定 API key（請於上方輸入，或於 local.properties 設定 safebrowsing.apiKey）"
+                            "未設定 API key（請於上方欄位貼上 Google Cloud Console 取得的 Safe Browsing API 金鑰）"
                         )
                     }
                     when (val outcome = querySafeBrowsing(appCtx, listOf("https://example.com/"))) {
