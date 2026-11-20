@@ -1560,6 +1560,8 @@ fun ChatAssistantTab(
                 }
                 pendingOpenSettingItem?.let { targetItem ->
                     val targetIntent = when (targetItem.page) {
+                        "PermissionHubActivity" -> Intent(ctx, PermissionHubActivity::class.java)
+                        "AssistantHubActivity" -> Intent(ctx, AssistantHubActivity::class.java)
                         "LinkedAppsActivity" -> Intent(ctx, LinkedAppsActivity::class.java)
                         "ApiKeySettingsActivity" -> Intent(ctx, ApiKeySettingsActivity::class.java)
                         else -> Intent(ctx, SettingsActivity::class.java).apply {

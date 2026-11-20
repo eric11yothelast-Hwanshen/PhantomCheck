@@ -310,7 +310,7 @@ class SettingsActivity : ComponentActivity() {
 }
 
 private val SETTINGS_CARD_ORDER = listOf(
-    "quick", "personalization", "stats", "ai", "memory_assistant", "notif", "data", "appearance", "shizuku", "intel", "about"
+    "quick", "permission_hub", "assistant_hub", "personalization", "stats", "ai", "memory_assistant", "notif", "data", "appearance", "shizuku", "intel", "about"
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
@@ -1302,6 +1302,85 @@ fun FilterSettingsScreen(
                     )
                 }
             }
+            }
+
+            // 1.2 #340 權限授予中心樞紐卡（集中全部權限，Shizuku 除外）
+            if ("permission_hub" in visibleCardKeys) {
+                item(key = "card_permission_hub") {
+                    PhantomGlassCard(
+                        glassState = glassState,
+                        cornerRadius = 20.dp,
+                        contentPadding = 16.dp,
+                        modifier = Modifier.onGloballyPositioned { coords ->
+                            cardBounds["permission_hub"] = coords.boundsInRoot()
+                        }
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "🔐 權限授予中心",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "集中檢視並快速授予通知存取、簡訊、通訊錄、日曆、精確鬧鐘、電池優化與使用情況權限（Shizuku 維持獨立卡片）。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Button(
+                                onClick = { ctx.startActivity(Intent(ctx, PermissionHubActivity::class.java)) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("開啟權限授予中心")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 1.3 #340 AI 夥伴與主動推播樞紐卡（收納本批全部新設定）
+            if ("assistant_hub" in visibleCardKeys) {
+                item(key = "card_assistant_hub") {
+                    PhantomGlassCard(
+                        glassState = glassState,
+                        cornerRadius = 20.dp,
+                        contentPadding = 16.dp,
+                        modifier = Modifier.onGloballyPositioned { coords ->
+                            cardBounds["assistant_hub"] = coords.boundsInRoot()
+                        }
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "✨ AI 夥伴與主動推播",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "早晚個人簡報、主動推播主題與上限勿擾、畫像卡、外部搜尋端點 BYOK、通訊錄整合與連結應用程式中心。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { ctx.startActivity(Intent(ctx, AssistantHubActivity::class.java)) },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("夥伴與簡報設定", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                OutlinedButton(
+                                    onClick = { ctx.startActivity(Intent(ctx, LinkedAppsActivity::class.java)) },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("連結應用中心", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // 1.5 個人化
@@ -2621,8 +2700,13 @@ fun FilterSettingsScreen(
 
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
 
-                    // #336 通訊錄整合（暱稱綁定、關係單位匯入嚮導、VIP 信任圈連動）
-                    ContactsIntegrationSection()
+                    // #336 / #340 通訊錄整合已集中收納於「AI 夥伴與主動推播」獨立設定頁
+                    OutlinedButton(
+                        onClick = { ctx.startActivity(Intent(ctx, AssistantHubActivity::class.java)) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("管理通訊錄整合（暱稱綁定／關係匯入／VIP 信任圈）")
+                    }
 
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
 
