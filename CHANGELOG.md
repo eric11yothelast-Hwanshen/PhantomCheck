@@ -2,6 +2,31 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [3.1.0] - 2026-11-20
+
+### 新增
+- **記憶 × 防詐交叉檢查與防詐免疫（#328 / PR #330）**：
+  - 新增 `ContactContext`（L1 離線通訊錄比對層）：讀取 `READ_CONTACTS` runtime 權限（權限拒絕時自動降級純記憶比對、不閃退），以 `LruCache`（30 分鐘 TTL）快取聯絡人顯示名稱，交叉比對通訊錄與 `person` 記憶（慣用 App、深夜／凌晨時段、陌生帳號自稱熟人＋急迫語氣），僅輸出匿名結論字串，原始通訊錄絕不外送。
+  - `MemoryEngine.buildAntiFraudPromptBlock` 整合情境矛盾交叉檢查（`schedule`／`routine`／`preference` 類 `normal` 記憶注入風險分析）與 `scam_immunity` 檢索優先加權，並持續雙重硬排除 `privacyTier = sensitive`。
+  - 新增 `scam_immunity`（「防詐免疫」）記憶分類：警示中心 `ScamDetailDialog` 新增「🛡️ 加入防詐免疫記憶」一鍵確認卡，並新增每週 `ScamImmunitySummaryWorker`（`ScamImmunityPolicy`）掃描近 30 天高風險紀錄產出待確認草稿，於記憶頁經確認卡核准才寫入。
+  - `AiClient.analyzeMessage` 分析快取鍵納入記憶／通訊錄版本戳記（`getAntiFraudCacheVersion`），避免新免疫記憶或權限變更被舊快取遮蔽；設定頁新增「記憶 × 防詐交叉檢查」總開關（預設開啟；關閉時 prompt、快取鍵與 token 用量與 v3.0.0 完全一致）。
+- **本機日曆整合（#329 / PR #330）**：
+  - 新增 `CalendarBridge`（純 `ContentResolver` 於 `Dispatchers.IO` 執行，零第三方依賴）：支援 `READ_CALENDAR`／`WRITE_CALENDAR` runtime 權限、設定頁勾選開放日曆清單（預設全不勾、標示可讀寫狀態），以及 `Instances` 空檔查詢（扣除既有行程後 ≥30 分鐘）與重疊撞期檢查。
+  - AI 助手僅於已授權且已勾選日曆時注入 `calendar_free_query`／`calendar_add` 指令：查詢本機空檔直接於本地計算並如實呈現；新增行程一律彈出確認卡顯示目標可寫日曆、時間與撞期警示（警示不阻擋）。
+  - `NotificationCollectorService` 偵測行程類通知且時間解析成功、勾選日曆無同名同時段事件時，經 `LruCache` 節流於 `MessageDetailActivity` 顯示「📅 加入日曆」可編輯建議卡（含撞期檢查）。
+  - 無寫入權限或無可寫日曆時，提供 `Intent(Intent.ACTION_INSERT)` 預填系統日曆 App fallback。
+
+### 變更與修正
+- **AI 回應相容修正與思考鏈折疊顯示（#326 / PR #330）**：
+  - `AiClient` 改以 `ResponseMessage`（`JsonElement`）＋ `extractJsonTextValue` 解析多型回應 `content`／`reasoning`／`reasoning_content`，全面相容陣列 chunk 清單、物件與純字串格式，修正 `zai-glm-5-3` 等模型回傳陣列導致 `BEGIN_ARRAY` 崩潰的問題。
+  - `ChatScreen` 支援思考鏈模型回應，於氣泡上方新增預設收合的「推演思路」折疊區塊（展開顯示完整思考過程，正式回覆無殘片，長按複製維持純文字，思考鏈不回放至 API）。
+  - 移除 `isVisionModelSupported` 與圖片視覺誤判閘門，附加圖片一律送出，不支援時如實回報 provider 錯誤。
+  - Room 資料庫升版 v18 → v19（`MIGRATION_18_19`），以 `ALTER TABLE` 非破壞性新增 `chat_messages.thinkingContent` 欄位，完整保留歷史對話。
+- **記憶頁 UI 優化（#327 / PR #330）**：
+  - 9 顆 `MemoryFilterChip` 篩選標籤列支援收合／展開並持久化狀態（`PhantomPrefs.isMemoryFilterChipsCollapsed`），收合時僅保留「全部」與目前生效條件，並對齊訊息頁 34dp 圓形箭頭按鈕與膠囊樣式。
+  - 頂部搜尋框改由 48dp 搜尋按鈕觸發展開（`AnimatedVisibility`＋`FocusRequester` 自動聚焦），支援有字維持展開、清空失焦收合與 `BackHandler` 先清字再收合，保留「搜尋→全選→批次刪除」完整流程。
+  - 統一記憶頁頂部列（標題、搜尋鈕、新增、齒輪）排版與 48dp 觸控目標。
+
 ## [3.0.0] - 2026-11-20
 
 ### 新增
