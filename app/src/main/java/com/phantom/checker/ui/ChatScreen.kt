@@ -265,6 +265,8 @@ fun ChatAssistantTab(
     var editingTodoTimeTarget by remember { mutableStateOf<PendingTodoInsertion?>(null) }
     var searchResultCard by remember { mutableStateOf<SearchResultCardState?>(null) }
     var pendingExtendedActionQueue by remember { mutableStateOf<List<PendingExtendedAction>>(emptyList()) }
+    var pendingMemoryWriteQueue by remember { mutableStateOf<List<PendingMemoryWriteState>>(emptyList()) }
+    var pendingMemoryDeleteQueue by remember { mutableStateOf<List<PendingMemoryDeleteState>>(emptyList()) }
     var showTodoListSheet by remember { mutableStateOf(false) }
     val rawTodoListItems by remember(appCtx) {
         AppDatabaseHolder.db(appCtx).todoDao().observeAll()
@@ -857,7 +859,11 @@ fun ChatAssistantTab(
                     !finalCandidates.isNullOrEmpty() ||
                     resolvedAdjustStates.isNotEmpty() ||
                     resolvedMsgActions.isNotEmpty() ||
-                    resolvedTodoInsertions.isNotEmpty()
+                    resolvedTodoInsertions.isNotEmpty() ||
+                    parsed.memoryViewProposals.isNotEmpty() ||
+                    parsed.memoryAddProposals.isNotEmpty() ||
+                    parsed.memoryUpdateProposals.isNotEmpty() ||
+                    parsed.memoryDeleteProposals.isNotEmpty()
 
                 val storedReply = parsed.cleanReply.ifBlank {
                     when {
@@ -923,13 +929,20 @@ fun ChatAssistantTab(
                 var resolvedSearchCard: SearchResultCardState? = null
                 val immediateExtraReplies = mutableListOf<String>()
                 val resolvedExtendedActions = mutableListOf<PendingExtendedAction>()
+                val resolvedMemoryWrites = mutableListOf<PendingMemoryWriteState>()
+                val resolvedMemoryDeletes = mutableListOf<PendingMemoryDeleteState>()
 
                 val hasExtendedProposals = parsed.searchProposals.isNotEmpty() ||
                     parsed.todoManageProposals.isNotEmpty() ||
                     parsed.vipPinProposals.isNotEmpty() ||
                     parsed.muteAppProposals.isNotEmpty() ||
                     parsed.markReadProposals.isNotEmpty() ||
-                    parsed.exportProposals.isNotEmpty()
+                    parsed.exportProposals.isNotEmpty() ||
+                    parsed.whitelistDeleteProposals.isNotEmpty() ||
+                    parsed.memoryViewProposals.isNotEmpty() ||
+                    parsed.memoryAddProposals.isNotEmpty() ||
+                    parsed.memoryUpdateProposals.isNotEmpty() ||
+                    parsed.memoryDeleteProposals.isNotEmpty()
 
                 if (hasExtendedProposals) {
                     withContext(Dispatchers.IO) {
@@ -1220,6 +1233,168 @@ fun ChatAssistantTab(
                                 )
                             }
                         }
+
+                        // 8. #314 A4 memory_view / memory_list（唯讀列出記憶含層級與狀態）
+                        if (parsed.memoryViewProposals.isNotEmpty()) {
+                            com.phantom.checker.data.MemoryEngine.lazyArchiveExpiredShortTerm(db, nowMs)
+                            val allMemories = db.memoryDao().all()
+                            parsed.memoryViewProposals.forEach { mvp ->
+                                val filtered = allMemories.filter { m ->
+                                    val layerOk = mvp.layer.isNullOrBlank() || mvp.layer == "all" || m.layer.equals(mvp.layer, ignoreCase = true)
+                                    val statusOk = mvp.status.isNullOrBlank() || mvp.status == "all" || m.status.equals(mvp.status, ignoreCase = true)
+                                    val queryOk = mvp.query.isNullOrBlank() ||
+                                        m.subject.contains(mvp.query, ignoreCase = true) ||
+                                        m.content.contains(mvp.query, ignoreCase = true) ||
+                                        com.phantom.checker.data.MemoryEngine.categoryLabel(m.category).contains(mvp.query, ignoreCase = true)
+                                    layerOk && statusOk && queryOk
+                                }
+                                if (filtered.isEmpty()) {
+                                    immediateExtraReplies.add("記憶庫中目前沒有符合條件的記憶紀錄。")
+                                } else {
+                                    val rows = filtered.take(25).joinToString("\n") { m ->
+                                        val catLbl = com.phantom.checker.data.MemoryEngine.categoryLabel(m.category)
+                                        val layerLbl = com.phantom.checker.data.MemoryEngine.layerLabel(m.layer)
+                                        val statusLbl = com.phantom.checker.data.MemoryEngine.statusLabel(m.status)
+                                        val confLbl = com.phantom.checker.data.MemoryEngine.confidenceLabel(m.confidence)
+                                        val privTag = if (m.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE) "🔒敏感" else "一般"
+                                        val safeSubj = m.subject.replace("|", "｜").replace("\n", " ").take(20)
+                                        val safeContent = m.content.replace("|", "｜").replace("\n", " ").take(45)
+                                        "| #${m.id} | $catLbl | $layerLbl | $statusLbl/$confLbl ($privTag) | $safeSubj：$safeContent |"
+                                    }
+                                    immediateExtraReplies.add(
+                                        "### 記憶庫清單（共 ${filtered.size} 筆）\n" +
+                                            "| ID | 分類 | 層級 | 狀態/可信度 | 內容 |\n|---|---|---|---|---|\n$rows"
+                                    )
+                                }
+                            }
+                        }
+
+                        // 9. #314 A2/A4 memory_add & memory_update（一律進確認卡，含衝突預覽）
+                        val sourceRefNow = com.phantom.checker.data.MemoryEngine.formatChatSourceRef(
+                            sessionId = sessionId,
+                            userSnippet = query,
+                            timeFormatted = formatChatTime(nowMs)
+                        )
+                        if (PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)) {
+                            parsed.memoryAddProposals.forEach { map ->
+                                val expiresAt = if (map.layer == com.phantom.checker.data.MemoryEntity.LAYER_SHORT_TERM) {
+                                    val days = (map.expiresDays ?: 7).coerceIn(1, 365)
+                                    nowMs + java.util.concurrent.TimeUnit.DAYS.toMillis(days.toLong())
+                                } else null
+                                val conflict = com.phantom.checker.data.MemoryEngine.previewConflict(
+                                    db = db,
+                                    category = map.category,
+                                    subject = map.subject,
+                                    proposedContent = map.content,
+                                    nowMs = nowMs
+                                )
+                                resolvedMemoryWrites.add(
+                                    PendingMemoryWriteState(
+                                        sessionId = sessionId,
+                                        isUpdate = false,
+                                        targetMemoryId = null,
+                                        category = map.category,
+                                        subject = map.subject,
+                                        content = map.content,
+                                        layer = map.layer,
+                                        expiresAt = expiresAt,
+                                        privacyTier = map.privacyTier,
+                                        sourceRef = sourceRefNow,
+                                        conflictingMemory = conflict
+                                    )
+                                )
+                            }
+
+                            parsed.memoryUpdateProposals.forEach { mup ->
+                                val existingById = mup.memoryId?.let { db.memoryDao().byId(it) }
+                                val existingBySubj = if (existingById == null && !mup.subject.isNullOrBlank()) {
+                                    val normKey = com.phantom.checker.data.MemoryEngine.normalizeSubjectKey(mup.subject)
+                                    db.memoryDao().all().firstOrNull {
+                                        com.phantom.checker.data.MemoryEngine.normalizeSubjectKey(it.subject) == normKey
+                                    } ?: db.memoryDao().all().firstOrNull {
+                                        it.subject.contains(mup.subject, ignoreCase = true)
+                                    }
+                                } else null
+                                val target = existingById ?: existingBySubj
+                                val resolvedCat = mup.category ?: target?.category ?: com.phantom.checker.data.MemoryEntity.CATEGORY_OTHER
+                                val resolvedSubj = mup.subject ?: target?.subject ?: mup.content.take(16).trim()
+                                val resolvedLayer = mup.layer ?: target?.layer ?: com.phantom.checker.data.MemoryEntity.LAYER_LONG_TERM
+                                val resolvedPrivacy = mup.privacyTier ?: target?.privacyTier ?: com.phantom.checker.data.MemoryEntity.PRIVACY_NORMAL
+                                val conflict = if (target != null && !com.phantom.checker.data.MemoryEngine.isSubstantiallySameContent(target.content, mup.content)) {
+                                    target
+                                } else {
+                                    com.phantom.checker.data.MemoryEngine.previewConflict(
+                                        db = db,
+                                        category = resolvedCat,
+                                        subject = resolvedSubj,
+                                        proposedContent = mup.content,
+                                        nowMs = nowMs
+                                    )
+                                }
+                                resolvedMemoryWrites.add(
+                                    PendingMemoryWriteState(
+                                        sessionId = sessionId,
+                                        isUpdate = true,
+                                        targetMemoryId = target?.id,
+                                        category = resolvedCat,
+                                        subject = resolvedSubj,
+                                        content = mup.content,
+                                        layer = resolvedLayer,
+                                        expiresAt = target?.expiresAt,
+                                        privacyTier = resolvedPrivacy,
+                                        sourceRef = sourceRefNow,
+                                        conflictingMemory = conflict
+                                    )
+                                )
+                            }
+                        }
+
+                        // 10. #314 A4 memory_delete（單筆／依關鍵字／依人物批次，皆確認卡，絕不自動刪除）
+                        if (parsed.memoryDeleteProposals.isNotEmpty()) {
+                            val allMemories = db.memoryDao().all()
+                            parsed.memoryDeleteProposals.forEach { mdp ->
+                                val matched = mutableListOf<com.phantom.checker.data.MemoryEntity>()
+                                if (mdp.memoryId != null) {
+                                    allMemories.firstOrNull { it.id == mdp.memoryId }?.let { matched.add(it) }
+                                }
+                                if (matched.isEmpty() && !mdp.subject.isNullOrBlank()) {
+                                    val s = mdp.subject.trim()
+                                    matched.addAll(
+                                        allMemories.filter {
+                                            it.subject.contains(s, ignoreCase = true) ||
+                                                it.content.contains(s, ignoreCase = true)
+                                        }
+                                    )
+                                }
+                                if (matched.isEmpty() && !mdp.query.isNullOrBlank()) {
+                                    val q = mdp.query.trim()
+                                    matched.addAll(
+                                        allMemories.filter {
+                                            it.subject.contains(q, ignoreCase = true) ||
+                                                it.content.contains(q, ignoreCase = true) ||
+                                                com.phantom.checker.data.MemoryEngine.categoryLabel(it.category).contains(q, ignoreCase = true)
+                                        }
+                                    )
+                                }
+                                val distinctTargets = matched.distinctBy { it.id }
+                                val labelDesc = listOfNotNull(
+                                    mdp.memoryId?.let { "#$it" },
+                                    mdp.subject?.let { "人物/主題「$it」" },
+                                    mdp.query?.let { "關鍵字「$it」" }
+                                ).joinToString("、").ifBlank { "指定條件" }
+                                if (distinctTargets.isEmpty()) {
+                                    immediateExtraReplies.add("找不到符合「$labelDesc」的記憶，無法執行刪除。")
+                                } else {
+                                    resolvedMemoryDeletes.add(
+                                        PendingMemoryDeleteState(
+                                            sessionId = sessionId,
+                                            targets = distinctTargets,
+                                            filterSummary = labelDesc
+                                        )
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1244,6 +1419,12 @@ fun ChatAssistantTab(
                 }
                 if (resolvedExtendedActions.isNotEmpty()) {
                     pendingExtendedActionQueue = pendingExtendedActionQueue.filterNot { it.sessionId == sessionId } + resolvedExtendedActions
+                }
+                if (resolvedMemoryWrites.isNotEmpty()) {
+                    pendingMemoryWriteQueue = pendingMemoryWriteQueue + resolvedMemoryWrites
+                }
+                if (resolvedMemoryDeletes.isNotEmpty()) {
+                    pendingMemoryDeleteQueue = pendingMemoryDeleteQueue + resolvedMemoryDeletes
                 }
                 if (newAppliedSettings.isNotEmpty()) {
                     val updatedKeys = newAppliedSettings.map { it.sessionId to it.item.id }.toSet()
@@ -3295,6 +3476,418 @@ fun ChatAssistantTab(
                                         }
                                     ) {
                                         Text("確認執行")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    val sessionMemWrites = pendingMemoryWriteQueue.filter { it.sessionId == currentSessionId }
+                    sessionMemWrites.firstOrNull()?.let { memWrite ->
+                        item(key = "pending_memory_write_card_${memWrite.subject}_${memWrite.content.hashCode()}") {
+                            val hasConflict = memWrite.conflictingMemory != null
+                            val catLbl = com.phantom.checker.data.MemoryEngine.categoryLabel(memWrite.category)
+                            val layerLbl = com.phantom.checker.data.MemoryEngine.layerLabel(memWrite.layer)
+                            val privLbl = com.phantom.checker.data.MemoryEngine.privacyLabel(memWrite.privacyTier)
+                            val expStr = memWrite.expiresAt?.let { "（到期：${formatChatTime(it)}）" }.orEmpty()
+                            PhantomGlassCard(
+                                glassState = glassState,
+                                modifier = Modifier.fillMaxWidth(),
+                                cornerRadius = 18.dp,
+                                contentPadding = 12.dp
+                            ) {
+                                Text(
+                                    text = when {
+                                        hasConflict -> "⚠️ 偵測到記憶衝突（同主題「${memWrite.subject}」內容不同）"
+                                        memWrite.isUpdate -> "確認更新記憶"
+                                        else -> "確認新增記憶（AI 推測）"
+                                    } + if (sessionMemWrites.size > 1) "（尚有 ${sessionMemWrites.size} 筆）" else "",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (hasConflict) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    text = "分類：$catLbl ｜ 層級：$layerLbl$expStr ｜ 隱私：$privLbl",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "主題：${memWrite.subject}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                if (hasConflict) {
+                                    val oldMem = memWrite.conflictingMemory!!
+                                    Spacer(Modifier.height(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Text(
+                                                text = "既有記憶（#${oldMem.id}）：${oldMem.content}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = "新提議內容：${memWrite.content}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = "請選擇「更新記憶」（將舊筆封存並標記為已確認）或「保留原樣」（保留舊筆並標記為已確認，也可以稍後至「記憶」分頁衝突區裁定）：",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                } else {
+                                    Text(
+                                        text = "內容：${memWrite.content}",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                                Text(
+                                    text = "來源：${memWrite.sourceRef}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                if (hasConflict) {
+                                    val oldMem = memWrite.conflictingMemory!!
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                val sid = memWrite.sessionId
+                                                pendingMemoryWriteQueue = pendingMemoryWriteQueue.filterNot { it === memWrite }
+                                                scope.launch {
+                                                    withContext(Dispatchers.IO) {
+                                                        val db = AppDatabaseHolder.db(appCtx)
+                                                        db.memoryDao().update(
+                                                            oldMem.copy(
+                                                                status = com.phantom.checker.data.MemoryEntity.STATUS_ACTIVE,
+                                                                confidence = com.phantom.checker.data.MemoryEntity.CONFIDENCE_CONFIRMED,
+                                                                updatedAt = System.currentTimeMillis()
+                                                            )
+                                                        )
+                                                        db.chatDao().insertMessage(
+                                                            ChatMessageEntity(
+                                                                sessionId = sid,
+                                                                role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                                content = "✓ 已選擇「保留原樣」：維持既有記憶 #${oldMem.id}「${oldMem.subject}：${oldMem.content}」（已標記為已確認）。",
+                                                                createdAt = System.currentTimeMillis()
+                                                            )
+                                                        )
+                                                    }
+                                                    loadMessages(sid)
+                                                    onShowMessage("已保留原記憶")
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("保留原樣")
+                                        }
+                                        Button(
+                                            onClick = {
+                                                val sid = memWrite.sessionId
+                                                pendingMemoryWriteQueue = pendingMemoryWriteQueue.filterNot { it === memWrite }
+                                                scope.launch {
+                                                    withContext(Dispatchers.IO) {
+                                                        val db = AppDatabaseHolder.db(appCtx)
+                                                        val outcome = com.phantom.checker.data.MemoryEngine.writeMemoryWithConflictDetection(
+                                                            db = db,
+                                                            category = memWrite.category,
+                                                            subject = memWrite.subject,
+                                                            content = memWrite.content,
+                                                            layer = memWrite.layer,
+                                                            expiresAt = memWrite.expiresAt,
+                                                            privacyTier = memWrite.privacyTier,
+                                                            confidence = com.phantom.checker.data.MemoryEntity.CONFIDENCE_CONFIRMED,
+                                                            sourceType = com.phantom.checker.data.MemoryEntity.SOURCE_CHAT,
+                                                            sourceRef = memWrite.sourceRef,
+                                                            forceReplaceConflict = true
+                                                        )
+                                                        val savedId = when (outcome) {
+                                                            is com.phantom.checker.data.MemoryEngine.WriteOutcome.Inserted -> outcome.memory.id
+                                                            is com.phantom.checker.data.MemoryEngine.WriteOutcome.Deduplicated -> outcome.memory.id
+                                                            is com.phantom.checker.data.MemoryEngine.WriteOutcome.ConflictDetected -> outcome.incomingMemory.id
+                                                        }
+                                                        db.chatDao().insertMessage(
+                                                            ChatMessageEntity(
+                                                                sessionId = sid,
+                                                                role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                                content = "✓ 已選擇「更新記憶」：新記憶 #$savedId「${memWrite.subject}：${memWrite.content}」（已確認，舊筆 #${oldMem.id} 已封存）。",
+                                                                createdAt = System.currentTimeMillis()
+                                                            )
+                                                        )
+                                                    }
+                                                    loadMessages(sid)
+                                                    onShowMessage("已更新記憶並封存舊版本")
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("更新記憶")
+                                        }
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        TextButton(
+                                            onClick = {
+                                                val sid = memWrite.sessionId
+                                                pendingMemoryWriteQueue = pendingMemoryWriteQueue.filterNot { it === memWrite }
+                                                scope.launch {
+                                                    withContext(Dispatchers.IO) {
+                                                        val db = AppDatabaseHolder.db(appCtx)
+                                                        com.phantom.checker.data.MemoryEngine.writeMemoryWithConflictDetection(
+                                                            db = db,
+                                                            category = memWrite.category,
+                                                            subject = memWrite.subject,
+                                                            content = memWrite.content,
+                                                            layer = memWrite.layer,
+                                                            expiresAt = memWrite.expiresAt,
+                                                            privacyTier = memWrite.privacyTier,
+                                                            confidence = com.phantom.checker.data.MemoryEntity.CONFIDENCE_INFERRED,
+                                                            sourceType = com.phantom.checker.data.MemoryEntity.SOURCE_CHAT,
+                                                            sourceRef = memWrite.sourceRef,
+                                                            forceReplaceConflict = false
+                                                        )
+                                                        db.chatDao().insertMessage(
+                                                            ChatMessageEntity(
+                                                                sessionId = sid,
+                                                                role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                                content = "已將衝突記憶移至「記憶」分頁的「衝突待確認」區塊，您可隨時前往裁定。",
+                                                                createdAt = System.currentTimeMillis()
+                                                            )
+                                                        )
+                                                    }
+                                                    loadMessages(sid)
+                                                    onShowMessage("已移至記憶頁衝突待確認區")
+                                                }
+                                            }
+                                        ) {
+                                            Text("移至記憶頁稍後裁定")
+                                        }
+                                        TextButton(
+                                            onClick = {
+                                                pendingMemoryWriteQueue = pendingMemoryWriteQueue.filterNot { it === memWrite }
+                                            }
+                                        ) {
+                                            Text("略過不寫入")
+                                        }
+                                    }
+                                } else {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                val sid = memWrite.sessionId
+                                                pendingMemoryWriteQueue = pendingMemoryWriteQueue.filterNot { it === memWrite }
+                                                scope.launch {
+                                                    withContext(Dispatchers.IO) {
+                                                        AppDatabaseHolder.db(appCtx).chatDao().insertMessage(
+                                                            ChatMessageEntity(
+                                                                sessionId = sid,
+                                                                role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                                content = "已取消記住「${memWrite.subject}」。",
+                                                                createdAt = System.currentTimeMillis()
+                                                            )
+                                                        )
+                                                    }
+                                                    loadMessages(sid)
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("不符／取消")
+                                        }
+                                        Button(
+                                            onClick = {
+                                                val sid = memWrite.sessionId
+                                                pendingMemoryWriteQueue = pendingMemoryWriteQueue.filterNot { it === memWrite }
+                                                scope.launch {
+                                                    val report = withContext(Dispatchers.IO) {
+                                                        val db = AppDatabaseHolder.db(appCtx)
+                                                        val outcome = com.phantom.checker.data.MemoryEngine.writeMemoryWithConflictDetection(
+                                                            db = db,
+                                                            category = memWrite.category,
+                                                            subject = memWrite.subject,
+                                                            content = memWrite.content,
+                                                            layer = memWrite.layer,
+                                                            expiresAt = memWrite.expiresAt,
+                                                            privacyTier = memWrite.privacyTier,
+                                                            confidence = com.phantom.checker.data.MemoryEntity.CONFIDENCE_INFERRED,
+                                                            sourceType = com.phantom.checker.data.MemoryEntity.SOURCE_CHAT,
+                                                            sourceRef = memWrite.sourceRef,
+                                                            forceReplaceConflict = false
+                                                        )
+                                                        when (outcome) {
+                                                            is com.phantom.checker.data.MemoryEngine.WriteOutcome.Inserted ->
+                                                                "✓ 已記住 #$${outcome.memory.id} [$catLbl/$layerLbl] ${outcome.memory.subject}：${outcome.memory.content}".replace("#$", "#")
+                                                            is com.phantom.checker.data.MemoryEngine.WriteOutcome.Deduplicated ->
+                                                                "✓ 記憶庫已有相同內容 #${outcome.memory.id}，已更新時間。"
+                                                            is com.phantom.checker.data.MemoryEngine.WriteOutcome.ConflictDetected ->
+                                                                "⚠️ 寫入時偵測到與既有記憶 #${outcome.existingMemory.id} 衝突，兩筆皆已標為「衝突待確認」，請至「記憶」分頁裁定。"
+                                                        }
+                                                    }
+                                                    withContext(Dispatchers.IO) {
+                                                        AppDatabaseHolder.db(appCtx).chatDao().insertMessage(
+                                                            ChatMessageEntity(
+                                                                sessionId = sid,
+                                                                role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                                content = report,
+                                                                createdAt = System.currentTimeMillis()
+                                                            )
+                                                        )
+                                                    }
+                                                    loadMessages(sid)
+                                                    onShowMessage("已寫入記憶庫")
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("確認記住")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    val sessionMemDeletes = pendingMemoryDeleteQueue.filter { it.sessionId == currentSessionId }
+                    sessionMemDeletes.firstOrNull()?.let { memDel ->
+                        item(key = "pending_memory_delete_card_${memDel.filterSummary}") {
+                            var selectedIds by remember(memDel) {
+                                mutableStateOf(memDel.targets.map { it.id }.toSet())
+                            }
+                            PhantomGlassCard(
+                                glassState = glassState,
+                                modifier = Modifier.fillMaxWidth(),
+                                cornerRadius = 18.dp,
+                                contentPadding = 12.dp
+                            ) {
+                                Text(
+                                    text = "確認刪除記憶（${memDel.filterSummary} · 共 ${memDel.targets.size} 筆）",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    memDel.targets.take(10).forEach { m ->
+                                        val checked = m.id in selectedIds
+                                        val catLbl = com.phantom.checker.data.MemoryEngine.categoryLabel(m.category)
+                                        val layerLbl = com.phantom.checker.data.MemoryEngine.layerLabel(m.layer)
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    selectedIds = if (checked) selectedIds - m.id else selectedIds + m.id
+                                                }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Checkbox(
+                                                    checked = checked,
+                                                    onCheckedChange = { isChecked ->
+                                                        selectedIds = if (isChecked) selectedIds + m.id else selectedIds - m.id
+                                                    }
+                                                )
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = "#${m.id} [$catLbl/$layerLbl] ${m.subject}",
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                    Text(
+                                                        text = m.content,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        maxLines = 2,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if (memDel.targets.size > 10) {
+                                        Text(
+                                            text = "…另有 ${memDel.targets.size - 10} 筆記憶",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(10.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            val sid = memDel.sessionId
+                                            pendingMemoryDeleteQueue = pendingMemoryDeleteQueue.filterNot { it === memDel }
+                                            scope.launch {
+                                                withContext(Dispatchers.IO) {
+                                                    AppDatabaseHolder.db(appCtx).chatDao().insertMessage(
+                                                        ChatMessageEntity(
+                                                            sessionId = sid,
+                                                            role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                            content = "已取消刪除記憶（${memDel.filterSummary}）。",
+                                                            createdAt = System.currentTimeMillis()
+                                                        )
+                                                    )
+                                                }
+                                                loadMessages(sid)
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("取消")
+                                    }
+                                    Button(
+                                        enabled = selectedIds.isNotEmpty(),
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                        onClick = {
+                                            val sid = memDel.sessionId
+                                            val idsToDelete = selectedIds.toList()
+                                            pendingMemoryDeleteQueue = pendingMemoryDeleteQueue.filterNot { it === memDel }
+                                            scope.launch {
+                                                withContext(Dispatchers.IO) {
+                                                    val db = AppDatabaseHolder.db(appCtx)
+                                                    db.memoryDao().deleteByIds(idsToDelete)
+                                                    db.chatDao().insertMessage(
+                                                        ChatMessageEntity(
+                                                            sessionId = sid,
+                                                            role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                            content = "✓ 已刪除 ${idsToDelete.size} 筆記憶（${memDel.filterSummary}）。",
+                                                            createdAt = System.currentTimeMillis()
+                                                        )
+                                                    )
+                                                }
+                                                loadMessages(sid)
+                                                onShowMessage("已刪除 ${idsToDelete.size} 筆記憶")
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("確認刪除（${selectedIds.size}）")
                                     }
                                 }
                             }
