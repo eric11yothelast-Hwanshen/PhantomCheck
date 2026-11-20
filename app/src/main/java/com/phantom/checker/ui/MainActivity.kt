@@ -203,11 +203,86 @@ import java.util.Date
 import java.util.Locale
 
 import com.phantom.checker.ui.home.*
+import com.phantom.checker.ui.memory.*
 import com.phantom.checker.ui.notes.*
 import com.phantom.checker.ui.stats.*
 import com.phantom.checker.ui.todo.*
 private const val PAGE_SIZE = 100
 private const val MAX_BATCH_SELECT = 100
+
+/** 記憶庫專屬圖示（純向量繪製，無需額外依賴） */
+internal val MemoryIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "MemoryBrain",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(15f, 9f)
+            horizontalLineTo(9f)
+            verticalLineToRelative(6f)
+            horizontalLineToRelative(6f)
+            verticalLineTo(9f)
+            close()
+            moveTo(13f, 13f)
+            horizontalLineToRelative(-2f)
+            verticalLineToRelative(-2f)
+            horizontalLineToRelative(2f)
+            verticalLineToRelative(2f)
+            close()
+            moveTo(21f, 11f)
+            verticalLineTo(9f)
+            horizontalLineToRelative(-2f)
+            verticalLineTo(7f)
+            curveToRelative(0f, -1.1f, -0.9f, -2f, -2f, -2f)
+            horizontalLineToRelative(-2f)
+            verticalLineTo(3f)
+            horizontalLineToRelative(-2f)
+            verticalLineToRelative(2f)
+            horizontalLineToRelative(-2f)
+            verticalLineTo(3f)
+            horizontalLineTo(9f)
+            verticalLineToRelative(2f)
+            horizontalLineTo(7f)
+            curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f)
+            verticalLineToRelative(2f)
+            horizontalLineTo(3f)
+            verticalLineToRelative(2f)
+            horizontalLineToRelative(2f)
+            verticalLineToRelative(2f)
+            horizontalLineTo(3f)
+            verticalLineToRelative(2f)
+            horizontalLineToRelative(2f)
+            verticalLineToRelative(2f)
+            curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f)
+            horizontalLineToRelative(2f)
+            verticalLineToRelative(2f)
+            horizontalLineToRelative(2f)
+            verticalLineToRelative(-2f)
+            horizontalLineToRelative(2f)
+            verticalLineToRelative(2f)
+            horizontalLineToRelative(2f)
+            verticalLineToRelative(-2f)
+            horizontalLineToRelative(2f)
+            curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f)
+            verticalLineToRelative(-2f)
+            horizontalLineToRelative(2f)
+            verticalLineToRelative(-2f)
+            horizontalLineToRelative(-2f)
+            verticalLineToRelative(-2f)
+            horizontalLineToRelative(2f)
+            close()
+            moveTo(17f, 17f)
+            horizontalLineTo(7f)
+            verticalLineTo(7f)
+            horizontalLineToRelative(10f)
+            verticalLineToRelative(10f)
+            close()
+        }
+    }.build()
+}
 
 class MainActivity : ComponentActivity() {
     companion object {
@@ -251,6 +326,7 @@ class MainActivity : ComponentActivity() {
         when (intent?.getStringExtra(DailySummaryPolicy.EXTRA_OPEN_TAB)) {
             DailySummaryPolicy.TAB_STATS -> requestedTabState.value = MainTab.STATS
             com.phantom.checker.widget.ReminderWidgetProvider.TAB_NOTES -> requestedTabState.value = MainTab.NOTES
+            "memory" -> requestedTabState.value = MainTab.MEMORY
         }
         val todoId = intent?.getLongExtra(com.phantom.checker.widget.ReminderWidgetProvider.EXTRA_EDIT_TODO_ID, -1L) ?: -1L
         if (todoId > 0L) {
@@ -279,6 +355,7 @@ private fun isPostNotificationsGranted(context: Context): Boolean {
 private enum class MainTab(val title: String) {
     MESSAGES("訊息"),
     ASSISTANT("AI 助手"),
+    MEMORY("記憶"),
     NOTES("記事"),
     STATS("統計")
 }
@@ -624,6 +701,7 @@ private fun PhantomCheckApp(
                         }
                     }
                     MainTab.ASSISTANT -> Unit
+                    MainTab.MEMORY -> Unit
                     MainTab.NOTES -> Unit
                     MainTab.STATS -> {
                         val summary = db.aiSummaryDao().latest()
@@ -1378,6 +1456,7 @@ private fun PhantomCheckApp(
                                     val icon = when (tab) {
                                         MainTab.MESSAGES -> Icons.Default.Email
                                         MainTab.ASSISTANT -> AutoAwesomeIcon
+                                        MainTab.MEMORY -> MemoryIcon
                                         MainTab.NOTES -> Icons.Default.Edit
                                         MainTab.STATS -> Icons.Default.Info
                                     }
@@ -1385,7 +1464,7 @@ private fun PhantomCheckApp(
                                         MainTab.ASSISTANT -> OnboardingTargets.AI_ASSISTANT_TAB
                                         MainTab.NOTES -> OnboardingTargets.NOTES_TAB
                                         MainTab.STATS -> OnboardingTargets.STATS_TAB
-                                        MainTab.MESSAGES -> null
+                                        MainTab.MESSAGES, MainTab.MEMORY -> null
                                     }
                                     val itemModifier = if (targetKey != null) {
                                         Modifier
@@ -1627,6 +1706,22 @@ private fun PhantomCheckApp(
                             )
                         }
                     }
+                    MainTab.MEMORY -> MemoryTab(
+                        glassState = glassState,
+                        onOpenMessageDetail = { messageId ->
+                            ctx.startActivity(MessageDetailActivity.createIntent(ctx, messageId))
+                        },
+                        onOpenMemorySettings = {
+                            ctx.startActivity(
+                                Intent(ctx, SettingsActivity::class.java).apply {
+                                    putExtra("highlight_card_key", "memory_assistant")
+                                }
+                            )
+                        },
+                        onShowMessage = { msg ->
+                            scope.launch { snackbarHostState.showSnackbar(msg) }
+                        }
+                    )
                     MainTab.NOTES -> NotesTab(
                         glassState = glassState,
                         initialEditTodoId = requestedEditTodoId,
