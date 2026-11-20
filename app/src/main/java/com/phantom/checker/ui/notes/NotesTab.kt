@@ -114,6 +114,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -776,6 +777,7 @@ internal fun NotesTab(
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val maxTodoExpandedHeight = maxHeight * 2f / 3f
         // 記事卡片排列模式（獨立於首頁，於設定頁調整後即時同步）；待辦收合狀態持久化
         val notesSettingsVersion by PhantomSettingsBus.version.collectAsState()
         val noteLayout = remember(notesSettingsVersion) { PhantomPrefs.getNoteCardLayoutMode(ctx) }
@@ -910,7 +912,8 @@ internal fun NotesTab(
                     enter = expandVertically(),
                     exit = shrinkVertically()
                 ) {
-                    Column {
+                    val todoListScrollState = key(todoFilter) { rememberScrollState() }
+                    Column(modifier = Modifier.heightIn(max = maxTodoExpandedHeight)) {
                         FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -932,32 +935,38 @@ internal fun NotesTab(
                             }
                         }
                         Spacer(Modifier.height(8.dp))
-                        if (filteredTodos.isEmpty()) {
-                            Text(
-                                text = if (todos.isEmpty()) {
-                                    "尚無待辦事項（點右上角 + 手動新增，或在 AI 助手對話中建立）"
-                                } else {
-                                    "此篩選條件下無待辦事項"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            filteredTodos.forEachIndexed { idx, todo ->
-                                if (idx > 0) {
-                                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                                }
-                                NotesTodoRow(
-                                    todo = todo,
-                                    now = now,
-                                    startOfToday = startOfToday,
-                                    endOfToday = endOfToday,
-                                    dayMs = dayMs,
-                                    onEdit = onEditTodo,
-                                    onDelete = onDeleteTodo,
-                                    onComplete = onCompleteTodo,
-                                    onOpenMessageDetail = onOpenMessageDetail
+                        Column(
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .verticalScroll(todoListScrollState)
+                        ) {
+                            if (filteredTodos.isEmpty()) {
+                                Text(
+                                    text = if (todos.isEmpty()) {
+                                        "尚無待辦事項（點右上角 + 手動新增，或在 AI 助手對話中建立）"
+                                    } else {
+                                        "此篩選條件下無待辦事項"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                            } else {
+                                filteredTodos.forEachIndexed { idx, todo ->
+                                    if (idx > 0) {
+                                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                                    }
+                                    NotesTodoRow(
+                                        todo = todo,
+                                        now = now,
+                                        startOfToday = startOfToday,
+                                        endOfToday = endOfToday,
+                                        dayMs = dayMs,
+                                        onEdit = onEditTodo,
+                                        onDelete = onDeleteTodo,
+                                        onComplete = onCompleteTodo,
+                                        onOpenMessageDetail = onOpenMessageDetail
+                                    )
+                                }
                             }
                         }
                     }
