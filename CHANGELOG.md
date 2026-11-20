@@ -2,6 +2,32 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.19.0] - 2026-11-20
+
+### 新增
+- **儲存空間明細與資料庫壓縮維護（#299 / PR #303）**：
+  - 設定頁「資料管理」新增唯讀儲存空間明細（顯示資料庫含 WAL／SHM、背景圖片、快取與合計大小）與「立即壓縮資料庫」按鈕。
+  - 新增 `DbMaintenance` 與 `VacuumWorker` 執行 `wal_checkpoint(TRUNCATE)` 與交易外 `VACUUM`（`RetentionWorker` 刪除超過 1000 列且 24 小時節流自動觸發，手動清除已讀／刪除全部亦非同步排程）。
+
+### 變更與修正
+- **中央堆疊 v6 首尾邊界填滿與短清單模式（#298 / PR #302）**：
+  - `CenterFocusCardStack` 新增首尾邊界填滿補償（`pAbove`／`pBelow` 對稱等效 fill pitch，上限 `0.98 * cardH`），頭尾定點零留白且全幅模式整組展開滿高。
+  - `edgeGap` 由 `4.dp` 調整為 `6.dp`（預設值與訊息頁／記事頁兩處呼叫點同步），首卡距我的最愛與尾卡距底部導覽列皆為 `6.dp`。
+  - 新增短清單置頂模式（`neededPitch > maxPitch`，約 2–4 則時固定於 `topAnchor` 緊貼標題列下 `6.dp` 堆疊；單筆維持單卡路徑）。
+- **空間優化與資料庫索引（#299 / PR #303）**：
+  - `release` 建置類型啟用 R8 程式碼縮減（`isMinifyEnabled = true`）與資源壓縮（`isShrinkResources = true`），並於 `proguard-rules.pro` 保留 Gson 序列化模型與 Shizuku 跨行程介面。
+  - Room 資料庫升版至 v17（`MIGRATION_16_17`），補齊 `messages(isOwn, timestamp)`、`messages(isOwn, isRead)`、`todos(relatedMessageId)`、`sender_avatars(updatedAt)` 與 `intel_cache(checkedAt)` 索引。
+  - `sender_avatars` 頭像快取上限設為 300 筆（保留最新 `updatedAt`），`intel_cache` 72 小時過期列隨 `RetentionWorker` 定期清除。
+- **電量與穩定性優化（#300 / PR #304）**：
+  - `KeepAlivePolicy` watchdog 間隔放寬為 15→45 分鐘，`ShizukuWatchdogService` 穩態輪詢放寬為 300→600 秒（8 小時安全網、1 秒 rescue、5 秒 rebind 維持不變）。
+  - `HeartbeatPolicy` 平時改採 `ExistingWorkPolicy.KEEP` 消除重排抖動，模式切換時以 `UPDATE` 切換 15/30 分鐘；關閉常駐統計通知時仍保留 30 分鐘低頻通知監聽重連檢查（不啟動前景服務與精確鬧鐘）。
+  - `StatsForegroundService` 補齊 `startForegroundCompat` 三層例外防護（失敗即 `stopSelf()`）、rescue 指數退避（60 秒窗口第 3 次內 1 秒重試，超過改 30 秒起加倍封頂 5 分鐘），並於熄屏且未逾 staleness 時在 DB 查詢前早退（亮屏由 `ScreenStateReceiver` 補齊）。
+  - 熱路徑 Regex 與時間格式常數化：`AiClient`、`NotificationCollectorService`、`ChatScreen` 預編譯 Regex 與 `DateTimeFormatter`，`PhantomPrefs.formatMessageTime` 改用 `ThreadLocal` 快取。
+- **主畫面與對話介面元件拆分（#301 / PR #305）**：
+  - 將 `MainActivity` 與 `ChatScreen` 拆分為獨立分頁／元件檔案（`MessagesTab.kt`、`NotesTab.kt`、`StatsTab.kt`、`TodoSection.kt`、`ChatScreenParts.kt`），純架構整理、零行為變更。
+- **立即壓縮資料庫等待邏輯修正（#306 / PR #307）**：
+  - 修正 `DbMaintenance` 於背景 `VACUUM` 任務已排隊時點擊「立即壓縮資料庫」的等待判斷，避免長時間等待或卡住。
+
 ## [2.18.0] - 2026-11-19
 
 ### 修正

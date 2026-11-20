@@ -213,6 +213,10 @@ internal enum class TodoFilterMode(val label: String) {
 }
 
 
+/**
+ * #242 待辦事項單列（展開清單與收合精簡顯示共用）。
+ * 到期資訊依智慧排序結果渲染：未逾期近者在上、已逾期下移、已完成殿後。
+ */
 @Composable
 internal fun NotesTodoRow(
     todo: TodoEntity,
@@ -337,10 +341,6 @@ internal fun NotesTodoRow(
     }
 }
 
-/**
- * #242 待辦事項單列（展開清單與收合精簡顯示共用）。
- * 到期資訊依智慧排序結果渲染：未逾期近者在上、已逾期下移、已完成殿後。
- */
 @OptIn(ExperimentalFoundationApi::class)
 
 @Composable
