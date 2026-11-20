@@ -1453,5 +1453,125 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         if (expanded) collapsed.remove(sectionKey) else collapsed.add(sectionKey)
         prefs(ctx).edit().putStringSet(KEY_MEMORY_SECTION_COLLAPSED, collapsed).apply()
     }
+
+    // ==================== #315 B3 自訂 AI 助手（名字／個性 preset／自訂個性／詳細度／頭像） ====================
+
+    enum class AssistantPersonalityPreset(val key: String, val label: String, val promptInstruction: String) {
+        DEFAULT("default", "預設", "語氣平衡自然，兼顧訊息整理與防詐提醒。"),
+        CONCISE_PRO("concise_pro", "簡潔專業", "語氣商務專業、精準俐落，直接給結論與關鍵數據，不寒暄。"),
+        WARM_DETAILED("warm_detailed", "親切詳細", "語氣親切溫和、有耐心，清楚解釋來龍去脈與貼心提醒。"),
+        STRICT_ANTI_SCAM("strict_anti_scam", "嚴謹防詐顧問", "以資安與防詐最高標準審視訊息，主動點出可疑話術、連結與查證步驟。"),
+        CUSTOM("custom", "完全自訂", "");
+
+        companion object {
+            fun fromKey(raw: String?): AssistantPersonalityPreset =
+                entries.firstOrNull { it.key == raw } ?: DEFAULT
+        }
+    }
+
+    enum class AssistantVerbosity(val key: String, val label: String, val promptInstruction: String) {
+        CONCISE("concise", "精簡", "回答極度精簡，控制在 3 句或 3 點以內。"),
+        STANDARD("standard", "適中", "回答條理分明，篇幅適中，重點突出。"),
+        DETAILED("detailed", "詳細", "回答完整深入，提供背景脈絡、分點說明與具體建議。");
+
+        companion object {
+            fun fromKey(raw: String?): AssistantVerbosity =
+                entries.firstOrNull { it.key == raw } ?: STANDARD
+        }
+    }
+
+    private const val KEY_ASSISTANT_NAME = "assistant_custom_name"
+    private const val KEY_ASSISTANT_PERSONALITY_PRESET = "assistant_personality_preset"
+    private const val KEY_ASSISTANT_CUSTOM_PERSONALITY = "assistant_custom_personality_text"
+    private const val KEY_ASSISTANT_VERBOSITY = "assistant_verbosity_mode"
+    private const val KEY_ASSISTANT_HAS_AVATAR = "assistant_has_custom_avatar"
+
+    const val DEFAULT_ASSISTANT_NAME = "幻訊"
+    const val MAX_ASSISTANT_NAME_LENGTH = 20
+    const val MAX_ASSISTANT_CUSTOM_PERSONALITY_CHARS = 120
+    const val MAX_ASSISTANT_PERSONA_TOKEN_BUDGET = 120
+
+    /** AI 助手名字（預設「幻訊」） */
+    fun getAssistantName(ctx: Context): String =
+        prefs(ctx).getString(KEY_ASSISTANT_NAME, DEFAULT_ASSISTANT_NAME)
+            ?.trim()
+            ?.take(MAX_ASSISTANT_NAME_LENGTH)
+            ?.ifEmpty { DEFAULT_ASSISTANT_NAME }
+            ?: DEFAULT_ASSISTANT_NAME
+
+    fun setAssistantName(ctx: Context, name: String) {
+        val clean = name.trim().take(MAX_ASSISTANT_NAME_LENGTH).ifEmpty { DEFAULT_ASSISTANT_NAME }
+        prefs(ctx).edit().putString(KEY_ASSISTANT_NAME, clean).apply()
+    }
+
+    /** AI 助手個性 Preset */
+    fun getAssistantPersonalityPreset(ctx: Context): AssistantPersonalityPreset =
+        AssistantPersonalityPreset.fromKey(prefs(ctx).getString(KEY_ASSISTANT_PERSONALITY_PRESET, null))
+
+    fun setAssistantPersonalityPreset(ctx: Context, preset: AssistantPersonalityPreset) {
+        prefs(ctx).edit().putString(KEY_ASSISTANT_PERSONALITY_PRESET, preset.key).apply()
+    }
+
+    /** AI 助手自訂個性描述（最多 120 字） */
+    fun getAssistantCustomPersonality(ctx: Context): String =
+        prefs(ctx).getString(KEY_ASSISTANT_CUSTOM_PERSONALITY, "")
+            ?.trim()
+            ?.take(MAX_ASSISTANT_CUSTOM_PERSONALITY_CHARS)
+            .orEmpty()
+
+    fun setAssistantCustomPersonality(ctx: Context, text: String) {
+        val clean = text.trim().take(MAX_ASSISTANT_CUSTOM_PERSONALITY_CHARS)
+        prefs(ctx).edit().putString(KEY_ASSISTANT_CUSTOM_PERSONALITY, clean).apply()
+    }
+
+    /** AI 助手回答詳細度 */
+    fun getAssistantVerbosity(ctx: Context): AssistantVerbosity =
+        AssistantVerbosity.fromKey(prefs(ctx).getString(KEY_ASSISTANT_VERBOSITY, null))
+
+    fun setAssistantVerbosity(ctx: Context, verbosity: AssistantVerbosity) {
+        prefs(ctx).edit().putString(KEY_ASSISTANT_VERBOSITY, verbosity.key).apply()
+    }
+
+    /** 是否已設定自訂 AI 助手頭像 */
+    fun hasAssistantAvatar(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_ASSISTANT_HAS_AVATAR, false)
+
+    fun setHasAssistantAvatar(ctx: Context, hasAvatar: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_ASSISTANT_HAS_AVATAR, hasAvatar).apply()
+    }
+
+    /**
+     * 組裝注入 chatAssistant systemPrompt 的【助手設定】區塊（嚴格控管 ≤ 120 tokens，並套用 sanitizeForPrompt 防注入）。
+     */
+    fun buildAssistantPersonaPromptBlock(ctx: Context): String {
+        val name = com.phantom.checker.network.AiClient.sanitizeForPrompt(
+            getAssistantName(ctx).replace("\n", " ").trim()
+        ).take(MAX_ASSISTANT_NAME_LENGTH)
+        val preset = getAssistantPersonalityPreset(ctx)
+        val customText = com.phantom.checker.network.AiClient.sanitizeForPrompt(
+            getAssistantCustomPersonality(ctx).replace("\n", " ").trim()
+        ).take(MAX_ASSISTANT_CUSTOM_PERSONALITY_CHARS)
+        val verbosity = getAssistantVerbosity(ctx)
+
+        val personalityDesc = when {
+            preset == AssistantPersonalityPreset.CUSTOM && customText.isNotEmpty() -> customText
+            customText.isNotEmpty() -> "${preset.promptInstruction}（補充：$customText）"
+            else -> preset.promptInstruction
+        }.take(110)
+
+        val rawBlock = buildString {
+            appendLine("【助手設定】")
+            appendLine("- 你的名字：$name")
+            appendLine("- 個性與風格：$personalityDesc")
+            append("- 回答詳細度（${verbosity.label}）：${verbosity.promptInstruction}")
+        }
+        // 確保總預算 ≤ 120 tokens（約 160 中文字）
+        return if (com.phantom.checker.data.MemoryEngine.estimateMemoryTokens(rawBlock) <= MAX_ASSISTANT_PERSONA_TOKEN_BUDGET) {
+            rawBlock
+        } else {
+            rawBlock.take(160).trimEnd()
+        }
+    }
 }
+
 

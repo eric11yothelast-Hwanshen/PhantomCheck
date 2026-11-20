@@ -141,6 +141,9 @@ import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.NotificationCollectorService
 import com.phantom.checker.service.ReminderScheduler
 import com.phantom.checker.service.StatsForegroundService
+import androidx.compose.ui.graphics.ImageBitmap
+import com.phantom.checker.util.AssistantAvatarCircle
+import com.phantom.checker.util.AssistantAvatarHelper
 import com.phantom.checker.util.ClientTimeParser
 import com.phantom.checker.util.NaturalTimeParseResult
 import com.phantom.checker.util.NotificationFoldUtil
@@ -243,11 +246,13 @@ fun ChatAssistantTab(
     var activeProfile by remember { mutableStateOf(AiClient.getProfileForPurpose(appCtx, com.phantom.checker.util.AiPurpose.CHAT)) }
     var hasApiKey by remember { mutableStateOf(activeProfile != null) }
     var showSuggestions by remember { mutableStateOf(PhantomPrefs.isChatSuggestionsEnabled(appCtx)) }
+    var assistantName by remember { mutableStateOf(PhantomPrefs.getAssistantName(appCtx)) }
+    var assistantAvatar by remember { mutableStateOf<ImageBitmap?>(null) }
     val settingsVersion by PhantomSettingsBus.version.collectAsState()
     LaunchedEffect(settingsVersion) {
-        if (settingsVersion > 0L) {
-            showSuggestions = PhantomPrefs.isChatSuggestionsEnabled(appCtx)
-        }
+        showSuggestions = PhantomPrefs.isChatSuggestionsEnabled(appCtx)
+        assistantName = PhantomPrefs.getAssistantName(appCtx)
+        assistantAvatar = AssistantAvatarHelper.loadAvatarBitmap(appCtx)
     }
     var quickCommands by remember { mutableStateOf(PhantomPrefs.getQuickChatCommands(appCtx)) }
     var showInputToolsMenu by remember { mutableStateOf(false) }
@@ -338,6 +343,10 @@ fun ChatAssistantTab(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 showSuggestions = PhantomPrefs.isChatSuggestionsEnabled(appCtx)
+                assistantName = PhantomPrefs.getAssistantName(appCtx)
+                scope.launch {
+                    assistantAvatar = AssistantAvatarHelper.loadAvatarBitmap(appCtx)
+                }
                 quickCommands = PhantomPrefs.getQuickChatCommands(appCtx)
                 profiles = AiClient.getProfiles(appCtx)
                 activeProfile = AiClient.getProfileForPurpose(appCtx, com.phantom.checker.util.AiPurpose.CHAT)
@@ -2031,14 +2040,29 @@ fun ChatAssistantTab(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.weight(1f, fill = false),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 IconButton(onClick = { showSessionDrawer = true }) {
                     Icon(Icons.Default.Menu, contentDescription = "歷史對話")
                 }
+                AssistantAvatarCircle(
+                    avatarBitmap = assistantAvatar,
+                    assistantName = assistantName,
+                    size = 28.dp
+                )
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "AI 訊息助手",
+                    text = if (assistantName == PhantomPrefs.DEFAULT_ASSISTANT_NAME) {
+                        "幻訊 · AI 訊息助手"
+                    } else {
+                        "$assistantName · AI 助手"
+                    },
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2140,7 +2164,7 @@ fun ChatAssistantTab(
                 EmptyStateView(
                     icon = AutoAwesomeIcon,
                     title = "有什麼訊息想查嗎？",
-                    description = "你可以問「今天 LINE 的訊息」、「昨日簡報」或「最近有可疑詐騙嗎」，AI 會根據你的本地備份唯讀查詢並引用來源。"
+                    description = "你可以問「今天 LINE 的訊息」、「昨日簡報」或「最近有可疑詐騙嗎」，${assistantName}會根據你的本地備份唯讀查詢並引用來源。"
                 )
             } else {
                 LazyColumn(
@@ -2178,29 +2202,52 @@ fun ChatAssistantTab(
                                     )
                                 }
                             } else {
-                                PhantomGlassCard(
-                                    glassState = glassState,
-                                    modifier = Modifier
-                                        .widthIn(max = assistantBubbleMaxWidth)
-                                        .clip(RoundedCornerShape(18.dp))
-                                        .combinedClickable(
-                                            onClick = {},
-                                            onLongClick = {
-                                                val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                                cm.setPrimaryClip(
-                                                    ClipData.newPlainText("assistant_reply", stripMarkdown(msg.content))
-                                                )
-                                                onShowMessage("已複製助手回覆")
-                                            }
-                                        ),
-                                    cornerRadius = 18.dp,
-                                    contentPadding = 12.dp
+                                Column(
+                                    modifier = Modifier.widthIn(max = assistantBubbleMaxWidth),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    PhantomMarkdownText(
-                                        markdown = msg.content,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.padding(start = 4.dp)
+                                    ) {
+                                        AssistantAvatarCircle(
+                                            avatarBitmap = assistantAvatar,
+                                            assistantName = assistantName,
+                                            size = 22.dp
+                                        )
+                                        Text(
+                                            text = assistantName,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    PhantomGlassCard(
+                                        glassState = glassState,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(18.dp))
+                                            .combinedClickable(
+                                                onClick = {},
+                                                onLongClick = {
+                                                    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                    cm.setPrimaryClip(
+                                                        ClipData.newPlainText("assistant_reply", stripMarkdown(msg.content))
+                                                    )
+                                                    onShowMessage("已複製助手回覆")
+                                                }
+                                            ),
+                                        cornerRadius = 18.dp,
+                                        contentPadding = 12.dp
+                                    ) {
+                                        PhantomMarkdownText(
+                                            markdown = msg.content,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
                                 }
                             }
                         }
