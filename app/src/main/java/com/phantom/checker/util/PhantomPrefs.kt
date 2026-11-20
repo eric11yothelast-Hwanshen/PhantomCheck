@@ -1405,6 +1405,47 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putString(KEY_SCHEDULE_MEMO_ROUTE, safe).apply()
     }
 
+    /** #336 通訊錄 VIP 信任圈同步設定（off / starred / group） */
+    const val CONTACTS_VIP_MODE_OFF = "off"
+    const val CONTACTS_VIP_MODE_STARRED = "starred"
+    const val CONTACTS_VIP_MODE_GROUP = "group"
+    private const val KEY_CONTACTS_VIP_MODE = "contacts_vip_mode"
+    private const val KEY_CONTACTS_VIP_GROUP_ID = "contacts_vip_group_id"
+    private const val KEY_CONTACTS_VIP_LAST_SYNC_AT = "contacts_vip_last_sync_at"
+
+    fun getContactsVipMode(ctx: Context): String {
+        return when (prefs(ctx).getString(KEY_CONTACTS_VIP_MODE, CONTACTS_VIP_MODE_OFF)) {
+            CONTACTS_VIP_MODE_STARRED -> CONTACTS_VIP_MODE_STARRED
+            CONTACTS_VIP_MODE_GROUP -> CONTACTS_VIP_MODE_GROUP
+            else -> CONTACTS_VIP_MODE_OFF
+        }
+    }
+
+    fun setContactsVipMode(ctx: Context, mode: String) {
+        val safe = when (mode) {
+            CONTACTS_VIP_MODE_STARRED -> CONTACTS_VIP_MODE_STARRED
+            CONTACTS_VIP_MODE_GROUP -> CONTACTS_VIP_MODE_GROUP
+            else -> CONTACTS_VIP_MODE_OFF
+        }
+        prefs(ctx).edit().putString(KEY_CONTACTS_VIP_MODE, safe).apply()
+    }
+
+    fun getContactsVipGroupId(ctx: Context): Long? {
+        val v = prefs(ctx).getLong(KEY_CONTACTS_VIP_GROUP_ID, -1L)
+        return if (v > 0L) v else null
+    }
+
+    fun setContactsVipGroupId(ctx: Context, groupId: Long?) {
+        prefs(ctx).edit().putLong(KEY_CONTACTS_VIP_GROUP_ID, groupId ?: -1L).apply()
+    }
+
+    fun getContactsVipLastSyncAt(ctx: Context): Long =
+        prefs(ctx).getLong(KEY_CONTACTS_VIP_LAST_SYNC_AT, 0L)
+
+    fun setContactsVipLastSyncAt(ctx: Context, ts: Long) {
+        prefs(ctx).edit().putLong(KEY_CONTACTS_VIP_LAST_SYNC_AT, ts).apply()
+    }
+
     data class StatsCardOption(val key: String, val title: String, val subtitle: String, val defaultVisible: Boolean)
 
     val STATS_CARD_OPTIONS: List<StatsCardOption> = listOf(

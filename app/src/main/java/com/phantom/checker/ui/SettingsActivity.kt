@@ -2621,6 +2621,11 @@ fun FilterSettingsScreen(
 
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
 
+                    // #336 通訊錄整合（暱稱綁定、關係單位匯入嚮導、VIP 信任圈連動）
+                    ContactsIntegrationSection()
+
+                    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+
                     // (2) 注入預算（正常模式 vs 省 token 模式分開設定、互不覆寫）
                     Text(
                         text = "二、對話記憶注入預算（雙模式獨立保存）",

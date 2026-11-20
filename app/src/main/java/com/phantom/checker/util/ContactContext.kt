@@ -159,6 +159,20 @@ object ContactContext {
         val lowerApp = appLabel.lowercase(Locale.ROOT)
 
         val senderInContacts = normSender.length >= 2 && contactNames.any { it == normSender }
+        val senderMatchedAlias = if (normSender.length >= 2) {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val aliases = com.phantom.checker.service.AppDatabaseHolder.db(ctx).contactAliasDao().all()
+                    aliases.any { entry ->
+                        val pkgMatch = entry.packageName.isNullOrBlank() ||
+                            entry.packageName.equals(packageName, ignoreCase = true)
+                        pkgMatch && normalizeName(entry.alias) == normSender
+                    }
+                }
+            }.getOrDefault(false)
+        } else {
+            false
+        }
         val matchedPersonMem = if (normSender.length >= 2) {
             safePersonMemories.firstOrNull { mem ->
                 val subj = normalizeName(mem.subject)
@@ -167,7 +181,7 @@ object ContactContext {
         } else {
             null
         }
-        val isKnownSender = senderInContacts || matchedPersonMem != null
+        val isKnownSender = senderInContacts || senderMatchedAlias || matchedPersonMem != null
 
         val hasUrgencyKeyword = URGENCY_SCAM_KEYWORDS.any { lowerContent.contains(it) }
         val hasImpersonationPhrase = IMPERSONATION_SELF_REF_KEYWORDS.any { lowerContent.contains(it) }

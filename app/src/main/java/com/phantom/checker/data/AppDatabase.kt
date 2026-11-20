@@ -165,6 +165,7 @@ data class AiRuleEntity(
     companion object {
         const val KIND_TAG = "tag"
         const val KIND_WHITELIST = "whitelist"
+        const val CONTACTS_VIP_RULE_PREFIX = "[contacts_vip] "
     }
 }
 
@@ -1167,7 +1168,49 @@ data class MemoryEntity(
         const val SOURCE_NOTIFICATION = "notification"
         const val SOURCE_CHAT = "chat"
         const val SOURCE_MANUAL = "manual"
+        const val SOURCE_CONTACTS = "contacts"
     }
+}
+
+/** #336 通訊錄暱稱綁定表（通訊軟體暱稱 ↔ 本名，純本機儲存絕不外送 AI） */
+@Entity(
+    tableName = "contact_aliases",
+    indices = [
+        Index(value = ["alias", "packageName"])
+    ]
+)
+data class ContactAliasEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val alias: String,
+    val displayName: String,
+    val packageName: String? = null,
+    val note: String? = null,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Dao
+interface ContactAliasDao {
+    @Query("SELECT * FROM contact_aliases ORDER BY createdAt DESC, id DESC")
+    suspend fun all(): List<ContactAliasEntity>
+
+    @Query("SELECT * FROM contact_aliases ORDER BY createdAt DESC, id DESC")
+    fun observeAll(): Flow<List<ContactAliasEntity>>
+
+    @Query(
+        """
+        SELECT * FROM contact_aliases
+        WHERE LOWER(alias) = LOWER(:alias)
+          AND (packageName IS NULL OR packageName = '' OR packageName = :packageName)
+        LIMIT 1
+        """
+    )
+    suspend fun findByAlias(alias: String, packageName: String? = null): ContactAliasEntity?
+
+    @Insert
+    suspend fun insert(entity: ContactAliasEntity): Long
+
+    @Query("DELETE FROM contact_aliases WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }
 
 @Dao
@@ -1252,9 +1295,10 @@ interface MemoryDao {
         MemoRuleEntity::class,
         OwnReplyEchoEntity::class,
         SenderAvatarEntity::class,
-        MemoryEntity::class
+        MemoryEntity::class,
+        ContactAliasEntity::class
     ],
-    version = 19,
+    version = 20,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1274,6 +1318,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun ownReplyEchoDao(): OwnReplyEchoDao
     abstract fun senderAvatarDao(): SenderAvatarDao
     abstract fun memoryDao(): MemoryDao
+    abstract fun contactAliasDao(): ContactAliasDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -1623,6 +1668,24 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_18_19 = object : Migration(18, 19) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `chat_messages` ADD COLUMN `thinkingContent` TEXT")
+            }
+        }
+
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `contact_aliases` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `alias` TEXT NOT NULL,
+                        `displayName` TEXT NOT NULL,
+                        `packageName` TEXT,
+                        `note` TEXT,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_contact_aliases_alias_packageName` ON `contact_aliases` (`alias`, `packageName`)")
             }
         }
     }

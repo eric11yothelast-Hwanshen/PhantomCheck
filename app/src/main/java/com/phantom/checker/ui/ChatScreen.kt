@@ -289,6 +289,7 @@ fun ChatAssistantTab(
     var pendingExtendedActionQueue by remember { mutableStateOf<List<PendingExtendedAction>>(emptyList()) }
     var pendingMemoryWriteQueue by remember { mutableStateOf<List<PendingMemoryWriteState>>(emptyList()) }
     var pendingMemoryDeleteQueue by remember { mutableStateOf<List<PendingMemoryDeleteState>>(emptyList()) }
+    var pendingAliasCandidate by remember { mutableStateOf<com.phantom.checker.util.ContactBridge.AliasCandidate?>(null) }
     var showTodoListSheet by remember { mutableStateOf(false) }
     val rawTodoListItems by remember(appCtx) {
         AppDatabaseHolder.db(appCtx).todoDao().observeAll()
@@ -1519,6 +1520,27 @@ fun ChatAssistantTab(
                 }
                 if (resolvedMemoryDeletes.isNotEmpty()) {
                     pendingMemoryDeleteQueue = pendingMemoryDeleteQueue + resolvedMemoryDeletes
+                }
+                // #336 純本機暱稱綁定候選偵測（絕不外送通訊錄給 AI）
+                if (pendingAliasCandidate == null && com.phantom.checker.util.ContactBridge.hasReadContactsPermission(appCtx)) {
+                    val detectedAlias = withContext(Dispatchers.IO) {
+                        val db = AppDatabaseHolder.db(appCtx)
+                        val recentSenders = db.messageDao().paged(30, 0)
+                            .filter { it.sender.length >= 2 && query.contains(it.sender, ignoreCase = true) }
+                            .distinctBy { it.sender to it.packageName }
+                            .take(3)
+                        recentSenders.firstNotNullOfOrNull { m ->
+                            com.phantom.checker.util.ContactBridge.findAliasCandidateForSender(
+                                ctx = appCtx,
+                                db = db,
+                                sender = m.sender,
+                                packageName = m.packageName
+                            )
+                        }
+                    }
+                    if (detectedAlias != null) {
+                        pendingAliasCandidate = detectedAlias
+                    }
                 }
                 if (newAppliedSettings.isNotEmpty()) {
                     val updatedKeys = newAppliedSettings.map { it.sessionId to it.item.id }.toSet()
@@ -4287,6 +4309,62 @@ fun ChatAssistantTab(
                                             modifier = Modifier.weight(1f)
                                         ) {
                                             Text("確認記住")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    pendingAliasCandidate?.let { aliasCand ->
+                        item(key = "pending_alias_bind_${aliasCand.alias}_${aliasCand.matchedDisplayName}") {
+                            PhantomGlassCard(
+                                glassState = glassState,
+                                cornerRadius = 16.dp,
+                                contentPadding = 12.dp
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "👤 疑似通訊錄聯絡人暱稱（純本機比對）",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "寄件者「${aliasCand.alias}」疑似本機聯絡人「${aliasCand.matchedDisplayName}」。綁定後防詐檢查將視其為熟人寄件者。",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = { pendingAliasCandidate = null },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("略過")
+                                        }
+                                        Button(
+                                            onClick = {
+                                                pendingAliasCandidate = null
+                                                scope.launch {
+                                                    withContext(Dispatchers.IO) {
+                                                        AppDatabaseHolder.db(appCtx).contactAliasDao().insert(
+                                                            com.phantom.checker.data.ContactAliasEntity(
+                                                                alias = aliasCand.alias,
+                                                                displayName = aliasCand.matchedDisplayName,
+                                                                packageName = aliasCand.packageName,
+                                                                note = "由聊天確認卡綁定"
+                                                            )
+                                                        )
+                                                    }
+                                                    com.phantom.checker.util.ContactContext.invalidateCache()
+                                                    onShowMessage("已綁定暱稱「${aliasCand.alias} → ${aliasCand.matchedDisplayName}」")
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("確認綁定")
                                         }
                                     }
                                 }

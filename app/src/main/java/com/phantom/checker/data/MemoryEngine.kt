@@ -90,6 +90,7 @@ object MemoryEngine {
     fun sourceTypeLabel(sourceType: String): String = when (sourceType) {
         MemoryEntity.SOURCE_NOTIFICATION -> "通知"
         MemoryEntity.SOURCE_CHAT -> "AI 對話"
+        MemoryEntity.SOURCE_CONTACTS -> "通訊錄匯入"
         else -> "手動"
     }
 
