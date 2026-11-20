@@ -37,6 +37,7 @@ object MemoryEngine {
         MemoryEntity.CATEGORY_ROUTINE,
         MemoryEntity.CATEGORY_RELATIONSHIP,
         MemoryEntity.CATEGORY_SCAM_IMMUNITY,
+        MemoryEntity.CATEGORY_INTEREST,
         MemoryEntity.CATEGORY_OTHER
     )
 
@@ -63,6 +64,7 @@ object MemoryEngine {
         MemoryEntity.CATEGORY_ROUTINE -> "習慣"
         MemoryEntity.CATEGORY_RELATIONSHIP -> "關係"
         MemoryEntity.CATEGORY_SCAM_IMMUNITY -> "防詐免疫"
+        MemoryEntity.CATEGORY_INTEREST -> "興趣"
         else -> "其他"
     }
 
@@ -528,12 +530,20 @@ object MemoryEngine {
                     (mem.layer != MemoryEntity.LAYER_SHORT_TERM || mem.expiresAt == null || mem.expiresAt > nowMs)
             }
 
-        if (rawCandidates.isEmpty()) {
+        val portraitText = PhantomPrefs.getPortraitCardText(ctx)
+        if (rawCandidates.isEmpty() && portraitText.isBlank()) {
             return@withContext RetrievedMemoryPrompt("", emptyList(), 0)
         }
 
+        val tokenSaver = PhantomPrefs.isTokenSaverEnabled(ctx)
         val baseTopK = PhantomPrefs.getEffectiveMemoryInjectionTopK(ctx)
-        val effectiveTopK = (baseTopK * degradeFactor).toInt().coerceAtLeast(1)
+        // #337 畫像卡優先注入，其後 top-K 減半（省 token 模式僅畫像卡 + 最多 2 筆）
+        val adjustedTopK = if (portraitText.isNotBlank()) {
+            if (tokenSaver) minOf(2, (baseTopK / 2).coerceAtLeast(1)) else (baseTopK / 2).coerceAtLeast(1)
+        } else {
+            baseTopK
+        }
+        val effectiveTopK = (adjustedTopK * degradeFactor).toInt().coerceAtLeast(1)
         val perItemCharCap = PhantomPrefs.getEffectiveMemoryPerItemMaxChars(ctx)
         val baseTokenBudget = PhantomPrefs.getEffectiveMemoryTotalTokenBudget(ctx)
         val effectiveTokenBudget = (baseTokenBudget * degradeFactor).toInt().coerceAtLeast(30)
@@ -553,6 +563,13 @@ object MemoryEngine {
         var usedTokens = estimateMemoryTokens(header)
         val lines = mutableListOf<String>()
         val selectedIds = mutableListOf<Long>()
+
+        if (portraitText.isNotBlank()) {
+            val safePortrait = AiClient.sanitizeForPrompt(portraitText.replace("\n", " ").trim()).take(if (tokenSaver) 140 else 240)
+            val portraitLine = "【我對你的瞭解】$safePortrait"
+            lines.add(portraitLine)
+            usedTokens += estimateMemoryTokens(portraitLine)
+        }
 
         for ((mem, _) in ranked) {
             // 再次靜態斷言：絕不允許 sensitive 記憶進入
@@ -600,6 +617,89 @@ object MemoryEngine {
             hitMemoryIds = selectedIds,
             estimatedTokens = usedTokens
         )
+    }
+
+    // ==================== #337 「我對你的瞭解」畫像卡（≤200 tokens，敏感記憶絕不進入） ====================
+
+    private const val PORTRAIT_REFRESH_INTERVAL_MS = 7L * 24L * 60L * 60L * 1000L
+    private const val PORTRAIT_NEW_CONFIRMED_THRESHOLD = 20
+    private const val PORTRAIT_DAILY_MAX_GENS = 3
+
+    suspend fun shouldRefreshPortrait(
+        ctx: Context,
+        db: AppDatabase,
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean = withContext(Dispatchers.IO) {
+        val normals = db.memoryDao().activeNormalMemoriesForPrompt(nowMs)
+            .filter { it.privacyTier == MemoryEntity.PRIVACY_NORMAL && it.status == MemoryEntity.STATUS_ACTIVE }
+        if (normals.isEmpty()) return@withContext false
+        val existing = PhantomPrefs.getPortraitCardText(ctx)
+        if (existing.isBlank()) return@withContext true
+        val lastAt = PhantomPrefs.getPortraitCardUpdatedAt(ctx)
+        if (nowMs - lastAt >= PORTRAIT_REFRESH_INTERVAL_MS) return@withContext true
+        val confirmedNow = normals.count { it.confidence == MemoryEntity.CONFIDENCE_CONFIRMED }
+        val confirmedAtGen = PhantomPrefs.getPortraitConfirmedCountAtGen(ctx)
+        (confirmedNow - confirmedAtGen) >= PORTRAIT_NEW_CONFIRMED_THRESHOLD
+    }
+
+    /**
+     * 生成「我對你的瞭解」畫像卡（≤200 tokens）：
+     * - 嚴格雙重排除 privacyTier == sensitive（沿用 #319 敏感雙閘門）。
+     * - 走 AiPurpose.BRIEFING，獨立每日小額上限（3 次/日），不吃訊息分析額度。
+     * - 未設 AI 金鑰時降級為本機精簡摘要。
+     */
+    suspend fun generatePortraitCard(
+        ctx: Context,
+        db: AppDatabase,
+        forceManual: Boolean = false,
+        nowMs: Long = System.currentTimeMillis()
+    ): String? = withContext(Dispatchers.IO) {
+        val appCtx = ctx.applicationContext
+        lazyArchiveExpiredShortTerm(db, nowMs)
+        val normals = db.memoryDao().activeNormalMemoriesForPrompt(nowMs)
+            .filter { mem ->
+                mem.privacyTier == MemoryEntity.PRIVACY_NORMAL &&
+                    mem.status == MemoryEntity.STATUS_ACTIVE &&
+                    (mem.layer != MemoryEntity.LAYER_SHORT_TERM || mem.expiresAt == null || mem.expiresAt > nowMs)
+            }
+        if (normals.isEmpty()) return@withContext null
+
+        val dayKey = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(java.util.Date(nowMs))
+        if (!forceManual && PhantomPrefs.getPortraitDailyGenCount(appCtx, dayKey) >= PORTRAIT_DAILY_MAX_GENS) {
+            return@withContext PhantomPrefs.getPortraitCardText(appCtx).takeIf { it.isNotBlank() }
+        }
+
+        val confirmedCount = normals.count { it.confidence == MemoryEntity.CONFIDENCE_CONFIRMED }
+        val prioritized = normals
+            .sortedWith(
+                compareByDescending<MemoryEntity> { it.confidence == MemoryEntity.CONFIDENCE_CONFIRMED }
+                    .thenByDescending { it.useCount }
+                    .thenByDescending { it.updatedAt }
+            )
+            .take(20)
+
+        val memLines = prioritized.joinToString("\n") { mem ->
+            "- [${categoryLabel(mem.category)}] ${AiClient.sanitizeForPrompt(mem.subject).take(18)}：${AiClient.sanitizeForPrompt(mem.content).take(60)}"
+        }
+        val assistantName = PhantomPrefs.getAssistantName(appCtx)
+        val aiText = AiClient.generateBriefingText(
+            context = appCtx,
+            systemPrompt = "你是「$assistantName」，請根據以下已過濾的一般記憶，用繁體中文第一人稱寫一段溫暖精準的「我對你的瞭解」個人畫像摘要（嚴格 ≤140 字／≤200 tokens，分 2–3 句，不要列點、不要編造未提供的事實）。",
+            userPrompt = memLines,
+            maxTokens = 200
+        )
+
+        val finalText = aiText?.trim()?.take(360) ?: buildString {
+            val topCats = prioritized.groupBy { categoryLabel(it.category) }
+                .entries.sortedByDescending { it.value.size }.take(3)
+            append("目前共記住 ${normals.size} 筆一般記憶（已確認 $confirmedCount 筆），主要涵蓋")
+            append(topCats.joinToString("、") { "${it.key}（${it.value.size} 筆）" })
+            append("。")
+        }
+
+        PhantomPrefs.savePortraitCard(appCtx, finalText, nowMs, confirmedCount)
+        PhantomPrefs.incrementPortraitDailyGenCount(appCtx, dayKey)
+        finalText
     }
 
     // ==================== A5 整合既有資料彙總查詢與統一操作介面（不搬表、零遷移） ====================

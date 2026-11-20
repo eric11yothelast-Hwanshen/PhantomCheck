@@ -920,6 +920,16 @@ internal fun MemoryTab(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(bottom = 24.dp)
             ) {
+                // 0. #337 「我對你的瞭解」畫像卡（≤200 tokens，敏感記憶絕不入卡）
+                if (selectedFilter == MemoryFilterChip.ALL && qTrim.isEmpty()) {
+                    item(key = "section_portrait_card") {
+                        com.phantom.checker.ui.components.PortraitCardSection(
+                            glassState = glassState,
+                            onShowMessage = onShowMessage
+                        )
+                    }
+                }
+
                 // 1. 衝突待確認區塊（醒目提示＋兩按鈕裁定）
                 if (showConflicts && (conflictMemories.isNotEmpty() || selectedFilter == MemoryFilterChip.CONFLICT)) {
                     item(key = "section_conflict") {

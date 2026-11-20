@@ -26,6 +26,8 @@ class BootReceiver : BroadcastReceiver() {
         DailySummaryPolicy.maybeCatchUp(appCtx)
         WeeklySummaryPolicy.schedule(appCtx)
         WeeklySummaryPolicy.maybeCatchUp(appCtx)
+        BriefingScheduler.rescheduleAll(appCtx)
+        BriefingScheduler.maybeCatchUp(appCtx)
         RetentionPolicy.scheduleOrUpdate(appCtx)
         KeepAlivePolicy.scheduleAll(appCtx)
         StatsForegroundService.startOrRefresh(appCtx, force = true)

@@ -328,6 +328,12 @@ class MainActivity : ComponentActivity() {
             DailySummaryPolicy.TAB_STATS -> requestedTabState.value = MainTab.STATS
             com.phantom.checker.widget.ReminderWidgetProvider.TAB_NOTES -> requestedTabState.value = MainTab.NOTES
             "memory" -> requestedTabState.value = MainTab.MEMORY
+            com.phantom.checker.service.BriefingScheduler.TAB_ASSISTANT -> requestedTabState.value = MainTab.ASSISTANT
+        }
+        val briefingMsgId = intent?.getLongExtra(com.phantom.checker.service.BriefingScheduler.EXTRA_BRIEFING_MSG_ID, -1L) ?: -1L
+        if (briefingMsgId > 0L) {
+            requestedTabState.value = MainTab.ASSISTANT
+            PhantomPrefs.incrementBriefingReadCount(applicationContext)
         }
         val todoId = intent?.getLongExtra(com.phantom.checker.widget.ReminderWidgetProvider.EXTRA_EDIT_TODO_ID, -1L) ?: -1L
         if (todoId > 0L) {

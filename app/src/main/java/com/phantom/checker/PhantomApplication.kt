@@ -8,6 +8,7 @@ class PhantomApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         ShizukuManager.init(this)
+        com.phantom.checker.service.BriefingScheduler.rescheduleAll(this)
     }
 
     override fun onTrimMemory(level: Int) {

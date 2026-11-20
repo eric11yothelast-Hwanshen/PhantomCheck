@@ -2430,4 +2430,75 @@ object AiClient {
             Result.failure(Exception(msg))
         }
     }
+
+    /**
+     * #337 早晚簡報與畫像卡生成（走 AiPurpose.BRIEFING 獨立模型路由，不干擾訊息分析額度計數）。
+     * 未設定 AI 金鑰或失敗時回傳 null，由呼叫端降級為零 token 模板。
+     */
+    suspend fun generateBriefingText(
+        context: Context,
+        systemPrompt: String,
+        userPrompt: String,
+        maxTokens: Int = 360
+    ): String? = withContext(Dispatchers.IO) {
+        val profile = getProfileForPurpose(context, AiPurpose.BRIEFING) ?: return@withContext null
+        val apiKey = profile.apiKey.trim()
+        if (apiKey.isEmpty()) return@withContext null
+        val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
+        val auth = "Bearer $apiKey"
+        val body = ChatRequest(
+            model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
+            messages = listOf(
+                ChatMessage("system", systemPrompt),
+                ChatMessage("user", userPrompt)
+            ),
+            maxTokens = maxTokens.coerceIn(120, 600),
+            temperature = 0.4
+        )
+        try {
+            enforceRateLimit()
+            val res = getApi(profile.baseUrl).chat(url = fullUrl, auth = auth, body = body)
+            extractReplyText(res.choices.firstOrNull()?.message?.content).takeIf { it.isNotBlank() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * #337 選配外部情報搜尋（OpenAI 相容搜尋端點 BYOK，如 Perplexity sonar）：
+     * - 金鑰與端點存於 EncryptedByokStore（EncryptedSharedPreferences），絕不進 repo/log。
+     * - 未設定端點或省 token 模式開啟時誠實回傳 null，不報錯。
+     */
+    suspend fun queryExternalSearchEndpoint(
+        context: Context,
+        query: String
+    ): String? = withContext(Dispatchers.IO) {
+        val appCtx = context.applicationContext
+        if (PhantomPrefs.isTokenSaverEnabled(appCtx)) return@withContext null
+        if (!com.phantom.checker.util.EncryptedByokStore.isExternalSearchConfigured(appCtx)) return@withContext null
+        val baseUrl = com.phantom.checker.util.EncryptedByokStore.getExternalSearchBaseUrl(appCtx)
+        val apiKey = com.phantom.checker.util.EncryptedByokStore.getExternalSearchApiKey(appCtx)
+        val model = com.phantom.checker.util.EncryptedByokStore.getExternalSearchModel(appCtx)
+        val fullUrl = buildFullUrl(baseUrl, "/chat/completions")
+        val body = ChatRequest(
+            model = model,
+            messages = listOf(
+                ChatMessage("system", "請用繁體中文精簡摘要 2–3 點最新重點情報（總長 ≤180 字），不加多餘寒暄。"),
+                ChatMessage("user", query.trim().take(200))
+            ),
+            maxTokens = 240,
+            temperature = 0.2
+        )
+        try {
+            enforceRateLimit()
+            val res = getApi(baseUrl).chat(url = fullUrl, auth = "Bearer $apiKey", body = body)
+            extractReplyText(res.choices.firstOrNull()?.message?.content).takeIf { it.isNotBlank() }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
 }

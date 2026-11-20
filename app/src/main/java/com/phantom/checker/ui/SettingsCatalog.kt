@@ -120,6 +120,11 @@ object SettingsCatalog {
         SettingSearchItem("calendar_integration", "memory_assistant", "本機日曆整合", "勾選開放給 AI 助手查詢空檔與寫入行程的本機日曆帳號（預設全不勾，日曆資料僅留存本機絕不外送）", listOf("日曆", "行事曆", "行程", "空檔", "撞期", "calendar")),
         SettingSearchItem("schedule_memo_route", "memory_assistant", "行程類通知分流", "行程類通知優先提示加入日曆，不再自動建立待辦/記事", listOf("行程", "分流", "日曆", "待辦", "記事", "建議卡", "schedule", "calendar")),
         SettingSearchItem("contacts_integration", "memory_assistant", "通訊錄整合（暱稱／匯入／VIP）", "管理通訊軟體暱稱綁定本名、零 token 關係單位匯入與 VIP 信任圈白名單同步（原始通訊錄絕不外送 AI）", listOf("通訊錄", "聯絡人", "暱稱", "綁定", "匯入", "vip", "信任圈", "contacts")),
+        SettingSearchItem("briefing_morning_enabled", "memory_assistant", "早間個人簡報", "每日定時（預設 08:45）整理今日行程、待辦與重點通知寫入 AI 助手並發送通知", listOf("早間簡報", "早報", "簡報", "主動推播", "briefing")),
+        SettingSearchItem("briefing_evening_enabled", "memory_assistant", "晚間個人簡報", "每日定時（預設 22:25）回顧今日重點並預覽明日行程與待辦", listOf("晚間簡報", "晚報", "簡報", "主動推播", "briefing")),
+        SettingSearchItem("proactive_daily_cap", "memory_assistant", "每日主動推播上限", "限制 AI 助手每日主動簡報與提醒則數上限（預設 6 則，1–20 可調）", listOf("主動推播", "上限", "節流", "cap", "簡報")),
+        SettingSearchItem("proactive_dnd_enabled", "memory_assistant", "主動推播獨立勿擾時段", "設定主動推播的獨立勿擾時段（預設 00:00–07:00，期間仍寫入聊天但不發通知）", listOf("勿擾", "主動推播", "靜音", "dnd")),
+        SettingSearchItem("ai_model_briefing", "ai", "簡報與畫像卡模型", "為早晚簡報與「我對你的瞭解」畫像卡指定獨立 AI 模型", listOf("簡報模型", "畫像卡模型", "briefing", "模型")),
         SettingSearchItem("update_auto_check", "about", "自動檢查更新", "每次開啟 App 時自動檢查 GitHub 最新版本並提示；通知欄提醒每天最多一次", listOf("檢查更新", "更新", "版本", "自動更新", "update")),
         SettingSearchItem("about_section", "about", "關於", "應用程式名稱、版本號、作者、GitHub 倉庫、第三方元件與隱私說明", listOf("版本", "作者", "關於", "about", "version", "檢查更新", "更新", "update", "下載"))
     )
@@ -141,6 +146,9 @@ object SettingsCatalog {
         "ai_daily_summary_notif",
         "memory_chat_capture",
         "ai_anti_fraud_cross_check",
+        "briefing_morning_enabled",
+        "briefing_evening_enabled",
+        "proactive_dnd_enabled",
         "notif_persistent_icons",
         "notif_ongoing",
         "notif_quiet_hours",
@@ -188,6 +196,9 @@ object SettingsCatalog {
             "ai_daily_summary_notif" -> PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
             "memory_chat_capture" -> PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
             "ai_anti_fraud_cross_check" -> PhantomPrefs.isAntiFraudCrossCheckEnabled(appCtx)
+            "briefing_morning_enabled" -> PhantomPrefs.isMorningBriefingEnabled(appCtx)
+            "briefing_evening_enabled" -> PhantomPrefs.isEveningBriefingEnabled(appCtx)
+            "proactive_dnd_enabled" -> PhantomPrefs.isProactiveDndEnabled(appCtx)
             "notif_persistent_icons" -> PhantomPrefs.isPersistentNotifShowIcons(appCtx)
             "notif_ongoing" -> PhantomPrefs.isRecordOngoingEnabled(appCtx)
             "notif_quiet_hours" -> PhantomPrefs.isQuietHoursEnabled(appCtx)
@@ -263,6 +274,15 @@ object SettingsCatalog {
             "ai_daily_summary_notif" -> PhantomPrefs.setDailySummaryNotifEnabled(appCtx, enabled)
             "memory_chat_capture" -> PhantomPrefs.setMemoryChatCaptureEnabled(appCtx, enabled)
             "ai_anti_fraud_cross_check" -> PhantomPrefs.setAntiFraudCrossCheckEnabled(appCtx, enabled)
+            "briefing_morning_enabled" -> {
+                PhantomPrefs.setMorningBriefingEnabled(appCtx, enabled)
+                com.phantom.checker.service.BriefingScheduler.rescheduleAll(appCtx)
+            }
+            "briefing_evening_enabled" -> {
+                PhantomPrefs.setEveningBriefingEnabled(appCtx, enabled)
+                com.phantom.checker.service.BriefingScheduler.rescheduleAll(appCtx)
+            }
+            "proactive_dnd_enabled" -> PhantomPrefs.setProactiveDndEnabled(appCtx, enabled)
             "notif_persistent_icons" -> {
                 PhantomPrefs.setPersistentNotifShowIcons(appCtx, enabled)
                 StatsForegroundService.startOrRefresh(appCtx, force = true)
@@ -416,6 +436,14 @@ object SettingsCatalog {
             max = PhantomPrefs.MAX_MEMORY_SAVER_TOP_K,
             step = 1,
             unit = "筆"
+        ),
+        NumericSettingSpec(
+            id = "proactive_daily_cap",
+            title = "每日主動推播上限",
+            min = 1,
+            max = 20,
+            step = 1,
+            unit = "則"
         )
     )
 
@@ -439,6 +467,7 @@ object SettingsCatalog {
             "memory_normal_top_k" -> PhantomPrefs.getMemoryNormalTopK(appCtx)
             "memory_normal_per_item_chars" -> PhantomPrefs.getMemoryNormalPerItemChars(appCtx)
             "memory_saver_top_k" -> PhantomPrefs.getMemorySaverTopK(appCtx)
+            "proactive_daily_cap" -> PhantomPrefs.getProactiveDailyCap(appCtx)
             else -> null
         }
     }
@@ -468,6 +497,7 @@ object SettingsCatalog {
             "memory_normal_top_k" -> PhantomPrefs.setMemoryNormalTopK(appCtx, target)
             "memory_normal_per_item_chars" -> PhantomPrefs.setMemoryNormalPerItemChars(appCtx, target)
             "memory_saver_top_k" -> PhantomPrefs.setMemorySaverTopK(appCtx, target)
+            "proactive_daily_cap" -> PhantomPrefs.setProactiveDailyCap(appCtx, target)
             else -> return null
         }
         PhantomSettingsBus.notifyChanged()

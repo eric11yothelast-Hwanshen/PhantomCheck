@@ -1150,6 +1150,7 @@ data class MemoryEntity(
         const val CATEGORY_ROUTINE = "routine"
         const val CATEGORY_RELATIONSHIP = "relationship"
         const val CATEGORY_SCAM_IMMUNITY = "scam_immunity"
+        const val CATEGORY_INTEREST = "interest"
         const val CATEGORY_OTHER = "other"
 
         const val LAYER_LONG_TERM = "long_term"
