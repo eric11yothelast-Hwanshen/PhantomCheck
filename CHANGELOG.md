@@ -2,6 +2,26 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [3.0.0] - 2026-11-20
+
+### 新增
+- **AI 記憶庫核心引擎（#314 / PR #319）**：
+  - Room 資料庫升級 v17 → v18（`MIGRATION_17_18`），新增 `memories` 資料表（含 `category`、`subject`、`content`、`layer`、`status`、`confidence`、`sourceType`／`sourceRef`、`privacyTier`、`createdAt`／`updatedAt`、`lastUsedAt`／`useCount` 等欄位與 `(status,layer)`、`(category,subject)`、`(updatedAt)`、`(privacyTier)` 四組索引）。
+  - 新增 `MemoryEngine`：同 `subject` 去重與衝突偵測（`status = conflict` 雙筆保留、絕不覆蓋），`resolveConflictGroup` 裁定（勝出筆設為 `active + confirmed`，落敗筆設為 `archived`）；短期記憶 `expiresAt` 預設 7 天，啟動／查詢時 `lazyArchiveExpiredShortTerm` 與每日 `MemoryExpiryWorker` 過期封存。
+  - 純本地確定性 Top-K 檢索（0 額外 API 呼叫），依關鍵字、分類意圖與時間條件計分排序，注入 `buildRagSystemPrompt` 的「【長期記憶】」區塊（套用 `AiClient.sanitizeForPrompt` 防注入），命中後更新 `lastUsedAt` 與 `useCount`。
+  - `privacyTier = sensitive` 雙重硬性排除閘門（SQL `privacyTier = 'normal'` ＋ Kotlin `.filter { it.privacyTier != PRIVACY_SENSITIVE }`）。
+  - `MemoryEngine.loadIntegratedSnapshot` 整合查詢既有備忘錄（`notes (source=auto)`）、`ai_rules`（白名單／標籤）、`user_tag_rules` 與 `memo_rules`，提供統一查詢、啟停與刪除介面（連動 `NotificationCollectorService.invalidateRuleCaches()`，零資料表遷移）。
+- **第 5 個分頁「記憶」（#315 / PR #319）**：`MainTab.MEMORY("記憶")` 接入 `LiquidGlassTabBar`（標準／縮小／自動隱藏三模式）、`saveableStateHolder` 與 `PhantomBackgroundBox(layer = GLOBAL)`，完整 `MemoryTab` UI：頂部搜尋列、9 顆篩選 chips（`FlowRow` 自適應大字體與窄螢幕）、8 個可收合區塊（⚠️ 衝突待確認、長期記憶、短期記憶、已封存記憶、自動備忘錄、白名單規則、標籤規則、自動記事／待辦規則）、來源與徽章顯示（`AI 推測` / `已確認` / `🔒 敏感` / 到期時間）、雙按鈕衝突裁定、完整新增／編輯對話框、左滑封存／恢復／刪除、多選批次刪除確認對話框，以及右上角設定齒輪直達設定頁「記憶庫與 AI 助手」卡片。
+- **自訂 AI 助手（#315 / PR #319）**：支援自訂名字（預設「幻訊」）、個性 preset（預設／簡潔專業／親切詳細／嚴謹防詐顧問／完全自訂）＋自訂個性欄位、回答詳細度（精簡／適中／詳細），注入【助手設定】嚴格管控 ≤120 tokens，並於 `ChatScreen` 頂列與助手回覆氣泡即時顯示圓形頭像與名字。
+- **設定頁新增分類「記憶庫與 AI 助手」（#315 / PR #319）**：可收合卡 `card_memory_assistant`（含記憶擷取、雙模式獨立注入滑桿、自訂助手與圓形頭像裁切、隱私分級說明），並於 `SettingsCatalog` 註冊 `memory_chat_capture`、`memory_normal_top_k`、`memory_normal_per_item_chars`、`memory_saver_top_k`、`assistant_custom_name`、`assistant_personality`、`assistant_verbosity`、`assistant_avatar`、`memory_privacy_tier_info` 共 9 項設定，支援本地搜尋、AI 語意搜尋與聊天 `setting_toggle` / `setting_adjust` / `open_setting`。
+
+### 變更與修正
+
+- **省 token 快捷開關（#315 / PR #319）**：AI 助手頁頂列新增省 token 快捷開關 chip 與 `Info` 資訊按鈕，透過 `PhantomSettingsBus` 與設定頁 100% 雙向即時同步；彈窗逐條對照 `PhantomPrefs.isEffective*` 實際行為。
+- **Safe Browsing key 改 BYOK（#316 / PR #318，行為變更）**：移除 `BuildConfig.SAFE_BROWSING_API_KEY`／`local.properties` fallback 路徑，統一僅設定頁 `EncryptedSharedPreferences` 輸入；未設定時誠實跳過該源且 UI 提示一致，release 建置後已無 `SAFE_BROWSING_API_KEY` 欄位殘留。
+- **教學 auto-skip 雙條件（#316 / PR #320）**：新手教學 auto-skip 延遲 400ms 後仍需 bounds 已量測且目標仍缺席，才自動跳步，避免極慢機型在分頁切換進行中誤跳。
+- **Safe Browsing 卡過時文案移除（#316 / PR #320）**：「Key 狀態：已於 App 加密儲存（優先於 BuildConfig）」改為「Key 狀態：已於 App 加密儲存」，並移除不可達的「Key 狀態：已從 local.properties 注入」分支（`getSafeBrowsingKeySource` 僅回傳 EncryptedPrefs／NONE）。
+
 ## [2.20.0] - 2026-11-20
 
 ### 修正

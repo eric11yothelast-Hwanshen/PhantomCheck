@@ -46,6 +46,13 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
 
+### v3.0.0 更新重點（versionCode 39，2026-11-20）
+
+- **AI 記憶庫核心引擎（#314 / PR #319）**：長短期分層、衝突確認卡、隱私分級、批次忘記；舊自動備忘錄／規則整併記憶庫管理。
+- **記憶分頁（#315）與自訂 AI 助手（名字／個性／詳細度／頭像）**、省 token 快捷開關（雙模式預算：正常 8 筆／省 token 4 筆）。
+- **Safe Browsing key 改 BYOK（#316 / PR #318）**：移除 BuildConfig／`local.properties` fallback，改設定頁加密輸入。
+- **教學 auto-skip 雙條件與 Safe Browsing 卡文案修正（#316 / PR #320）**。
+
 ### v2.20.0 更新重點（versionCode 38）
 
 - **記事頁待辦事項展開區可捲動與高度上限（#310 / PR #311）**：`NotesTab` 待辦展開區上限改為 `BoxWithConstraints` 可用高度之 2/3（短清單維持依內容 wrap-content）；篩選膠囊列固定於頂部、清單段支援卡內上下捲動並於切換篩選時重置回頂部，解決待辦過多擠壓下方記事區的問題（收合精簡顯示維持不變）。
