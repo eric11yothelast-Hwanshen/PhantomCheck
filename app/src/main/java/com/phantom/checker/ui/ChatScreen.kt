@@ -66,6 +66,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -248,11 +249,14 @@ fun ChatAssistantTab(
     var showSuggestions by remember { mutableStateOf(PhantomPrefs.isChatSuggestionsEnabled(appCtx)) }
     var assistantName by remember { mutableStateOf(PhantomPrefs.getAssistantName(appCtx)) }
     var assistantAvatar by remember { mutableStateOf<ImageBitmap?>(null) }
+    var tokenSaverEnabled by remember { mutableStateOf(PhantomPrefs.isTokenSaverEnabled(appCtx)) }
+    var showTokenSaverInfoDialog by remember { mutableStateOf(false) }
     val settingsVersion by PhantomSettingsBus.version.collectAsState()
     LaunchedEffect(settingsVersion) {
         showSuggestions = PhantomPrefs.isChatSuggestionsEnabled(appCtx)
         assistantName = PhantomPrefs.getAssistantName(appCtx)
         assistantAvatar = AssistantAvatarHelper.loadAvatarBitmap(appCtx)
+        tokenSaverEnabled = PhantomPrefs.isTokenSaverEnabled(appCtx)
     }
     var quickCommands by remember { mutableStateOf(PhantomPrefs.getQuickChatCommands(appCtx)) }
     var showInputToolsMenu by remember { mutableStateOf(false) }
@@ -344,6 +348,7 @@ fun ChatAssistantTab(
             if (event == Lifecycle.Event.ON_RESUME) {
                 showSuggestions = PhantomPrefs.isChatSuggestionsEnabled(appCtx)
                 assistantName = PhantomPrefs.getAssistantName(appCtx)
+                tokenSaverEnabled = PhantomPrefs.isTokenSaverEnabled(appCtx)
                 scope.launch {
                     assistantAvatar = AssistantAvatarHelper.loadAvatarBitmap(appCtx)
                 }
@@ -2084,7 +2089,7 @@ fun ChatAssistantTab(
             }
         }
 
-        // Provider / 模型即時切換列＋搜尋、重整、設定入口
+        // Provider / 模型即時切換列＋省 token 快捷開關（含資訊說明）＋搜尋、重整、設定入口
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2092,33 +2097,70 @@ fun ChatAssistantTab(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            AiProviderSwitcherChip(
-                profiles = profiles,
-                activeProfile = activeProfile,
-                onSelectProfile = { selected ->
-                    PhantomPrefs.setPurposeProfileId(appCtx, com.phantom.checker.util.AiPurpose.CHAT.id, selected.id)
-                    activeProfile = selected
-                    hasApiKey = true
-                    onShowMessage("已切換對話模型：${selected.name}・${selected.model}")
-                },
-                modifier = Modifier.weight(1f)
-            )
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                AiProviderSwitcherChip(
+                    profiles = profiles,
+                    activeProfile = activeProfile,
+                    onSelectProfile = { selected ->
+                        PhantomPrefs.setPurposeProfileId(appCtx, com.phantom.checker.util.AiPurpose.CHAT.id, selected.id)
+                        activeProfile = selected
+                        hasApiKey = true
+                        onShowMessage("已切換對話模型：${selected.name}・${selected.model}")
+                    },
+                    modifier = Modifier.weight(1f, fill = false),
+                    label = ""
+                )
+                FilterChip(
+                    selected = tokenSaverEnabled,
+                    onClick = {
+                        val next = !tokenSaverEnabled
+                        tokenSaverEnabled = next
+                        SettingsCatalog.applyBooleanSetting(appCtx, "quick_token_saver", next)
+                        if (!next) {
+                            com.phantom.checker.service.DailySummaryPolicy.maybeCatchUp(appCtx)
+                        }
+                        onShowMessage(if (next) "已開啟省 token 模式" else "已關閉省 token 模式（已還原設定預算）")
+                    },
+                    label = {
+                        Text(
+                            text = if (tokenSaverEnabled) "省token:開" else "省token",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                    }
+                )
+                IconButton(
+                    onClick = { showTokenSaverInfoDialog = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "省 token 模式說明",
+                        tint = if (tokenSaverEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onToggleSearch) {
+                IconButton(onClick = onToggleSearch, modifier = Modifier.size(36.dp)) {
                     Icon(
                         imageVector = if (isSearchActive) Icons.Default.Clear else Icons.Default.Search,
                         contentDescription = "搜尋訊息",
                         modifier = Modifier.size(20.dp)
                     )
                 }
-                IconButton(onClick = onRefresh) {
+                IconButton(onClick = onRefresh, modifier = Modifier.size(36.dp)) {
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = "重新整理",
                         modifier = Modifier.size(20.dp)
                     )
                 }
-                IconButton(onClick = onOpenSettings) {
+                IconButton(onClick = onOpenSettings, modifier = Modifier.size(36.dp)) {
                     Icon(
                         imageVector = Icons.Default.Settings,
                         contentDescription = "設定",
@@ -2126,6 +2168,77 @@ fun ChatAssistantTab(
                     )
                 }
             }
+        }
+
+        if (showTokenSaverInfoDialog) {
+            val normalRag = PhantomPrefs.getChatRagMessageLimit(appCtx)
+            val normalMemTopK = PhantomPrefs.getMemoryNormalTopK(appCtx)
+            val saverMemTopK = PhantomPrefs.getMemorySaverTopK(appCtx)
+            AlertDialog(
+                onDismissRequest = { showTokenSaverInfoDialog = false },
+                title = {
+                    Text(
+                        text = "省 token 模式影響清單",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "目前狀態：${if (tokenSaverEnabled) "已開啟（生效中）" else "已關閉"}。開啟時以 Override 層運作，絕不覆寫您原本的設定值，關閉後立即還原：",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "1. 每則訊息 AI 風險掃描：暫停一般訊息逐則 AI 掃描，僅在訊息命中可疑特徵（如可疑網址、短連結或過濾規則）時才觸發 AI 分析。",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "2. AI 智慧標籤與自動備忘錄：暫停每則訊息的 AI 自動標籤分發（isEffectiveAiAutoTagEnabled = false）與隨附的自動備忘錄擷取；確定性使用者標籤規則與 App 分類仍正常運作。",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "3. 每日 AI 摘要排程與完成推播：暫停每日定時自動生成摘要與推播通知（isEffectiveDailySummaryEnabled = false；仍可手動生成，每週摘要不受影響）。",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "4. AI 助手單次閱讀訊息上限（RAG）：由原設定值（目前設定 $normalRag 則）暫時降載為 100 則（getEffectiveChatRagMessageLimit = 100），不覆寫原設定值。",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "5. 記憶庫對話注入預算：由正常模式（設定 $normalMemTopK 筆／每筆約 50 tokens／總預算 ≤250 tokens）切換為省 token 預算（設定 $saverMemTopK 筆／每筆約 25 tokens／總預算 ≤120 tokens），兩組設定獨立保存。",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "6. 聊天附加圖片壓縮：上傳圖片邊長上限由 768px 降至 512px、JPEG 品質由 72 降至 65，減少視覺模型圖片 token 消耗。",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val next = !tokenSaverEnabled
+                            tokenSaverEnabled = next
+                            SettingsCatalog.applyBooleanSetting(appCtx, "quick_token_saver", next)
+                            if (!next) {
+                                com.phantom.checker.service.DailySummaryPolicy.maybeCatchUp(appCtx)
+                            }
+                            showTokenSaverInfoDialog = false
+                            onShowMessage(if (next) "已開啟省 token 模式" else "已關閉省 token 模式")
+                        }
+                    ) {
+                        Text(if (tokenSaverEnabled) "關閉省 token" else "立即開啟省 token")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showTokenSaverInfoDialog = false }) {
+                        Text("關閉說明")
+                    }
+                }
+            )
         }
 
         if (!hasApiKey) {
