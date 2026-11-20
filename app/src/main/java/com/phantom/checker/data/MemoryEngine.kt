@@ -584,7 +584,7 @@ object MemoryEngine {
         )
     }
 
-    // ==================== A5 整合既有資料彙總查詢介面（不搬表、零遷移） ====================
+    // ==================== A5 整合既有資料彙總查詢與統一操作介面（不搬表、零遷移） ====================
 
     data class IntegratedMemoryDataSnapshot(
         val autoNotes: List<NoteEntity>,
@@ -593,7 +593,10 @@ object MemoryEngine {
         val userTagRules: List<UserTagRuleEntity>,
         val memoRules: List<MemoRuleEntity>,
         val tagsById: Map<Long, TagEntity>
-    )
+    ) {
+        val totalCount: Int
+            get() = autoNotes.size + whitelistRules.size + aiTagRules.size + userTagRules.size + memoRules.size
+    }
 
     /**
      * 統一查詢既有自動備忘錄（notes source=auto）、白名單（ai_rules kind=whitelist）、
@@ -617,6 +620,41 @@ object MemoryEngine {
                 tagsById = tagsById
             )
         }
+
+    suspend fun deleteAutoNote(ctx: Context, db: AppDatabase, noteId: Long) = withContext(Dispatchers.IO) {
+        db.noteDao().deleteById(noteId)
+        com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(ctx.applicationContext)
+    }
+
+    suspend fun toggleAiRuleEnabled(db: AppDatabase, rule: AiRuleEntity, enabled: Boolean) = withContext(Dispatchers.IO) {
+        db.aiRuleDao().update(rule.copy(isEnabled = enabled))
+        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+    }
+
+    suspend fun deleteAiRule(db: AppDatabase, ruleId: Long) = withContext(Dispatchers.IO) {
+        db.aiRuleDao().deleteById(ruleId)
+        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+    }
+
+    suspend fun toggleUserTagRuleEnabled(db: AppDatabase, rule: UserTagRuleEntity, enabled: Boolean) = withContext(Dispatchers.IO) {
+        db.userTagRuleDao().update(rule.copy(isEnabled = enabled))
+        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+    }
+
+    suspend fun deleteUserTagRule(db: AppDatabase, ruleId: Long) = withContext(Dispatchers.IO) {
+        db.userTagRuleDao().deleteById(ruleId)
+        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+    }
+
+    suspend fun toggleMemoRuleEnabled(db: AppDatabase, rule: MemoRuleEntity, enabled: Boolean) = withContext(Dispatchers.IO) {
+        db.memoRuleDao().update(rule.copy(isEnabled = enabled))
+        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+    }
+
+    suspend fun deleteMemoRule(db: AppDatabase, ruleId: Long) = withContext(Dispatchers.IO) {
+        db.memoRuleDao().deleteById(ruleId)
+        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+    }
 }
 
 /**
