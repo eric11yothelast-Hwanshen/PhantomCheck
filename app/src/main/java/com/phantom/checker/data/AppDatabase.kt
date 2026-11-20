@@ -1114,6 +1114,122 @@ interface SenderAvatarDao {
     }
 }
 
+@Entity(
+    tableName = "memories",
+    indices = [
+        Index(value = ["status", "layer"]),
+        Index(value = ["category", "subject"]),
+        Index(value = ["updatedAt"]),
+        Index(value = ["privacyTier"])
+    ]
+)
+data class MemoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val category: String,
+    val subject: String,
+    val content: String,
+    val layer: String = LAYER_LONG_TERM,
+    val status: String = STATUS_ACTIVE,
+    val expiresAt: Long? = null,
+    val privacyTier: String = PRIVACY_NORMAL,
+    val confidence: String = CONFIDENCE_INFERRED,
+    val sourceType: String = SOURCE_CHAT,
+    val sourceRef: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val lastUsedAt: Long = 0L,
+    val useCount: Int = 0
+) {
+    companion object {
+        const val CATEGORY_PERSON = "person"
+        const val CATEGORY_PLACE = "place"
+        const val CATEGORY_SCHEDULE = "schedule"
+        const val CATEGORY_PREFERENCE = "preference"
+        const val CATEGORY_ROUTINE = "routine"
+        const val CATEGORY_RELATIONSHIP = "relationship"
+        const val CATEGORY_OTHER = "other"
+
+        const val LAYER_LONG_TERM = "long_term"
+        const val LAYER_SHORT_TERM = "short_term"
+
+        const val STATUS_ACTIVE = "active"
+        const val STATUS_ARCHIVED = "archived"
+        const val STATUS_CONFLICT = "conflict"
+
+        const val PRIVACY_NORMAL = "normal"
+        const val PRIVACY_SENSITIVE = "sensitive"
+
+        const val CONFIDENCE_INFERRED = "inferred"
+        const val CONFIDENCE_CONFIRMED = "confirmed"
+
+        const val SOURCE_NOTIFICATION = "notification"
+        const val SOURCE_CHAT = "chat"
+        const val SOURCE_MANUAL = "manual"
+    }
+}
+
+@Dao
+interface MemoryDao {
+    @Query("SELECT * FROM memories ORDER BY updatedAt DESC, id DESC")
+    fun observeAll(): Flow<List<MemoryEntity>>
+
+    @Query("SELECT * FROM memories WHERE status = :status ORDER BY updatedAt DESC, id DESC")
+    fun observeByStatus(status: String): Flow<List<MemoryEntity>>
+
+    @Query("SELECT * FROM memories WHERE status = :status AND layer = :layer ORDER BY updatedAt DESC, id DESC")
+    fun observeByStatusAndLayer(status: String, layer: String): Flow<List<MemoryEntity>>
+
+    @Query("SELECT * FROM memories ORDER BY updatedAt DESC, id DESC")
+    suspend fun all(): List<MemoryEntity>
+
+    @Query("SELECT * FROM memories WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): MemoryEntity?
+
+    @Query("SELECT * FROM memories WHERE status = :status ORDER BY updatedAt DESC, id DESC")
+    suspend fun byStatus(status: String): List<MemoryEntity>
+
+    @Query("SELECT * FROM memories WHERE status = :status AND layer = :layer ORDER BY updatedAt DESC, id DESC")
+    suspend fun byStatusAndLayer(status: String, layer: String): List<MemoryEntity>
+
+    @Query("SELECT * FROM memories WHERE category = :category AND subject = :subject AND status = 'active' ORDER BY updatedAt DESC, id DESC")
+    suspend fun findActiveByCategoryAndSubject(category: String, subject: String): List<MemoryEntity>
+
+    @Query(
+        "SELECT * FROM memories WHERE status = 'active' AND privacyTier = 'normal' " +
+            "AND (layer != 'short_term' OR expiresAt IS NULL OR expiresAt > :nowMs) " +
+            "ORDER BY updatedAt DESC, id DESC"
+    )
+    suspend fun activeNormalMemoriesForPrompt(nowMs: Long): List<MemoryEntity>
+
+    @Query(
+        "SELECT * FROM memories WHERE " +
+            "(subject LIKE '%' || :query || '%' COLLATE NOCASE OR content LIKE '%' || :query || '%' COLLATE NOCASE OR category LIKE '%' || :query || '%' COLLATE NOCASE) " +
+            "ORDER BY updatedAt DESC, id DESC"
+    )
+    suspend fun search(query: String): List<MemoryEntity>
+
+    @Query(
+        "UPDATE memories SET status = 'archived', updatedAt = :nowMs " +
+            "WHERE status = 'active' AND layer = 'short_term' AND expiresAt IS NOT NULL AND expiresAt <= :nowMs"
+    )
+    suspend fun archiveExpiredShortTerm(nowMs: Long): Int
+
+    @Query("UPDATE memories SET lastUsedAt = :usedAt, useCount = useCount + 1 WHERE id IN (:ids)")
+    suspend fun recordUsage(ids: List<Long>, usedAt: Long)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(memory: MemoryEntity): Long
+
+    @Update
+    suspend fun update(memory: MemoryEntity)
+
+    @Query("DELETE FROM memories WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
+    @Query("DELETE FROM memories WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>)
+}
+
 @Database(
     entities = [
         MessageEntity::class,
@@ -1133,9 +1249,10 @@ interface SenderAvatarDao {
         NoteEntity::class,
         MemoRuleEntity::class,
         OwnReplyEchoEntity::class,
-        SenderAvatarEntity::class
+        SenderAvatarEntity::class,
+        MemoryEntity::class
     ],
-    version = 17,
+    version = 18,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1154,6 +1271,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun memoRuleDao(): MemoRuleDao
     abstract fun ownReplyEchoDao(): OwnReplyEchoDao
     abstract fun senderAvatarDao(): SenderAvatarDao
+    abstract fun memoryDao(): MemoryDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -1467,6 +1585,36 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_todos_relatedMessageId` ON `todos` (`relatedMessageId`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_sender_avatars_updatedAt` ON `sender_avatars` (`updatedAt`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_intel_cache_checkedAt` ON `intel_cache` (`checkedAt`)")
+            }
+        }
+
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `memories` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `category` TEXT NOT NULL,
+                        `subject` TEXT NOT NULL,
+                        `content` TEXT NOT NULL,
+                        `layer` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `expiresAt` INTEGER,
+                        `privacyTier` TEXT NOT NULL,
+                        `confidence` TEXT NOT NULL,
+                        `sourceType` TEXT NOT NULL,
+                        `sourceRef` TEXT,
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        `lastUsedAt` INTEGER NOT NULL,
+                        `useCount` INTEGER NOT NULL DEFAULT 0
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memories_status_layer` ON `memories` (`status`, `layer`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memories_category_subject` ON `memories` (`category`, `subject`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memories_updatedAt` ON `memories` (`updatedAt`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_memories_privacyTier` ON `memories` (`privacyTier`)")
             }
         }
     }
