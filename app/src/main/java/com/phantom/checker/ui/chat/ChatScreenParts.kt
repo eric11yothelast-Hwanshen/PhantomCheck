@@ -393,6 +393,11 @@ internal suspend fun buildRagSystemPrompt(
             appendLine("- 更新記憶：{\"action\":\"memory_update\",\"memoryId\":123,\"category\":\"person|place|schedule|preference|routine|relationship|other(可選)\",\"subject\":\"主題鍵(可選)\",\"content\":\"更新後內容\",\"layer\":\"long_term|short_term(可選)\",\"privacyTier\":\"normal|sensitive(可選)\"}")
             appendLine("- 刪除記憶（支援單筆 memoryId、依關鍵字 query、或依人物/主題 subject 批次，一律出確認卡）：{\"action\":\"memory_delete\",\"memoryId\":123,\"query\":\"關鍵字(可選)\",\"subject\":\"人物或主題(可選)\"}")
         }
+        if (com.phantom.checker.util.CalendarBridge.isCalendarEnabledForAi(ctx)) {
+            appendLine("本機日曆操作指令（僅查詢使用者勾選的本機日曆，禁止編造任何行程或空檔）：")
+            appendLine("- 查詢日曆空檔與行程（系統會由本機日曆直接查詢並附上真實結果；days 預設 7，from/to 選填 HH:mm 如 \"13:00\"/\"18:00\"，day 選填 today/tomorrow/monday..sunday）：{\"action\":\"calendar_free_query\",\"days\":7,\"from\":\"06:00\",\"to\":\"24:00\",\"day\":\"\"}")
+            appendLine("- 新增本機日曆行程（一律彈出確認卡並自動檢查撞期；start/end 為 yyyy-MM-dd HH:mm）：{\"action\":\"calendar_add\",\"title\":\"行程標題\",\"start\":\"yyyy-MM-dd HH:mm\",\"end\":\"yyyy-MM-dd HH:mm\",\"allDay\":false,\"location\":\"地點(可選)\",\"notes\":\"備註(可選)\"}")
+        }
         val tagNamesStr = allTags.joinToString("、") { it.name }.ifBlank { "無" }
         appendLine("【目前可用標籤】$tagNamesStr")
         val tagNameById = allTags.associate { it.id to it.name }
@@ -858,6 +863,34 @@ internal data class PendingMemoryDeleteState(
     val filterSummary: String
 )
 
+internal data class CalendarFreeQueryProposal(
+    val days: Int = 7,
+    val from: String? = null,
+    val to: String? = null,
+    val day: String? = null
+)
+
+internal data class CalendarAddProposal(
+    val title: String,
+    val startRaw: String,
+    val endRaw: String? = null,
+    val allDay: Boolean = false,
+    val location: String? = null,
+    val notes: String? = null
+)
+
+internal data class PendingCalendarAddition(
+    val sessionId: Long,
+    val title: String,
+    val startMs: Long,
+    val endMs: Long,
+    val allDay: Boolean,
+    val location: String?,
+    val notes: String?,
+    val writableCalendars: List<com.phantom.checker.util.CalendarBridge.CalendarAccountInfo>,
+    val conflicts: List<com.phantom.checker.util.CalendarBridge.CalendarEventInstance>
+)
+
 internal data class ParsedChatActions(
     val cleanReply: String,
     val ruleProposals: List<PendingRuleProposal> = emptyList(),
@@ -881,6 +914,8 @@ internal data class ParsedChatActions(
     val memoryAddProposals: List<MemoryAddProposal> = emptyList(),
     val memoryUpdateProposals: List<MemoryUpdateProposal> = emptyList(),
     val memoryDeleteProposals: List<MemoryDeleteProposal> = emptyList(),
+    val calendarFreeQueryProposals: List<CalendarFreeQueryProposal> = emptyList(),
+    val calendarAddProposals: List<CalendarAddProposal> = emptyList(),
     val invalidActionErrors: List<String> = emptyList()
 )
 
@@ -935,7 +970,9 @@ private val KNOWN_CHAT_ACTIONS = setOf(
     "memory_list",
     "memory_add",
     "memory_update",
-    "memory_delete"
+    "memory_delete",
+    "calendar_free_query",
+    "calendar_add"
 )
 
 /**
@@ -1002,6 +1039,8 @@ private fun parseSingleActionJson(
     memoryAddOut: MutableList<MemoryAddProposal>,
     memoryUpdateOut: MutableList<MemoryUpdateProposal>,
     memoryDeleteOut: MutableList<MemoryDeleteProposal>,
+    calendarFreeOut: MutableList<CalendarFreeQueryProposal>,
+    calendarAddOut: MutableList<CalendarAddProposal>,
     errorsOut: MutableList<String>
 ): Boolean {
     val obj = try {
@@ -1370,6 +1409,39 @@ private fun parseSingleActionJson(
                 memoryDeleteOut.add(MemoryDeleteProposal(memoryId = memId, query = q, subject = subj))
             }
         }
+        "calendar_free_query" -> {
+            val days = obj.get("days")?.takeIf { !it.isJsonNull }?.let { el ->
+                runCatching { el.asInt }.getOrNull() ?: el.asString?.trim()?.toIntOrNull()
+            }?.coerceIn(1, 14) ?: 7
+            val from = obj.get("from")?.takeIf { !it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() }
+            val to = obj.get("to")?.takeIf { !it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() }
+            val day = obj.get("day")?.takeIf { !it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() }
+            calendarFreeOut.add(CalendarFreeQueryProposal(days = days, from = from, to = to, day = day))
+        }
+        "calendar_add" -> {
+            val title = obj.get("title")?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim().orEmpty()
+            val startRaw = (obj.get("start") ?: obj.get("time"))?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
+            val endRaw = obj.get("end")?.takeIf { !it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() }
+            val allDay = obj.get("allDay")?.takeIf { !it.isJsonNull }?.let { el ->
+                runCatching { el.asBoolean }.getOrNull() ?: el.asString?.equals("true", ignoreCase = true)
+            } ?: false
+            val location = obj.get("location")?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim()?.takeIf { it.isNotEmpty() }
+            val notes = obj.get("notes")?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim()?.takeIf { it.isNotEmpty() }
+            if (title.isBlank() || startRaw.isBlank()) {
+                errorsOut.add("新增日曆行程動作缺少標題（title）或開始時間（start）。")
+            } else {
+                calendarAddOut.add(
+                    CalendarAddProposal(
+                        title = title,
+                        startRaw = startRaw,
+                        endRaw = endRaw,
+                        allDay = allDay,
+                        location = location,
+                        notes = notes
+                    )
+                )
+            }
+        }
     }
     return true
 }
@@ -1396,6 +1468,8 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
     val memoryAdds = mutableListOf<MemoryAddProposal>()
     val memoryUpdates = mutableListOf<MemoryUpdateProposal>()
     val memoryDeletes = mutableListOf<MemoryDeleteProposal>()
+    val calendarFreeQueries = mutableListOf<CalendarFreeQueryProposal>()
+    val calendarAdds = mutableListOf<CalendarAddProposal>()
     val errors = mutableListOf<String>()
 
     val rangesToRemove = mutableListOf<IntRange>()
@@ -1410,7 +1484,7 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
             errors.add("動作指令格式無法解析，請重新嘗試。")
         } else {
             objs.forEach { (_, jsonStr) ->
-                parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, whitelistDeletes, toggles, candidates, adjusts, openSettings, msgActions, searchProposals, todoManages, vipPins, muteApps, markReads, exports, memoryViews, memoryAdds, memoryUpdates, memoryDeletes, errors)
+                parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, whitelistDeletes, toggles, candidates, adjusts, openSettings, msgActions, searchProposals, todoManages, vipPins, muteApps, markReads, exports, memoryViews, memoryAdds, memoryUpdates, memoryDeletes, calendarFreeQueries, calendarAdds, errors)
             }
         }
     }
@@ -1428,7 +1502,7 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
     val inlineRangesToRemove = mutableListOf<IntRange>()
     splitBalancedJsonObjects(withoutFenced).forEach { (range, jsonStr) ->
         if (jsonStr.contains("\"action\"", ignoreCase = true)) {
-            val handled = parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, whitelistDeletes, toggles, candidates, adjusts, openSettings, msgActions, searchProposals, todoManages, vipPins, muteApps, markReads, exports, memoryViews, memoryAdds, memoryUpdates, memoryDeletes, errors)
+            val handled = parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, whitelistDeletes, toggles, candidates, adjusts, openSettings, msgActions, searchProposals, todoManages, vipPins, muteApps, markReads, exports, memoryViews, memoryAdds, memoryUpdates, memoryDeletes, calendarFreeQueries, calendarAdds, errors)
             if (handled) {
                 inlineRangesToRemove.add(range)
             }
@@ -1478,6 +1552,8 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
         memoryAddProposals = memoryAdds.distinct(),
         memoryUpdateProposals = memoryUpdates.distinct(),
         memoryDeleteProposals = memoryDeletes.distinct(),
+        calendarFreeQueryProposals = calendarFreeQueries.distinct(),
+        calendarAddProposals = calendarAdds.distinct(),
         invalidActionErrors = errors.distinct()
     )
 }

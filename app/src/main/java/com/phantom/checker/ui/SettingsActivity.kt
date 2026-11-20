@@ -389,6 +389,30 @@ fun FilterSettingsScreen(
             Toast.LENGTH_SHORT
         ).show()
     }
+    var calendarReadGranted by remember { mutableStateOf(com.phantom.checker.util.CalendarBridge.hasReadPermission(appCtx)) }
+    var calendarWriteGranted by remember { mutableStateOf(com.phantom.checker.util.CalendarBridge.hasWritePermission(appCtx)) }
+    var deviceCalendars by remember { mutableStateOf<List<com.phantom.checker.util.CalendarBridge.CalendarAccountInfo>>(emptyList()) }
+    var selectedCalendarIds by remember { mutableStateOf(PhantomPrefs.getSelectedCalendarIds(appCtx)) }
+    val calendarPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { resultMap ->
+        calendarReadGranted = resultMap[android.Manifest.permission.READ_CALENDAR] == true ||
+            com.phantom.checker.util.CalendarBridge.hasReadPermission(appCtx)
+        calendarWriteGranted = resultMap[android.Manifest.permission.WRITE_CALENDAR] == true ||
+            com.phantom.checker.util.CalendarBridge.hasWritePermission(appCtx)
+        Toast.makeText(
+            ctx,
+            if (calendarReadGranted) "已授予日曆權限，請勾選欲開放給助手的本機日曆" else "未授予日曆權限，日曆查詢功能維持停用",
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+    LaunchedEffect(calendarReadGranted) {
+        deviceCalendars = if (calendarReadGranted) {
+            com.phantom.checker.util.CalendarBridge.listCalendars(appCtx)
+        } else {
+            emptyList()
+        }
+    }
     var memoryNormalTopK by remember { mutableIntStateOf(PhantomPrefs.getMemoryNormalTopK(appCtx)) }
     var memoryNormalPerItemChars by remember { mutableIntStateOf(PhantomPrefs.getMemoryNormalPerItemChars(appCtx)) }
     var memorySaverTopK by remember { mutableIntStateOf(PhantomPrefs.getMemorySaverTopK(appCtx)) }
@@ -590,6 +614,9 @@ fun FilterSettingsScreen(
             memoryChatCaptureEnabled = PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
             antiFraudCrossCheckEnabled = PhantomPrefs.isAntiFraudCrossCheckEnabled(appCtx)
             contactsPermissionGranted = com.phantom.checker.util.ContactContext.hasContactsPermission(appCtx)
+            calendarReadGranted = com.phantom.checker.util.CalendarBridge.hasReadPermission(appCtx)
+            calendarWriteGranted = com.phantom.checker.util.CalendarBridge.hasWritePermission(appCtx)
+            selectedCalendarIds = PhantomPrefs.getSelectedCalendarIds(appCtx)
             memoryNormalTopK = PhantomPrefs.getMemoryNormalTopK(appCtx)
             memoryNormalPerItemChars = PhantomPrefs.getMemoryNormalPerItemChars(appCtx)
             memorySaverTopK = PhantomPrefs.getMemorySaverTopK(appCtx)
@@ -2428,6 +2455,128 @@ fun FilterSettingsScreen(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+
+                    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+
+                    // #329 本機日曆整合（多日曆勾選，預設全不勾，日曆資料絕不外送 API）
+                    Text(
+                        text = "本機日曆整合（僅本機存取，絕不外送 API）",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "僅會查詢與寫入您明確勾選的本機日曆（預設全不勾）；AI 助手空檔查詢由本機直接計算，寫入前自動檢查撞期並彈出確認卡。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    if (!calendarReadGranted) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "日曆權限：未授權（查詢與自動行程建議目前停用）",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(
+                                onClick = {
+                                    calendarPermLauncher.launch(
+                                        arrayOf(
+                                            android.Manifest.permission.READ_CALENDAR,
+                                            android.Manifest.permission.WRITE_CALENDAR
+                                        )
+                                    )
+                                }
+                            ) {
+                                Text("授予日曆權限")
+                            }
+                        }
+                    } else {
+                        if (!calendarWriteGranted) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "已授權讀取；未授予寫入權限時將以日曆 App 預填方式新增行程",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(
+                                    onClick = {
+                                        calendarPermLauncher.launch(
+                                            arrayOf(
+                                                android.Manifest.permission.READ_CALENDAR,
+                                                android.Manifest.permission.WRITE_CALENDAR
+                                            )
+                                        )
+                                    }
+                                ) {
+                                    Text("補授寫入")
+                                }
+                            }
+                        }
+                        if (deviceCalendars.isEmpty()) {
+                            Text(
+                                text = "裝置目前沒有可讀取的本機日曆帳號。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                deviceCalendars.forEach { cal ->
+                                    val checked = cal.id in selectedCalendarIds
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                val next = if (checked) selectedCalendarIds - cal.id else selectedCalendarIds + cal.id
+                                                selectedCalendarIds = next
+                                                PhantomPrefs.setSelectedCalendarIds(appCtx, next)
+                                                PhantomSettingsBus.notifyChanged()
+                                            }
+                                            .padding(vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Checkbox(
+                                            checked = checked,
+                                            onCheckedChange = { isChecked ->
+                                                val next = if (isChecked) selectedCalendarIds + cal.id else selectedCalendarIds - cal.id
+                                                selectedCalendarIds = next
+                                                PhantomPrefs.setSelectedCalendarIds(appCtx, next)
+                                                PhantomSettingsBus.notifyChanged()
+                                            }
+                                        )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = cal.displayName + if (cal.isWritable) "（可讀寫）" else "（唯讀）",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            if (cal.accountName.isNotBlank()) {
+                                                Text(
+                                                    text = cal.accountName,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
 

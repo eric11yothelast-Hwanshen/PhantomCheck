@@ -42,6 +42,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -153,6 +154,9 @@ fun MessageDetailScreen(
     var showReminderPicker by remember { mutableStateOf(false) }
     var showNeverMemoDialog by remember { mutableStateOf(false) }
     var hasNeverMemoRule by remember { mutableStateOf(false) }
+    var calendarSuggestion by remember { mutableStateOf<com.phantom.checker.util.CalendarBridge.NotificationCalendarSuggestion?>(null) }
+    var calendarWritableCals by remember { mutableStateOf<List<com.phantom.checker.util.CalendarBridge.CalendarAccountInfo>>(emptyList()) }
+    var calendarConflicts by remember { mutableStateOf<List<com.phantom.checker.util.CalendarBridge.CalendarEventInstance>>(emptyList()) }
 
     val lifecycleOwner = ctx as? LifecycleOwner
     DisposableEffect(lifecycleOwner) {
@@ -182,6 +186,18 @@ fun MessageDetailScreen(
             val refs = db.tagDao().crossRefsForMessage(messageId)
             selectedTagIds = refs.map { it.tagId }.toSet()
             tagSourceByTagId = refs.associate { it.tagId to it.source }
+            if (loaded != null) {
+                val sug = com.phantom.checker.util.CalendarBridge.evaluateMessageForSuggestion(appCtx, loaded)
+                calendarSuggestion = sug
+                if (sug != null) {
+                    calendarWritableCals = com.phantom.checker.util.CalendarBridge.listSelectedWritableCalendars(appCtx)
+                    calendarConflicts = com.phantom.checker.util.CalendarBridge.findConflictingEvents(
+                        ctx = appCtx,
+                        startMs = sug.startMs,
+                        endMs = sug.endMs
+                    )
+                }
+            }
         }
         isLoading = false
     }
@@ -380,6 +396,161 @@ fun MessageDetailScreen(
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary
                                 )
+                            }
+                        }
+
+                        // #329 通知自動轉行程「📅 加入日曆」一鍵建議卡（含撞期檢查與 ACTION_INSERT fallback）
+                        calendarSuggestion?.let { sug ->
+                            var editCalTitle by remember(sug.messageId) { mutableStateOf(sug.title) }
+                            var editCalNotes by remember(sug.messageId) { mutableStateOf(sug.notes) }
+                            var selectedCalId by remember(sug.messageId, calendarWritableCals) {
+                                mutableStateOf(calendarWritableCals.firstOrNull()?.id)
+                            }
+                            val hasWritePerm = remember(sug.messageId, resumeRefreshTrigger) {
+                                com.phantom.checker.util.CalendarBridge.hasWritePermission(appCtx)
+                            }
+                            val startStr = remember(sug.startMs) {
+                                PhantomPrefs.formatMessageTime(ctx, sug.startMs, includeDate = true)
+                            }
+                            val endStr = remember(sug.endMs) {
+                                PhantomPrefs.formatMessageTime(ctx, sug.endMs, includeDate = false)
+                            }
+                            PhantomGlassCard(
+                                glassState = glassState,
+                                modifier = Modifier.fillMaxWidth(),
+                                cornerRadius = 20.dp,
+                                contentPadding = 14.dp
+                            ) {
+                                Text(
+                                    text = "📅 偵測到行程通知，建議加入本機日曆",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    text = "時間：$startStr – $endStr",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                OutlinedTextField(
+                                    value = editCalTitle,
+                                    onValueChange = { editCalTitle = it },
+                                    label = { Text("行程標題") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                OutlinedTextField(
+                                    value = editCalNotes,
+                                    onValueChange = { editCalNotes = it },
+                                    label = { Text("備註") },
+                                    minLines = 1,
+                                    maxLines = 3,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                if (calendarWritableCals.isNotEmpty()) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(
+                                        text = "寫入日曆：",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        calendarWritableCals.forEach { cal ->
+                                            FilterChip(
+                                                selected = selectedCalId == cal.id,
+                                                onClick = { selectedCalId = cal.id },
+                                                label = { Text(cal.displayName, style = MaterialTheme.typography.labelSmall) }
+                                            )
+                                        }
+                                    }
+                                }
+                                if (calendarConflicts.isNotEmpty()) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = "⚠ 與既有行程撞期：${com.phantom.checker.util.CalendarBridge.formatConflictSummary(calendarConflicts)}（仍可選擇照寫）",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            modifier = Modifier.padding(8.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            com.phantom.checker.util.CalendarBridge.dismissSuggestion(sug.messageId)
+                                            calendarSuggestion = null
+                                        }
+                                    ) {
+                                        Text("略過")
+                                    }
+                                    Button(
+                                        enabled = editCalTitle.isNotBlank(),
+                                        onClick = {
+                                            val targetCalId = selectedCalId
+                                            if (hasWritePerm && targetCalId != null) {
+                                                scope.launch {
+                                                    val res = com.phantom.checker.util.CalendarBridge.insertEvent(
+                                                        ctx = appCtx,
+                                                        calendarId = targetCalId,
+                                                        title = editCalTitle.trim(),
+                                                        startMs = sug.startMs,
+                                                        endMs = sug.endMs,
+                                                        allDay = false,
+                                                        description = editCalNotes.trim()
+                                                    )
+                                                    com.phantom.checker.util.CalendarBridge.dismissSuggestion(sug.messageId)
+                                                    calendarSuggestion = null
+                                                    res.fold(
+                                                        onSuccess = {
+                                                            snackbarHostState.showSnackbar("📅 已加入本機日曆：${editCalTitle.trim()}")
+                                                        },
+                                                        onFailure = { err ->
+                                                            snackbarHostState.showSnackbar("寫入失敗：${err.localizedMessage ?: "未知錯誤"}")
+                                                        }
+                                                    )
+                                                }
+                                            } else {
+                                                runCatching {
+                                                    val intent = com.phantom.checker.util.CalendarBridge.buildInsertEventIntent(
+                                                        title = editCalTitle.trim(),
+                                                        startMs = sug.startMs,
+                                                        endMs = sug.endMs,
+                                                        allDay = false,
+                                                        description = editCalNotes.trim()
+                                                    )
+                                                    ctx.startActivity(intent)
+                                                    com.phantom.checker.util.CalendarBridge.dismissSuggestion(sug.messageId)
+                                                    calendarSuggestion = null
+                                                }.onFailure {
+                                                    Toast.makeText(ctx, "裝置找不到可用的日曆 App", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    ) {
+                                        Text(
+                                            if (hasWritePerm && selectedCalId != null) {
+                                                if (calendarConflicts.isNotEmpty()) "仍要加入日曆" else "📅 加入日曆"
+                                            } else {
+                                                "於日曆 App 預填"
+                                            }
+                                        )
+                                    }
+                                }
                             }
                         }
 

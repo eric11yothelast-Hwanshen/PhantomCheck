@@ -117,6 +117,7 @@ object SettingsCatalog {
         SettingSearchItem("assistant_avatar", "memory_assistant", "AI 助手頭像", "從相簿選圖、圓形裁切並降採樣儲存為 AI 助手頭像，或重設為預設圖示", listOf("頭像", "大頭貼", "照片", "圖片", "圓形裁切", "avatar", "自訂助手")),
         SettingSearchItem("memory_privacy_tier_info", "memory_assistant", "記憶庫隱私分級說明", "一般記憶可參與本地檢索注入；標為「🔒 敏感」的記憶在任何對外 AI 請求皆由程式碼硬性排除，100% 僅留存本機", listOf("隱私", "敏感", "分級", "外送", "安全", "sensitive", "記憶隱私")),
         SettingSearchItem("ai_anti_fraud_cross_check", "memory_assistant", "記憶 × 防詐交叉檢查", "結合本機通訊錄與一般記憶做離線矛盾比對（熟人冒充、情境破綻、防詐免疫），絕不外送原始通訊錄或敏感記憶", listOf("防詐", "交叉檢查", "熟人冒充", "通訊錄", "矛盾", "免疫", "記憶防詐")),
+        SettingSearchItem("calendar_integration", "memory_assistant", "本機日曆整合", "勾選開放給 AI 助手查詢空檔與寫入行程的本機日曆帳號（預設全不勾，日曆資料僅留存本機絕不外送）", listOf("日曆", "行事曆", "行程", "空檔", "撞期", "calendar")),
         SettingSearchItem("update_auto_check", "about", "自動檢查更新", "每次開啟 App 時自動檢查 GitHub 最新版本並提示；通知欄提醒每天最多一次", listOf("檢查更新", "更新", "版本", "自動更新", "update")),
         SettingSearchItem("about_section", "about", "關於", "應用程式名稱、版本號、作者、GitHub 倉庫、第三方元件與隱私說明", listOf("版本", "作者", "關於", "about", "version", "檢查更新", "更新", "update", "下載"))
     )

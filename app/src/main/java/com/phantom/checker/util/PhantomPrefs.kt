@@ -1366,6 +1366,22 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
             .apply()
     }
 
+    /** #329 本機日曆整合：使用者勾選開放給 AI 查詢／寫入的日曆 ID 清單（預設全不勾） */
+    private const val KEY_CALENDAR_SELECTED_IDS = "calendar_selected_ids"
+
+    fun getSelectedCalendarIds(ctx: Context): Set<Long> {
+        val raw = prefs(ctx).getString(KEY_CALENDAR_SELECTED_IDS, "").orEmpty().trim()
+        if (raw.isEmpty()) return emptySet()
+        return raw.split(',')
+            .mapNotNull { it.trim().toLongOrNull() }
+            .toSet()
+    }
+
+    fun setSelectedCalendarIds(ctx: Context, ids: Set<Long>) {
+        val encoded = ids.sorted().joinToString(",")
+        prefs(ctx).edit().putString(KEY_CALENDAR_SELECTED_IDS, encoded).apply()
+    }
+
     data class StatsCardOption(val key: String, val title: String, val subtitle: String, val defaultVisible: Boolean)
 
     val STATS_CARD_OPTIONS: List<StatsCardOption> = listOf(

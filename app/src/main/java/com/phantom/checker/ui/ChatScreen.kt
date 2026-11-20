@@ -282,6 +282,7 @@ fun ChatAssistantTab(
     var pendingMsgActionQueue by remember { mutableStateOf<List<PendingMessageActionState>>(emptyList()) }
     var pendingTodoQueue by remember { mutableStateOf<List<PendingTodoInsertion>>(emptyList()) }
     var editingTodoTimeTarget by remember { mutableStateOf<PendingTodoInsertion?>(null) }
+    var pendingCalendarQueue by remember { mutableStateOf<List<PendingCalendarAddition>>(emptyList()) }
     var searchResultCard by remember { mutableStateOf<SearchResultCardState?>(null) }
     var pendingExtendedActionQueue by remember { mutableStateOf<List<PendingExtendedAction>>(emptyList()) }
     var pendingMemoryWriteQueue by remember { mutableStateOf<List<PendingMemoryWriteState>>(emptyList()) }
@@ -889,7 +890,9 @@ fun ChatAssistantTab(
                     parsed.memoryViewProposals.isNotEmpty() ||
                     parsed.memoryAddProposals.isNotEmpty() ||
                     parsed.memoryUpdateProposals.isNotEmpty() ||
-                    parsed.memoryDeleteProposals.isNotEmpty()
+                    parsed.memoryDeleteProposals.isNotEmpty() ||
+                    parsed.calendarFreeQueryProposals.isNotEmpty() ||
+                    parsed.calendarAddProposals.isNotEmpty()
 
                 val storedReply = parsed.cleanReply.ifBlank {
                     when {
@@ -958,6 +961,7 @@ fun ChatAssistantTab(
                 val resolvedExtendedActions = mutableListOf<PendingExtendedAction>()
                 val resolvedMemoryWrites = mutableListOf<PendingMemoryWriteState>()
                 val resolvedMemoryDeletes = mutableListOf<PendingMemoryDeleteState>()
+                val resolvedCalendarAdds = mutableListOf<PendingCalendarAddition>()
 
                 val hasExtendedProposals = parsed.searchProposals.isNotEmpty() ||
                     parsed.todoManageProposals.isNotEmpty() ||
@@ -969,7 +973,9 @@ fun ChatAssistantTab(
                     parsed.memoryViewProposals.isNotEmpty() ||
                     parsed.memoryAddProposals.isNotEmpty() ||
                     parsed.memoryUpdateProposals.isNotEmpty() ||
-                    parsed.memoryDeleteProposals.isNotEmpty()
+                    parsed.memoryDeleteProposals.isNotEmpty() ||
+                    parsed.calendarFreeQueryProposals.isNotEmpty() ||
+                    parsed.calendarAddProposals.isNotEmpty()
 
                 if (hasExtendedProposals) {
                     withContext(Dispatchers.IO) {
@@ -1427,7 +1433,60 @@ fun ChatAssistantTab(
                                 }
                             }
                         }
+
+                        // #329 本機日曆空檔查詢（本地查詢如實呈現，LLM 不編造）
+                        if (parsed.calendarFreeQueryProposals.isNotEmpty()) {
+                            parsed.calendarFreeQueryProposals.forEach { q ->
+                                val summary = com.phantom.checker.util.CalendarBridge.queryFreeSlotsSummary(
+                                    ctx = appCtx,
+                                    days = q.days,
+                                    fromHHmm = q.from,
+                                    toHHmm = q.to,
+                                    dayFilter = q.day
+                                )
+                                immediateExtraReplies.add(summary)
+                            }
+                        }
+
+                        // #329 本機日曆新增行程（組裝確認卡並先做重疊撞期檢查）
+                        if (parsed.calendarAddProposals.isNotEmpty()) {
+                            val writableCals = com.phantom.checker.util.CalendarBridge.listSelectedWritableCalendars(appCtx)
+                            parsed.calendarAddProposals.forEach { cap ->
+                                val parsedStart = com.phantom.checker.util.ClientTimeParser.parseStructuredDueAt(cap.startRaw)
+                                    ?: (com.phantom.checker.util.ClientTimeParser.parseNaturalReminderTime(null, cap.startRaw) as? com.phantom.checker.util.NaturalTimeParseResult.Success)?.epochMillis
+                                if (parsedStart == null) {
+                                    immediateExtraReplies.add("無法解析日曆行程「${cap.title}」的開始時間（${cap.startRaw}），請提供明確日期時間（如 2026-11-21 14:00）。")
+                                } else {
+                                    val parsedEnd = cap.endRaw?.let { rawEnd ->
+                                        com.phantom.checker.util.ClientTimeParser.parseStructuredDueAt(rawEnd)
+                                            ?: (com.phantom.checker.util.ClientTimeParser.parseNaturalReminderTime(null, rawEnd) as? com.phantom.checker.util.NaturalTimeParseResult.Success)?.epochMillis
+                                    }?.takeIf { it > parsedStart } ?: (parsedStart + 60L * 60L * 1000L)
+                                    val conflicts = com.phantom.checker.util.CalendarBridge.findConflictingEvents(
+                                        ctx = appCtx,
+                                        startMs = parsedStart,
+                                        endMs = parsedEnd
+                                    )
+                                    resolvedCalendarAdds.add(
+                                        PendingCalendarAddition(
+                                            sessionId = sessionId,
+                                            title = cap.title,
+                                            startMs = parsedStart,
+                                            endMs = parsedEnd,
+                                            allDay = cap.allDay,
+                                            location = cap.location,
+                                            notes = cap.notes,
+                                            writableCalendars = writableCals,
+                                            conflicts = conflicts
+                                        )
+                                    )
+                                }
+                            }
+                        }
                     }
+                }
+
+                if (resolvedCalendarAdds.isNotEmpty()) {
+                    pendingCalendarQueue = resolvedCalendarAdds
                 }
 
                 if (immediateExtraReplies.isNotEmpty()) {
@@ -3341,6 +3400,189 @@ fun ChatAssistantTab(
                                         onClick = { pendingQuickCommandQueue = pendingQuickCommandQueue.drop(1) }
                                     ) {
                                         Text("取消")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    val sessionPendingCalendars = pendingCalendarQueue.filter { it.sessionId == currentSessionId }
+                    sessionPendingCalendars.firstOrNull()?.let { pendingCal ->
+                        item(key = "pending_calendar_card") {
+                            val startFormatted = remember(pendingCal.startMs) {
+                                PhantomPrefs.formatMessageTime(appCtx, pendingCal.startMs, includeDate = true)
+                            }
+                            val endFormatted = remember(pendingCal.endMs) {
+                                PhantomPrefs.formatMessageTime(appCtx, pendingCal.endMs, includeDate = false)
+                            }
+                            var selectedCalId by remember(pendingCal) {
+                                mutableStateOf(pendingCal.writableCalendars.firstOrNull()?.id)
+                            }
+                            val hasWritePerm = remember(pendingCal) {
+                                com.phantom.checker.util.CalendarBridge.hasWritePermission(appCtx)
+                            }
+                            PhantomGlassCard(
+                                glassState = glassState,
+                                modifier = Modifier.fillMaxWidth(),
+                                cornerRadius = 18.dp,
+                                contentPadding = 12.dp
+                            ) {
+                                Text(
+                                    text = if (sessionPendingCalendars.size > 1) {
+                                        "📅 新增本機日曆行程（尚有 ${sessionPendingCalendars.size} 筆）"
+                                    } else {
+                                        "📅 新增本機日曆行程"
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = "行程：${pendingCal.title}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = if (pendingCal.allDay) {
+                                        "時間：$startFormatted（全天）"
+                                    } else {
+                                        "時間：$startFormatted – $endFormatted"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (!pendingCal.location.isNullOrBlank()) {
+                                    Text(
+                                        text = "地點：${pendingCal.location}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (pendingCal.writableCalendars.isNotEmpty()) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(
+                                        text = "目標日曆：",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        pendingCal.writableCalendars.forEach { cal ->
+                                            FilterChip(
+                                                selected = selectedCalId == cal.id,
+                                                onClick = { selectedCalId = cal.id },
+                                                label = { Text(cal.displayName, style = MaterialTheme.typography.labelSmall) }
+                                            )
+                                        }
+                                    }
+                                }
+                                if (pendingCal.conflicts.isNotEmpty()) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = "⚠ 與既有行程撞期：${com.phantom.checker.util.CalendarBridge.formatConflictSummary(pendingCal.conflicts)}（仍可選擇照寫）",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            modifier = Modifier.padding(8.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            val sid = pendingCal.sessionId
+                                            pendingCalendarQueue = pendingCalendarQueue.filterNot { it === pendingCal }
+                                            scope.launch {
+                                                withContext(Dispatchers.IO) {
+                                                    AppDatabaseHolder.db(appCtx).chatDao().insertMessage(
+                                                        ChatMessageEntity(
+                                                            sessionId = sid,
+                                                            role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                            content = "已取消新增日曆行程「${pendingCal.title}」。",
+                                                            createdAt = System.currentTimeMillis()
+                                                        )
+                                                    )
+                                                }
+                                                loadMessages(sid)
+                                            }
+                                        }
+                                    ) {
+                                        Text("取消")
+                                    }
+                                    Button(
+                                        onClick = {
+                                            val sid = pendingCal.sessionId
+                                            val targetCalId = selectedCalId
+                                            pendingCalendarQueue = pendingCalendarQueue.filterNot { it === pendingCal }
+                                            if (hasWritePerm && targetCalId != null) {
+                                                scope.launch {
+                                                    val res = com.phantom.checker.util.CalendarBridge.insertEvent(
+                                                        ctx = appCtx,
+                                                        calendarId = targetCalId,
+                                                        title = pendingCal.title,
+                                                        startMs = pendingCal.startMs,
+                                                        endMs = pendingCal.endMs,
+                                                        allDay = pendingCal.allDay,
+                                                        location = pendingCal.location,
+                                                        description = pendingCal.notes
+                                                    )
+                                                    val replyText = res.fold(
+                                                        onSuccess = {
+                                                            "📅 已寫入本機日曆：「${pendingCal.title}」（$startFormatted）。"
+                                                        },
+                                                        onFailure = { err ->
+                                                            "寫入日曆失敗：${err.localizedMessage ?: "未知錯誤"}。"
+                                                        }
+                                                    )
+                                                    withContext(Dispatchers.IO) {
+                                                        AppDatabaseHolder.db(appCtx).chatDao().insertMessage(
+                                                            ChatMessageEntity(
+                                                                sessionId = sid,
+                                                                role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                                content = replyText,
+                                                                createdAt = System.currentTimeMillis()
+                                                            )
+                                                        )
+                                                    }
+                                                    loadMessages(sid)
+                                                }
+                                            } else {
+                                                // 無 WRITE_CALENDAR 權限或無可寫日曆：以 ACTION_INSERT Intent 預填開啟系統日曆 App
+                                                runCatching {
+                                                    val intent = com.phantom.checker.util.CalendarBridge.buildInsertEventIntent(
+                                                        title = pendingCal.title,
+                                                        startMs = pendingCal.startMs,
+                                                        endMs = pendingCal.endMs,
+                                                        allDay = pendingCal.allDay,
+                                                        location = pendingCal.location,
+                                                        description = pendingCal.notes
+                                                    )
+                                                    ctx.startActivity(intent)
+                                                    onShowMessage("已預填行程並開啟日曆 App")
+                                                }.onFailure {
+                                                    onShowMessage("裝置找不到可用的日曆 App")
+                                                }
+                                            }
+                                        }
+                                    ) {
+                                        Text(
+                                            if (hasWritePerm && selectedCalId != null) {
+                                                if (pendingCal.conflicts.isNotEmpty()) "仍要寫入日曆" else "確認寫入日曆"
+                                            } else {
+                                                "於日曆 App 預填"
+                                            }
+                                        )
                                     }
                                 }
                             }
