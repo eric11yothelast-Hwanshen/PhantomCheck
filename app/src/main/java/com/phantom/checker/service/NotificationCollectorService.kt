@@ -487,8 +487,8 @@ class NotificationCollectorService : NotificationListenerService() {
                         sender = title,
                         content = text,
                         packageName = pkg,
-                        appLabel = appLabel,
-                        timestampMs = now
+                        appLabel = cachedAppLabel(pkg),
+                        timestampMs = nowMs
                     )
                 )
             }
