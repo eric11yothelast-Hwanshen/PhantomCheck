@@ -226,6 +226,7 @@ class MainActivity : ComponentActivity() {
         WeeklySummaryPolicy.schedule(applicationContext)
         WeeklySummaryPolicy.maybeCatchUp(applicationContext)
         HeartbeatPolicy.schedule(applicationContext)
+        com.phantom.checker.data.MemoryExpiryPolicy.schedule(applicationContext)
         StatsForegroundService.startOrRefresh(applicationContext)
         parseIntentTab(intent)
         setContent {

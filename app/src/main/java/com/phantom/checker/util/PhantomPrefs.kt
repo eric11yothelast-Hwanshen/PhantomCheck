@@ -1367,4 +1367,91 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         val trimmed = name?.trim()?.takeIf { it.isNotEmpty() } ?: return false
         return getMyDisplayNames(ctx).any { it.equals(trimmed, ignoreCase = true) }
     }
+
+    // ==================== #314 / #315 記憶庫與 AI 助手設定 ====================
+
+    private const val KEY_MEMORY_CHAT_CAPTURE_ENABLED = "memory_chat_capture_enabled"
+    private const val KEY_MEMORY_NORMAL_TOP_K = "memory_normal_top_k"
+    private const val KEY_MEMORY_SAVER_TOP_K = "memory_saver_top_k"
+    private const val KEY_MEMORY_NORMAL_PER_ITEM_CHARS = "memory_normal_per_item_chars"
+    private const val KEY_MEMORY_SECTION_COLLAPSED = "memory_section_collapsed"
+
+    const val DEFAULT_MEMORY_NORMAL_TOP_K = 8
+    const val MIN_MEMORY_NORMAL_TOP_K = 1
+    const val MAX_MEMORY_NORMAL_TOP_K = 8
+
+    const val DEFAULT_MEMORY_SAVER_TOP_K = 4
+    const val MIN_MEMORY_SAVER_TOP_K = 1
+    const val MAX_MEMORY_SAVER_TOP_K = 4
+
+    const val DEFAULT_MEMORY_NORMAL_PER_ITEM_CHARS = 70 // 約 50 tokens 中文
+    const val MIN_MEMORY_NORMAL_PER_ITEM_CHARS = 30
+    const val MAX_MEMORY_NORMAL_PER_ITEM_CHARS = 120
+    const val TOKEN_SAVER_MEMORY_PER_ITEM_CHARS = 36    // 約 25 tokens 中文
+
+    const val MEMORY_NORMAL_TOTAL_TOKEN_BUDGET = 250
+    const val MEMORY_SAVER_TOTAL_TOKEN_BUDGET = 120
+
+    /** 聊天記憶擷取開關（預設開；AI 擷取後一律跳確認卡，確認才寫入） */
+    fun isMemoryChatCaptureEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_MEMORY_CHAT_CAPTURE_ENABLED, true)
+
+    fun setMemoryChatCaptureEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_MEMORY_CHAT_CAPTURE_ENABLED, enabled).apply()
+    }
+
+    /** 正常模式記憶注入筆數 Top-K（範圍 1–8，預設 8；與省 token 模式獨立儲存、互不覆寫） */
+    fun getMemoryNormalTopK(ctx: Context): Int =
+        prefs(ctx).getInt(KEY_MEMORY_NORMAL_TOP_K, DEFAULT_MEMORY_NORMAL_TOP_K)
+            .coerceIn(MIN_MEMORY_NORMAL_TOP_K, MAX_MEMORY_NORMAL_TOP_K)
+
+    fun setMemoryNormalTopK(ctx: Context, topK: Int) {
+        val clamped = topK.coerceIn(MIN_MEMORY_NORMAL_TOP_K, MAX_MEMORY_NORMAL_TOP_K)
+        prefs(ctx).edit().putInt(KEY_MEMORY_NORMAL_TOP_K, clamped).apply()
+    }
+
+    /** 省 token 模式記憶注入筆數 Top-K（範圍 1–4，預設 4；與正常模式獨立儲存、互不覆寫） */
+    fun getMemorySaverTopK(ctx: Context): Int =
+        prefs(ctx).getInt(KEY_MEMORY_SAVER_TOP_K, DEFAULT_MEMORY_SAVER_TOP_K)
+            .coerceIn(MIN_MEMORY_SAVER_TOP_K, MAX_MEMORY_SAVER_TOP_K)
+
+    fun setMemorySaverTopK(ctx: Context, topK: Int) {
+        val clamped = topK.coerceIn(MIN_MEMORY_SAVER_TOP_K, MAX_MEMORY_SAVER_TOP_K)
+        prefs(ctx).edit().putInt(KEY_MEMORY_SAVER_TOP_K, clamped).apply()
+    }
+
+    /** 正常模式每筆記憶預覽截斷字數（範圍 30–120 字，預設 70 字 ≈ 50 tokens 中文） */
+    fun getMemoryNormalPerItemChars(ctx: Context): Int =
+        prefs(ctx).getInt(KEY_MEMORY_NORMAL_PER_ITEM_CHARS, DEFAULT_MEMORY_NORMAL_PER_ITEM_CHARS)
+            .coerceIn(MIN_MEMORY_NORMAL_PER_ITEM_CHARS, MAX_MEMORY_NORMAL_PER_ITEM_CHARS)
+
+    fun setMemoryNormalPerItemChars(ctx: Context, chars: Int) {
+        val clamped = chars.coerceIn(MIN_MEMORY_NORMAL_PER_ITEM_CHARS, MAX_MEMORY_NORMAL_PER_ITEM_CHARS)
+        prefs(ctx).edit().putInt(KEY_MEMORY_NORMAL_PER_ITEM_CHARS, clamped).apply()
+    }
+
+    /** 實際生效的記憶注入筆數（依省 token 模式切換對應的獨立設定，絕不覆寫原設定值） */
+    fun getEffectiveMemoryInjectionTopK(ctx: Context): Int =
+        if (isTokenSaverEnabled(ctx)) getMemorySaverTopK(ctx) else getMemoryNormalTopK(ctx)
+
+    /** 實際生效的每筆記憶預覽字數上限（省 token 模式約 25 tokens 中文，正常模式約 50 tokens 中文） */
+    fun getEffectiveMemoryPerItemMaxChars(ctx: Context): Int =
+        if (isTokenSaverEnabled(ctx)) TOKEN_SAVER_MEMORY_PER_ITEM_CHARS else getMemoryNormalPerItemChars(ctx)
+
+    /** 實際生效的記憶注入總 token 預算（正常模式 ≤250 tokens，省 token 模式 ≤120 tokens） */
+    fun getEffectiveMemoryTotalTokenBudget(ctx: Context): Int =
+        if (isTokenSaverEnabled(ctx)) MEMORY_SAVER_TOTAL_TOKEN_BUDGET else MEMORY_NORMAL_TOTAL_TOKEN_BUDGET
+
+    /** 記憶分頁各區塊收合狀態（沿用 settings_collapsed_cards 風格，預設展開） */
+    fun isMemorySectionExpanded(ctx: Context, sectionKey: String): Boolean {
+        val collapsed = prefs(ctx).getStringSet(KEY_MEMORY_SECTION_COLLAPSED, emptySet()) ?: emptySet()
+        return sectionKey !in collapsed
+    }
+
+    fun setMemorySectionExpanded(ctx: Context, sectionKey: String, expanded: Boolean) {
+        val collapsed = (prefs(ctx).getStringSet(KEY_MEMORY_SECTION_COLLAPSED, emptySet()) ?: emptySet()).toMutableSet()
+        if (expanded) collapsed.remove(sectionKey) else collapsed.add(sectionKey)
+        prefs(ctx).edit().putStringSet(KEY_MEMORY_SECTION_COLLAPSED, collapsed).apply()
+    }
 }
+
