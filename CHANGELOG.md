@@ -2,6 +2,25 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [3.2.0] - 2026-11-20
+
+### 行為變更
+- **行程類通知預設改為只建立日曆建議卡（#333 / PR #342）**：`NotificationCollectorService.saveAutoMemoIfPresent` 新增前置行程分流，無顯式 `ACTION_TODO`／`ACTION_NOTE` 規則覆寫、具備未來時間、屬行程類且日曆已啟用時，預設（`schedule_memo_route = "suggest_calendar"`）僅建立日曆建議卡並直接返回，不再重複建立待辦／記事或排程提醒鬧鐘；可於設定頁「行程類通知分流」（`schedule_memo_route`）切回舊行為 `legacy_todo_note`。
+- **新增 `ACCESS_COARSE_LOCATION` 選配宣告（#337、#339、#340 / PR #342）**：於 `AndroidManifest.xml` 宣告 `ACCESS_COARSE_LOCATION`（純選配，僅在使用者於「AI 夥伴與主動推播」點擊取得地區或於「連結應用程式中心」授權時一次性取得粗略位置進行地區反解，不背景持續追蹤）。
+- **資料庫升級至 version 20（#336 / PR #342）**：Room 資料庫由 v19 非破壞性升級至 v20（`MIGRATION_19_20`），新增 `contact_aliases` 資料表與 `(alias, packageName)` 索引以儲存通訊軟體暱稱與本名綁定，完整保留既有資料。
+
+### 新增
+- **記憶 × 防詐可視化補全（#335 / PR #342）**：`MemoryTab` 新增「防詐免疫」篩選 chip 與獨立可收合專區，可透過 `MemoryEngine.extractRelatedMessageId` 解析來源並顯示「查看來源訊息 #ID →」直達 `MessageDetailActivity`；`ChatScreen` 寫入／更新 `scam_immunity` 記憶後於 Snackbar 提供「查看」按鈕，一鍵切換至記憶分頁並預選「防詐免疫」篩選。
+- **通訊錄整合（#336 / PR #342）**：新增 `ContactBridge`（`ContactsContract.Data` MIMETYPE 查詢、零 token 關係單位匯入嚮導含 diff 去重、VIP 信任圈同步至 `AiRuleEntity` 白名單並以 `[contacts_vip] ` 前綴標記且支援整批撤銷、10 分鐘節流 `ContentObserver`）；`ContactContext.evaluateContradictionSignals` 升級比對 `contact_aliases` 視同熟人（輸出維持匿名結論，原始通訊錄絕不外送）；聊天頁支援純本機暱稱綁定確認卡。
+- **主動式推播與個人簡報引擎（#337 / PR #342）**：新增 `BriefingScheduler`（早 08:45／晚 22:25，`setAlarmClock` 主路徑＋`setExactAndAllowWhileIdle`→`setAndAllowWhileIdle` fallback、`BootReceiver` 與 `BriefingAlarmReceiver` 監聽 `TIME_SET`／`TIMEZONE_CHANGED` 重排、錯過 `<2h` 補發）、`ProactiveEngine`＋`ProactiveMonitorWorker`（15 分鐘零 token SHA-256 指紋偵測、無變動零 AI 呼叫、整合行程待辦／撞期附空檔／興趣地區／選配 BYOK 外部搜尋端點、寫入 AI 助手聊天＋`assistant_briefing` 通知頻道直達 `PendingIntent.getActivity`，支援獨立勿擾、每日上限預設 6 則與省 token 連動）、`AiPurpose.BRIEFING`、`EncryptedByokStore` 加密金鑰儲存，以及共用 `PortraitCardSection`（「我對你的瞭解」畫像卡 ≤200 tokens，7 天或 +20 確認記憶觸發、雙重硬排除敏感記憶、注入優先序改畫像卡先行＋`topK` 減半）。
+- **AI 夥伴分頁（#338 / PR #342）**：`MainTab` 最右新增第 6 分頁 `PARTNER`，`LiquidGlassTabBar` 三模式同步擴充至 6 分頁並支援助手自訂頭像縮圖與 `fontScale 1.3` 省略保護，標籤顯示使用者自訂助手名稱（未自訂 fallback「夥伴」，上限 6 字元）；新增 `PartnerTab` 呈現大頭像、陪伴天數、親密度公式（`已確認記憶×2 + 聊天互動×1 + 簡報點閱×1`）、近 7 天橫向動態卡、共用 `PortraitCardSection`、主動主題與個性快捷及「開始聊天」入口。
+- **連結應用程式中心與「確認後執行」跨 App 動作卡（#339 / PR #342）**：新增 `LinkedAppsActivity`（鬧鐘計時器即用、6 項本機能力卡於 `onResume` 即時重查與快捷、GitHub PAT 15 分鐘輪詢 `GitHubMonitorWorker` 追蹤 Build 失敗／PR 與 Discord Webhook 遮罩輸入＋測試鈕，金鑰全部經 `EncryptedByokStore` 加密儲存）；新增 `CrossAppActionExecutor` 與聊天動作解析（`gmail_compose`／`maps_navigate`／`set_alarm`／`open_app`），一律先顯示確認卡並由使用者點擊「執行」才呼叫 `startActivity`（無 `EXTRA_SKIP_UI`、失敗 fallback chooser／toast）。
+- **設定重整：權限授予中心與 AI 夥伴設定樞紐（#340 / PR #342）**：新增 `PermissionHubActivity`（集中管理通知、SMS、通訊錄、日曆、精確鬧鐘、電池優化與使用情況 7 項權限，Shizuku 保留於主設定頁獨立卡片，沿用 `restrictedSettingsOemNote()` 四廠牌安全 fallback）與 `AssistantHubActivity`（集中收納早晚簡報、主動推播、畫像卡、外部搜尋 BYOK、通訊錄整合與連結應用入口）；主設定頁僅新增兩張樞紐卡並同步 `SettingsCatalog.ITEMS` 與聊天 `open_setting` 路由。
+
+### 變更與修正
+- **v3.0.0–v3.1.0 全功能健檢與修復（#334 / PR #342）**：修正 `CalendarBridge.queryFreeSlotsSummary` 對 `ALL_DAY` 事件未以 UTC `LocalDate` 邊界對齊與 ±1 日視窗導致 UTC+8 跨日誤判空檔的問題；修正 `ChatScreen` 的 `memory_view`／`memory_list` 關鍵字比對曾涵蓋敏感記憶 `content` 欄位，避免側錄探測。
+- **新手教學 20 步與設定教學 10 步重寫（#341 / PR #342）**：主頁教學重寫為 20 步（涵蓋 `MEMORY`、`PARTNER` 分頁、防詐免疫、通訊錄綁定、日曆建議卡、早晚簡報與權限授予中心，保留 400ms 雙條件 auto-skip 與空資料庫合併步）；設定教學擴充為 10 步（新增「權限授予中心」與「AI 夥伴與主動推播」兩步，同步 `SETTINGS_CARD_ORDER` 與 `BringIntoViewRequester`＋`withFrameNanos`）。
+
 ## [3.1.0] - 2026-11-20
 
 ### 新增
