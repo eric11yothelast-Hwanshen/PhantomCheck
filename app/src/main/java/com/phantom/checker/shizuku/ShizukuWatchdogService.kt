@@ -87,7 +87,7 @@ class ShizukuWatchdogService : IShizukuShellService.Stub() {
     override fun isWatchdogRunning(): Boolean = running
 
     companion object {
-        private const val STEADY_INTERVAL_SEC = 300L
+        private const val STEADY_INTERVAL_SEC = 600L
         private const val INTENSIVE_INTERVAL_SEC = 60L
         private const val INTENSIVE_WINDOW_MS = 10L * 60L * 1000L
     }

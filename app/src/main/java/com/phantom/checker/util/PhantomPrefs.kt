@@ -1053,6 +1053,10 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putBoolean("time_format_24h", use24h).apply()
     }
 
+    private val messageTimeFormatters = object : ThreadLocal<MutableMap<String, SimpleDateFormat>>() {
+        override fun initialValue(): MutableMap<String, SimpleDateFormat> = HashMap(8)
+    }
+
     /** 依 12/24 小時制格式化訊息時間 */
     fun formatMessageTime(ctx: Context, timestamp: Long, includeDate: Boolean = false): String {
         val use24h = is24HourFormat(ctx)
@@ -1062,7 +1066,11 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
             use24h -> "HH:mm"
             else -> "a hh:mm"
         }
-        return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(timestamp))
+        val locale = Locale.getDefault()
+        val key = "${locale.toLanguageTag()}|$pattern"
+        val map = messageTimeFormatters.get()!!
+        val sdf = map.getOrPut(key) { SimpleDateFormat(pattern, locale) }
+        return sdf.format(Date(timestamp))
     }
 
     fun hasBackgroundImage(ctx: Context, layer: BackgroundLayer): Boolean =

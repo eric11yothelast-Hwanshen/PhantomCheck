@@ -152,7 +152,6 @@ import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
 import java.time.DateTimeException
 import java.time.DayOfWeek
 import java.time.Instant
@@ -579,7 +578,7 @@ fun ChatAssistantTab(
                         parsed.whitelistProposals.forEach { wp ->
                             val ref = wp.messageRef.trim()
                             val extractedId = ref.toLongOrNull()
-                                ?: Regex("^(?:#|id[:=\\s]*)(\\d+)$", RegexOption.IGNORE_CASE)
+                                ?: CHAT_ID_REF_REGEX
                                     .matchEntire(ref)?.groupValues?.getOrNull(1)?.toLongOrNull()
                             val byId = extractedId?.let { db.messageDao().byId(it) }
                             val resolved = if (byId != null) {
@@ -606,7 +605,7 @@ fun ChatAssistantTab(
                                     if (prefixMatch != null) {
                                         prefixMatch
                                     } else {
-                                        val tokens = ref.split(Regex("[\\s:：,，、/|]+"))
+                                        val tokens = ref.split(CHAT_REF_SPLIT_REGEX)
                                             .map { it.trim() }
                                             .filter { it.length >= 2 }
                                             .sortedByDescending { it.length }
@@ -1215,12 +1214,11 @@ fun ChatAssistantTab(
                             }
                             val distinctMatched = matchedRules.distinctBy { it.id }
                             if (distinctMatched.isNotEmpty()) {
-                                val fmt = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
                                 val summaryText = distinctMatched.joinToString("\n") { r ->
                                     val target = r.sender?.takeIf { it.isNotBlank() } ?: r.ruleText.take(40)
                                     val mode = if (!r.sender.isNullOrBlank()) "全寄件者" else "僅內容"
                                     val pkg = r.packageName?.takeIf { it.isNotBlank() } ?: "全域"
-                                    "• #${r.id} $target（$pkg，$mode，${fmt.format(Date(r.createdAt))}）"
+                                    "• #${r.id} $target（$pkg，$mode，${formatChatTime(r.createdAt)}）"
                                 }
                                 resolvedExtendedActions.add(
                                     PendingExtendedAction.WhitelistDelete(
@@ -2066,7 +2064,7 @@ fun ChatAssistantTab(
                                         val isSenderMode = wItem.kind == "sender"
                                         val checked = idx in selectedIndices
                                         val timeStr = remember(targetMsg.timestamp) {
-                                            SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(targetMsg.timestamp))
+                                            formatChatTime(targetMsg.timestamp)
                                         }
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
@@ -2579,7 +2577,7 @@ fun ChatAssistantTab(
                                     displayMsgs.forEach { m ->
                                         val isPicked = primaryMsg != null && m.id == primaryMsg.id
                                         val mTime = remember(m.timestamp) {
-                                            SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(m.timestamp))
+                                            formatChatTime(m.timestamp)
                                         }
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
@@ -3580,7 +3578,7 @@ fun ChatAssistantTab(
                                 items(sessions, key = { it.id }) { session ->
                                     val isSelected = session.id == currentSessionId
                                     val dateStr = remember(session.createdAt) {
-                                        SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(session.createdAt))
+                                        formatChatTime(session.createdAt)
                                     }
                                     Surface(
                                         shape = RoundedCornerShape(12.dp),
@@ -3787,7 +3785,7 @@ private suspend fun buildRagSystemPrompt(
             Triple("本週", startOfToday - 6L * dayMs, now)
         }
         else -> {
-            val daysMatch = Regex("近\\s*(\\d+)\\s*[天日]").find(query)
+            val daysMatch = CHAT_RECENT_DAYS_REGEX.find(query)
             val days = daysMatch?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(1, 90)
             if (days != null) {
                 Triple("近 $days 天", startOfToday - (days - 1L) * dayMs, now)
@@ -3866,7 +3864,6 @@ private suspend fun buildRagSystemPrompt(
     val muteModeMap = PhantomPrefs.getAppMuteModeMap(ctx)
     val alertKeywordsList = PhantomPrefs.getAlertKeywords(ctx)
     val stats = dao.statsOverview(startOfToday)
-    val timeFmt = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
 
     val lowerQ = query.lowercase(Locale.getDefault())
     val isSettingRelated = listOf(
@@ -3929,7 +3926,7 @@ private suspend fun buildRagSystemPrompt(
                     val appDisp = r.packageName?.takeIf { it.isNotBlank() }?.let { appLabelByPkg[it] ?: it } ?: "全域"
                     val modeStr = if (!r.sender.isNullOrBlank()) "全寄件者" else "僅內容"
                     val targetStr = r.sender?.takeIf { it.isNotBlank() } ?: r.ruleText.take(60)
-                    appendLine("- #${r.id} [$appDisp] $targetStr（$modeStr，建立於 ${timeFmt.format(Date(r.createdAt))}）")
+                    appendLine("- #${r.id} [$appDisp] $targetStr（$modeStr，建立於 ${formatChatTime(r.createdAt)}）")
                 }
             } else {
                 activeWhitelistRules.groupBy { r ->
@@ -3963,7 +3960,7 @@ private suspend fun buildRagSystemPrompt(
                     TodoEntity.REPEAT_WEEKLY -> "[每週]"
                     else -> ""
                 }
-                appendLine("- #${t.id} $overdueTag$repTag[${pri}優先] ${t.title}（${timeFmt.format(Date(t.dueAt))}）")
+                appendLine("- #${t.id} $overdueTag$repTag[${pri}優先] ${t.title}（${formatChatTime(t.dueAt)}）")
             }
         }
         if (allNotes.isNotEmpty()) {
@@ -4024,7 +4021,7 @@ private suspend fun buildRagSystemPrompt(
                     val headline = AiClient.sanitizeForPrompt(NotificationFoldUtil.formatFoldedHeadline(entry))
                     "${idx + 1}. [id=${m.id}] $headline [$risk]"
                 } else {
-                    val t = timeFmt.format(Date(m.timestamp))
+                    val t = formatChatTime(m.timestamp)
                     val safeSender = AiClient.sanitizeForPrompt(m.sender)
                     val contentShort = AiClient.sanitizeForPrompt(m.content.replace("\n", " ").take(contentCap))
                     "${idx + 1}. [id=${m.id}] [${m.appLabel}] $safeSender ($t) [$risk]: $contentShort"
@@ -4039,7 +4036,7 @@ private suspend fun buildRagSystemPrompt(
         }
 
         // ===== 3. 動態尾段（時間、統計、查詢條件、按需設定清單） =====
-        val deviceNowStr = SimpleDateFormat("yyyy-MM-dd HH:mm (EEEE)", Locale.TAIWAN).format(Date())
+        val deviceNowStr = Instant.now().atZone(ZoneId.systemDefault()).format(CHAT_DEVICE_NOW_FORMATTER)
         appendLine("【目前裝置時間】$deviceNowStr")
         appendLine("【整體統計】總 ${stats.total} 則、今日 ${stats.today} 則、未讀 ${stats.unread} 則、今日詐騙 ${stats.scam} 則。")
         appendLine(
@@ -4328,6 +4325,24 @@ private data class ParsedChatActions(
     val exportProposals: List<ExportMessagesProposal> = emptyList(),
     val invalidActionErrors: List<String> = emptyList()
 )
+
+private val CHAT_TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("MM/dd HH:mm")
+private val CHAT_DEVICE_NOW_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm (EEEE)", Locale.TAIWAN)
+
+private fun formatChatTime(epochMs: Long): String =
+    Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()).format(CHAT_TIME_FORMATTER)
+
+private val CHAT_ID_REF_REGEX = Regex("^(?:#|id[:=\\s]*)(\\d+)$", RegexOption.IGNORE_CASE)
+private val CHAT_REF_SPLIT_REGEX = Regex("[\\s:：,，、/|]+")
+private val CHAT_RECENT_DAYS_REGEX = Regex("近\\s*(\\d+)\\s*[天日]")
+private val ACTION_UNCLOSED_FENCE_REGEX = Regex("""```(?:json)?[\s\S]*?"action"[\s\S]*$""", RegexOption.IGNORE_CASE)
+private val ACTION_UNCLOSED_OBJ_REGEX = Regex("""\{[^{}]*"action"[^{}]*$""", RegexOption.IGNORE_CASE)
+private val ACTION_EMPTY_ARRAY_LINE_REGEX = Regex("""^\s*\[\s*(?:,\s*)*\]\s*$""", RegexOption.MULTILINE)
+private val TODO_PREFIX_REGEX = Regex("""^(?:請|幫我|麻煩)?(?:提醒我|別忘了|記得要|幫我記(?:一下)?|建立待辦|新增待辦|加到待辦)[：:\s,，]*""")
+private val TODO_TIME_STRIP_REGEX = Regex(
+    """(?:今天|今日|今晚|明天|明日|明早|明晚|後天|後日|大後天|下週[一二三四五六日天]|下星期[一二三四五六日天]|下禮拜[一二三四五六日天]|這週[一二三四五六日天]|本週[一二三四五六日天]|星期[一二三四五六日天]|禮拜[一二三四五六日天]|週[一二三四五六日天]|\d{4}[/\-]\d{1,2}[/\-]\d{1,2}|\d{1,2}[月/\-]\d{1,2}日?|\d+(?:\.\d+)?\s*(?:個)?小時(?:以)?後|\d+\s*分鐘(?:以)?後|\d+\s*天(?:以)?後|半(?:個)?小時(?:以)?後|凌晨|半夜|早上|上午|中午|午間|下午|午後|傍晚|晚上|夜裡|\d{1,2}\s*[:：]\s*\d{2}|\d{1,2}\s*[點時]\s*(?:半|\d{1,2}\s*分?)?)+"""
+)
+private val TODO_LEADING_FILLER_REGEX = Regex("""^[要得去把\s,，]+""")
 
 private val ACTION_FENCED_BLOCK_REGEX = Regex(
     """```(?:json)?\s*([\s\S]*?)```""",
@@ -4773,15 +4788,15 @@ private fun parseAllChatActions(rawReply: String): ParsedChatActions {
         if (cursor < withoutFenced.length) append(withoutFenced.substring(cursor))
     }
         // 移除未閉合的動作 JSON 片段或殘留 JSON 陣列外殼，避免原始 JSON 顯示給使用者
-        .replace(Regex("""```(?:json)?[\s\S]*?"action"[\s\S]*$""", RegexOption.IGNORE_CASE)) {
+        .replace(ACTION_UNCLOSED_FENCE_REGEX) {
             errors.add("部分動作指令的 JSON 區塊未閉合，已略過。")
             ""
         }
-        .replace(Regex("""\{[^{}]*"action"[^{}]*$""", RegexOption.IGNORE_CASE)) {
+        .replace(ACTION_UNCLOSED_OBJ_REGEX) {
             errors.add("部分動作指令的 JSON 格式不完整，已略過。")
             ""
         }
-        .replace(Regex("""^\s*\[\s*(?:,\s*)*\]\s*$""", RegexOption.MULTILINE), "")
+        .replace(ACTION_EMPTY_ARRAY_LINE_REGEX, "")
         .trim()
 
     return ParsedChatActions(
@@ -4830,12 +4845,8 @@ private fun isUnsupportedRecurringExpression(text: String): Boolean {
 
 private fun extractTodoTitleFromQuery(query: String): String {
     var s = query.trim()
-    val prefixRegex = Regex("""^(?:請|幫我|麻煩)?(?:提醒我|別忘了|記得要|幫我記(?:一下)?|建立待辦|新增待辦|加到待辦)[：:\s,，]*""")
-    s = s.replace(prefixRegex, "").trim()
-    val timeStripRegex = Regex(
-        """(?:今天|今日|今晚|明天|明日|明早|明晚|後天|後日|大後天|下週[一二三四五六日天]|下星期[一二三四五六日天]|下禮拜[一二三四五六日天]|這週[一二三四五六日天]|本週[一二三四五六日天]|星期[一二三四五六日天]|禮拜[一二三四五六日天]|週[一二三四五六日天]|\d{4}[/\-]\d{1,2}[/\-]\d{1,2}|\d{1,2}[月/\-]\d{1,2}日?|\d+(?:\.\d+)?\s*(?:個)?小時(?:以)?後|\d+\s*分鐘(?:以)?後|\d+\s*天(?:以)?後|半(?:個)?小時(?:以)?後|凌晨|半夜|早上|上午|中午|午間|下午|午後|傍晚|晚上|夜裡|\d{1,2}\s*[:：]\s*\d{2}|\d{1,2}\s*[點時]\s*(?:半|\d{1,2}\s*分?)?)+"""
-    )
-    val stripped = s.replace(timeStripRegex, " ").replace(Regex("""^[要得去把\s,，]+"""), "").trim()
+    s = s.replace(TODO_PREFIX_REGEX, "").trim()
+    val stripped = s.replace(TODO_TIME_STRIP_REGEX, " ").replace(TODO_LEADING_FILLER_REGEX, "").trim()
     return stripped.ifBlank { s }.ifBlank { "待辦事項" }
 }
 

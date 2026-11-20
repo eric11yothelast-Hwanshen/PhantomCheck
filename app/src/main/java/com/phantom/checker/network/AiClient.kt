@@ -675,6 +675,14 @@ object AiClient {
         """<\s*/?\s*(?:message_[a-z_]*|user_[a-z_]*|system|msg)\b""",
         RegexOption.IGNORE_CASE
     )
+    private val WHITESPACE_REGEX = Regex("\\s+")
+    private val CODE_FENCE_OPEN_REGEX = Regex("```[a-zA-Z0-9_-]*\\s*")
+    private val FALLBACK_RISK_SCORE_REGEX = Regex("\"(?:risk_score|risk)\"\\s*:\\s*(\\d+)")
+    private val FALLBACK_RISK_LABEL_REGEX = Regex("\"(?:risk_label|label)\"\\s*:\\s*\"(\\w+)\"")
+    private val FALLBACK_RISK_REASON_REGEX = Regex("\"(?:risk_reason|reason)\"\\s*:\\s*\"([^\"]*)\"")
+    private val FALLBACK_TAGS_REGEX = Regex("\"tags\"\\s*:\\s*\\[([^\\]]*)\\]")
+    private val LIMIT_REQUESTED_REGEX_1 = Regex("(?i)limit[:\\s]+(\\d+)[,\\s]+requested[:\\s]+(\\d+)")
+    private val LIMIT_REQUESTED_REGEX_2 = Regex("(?i)requested[:\\s]+(\\d+)[^\\d]+(?:limit|max(?:imum)?)[:\\s]+(\\d+)")
 
     /** 消毒外部訊息中的提示詞隔離標籤（把 < 轉為全形 ＜），防止 prompt injection 逃脫包裝 */
     fun sanitizeForPrompt(input: String): String =
@@ -900,7 +908,7 @@ object AiClient {
             if (parsedRetry != null) {
                 return@withContext Result.success(parsedRetry)
             }
-            val diagRaw = retryText.ifEmpty { text }.replace(Regex("\\s+"), " ").take(200)
+            val diagRaw = retryText.ifEmpty { text }.replace(WHITESPACE_REGEX, " ").take(200)
             Result.failure(
                 IllegalStateException(
                     "AI 回傳格式無法解析為風險與標籤 JSON（已自動重試一次仍失敗），建議改用指令遵循能力較佳的模型。\n原始回應前 200 字：$diagRaw"
@@ -1203,7 +1211,7 @@ object AiClient {
     }
 
     private fun stripMarkdownFences(raw: String): String =
-        raw.replace(Regex("```[a-zA-Z0-9_-]*\\s*"), "\n")
+        raw.replace(CODE_FENCE_OPEN_REGEX, "\n")
             .replace("```", "\n")
 
     /**
@@ -1324,12 +1332,12 @@ object AiClient {
     }
 
     private fun regexFallbackParseAnalysis(jsonStr: String, allowedTags: List<TagEntity>): AiAnalysisResult? {
-        val risk = Regex("\"(?:risk_score|risk)\"\\s*:\\s*(\\d+)").find(jsonStr)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100)
+        val risk = FALLBACK_RISK_SCORE_REGEX.find(jsonStr)?.groupValues?.get(1)?.toIntOrNull()?.coerceIn(0, 100)
             ?: return null
-        val rawLabel = Regex("\"(?:risk_label|label)\"\\s*:\\s*\"(\\w+)\"").find(jsonStr)?.groupValues?.get(1)?.lowercase() ?: "safe"
+        val rawLabel = FALLBACK_RISK_LABEL_REGEX.find(jsonStr)?.groupValues?.get(1)?.lowercase() ?: "safe"
         val label = if (rawLabel in setOf("safe", "suspicious", "scam")) rawLabel else "safe"
-        val reason = Regex("\"(?:risk_reason|reason)\"\\s*:\\s*\"([^\"]*)\"").find(jsonStr)?.groupValues?.get(1) ?: ""
-        val tagsRaw = Regex("\"tags\"\\s*:\\s*\\[([^\\]]*)\\]").find(jsonStr)?.groupValues?.get(1).orEmpty()
+        val reason = FALLBACK_RISK_REASON_REGEX.find(jsonStr)?.groupValues?.get(1) ?: ""
+        val tagsRaw = FALLBACK_TAGS_REGEX.find(jsonStr)?.groupValues?.get(1).orEmpty()
         val tagIds = if (tagsRaw.isNotBlank()) {
             resolveTagIdsFromElements(tagsRaw.split(","), allowedTags)
         } else {
@@ -1495,7 +1503,7 @@ object AiClient {
         } catch (_: Exception) {
             null
         }
-        val clean = (parsed ?: raw).replace(Regex("\\s+"), " ").trim()
+        val clean = (parsed ?: raw).replace(WHITESPACE_REGEX, " ").trim()
         return clean.takeIf { it.isNotEmpty() }?.take(220)
     }
 
@@ -1555,9 +1563,9 @@ object AiClient {
 
     private fun extractLimitAndRequested(rawErr: String?): Pair<String, String>? {
         if (rawErr.isNullOrBlank()) return null
-        val m1 = Regex("(?i)limit[:\\s]+(\\d+)[,\\s]+requested[:\\s]+(\\d+)").find(rawErr)
+        val m1 = LIMIT_REQUESTED_REGEX_1.find(rawErr)
         if (m1 != null) return m1.groupValues[1] to m1.groupValues[2]
-        val m2 = Regex("(?i)requested[:\\s]+(\\d+)[^\\d]+(?:limit|max(?:imum)?)[:\\s]+(\\d+)").find(rawErr)
+        val m2 = LIMIT_REQUESTED_REGEX_2.find(rawErr)
         if (m2 != null) return m2.groupValues[2] to m2.groupValues[1]
         return null
     }

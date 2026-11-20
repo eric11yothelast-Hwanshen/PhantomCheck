@@ -113,10 +113,12 @@ class StatsForegroundService : Service() {
                 scam = lastScam,
                 largeIcon = cachedStripBitmap
             )
-            startForegroundCompat(initialNotif)
+            if (!startForegroundCompat(initialNotif)) {
+                return START_NOT_STICKY
+            }
             isForegroundStarted = true
         } else if (!force && !isScreenInteractive()) {
-            // 熄屏時跳過主動刷新（被動事件如新通知到達、KeepAlive 心跳、亮屏仍會傳 force=true）
+            // 熄屏時跳過主動刷新（亮屏由 ScreenStateReceiver 一次補齊）
             return START_STICKY
         }
 
@@ -140,7 +142,7 @@ class StatsForegroundService : Service() {
         if (PhantomPrefs.isPersistentStatsEnabled(applicationContext) &&
             hasPostNotificationsPermission(applicationContext)
         ) {
-            KeepAlivePolicy.scheduleRescue(applicationContext, delayMs = 1000L)
+            KeepAlivePolicy.scheduleRescue(applicationContext, delayMs = nextRescueDelayMs())
         }
         super.onDestroy()
     }
@@ -214,7 +216,7 @@ class StatsForegroundService : Service() {
                 stopSelf()
                 return@launch
             }
-            if (!force && isForegroundStarted && !isScreenInteractive()) {
+            if (!isScreenInteractive() && !isRefreshStale()) {
                 return@launch
             }
             try {
@@ -297,23 +299,42 @@ class StatsForegroundService : Service() {
                     latestPackageName = snap.latestPackageName
                 )
                 // 有變化、逾時或通知遭滑掉時呼叫 startForeground 重建
-                startForegroundCompat(notif)
-                isForegroundStarted = true
+                if (startForegroundCompat(notif)) {
+                    isForegroundStarted = true
+                }
             } catch (_: SecurityException) {
             } catch (_: Exception) {
             }
         }
     }
 
-    private fun startForegroundCompat(notification: Notification) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(
-                STATS_NOTIF_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-            )
-        } else {
-            startForeground(STATS_NOTIF_ID, notification)
+    private fun startForegroundCompat(notification: Notification): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(
+                    STATS_NOTIF_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+            } else {
+                startForeground(STATS_NOTIF_ID, notification)
+            }
+            true
+        } catch (e: IllegalStateException) {
+            android.util.Log.w("StatsForegroundService", "startForeground failed (IllegalState/NotAllowed)", e)
+            stopForegroundCompat()
+            stopSelf()
+            false
+        } catch (e: SecurityException) {
+            android.util.Log.w("StatsForegroundService", "startForeground failed (SecurityException)", e)
+            stopForegroundCompat()
+            stopSelf()
+            false
+        } catch (e: Exception) {
+            android.util.Log.w("StatsForegroundService", "startForeground failed", e)
+            stopForegroundCompat()
+            stopSelf()
+            false
         }
     }
 
@@ -329,6 +350,31 @@ class StatsForegroundService : Service() {
         const val EXTRA_FORCE_REFRESH = "extra_force_refresh"
         private const val THROTTLE_MS = 5000L
         private const val DEFAULT_STALE_MS = 30 * 60 * 1000L
+        private const val RESCUE_WINDOW_MS = 60_000L
+        private const val RESCUE_MAX_FAST_COUNT = 3
+        private const val RESCUE_FAST_DELAY_MS = 1000L
+        private const val RESCUE_BACKOFF_BASE_MS = 30_000L
+        private const val RESCUE_BACKOFF_MAX_MS = 5 * 60 * 1000L
+
+        private val rescueLock = Any()
+        private var lastRescueAtMs = 0L
+        private var consecutiveRescueCount = 0
+
+        private fun nextRescueDelayMs(): Long = synchronized(rescueLock) {
+            val now = System.currentTimeMillis()
+            if (now - lastRescueAtMs > RESCUE_WINDOW_MS) {
+                consecutiveRescueCount = 1
+            } else {
+                consecutiveRescueCount += 1
+            }
+            lastRescueAtMs = now
+            if (consecutiveRescueCount <= RESCUE_MAX_FAST_COUNT) {
+                RESCUE_FAST_DELAY_MS
+            } else {
+                val shift = (consecutiveRescueCount - RESCUE_MAX_FAST_COUNT - 1).coerceAtMost(4)
+                (RESCUE_BACKOFF_BASE_MS shl shift).coerceAtMost(RESCUE_BACKOFF_MAX_MS)
+            }
+        }
 
         @Volatile private var lastToday = 0
         @Volatile private var lastUnread = 0

@@ -1071,6 +1071,7 @@ class NotificationCollectorService : NotificationListenerService() {
         private const val MAX_BATCH_SIZE = 5
         private const val RULE_CACHE_TTL_MS = 30_000L
         private val WHITESPACE_REGEX = Regex("\\s+")
+        private val PUNCTUATION_REGEX = Regex("[\\p{Punct}\\p{IsPunctuation}]+")
 
         private val ruleCacheLock = Any()
         private var cachedFilterRules: Pair<Long, List<FilterRule>>? = null
@@ -1272,8 +1273,8 @@ class NotificationCollectorService : NotificationListenerService() {
             java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC)
                 .trim()
                 .lowercase(java.util.Locale.ROOT)
-                .replace(Regex("[\\p{Punct}\\p{IsPunctuation}]+"), " ")
-                .replace(Regex("\\s+"), " ")
+                .replace(PUNCTUATION_REGEX, " ")
+                .replace(WHITESPACE_REGEX, " ")
                 .trim()
 
         internal fun diceBigramSimilarity(a: String, b: String): Double {

@@ -11,7 +11,7 @@ import com.phantom.checker.util.PhantomPrefs
 
 /**
  * 多層保活排程核心：
- * 1. AlarmManager 15 分鐘自鏈 Watchdog（支援精確鬧鐘與 setAndAllowWhileIdle 降級）
+ * 1. AlarmManager 45 分鐘自鏈 Watchdog（支援精確鬧鐘與 setAndAllowWhileIdle 降級）
  * 2. 8 小時 setAlarmClock() 安全網（最高優先權喚醒）
  * 3. onDestroy / onListenerDisconnected 1 秒自救重啟鬧鐘
  */
@@ -28,16 +28,16 @@ object KeepAlivePolicy {
     private const val REQ_REBIND = 2004
     private const val REQ_ALARM_SHOW = 2005
 
-    private const val WATCHDOG_INTERVAL_MS = 15 * 60 * 1000L
+    private const val WATCHDOG_INTERVAL_MS = 45 * 60 * 1000L
     private const val SAFETY_NET_INTERVAL_MS = 8 * 60 * 60 * 1000L
 
     fun scheduleAll(ctx: Context) {
         val appCtx = ctx.applicationContext
+        HeartbeatPolicy.schedule(appCtx)
         if (!PhantomPrefs.isPersistentStatsEnabled(appCtx)) {
             cancelAll(appCtx)
             return
         }
-        HeartbeatPolicy.schedule(appCtx)
         scheduleWatchdog(appCtx)
         scheduleAlarmClockSafetyNet(appCtx)
     }
@@ -46,6 +46,7 @@ object KeepAlivePolicy {
         val appCtx = ctx.applicationContext
         if (!PhantomPrefs.isPersistentStatsEnabled(appCtx)) {
             cancelAll(appCtx)
+            HeartbeatPolicy.schedule(appCtx)
             return
         }
         val am = appCtx.getSystemService(AlarmManager::class.java) ?: return
