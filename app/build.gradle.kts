@@ -25,7 +25,6 @@ android {
 
         buildConfigField("String", "MISTRAL_API_KEY", "\"${localProps.getProperty("mistral.apiKey", "")}\"")
         buildConfigField("String", "MISTRAL_BASE_URL", "\"${localProps.getProperty("mistral.baseUrl", "")}\"")
-        buildConfigField("String", "SAFE_BROWSING_API_KEY", "\"${localProps.getProperty("safebrowsing.apiKey", "")}\"")
     }
 
     val ksFile = System.getenv("PHANTOM_KEYSTORE_FILE")

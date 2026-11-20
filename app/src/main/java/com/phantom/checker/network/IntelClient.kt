@@ -31,7 +31,7 @@ import java.security.MessageDigest
  * 查詢順序：
  * 1. 本地快取（LruCache + Room intel_cache，TTL 72 小時）
  * 2. fraud.tw（台灣 165 通報，GET /api/check?d=<host>）
- * 3. Google Safe Browsing Lookup API v4（App 加密儲存 key 優先，BuildConfig fallback）
+ * 3. Google Safe Browsing Lookup API v4（僅 App 加密儲存 key／設定頁輸入）
  * 4. PhishTank（可選，預設關閉，支援可選 app_key）
  * 5. Chainabuse（可選，預設關閉，Basic 認證，僅查 crypto 地址）
  *
@@ -107,17 +107,12 @@ object IntelClient {
         }
     }
 
-    fun getSafeBrowsingApiKey(context: Context? = null): String? {
-        val stored = context?.let { getEncryptedPrefs(it)?.getString(KEY_SAFE_BROWSING_API, null)?.trim() }
-        if (!stored.isNullOrEmpty()) return stored
-        return BuildConfig.SAFE_BROWSING_API_KEY.trim().takeIf { it.isNotEmpty() }
-    }
+    fun getSafeBrowsingApiKey(context: Context? = null): String? =
+        context?.let { getEncryptedPrefs(it)?.getString(KEY_SAFE_BROWSING_API, null)?.trim()?.takeIf { k -> k.isNotEmpty() } }
 
     fun getSafeBrowsingKeySource(context: Context): ApiKeySource {
         val stored = getEncryptedPrefs(context)?.getString(KEY_SAFE_BROWSING_API, null)?.trim()
-        if (!stored.isNullOrEmpty()) return ApiKeySource.ENCRYPTED_PREFS
-        if (BuildConfig.SAFE_BROWSING_API_KEY.trim().isNotEmpty()) return ApiKeySource.BUILD_CONFIG
-        return ApiKeySource.NONE
+        return if (!stored.isNullOrEmpty()) ApiKeySource.ENCRYPTED_PREFS else ApiKeySource.NONE
     }
 
     fun setSafeBrowsingApiKey(context: Context, key: String) {

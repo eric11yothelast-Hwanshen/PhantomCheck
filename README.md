@@ -32,7 +32,7 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 - 🧭 **視覺化新手與設定教學**：18 步主頁高光引導＋8 步設定頁導覽，依步驟自動切換分頁並支援無訊息合併提示、Android 13+ 系統權限彈窗後再顯示、各廠牌「允許受限制的設定」疑難排解、直達 App 通知存取詳情頁與 Shizuku 一鍵授權；字卡自動上下避讓不遮擋高亮區域，支援淺色、深色、動態取色三模式高對比閱讀與洞內觸控穿透。
 - 🔋 **省 Token 五合一與省電／穩定性優化**：支援 Prompt Cache Key 與靜態前綴設計、雙模型信心路由（先以低價模型初判，模糊區間再升級重判）、增量情境摘要、圖片尺寸動態估算、省電自動停用玻璃模糊，以及 KeepAlive（45 分鐘）／Shizuku（600 秒）節能輪詢、Heartbeat `KEEP` 防抖動、熄屏查詢早退與前景服務異常防護。
 - 🚨 **詐騙警示中心、勿擾時段與 SMS 自動回覆**：集中顯示高風險詐騙訊息、情報來源與趨勢比較（可由訊息頁風險卡或統計頁 Top 5 卡進入）；支援勿擾時段與 SMS 自動回覆（簡訊記錄由通知攔截路徑單一收錄去重，接收器專職自動回覆，含 per-sender 4 小時冷卻、單日上限 3 次與範本自回防護）。
-- 📄 **CSV 匯出、保留政策、空間維護與加密金鑰**：一鍵匯出 CSV 至 `Downloads`；設定頁「資料管理」提供儲存空間明細與「立即壓縮資料庫」（定期 `VACUUM` 與過期資料／頭像快取上限 300 筆清理）；`EncryptedSharedPreferences` 本機加密儲存 AI 與情報源（Safe Browsing／PhishTank／Chainabuse）API Key，支援設定頁直接輸入（`local.properties` 為 fallback）。
+- 📄 **CSV 匯出、保留政策、空間維護與加密金鑰**：一鍵匯出 CSV 至 `Downloads`；設定頁「資料管理」提供儲存空間明細與「立即壓縮資料庫」（定期 `VACUUM` 與過期資料／頭像快取上限 300 筆清理）；`EncryptedSharedPreferences` 本機加密儲存 AI 與情報源（Safe Browsing／PhishTank／Chainabuse）API Key，支援設定頁直接輸入（BYOK，無 BuildConfig fallback）。
 
 - 🎨 **個人化三層背景圖片與卡片底色模式**：支援全域／AI 聊天／對話頁三層背景圖自訂（逐層 fallback、降採樣儲存防 OOM）、暗色可讀性遮罩（scrim）、液態玻璃卡片強度滑桿與卡片底色三模式（跟隨玻璃／透明滑桿 ≥15%／深色底）。
 - 🔍 **自動與手動檢查更新**：支援每次開啟 App 自動檢查 GitHub Releases 最新版本並彈窗提示（同一行程旋轉／返回不重複請求；通知欄提醒維持每日每版本最多一次，可於設定頁關於卡關閉），並保留手動檢查與 `DownloadManager` ＋ `FileProvider` APK 安裝流程。
@@ -254,6 +254,10 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 
 4. **開啟通知讀取權限與設定 API Key**
    - 依 App 內新手引導開啟「通知存取權」，並於「設定 → API Key 設定」輸入任意支援之 AI Provider Key（金鑰僅加密儲存於本機）。
+
+5. **輸入 Google Safe Browsing API Key（情報源 BYOK）**
+   - 於 [Google Cloud Console](https://console.cloud.google.com/) 建立專案、啟用「Safe Browsing API」，並於「憑證 → 建立 API 金鑰」取得 key（金鑰僅加密儲存於本機）。
+   - 於 App 內「設定 → 防詐情報 → Google Safe Browsing v4」欄位貼上該 key，加密儲存後即啟用；未輸入 key 時會誠實跳過 Safe Browsing 源，不影響其他情報來源。
 
 ---
 
