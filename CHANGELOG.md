@@ -2,6 +2,14 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [2.20.0] - 2026-11-20
+
+### 修正
+- **記事頁待辦事項展開區可捲動與高度上限（#310 / PR #311）**：
+  - `NotesTab` 待辦事項展開區（`!todoSectionCollapsed.value`）外層改為 `Column(Modifier.heightIn(max = maxTodoExpandedHeight))`，上限取自 `BoxWithConstraints` 可用高度之 2/3（`maxHeight * 2f / 3f`），避免清單過長時撐高卡片擠壓下方記事區。
+  - 篩選膠囊列 `FlowRow` 與 `8.dp` `Spacer` 固定於外層 `Column` 頂部，不隨清單捲動；清單段改為 `Column(Modifier.weight(1f, fill = false).verticalScroll(todoListScrollState))` 支援卡內上下捲動，並以 `key(todoFilter) { rememberScrollState() }` 於切換篩選條件時重置捲動位置至頂部。
+  - 短清單或空清單維持依內容 wrap-content 高度呈現，不強制填滿 2/3；收合精簡顯示（`todoSectionCollapsed = true`）與收合狀態持久化維持不變。
+
 ## [2.19.0] - 2026-11-20
 
 ### 新增

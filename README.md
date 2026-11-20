@@ -46,6 +46,10 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
 
+### v2.20.0 更新重點（versionCode 38）
+
+- **記事頁待辦事項展開區可捲動與高度上限（#310 / PR #311）**：`NotesTab` 待辦展開區上限改為 `BoxWithConstraints` 可用高度之 2/3（短清單維持依內容 wrap-content）；篩選膠囊列固定於頂部、清單段支援卡內上下捲動並於切換篩選時重置回頂部，解決待辦過多擠壓下方記事區的問題（收合精簡顯示維持不變）。
+
 ### v2.19.0 更新重點（versionCode 37）
 
 - **中央堆疊 v6 首尾邊界填滿與短清單模式（#298 / PR #302）**：`CenterFocusCardStack` 新增首尾邊界填滿補償（`pAbove`／`pBelow` 對稱 fill pitch）與短清單置頂緊貼排列，`edgeGap` 調整為 `6dp`（首卡距我的最愛、尾卡距底部導覽列皆為 `6dp`）。
