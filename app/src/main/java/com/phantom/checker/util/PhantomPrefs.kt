@@ -1307,6 +1307,16 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putBoolean(KEY_HOME_FILTER_CHIPS_COLLAPSED, collapsed).apply()
     }
 
+    /** 記憶頁篩選標籤列收合狀態（避免 9 顆標籤換行佔兩行） */
+    private const val KEY_MEMORY_FILTER_CHIPS_COLLAPSED = "memory_filter_chips_collapsed"
+
+    fun isMemoryFilterChipsCollapsed(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_MEMORY_FILTER_CHIPS_COLLAPSED, false)
+
+    fun setMemoryFilterChipsCollapsed(ctx: Context, collapsed: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_MEMORY_FILTER_CHIPS_COLLAPSED, collapsed).apply()
+    }
+
     data class StatsCardOption(val key: String, val title: String, val subtitle: String, val defaultVisible: Boolean)
 
     val STATS_CARD_OPTIONS: List<StatsCardOption> = listOf(

@@ -1,9 +1,13 @@
 package com.phantom.checker.ui.memory
 
 import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,6 +29,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -63,6 +68,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -399,8 +407,30 @@ internal fun MemoryTab(
         )
     }
 
+    var isSearchExpanded by remember { mutableStateOf(false) }
+    var searchHasFocused by remember { mutableStateOf(false) }
+    val searchFocusRequester = remember { FocusRequester() }
+    val isSearchVisible = isSearchExpanded || searchQuery.isNotEmpty()
+    var filterChipsCollapsed by remember { mutableStateOf(PhantomPrefs.isMemoryFilterChipsCollapsed(ctx)) }
+    val chipShape = RoundedCornerShape(8.dp)
+
+    LaunchedEffect(isSearchExpanded) {
+        if (isSearchExpanded) {
+            runCatching { searchFocusRequester.requestFocus() }
+        }
+    }
+
+    BackHandler(enabled = isSearchVisible) {
+        if (searchQuery.isNotEmpty()) {
+            searchQuery = ""
+        } else {
+            searchHasFocused = false
+            isSearchExpanded = false
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        // 頂部標題列：統計摘要 ＋ 新增記憶 ＋ 批次刪除模式 ＋ 右上角齒輪跳設定卡
+        // 頂部標題列：標題＋統計摘要 ｜ 搜尋鈕＋新增＋齒輪（保持 48dp 觸控目標，不擠壓）
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -410,13 +440,17 @@ internal fun MemoryTab(
                 Text(
                     text = "個人記憶庫",
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = "長期 ${longTermMemories.size} · 短期 ${shortTermMemories.size}" +
                         (if (conflictMemories.isNotEmpty()) " · 衝突 ${conflictMemories.size}" else "") +
                         " · 封存 ${archivedMemories.size}",
                     style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     color = if (conflictMemories.isNotEmpty()) {
                         MaterialTheme.colorScheme.tertiary
                     } else {
@@ -424,15 +458,30 @@ internal fun MemoryTab(
                     }
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                IconButton(
                     onClick = {
-                        isBatchMode = !isBatchMode
-                        if (!isBatchMode) selectedBatchIds = emptySet()
+                        if (isSearchVisible && searchQuery.isEmpty()) {
+                            searchHasFocused = false
+                            isSearchExpanded = false
+                        } else {
+                            isSearchExpanded = true
+                        }
                     },
-                    modifier = Modifier.heightIn(min = 48.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
-                    Text(if (isBatchMode) "結束批次" else "批次管理")
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = if (isSearchVisible) "收合搜尋框" else "搜尋記憶",
+                        tint = if (isSearchVisible) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        }
+                    )
                 }
                 IconButton(
                     onClick = {
@@ -452,39 +501,102 @@ internal fun MemoryTab(
             }
         }
 
-        Spacer(Modifier.height(6.dp))
+        // 可收合搜尋框（點擊頂部搜尋鈕展開並自動聚焦；有字維持展開；清空失焦收合；返回鍵先清字再收合）
+        AnimatedVisibility(
+            visible = isSearchVisible,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+                    .focusRequester(searchFocusRequester)
+                    .onFocusChanged { state ->
+                        if (state.isFocused) {
+                            searchHasFocused = true
+                        } else if (searchHasFocused && searchQuery.isEmpty()) {
+                            searchHasFocused = false
+                            isSearchExpanded = false
+                        }
+                    },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                placeholder = {
+                    Text(
+                        text = "搜尋記憶內容、人物主題、來源或規則…",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = "搜尋記憶")
+                },
+                trailingIcon = {
+                    IconButton(
+                        onClick = {
+                            if (searchQuery.isNotEmpty()) {
+                                searchQuery = ""
+                            } else {
+                                searchHasFocused = false
+                                isSearchExpanded = false
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Clear,
+                            contentDescription = if (searchQuery.isNotEmpty()) "清除搜尋" else "收合搜尋"
+                        )
+                    }
+                }
+            )
+        }
 
-        // 搜尋框（支援依關鍵字或人物搜尋→全選→批次刪除）
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            shape = RoundedCornerShape(16.dp),
-            placeholder = {
-                Text(
-                    text = "搜尋記憶內容、人物主題、來源或規則…",
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            leadingIcon = {
-                Icon(Icons.Default.Search, contentDescription = "搜尋記憶")
-            },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(Icons.Default.Clear, contentDescription = "清除搜尋")
+        // 搜尋結果狀態條（有輸入關鍵字且非批次模式時，顯示符合筆數與快速進入批次管理）
+        AnimatedVisibility(
+            visible = qTrim.isNotEmpty() && !isBatchMode,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "符合「$qTrim」共 ${visibleSelectableMemories.size} 筆可選記憶",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(
+                        onClick = { isBatchMode = true },
+                        modifier = Modifier.heightIn(min = 36.dp)
+                    ) {
+                        Text("批次選取", style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
-        )
+        }
 
         // 批次模式操作條（支援依搜尋結果全選→確認刪除）
         AnimatedVisibility(
             visible = isBatchMode,
-            enter = expandVertically(),
-            exit = shrinkVertically()
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
         ) {
             val allVisibleIds = remember(visibleSelectableMemories) {
                 visibleSelectableMemories.map { it.id }.toSet()
@@ -512,6 +624,8 @@ internal fun MemoryTab(
                         },
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f)
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -541,33 +655,106 @@ internal fun MemoryTab(
 
         Spacer(Modifier.height(6.dp))
 
-        // 篩選 chips FlowRow（全部/長期/短期/衝突待確認/已封存/自動備忘錄/白名單/標籤規則/備忘規則）
-        FlowRow(
+        // 可收合篩選 chips 列（對齊訊息頁：收合僅顯示「全部」＋目前生效 chip；右側批次鈕＋34dp 圓形箭頭鈕）
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            MemoryFilterChip.entries.forEach { chip ->
-                val badgeCount = when (chip) {
-                    MemoryFilterChip.ALL -> filteredMemories.size
-                    MemoryFilterChip.LONG_TERM -> longTermMemories.size
-                    MemoryFilterChip.SHORT_TERM -> shortTermMemories.size
-                    MemoryFilterChip.CONFLICT -> conflictMemories.size
-                    MemoryFilterChip.ARCHIVED -> archivedMemories.size
-                    MemoryFilterChip.AUTO_MEMO -> autoNotes.size
-                    MemoryFilterChip.WHITELIST -> filteredWhitelists.size
-                    MemoryFilterChip.TAG_RULES -> filteredAiTagRules.size + filteredUserTagRules.size
-                    MemoryFilterChip.MEMO_RULES -> filteredMemoRules.size
-                }
-                FilterChip(
-                    selected = selectedFilter == chip,
-                    onClick = { selectedFilter = chip },
-                    label = {
-                        Text(
-                            text = if (badgeCount > 0) "${chip.label} ($badgeCount)" else chip.label,
-                            style = MaterialTheme.typography.labelSmall
+            FlowRow(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                MemoryFilterChip.entries.forEach { chip ->
+                    val shouldShow = !filterChipsCollapsed ||
+                        chip == MemoryFilterChip.ALL ||
+                        chip == selectedFilter
+                    if (shouldShow) {
+                        val badgeCount = when (chip) {
+                            MemoryFilterChip.ALL -> filteredMemories.size
+                            MemoryFilterChip.LONG_TERM -> longTermMemories.size
+                            MemoryFilterChip.SHORT_TERM -> shortTermMemories.size
+                            MemoryFilterChip.CONFLICT -> conflictMemories.size
+                            MemoryFilterChip.ARCHIVED -> archivedMemories.size
+                            MemoryFilterChip.AUTO_MEMO -> autoNotes.size
+                            MemoryFilterChip.WHITELIST -> filteredWhitelists.size
+                            MemoryFilterChip.TAG_RULES -> filteredAiTagRules.size + filteredUserTagRules.size
+                            MemoryFilterChip.MEMO_RULES -> filteredMemoRules.size
+                        }
+                        FilterChip(
+                            selected = selectedFilter == chip,
+                            onClick = { selectedFilter = chip },
+                            shape = chipShape,
+                            modifier = Modifier.height(32.dp),
+                            label = {
+                                Text(
+                                    text = if (badgeCount > 0) "${chip.label} ($badgeCount)" else chip.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         )
                     }
+                }
+            }
+            Spacer(Modifier.width(4.dp))
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = if (isBatchMode) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                },
+                border = BorderStroke(
+                    width = 0.75.dp,
+                    color = if (isBatchMode) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                    } else {
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                    }
+                ),
+                modifier = Modifier
+                    .height(34.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable {
+                        isBatchMode = !isBatchMode
+                        if (!isBatchMode) selectedBatchIds = emptySet()
+                    }
+            ) {
+                Box(
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (isBatchMode) "結束批次" else "批次管理",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isBatchMode) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        maxLines = 1
+                    )
+                }
+            }
+            Spacer(Modifier.width(4.dp))
+            Box(
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
+                    .clickable {
+                        filterChipsCollapsed = !filterChipsCollapsed
+                        PhantomPrefs.setMemoryFilterChipsCollapsed(ctx, filterChipsCollapsed)
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (filterChipsCollapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                    contentDescription = if (filterChipsCollapsed) "展開篩選標籤" else "收合篩選標籤",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
