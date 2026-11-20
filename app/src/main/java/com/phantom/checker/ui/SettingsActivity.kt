@@ -394,6 +394,7 @@ fun FilterSettingsScreen(
     var calendarWriteGranted by remember { mutableStateOf(com.phantom.checker.util.CalendarBridge.hasWritePermission(appCtx)) }
     var deviceCalendars by remember { mutableStateOf<List<com.phantom.checker.util.CalendarBridge.CalendarAccountInfo>>(emptyList()) }
     var selectedCalendarIds by remember { mutableStateOf(PhantomPrefs.getSelectedCalendarIds(appCtx)) }
+    var scheduleMemoRoute by remember { mutableStateOf(PhantomPrefs.getScheduleMemoRoute(appCtx)) }
     val calendarPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { resultMap ->
@@ -618,6 +619,7 @@ fun FilterSettingsScreen(
             calendarReadGranted = com.phantom.checker.util.CalendarBridge.hasReadPermission(appCtx)
             calendarWriteGranted = com.phantom.checker.util.CalendarBridge.hasWritePermission(appCtx)
             selectedCalendarIds = PhantomPrefs.getSelectedCalendarIds(appCtx)
+            scheduleMemoRoute = PhantomPrefs.getScheduleMemoRoute(appCtx)
             memoryNormalTopK = PhantomPrefs.getMemoryNormalTopK(appCtx)
             memoryNormalPerItemChars = PhantomPrefs.getMemoryNormalPerItemChars(appCtx)
             memorySaverTopK = PhantomPrefs.getMemorySaverTopK(appCtx)
@@ -2577,6 +2579,44 @@ fun FilterSettingsScreen(
                                 }
                             }
                         }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "行程類通知分流",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "行程類通知優先提示加入日曆，不再自動建立待辦/記事（明確設定的備忘規則仍優先）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = scheduleMemoRoute == PhantomPrefs.SCHEDULE_MEMO_ROUTE_SUGGEST_CALENDAR,
+                            onClick = {
+                                scheduleMemoRoute = PhantomPrefs.SCHEDULE_MEMO_ROUTE_SUGGEST_CALENDAR
+                                PhantomPrefs.setScheduleMemoRoute(appCtx, scheduleMemoRoute)
+                                PhantomSettingsBus.notifyChanged()
+                            },
+                            label = { Text("優先日曆建議（預設）", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = scheduleMemoRoute == PhantomPrefs.SCHEDULE_MEMO_ROUTE_LEGACY_TODO_NOTE,
+                            onClick = {
+                                scheduleMemoRoute = PhantomPrefs.SCHEDULE_MEMO_ROUTE_LEGACY_TODO_NOTE
+                                PhantomPrefs.setScheduleMemoRoute(appCtx, scheduleMemoRoute)
+                                PhantomSettingsBus.notifyChanged()
+                            },
+                            label = { Text("沿用舊版（待辦/記事）", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
 
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))

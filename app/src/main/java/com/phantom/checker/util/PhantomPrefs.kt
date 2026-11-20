@@ -1382,6 +1382,29 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putString(KEY_CALENDAR_SELECTED_IDS, encoded).apply()
     }
 
+    /** #333 行程類備忘分流：suggest_calendar（預設，優先日曆建議卡不再進待辦/記事）或 legacy_todo_note（沿用 v3.1） */
+    const val SCHEDULE_MEMO_ROUTE_SUGGEST_CALENDAR = "suggest_calendar"
+    const val SCHEDULE_MEMO_ROUTE_LEGACY_TODO_NOTE = "legacy_todo_note"
+    private const val KEY_SCHEDULE_MEMO_ROUTE = "schedule_memo_route"
+
+    fun getScheduleMemoRoute(ctx: Context): String {
+        val raw = prefs(ctx).getString(KEY_SCHEDULE_MEMO_ROUTE, SCHEDULE_MEMO_ROUTE_SUGGEST_CALENDAR)
+        return if (raw == SCHEDULE_MEMO_ROUTE_LEGACY_TODO_NOTE) {
+            SCHEDULE_MEMO_ROUTE_LEGACY_TODO_NOTE
+        } else {
+            SCHEDULE_MEMO_ROUTE_SUGGEST_CALENDAR
+        }
+    }
+
+    fun setScheduleMemoRoute(ctx: Context, route: String) {
+        val safe = if (route == SCHEDULE_MEMO_ROUTE_LEGACY_TODO_NOTE) {
+            SCHEDULE_MEMO_ROUTE_LEGACY_TODO_NOTE
+        } else {
+            SCHEDULE_MEMO_ROUTE_SUGGEST_CALENDAR
+        }
+        prefs(ctx).edit().putString(KEY_SCHEDULE_MEMO_ROUTE, safe).apply()
+    }
+
     data class StatsCardOption(val key: String, val title: String, val subtitle: String, val defaultVisible: Boolean)
 
     val STATS_CARD_OPTIONS: List<StatsCardOption> = listOf(

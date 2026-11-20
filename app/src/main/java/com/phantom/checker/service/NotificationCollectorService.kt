@@ -1341,6 +1341,41 @@ class NotificationCollectorService : NotificationListenerService() {
             val normClean = normalizeForSimilarity(clean)
             val appLabel = msg.appLabel.ifBlank { msg.packageName }
 
+            val eventTime: Long? = try {
+                val structured = ClientTimeParser.parseStructuredDueAt(todoDue)?.takeIf { it > now }
+                structured ?: when (
+                    val res = ClientTimeParser.parseNaturalReminderTime(null, msg.content, now)
+                ) {
+                    is com.phantom.checker.util.NaturalTimeParseResult.Success -> res.epochMillis
+                    is com.phantom.checker.util.NaturalTimeParseResult.PastTime,
+                    com.phantom.checker.util.NaturalTimeParseResult.Unparseable -> null
+                }
+            } catch (_: Exception) {
+                null
+            }
+
+            // #333 前置行程分流：無顯式 memo rule 覆寫、有未來時間、屬行程類、日曆已啟用、且設定為 suggest_calendar 時，
+            // 僅建立日曆建議卡並直接 return，不再重複建 todo/note 或排提醒鬧鐘（零 AI token）。
+            val isExplicitRuleOverride = matchedRule?.action == MemoRuleEntity.ACTION_TODO ||
+                matchedRule?.action == MemoRuleEntity.ACTION_NOTE
+            val routeCtx = ctx?.applicationContext
+            val isCalendarRouteCandidate = !isExplicitRuleOverride &&
+                eventTime != null &&
+                routeCtx != null &&
+                PhantomPrefs.getScheduleMemoRoute(routeCtx) == PhantomPrefs.SCHEDULE_MEMO_ROUTE_SUGGEST_CALENDAR &&
+                com.phantom.checker.util.CalendarBridge.isScheduleTypeMessage(msg.content, clean) &&
+                com.phantom.checker.util.CalendarBridge.isCalendarEnabledForAi(routeCtx)
+            if (isCalendarRouteCandidate) {
+                com.phantom.checker.util.CalendarBridge.maybeSuggestFromNotification(
+                    ctx = routeCtx!!,
+                    messageId = msg.id,
+                    title = clean,
+                    startMs = eventTime!!,
+                    notes = "來源：$appLabel / ${msg.sender}\n${msg.content.take(120)}"
+                )
+                return
+            }
+
             if (effectiveMemoType == AiClient.MEMO_TYPE_TODO) {
                 if (db.todoDao().findByRelatedMessageId(msg.id) != null) return
                 val since = now - AUTO_MEMO_DEDUP_WINDOW_MS
@@ -1349,23 +1384,11 @@ class NotificationCollectorService : NotificationListenerService() {
                     val normCand = normalizeForSimilarity(cand.title)
                     normCand == normClean || diceBigramSimilarity(normCand, normClean) >= 0.9
                 }
-                val eventTime: Long? = try {
-                    val structured = ClientTimeParser.parseStructuredDueAt(todoDue)?.takeIf { it > now }
-                    structured ?: when (
-                        val res = ClientTimeParser.parseNaturalReminderTime(null, msg.content, now)
-                    ) {
-                        is com.phantom.checker.util.NaturalTimeParseResult.Success -> res.epochMillis
-                        is com.phantom.checker.util.NaturalTimeParseResult.PastTime,
-                        com.phantom.checker.util.NaturalTimeParseResult.Unparseable -> null
-                    }
-                } catch (_: Exception) {
-                    null
-                }
-                if (eventTime != null && ctx != null &&
+                if (eventTime != null && routeCtx != null &&
                     com.phantom.checker.util.CalendarBridge.isScheduleTypeMessage(msg.content, clean)
                 ) {
                     com.phantom.checker.util.CalendarBridge.maybeSuggestFromNotification(
-                        ctx = ctx.applicationContext,
+                        ctx = routeCtx,
                         messageId = msg.id,
                         title = clean,
                         startMs = eventTime,
