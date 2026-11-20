@@ -1270,9 +1270,14 @@ fun ChatAssistantTab(
                                         val layerLbl = com.phantom.checker.data.MemoryEngine.layerLabel(m.layer)
                                         val statusLbl = com.phantom.checker.data.MemoryEngine.statusLabel(m.status)
                                         val confLbl = com.phantom.checker.data.MemoryEngine.confidenceLabel(m.confidence)
-                                        val privTag = if (m.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE) "🔒敏感" else "一般"
+                                        val isSensitive = m.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE
+                                        val privTag = if (isSensitive) "🔒敏感" else "一般"
                                         val safeSubj = m.subject.replace("|", "｜").replace("\n", " ").take(20)
-                                        val safeContent = m.content.replace("|", "｜").replace("\n", " ").take(45)
+                                        val safeContent = if (isSensitive) {
+                                            "內容已隱藏（僅本機可見，請至記憶頁查看）"
+                                        } else {
+                                            m.content.replace("|", "｜").replace("\n", " ").take(45)
+                                        }
                                         "| #${m.id} | $catLbl | $layerLbl | $statusLbl/$confLbl ($privTag) | $safeSubj：$safeContent |"
                                     }
                                     immediateExtraReplies.add(
@@ -3737,11 +3742,16 @@ fun ChatAssistantTab(
                                                                 updatedAt = System.currentTimeMillis()
                                                             )
                                                         )
+                                                        val oldContentDisplay = if (oldMem.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE) {
+                                                            "🔒敏感（內容僅本機可見）"
+                                                        } else {
+                                                            oldMem.content
+                                                        }
                                                         db.chatDao().insertMessage(
                                                             ChatMessageEntity(
                                                                 sessionId = sid,
                                                                 role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                                content = "✓ 已選擇「保留原樣」：維持既有記憶 #${oldMem.id}「${oldMem.subject}：${oldMem.content}」（已標記為已確認）。",
+                                                                content = "✓ 已選擇「保留原樣」：維持既有記憶 #${oldMem.id}「${oldMem.subject}：$oldContentDisplay」（已標記為已確認）。",
                                                                 createdAt = System.currentTimeMillis()
                                                             )
                                                         )
@@ -3774,16 +3784,23 @@ fun ChatAssistantTab(
                                                             sourceRef = memWrite.sourceRef,
                                                             forceReplaceConflict = true
                                                         )
-                                                        val savedId = when (outcome) {
-                                                            is com.phantom.checker.data.MemoryEngine.WriteOutcome.Inserted -> outcome.memory.id
-                                                            is com.phantom.checker.data.MemoryEngine.WriteOutcome.Deduplicated -> outcome.memory.id
-                                                            is com.phantom.checker.data.MemoryEngine.WriteOutcome.ConflictDetected -> outcome.incomingMemory.id
+                                                        val (savedId, savedPrivacyTier) = when (outcome) {
+                                                            is com.phantom.checker.data.MemoryEngine.WriteOutcome.Inserted -> outcome.memory.id to outcome.memory.privacyTier
+                                                            is com.phantom.checker.data.MemoryEngine.WriteOutcome.Deduplicated -> outcome.memory.id to outcome.memory.privacyTier
+                                                            is com.phantom.checker.data.MemoryEngine.WriteOutcome.ConflictDetected -> outcome.incomingMemory.id to outcome.incomingMemory.privacyTier
+                                                        }
+                                                        val newContentDisplay = if (memWrite.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE ||
+                                                            savedPrivacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE
+                                                        ) {
+                                                            "🔒敏感（內容僅本機可見）"
+                                                        } else {
+                                                            memWrite.content
                                                         }
                                                         db.chatDao().insertMessage(
                                                             ChatMessageEntity(
                                                                 sessionId = sid,
                                                                 role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                                content = "✓ 已選擇「更新記憶」：新記憶 #$savedId「${memWrite.subject}：${memWrite.content}」（已確認，舊筆 #${oldMem.id} 已封存）。",
+                                                                content = "✓ 已選擇「更新記憶」：新記憶 #$savedId「${memWrite.subject}：$newContentDisplay」（已確認，舊筆 #${oldMem.id} 已封存）。",
                                                                 createdAt = System.currentTimeMillis()
                                                             )
                                                         )
@@ -3894,8 +3911,14 @@ fun ChatAssistantTab(
                                                             forceReplaceConflict = false
                                                         )
                                                         when (outcome) {
-                                                            is com.phantom.checker.data.MemoryEngine.WriteOutcome.Inserted ->
-                                                                "✓ 已記住 #$${outcome.memory.id} [$catLbl/$layerLbl] ${outcome.memory.subject}：${outcome.memory.content}".replace("#$", "#")
+                                                            is com.phantom.checker.data.MemoryEngine.WriteOutcome.Inserted -> {
+                                                                val contentDisplay = if (outcome.memory.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE) {
+                                                                    "🔒敏感（內容僅本機可見）"
+                                                                } else {
+                                                                    outcome.memory.content
+                                                                }
+                                                                "✓ 已記住 #${outcome.memory.id} [$catLbl/$layerLbl] ${outcome.memory.subject}：$contentDisplay"
+                                                            }
                                                             is com.phantom.checker.data.MemoryEngine.WriteOutcome.Deduplicated ->
                                                                 "✓ 記憶庫已有相同內容 #${outcome.memory.id}，已更新時間。"
                                                             is com.phantom.checker.data.MemoryEngine.WriteOutcome.ConflictDetected ->
