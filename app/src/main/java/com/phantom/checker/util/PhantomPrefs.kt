@@ -1664,6 +1664,43 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
             .apply()
     }
 
+    // ---- #339 連結應用程式中心：GitHub 監控與 Discord 轉發開關 ----
+
+    fun isGitHubMonitorEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("cloud_github_monitor_enabled", false)
+
+    fun setGitHubMonitorEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("cloud_github_monitor_enabled", enabled).apply()
+    }
+
+    fun getGitHubPollIntervalMinutes(ctx: Context): Int =
+        prefs(ctx).getInt("cloud_github_poll_interval_min", 15).coerceIn(15, 180)
+
+    fun setGitHubPollIntervalMinutes(ctx: Context, minutes: Int) {
+        prefs(ctx).edit().putInt("cloud_github_poll_interval_min", minutes.coerceIn(15, 180)).apply()
+    }
+
+    fun getLastGitHubAlertKey(ctx: Context): String =
+        prefs(ctx).getString("cloud_github_last_alert_key", "").orEmpty()
+
+    fun setLastGitHubAlertKey(ctx: Context, key: String) {
+        prefs(ctx).edit().putString("cloud_github_last_alert_key", key).apply()
+    }
+
+    fun getLastGitHubPrKey(ctx: Context): String =
+        prefs(ctx).getString("cloud_github_last_pr_key", "").orEmpty()
+
+    fun setLastGitHubPrKey(ctx: Context, key: String) {
+        prefs(ctx).edit().putString("cloud_github_last_pr_key", key).apply()
+    }
+
+    fun isDiscordForwardEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("cloud_discord_forward_enabled", false)
+
+    fun setDiscordForwardEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("cloud_discord_forward_enabled", enabled).apply()
+    }
+
     data class StatsCardOption(val key: String, val title: String, val subtitle: String, val defaultVisible: Boolean)
 
     val STATS_CARD_OPTIONS: List<StatsCardOption> = listOf(

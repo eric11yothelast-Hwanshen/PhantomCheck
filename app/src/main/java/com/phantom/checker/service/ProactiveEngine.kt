@@ -246,6 +246,11 @@ object ProactiveEngine {
         PhantomPrefs.setProactiveDirty(appCtx, false)
         PhantomPrefs.incrementProactiveDailySentCount(appCtx, dayKey)
         PhantomPrefs.saveLastBriefingMeta(appCtx, finalBody.replace("**", "").take(120), nowMs, msgId)
+        if (PhantomPrefs.isDiscordForwardEnabled(appCtx) && EncryptedByokStore.isDiscordConfigured(appCtx)) {
+            runCatching {
+                CloudExtensionsClient.sendDiscordMessage(appCtx, finalBody)
+            }
+        }
 
         if (!isInDndWindow(appCtx, nowMs)) {
             postBriefingNotification(

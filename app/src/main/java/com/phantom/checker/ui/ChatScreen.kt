@@ -290,6 +290,7 @@ fun ChatAssistantTab(
     var pendingMemoryWriteQueue by remember { mutableStateOf<List<PendingMemoryWriteState>>(emptyList()) }
     var pendingMemoryDeleteQueue by remember { mutableStateOf<List<PendingMemoryDeleteState>>(emptyList()) }
     var pendingAliasCandidate by remember { mutableStateOf<com.phantom.checker.util.ContactBridge.AliasCandidate?>(null) }
+    var pendingCrossAppQueue by remember { mutableStateOf<List<com.phantom.checker.util.CrossAppActionProposal>>(emptyList()) }
     var showTodoListSheet by remember { mutableStateOf(false) }
     val rawTodoListItems by remember(appCtx) {
         AppDatabaseHolder.db(appCtx).todoDao().observeAll()
@@ -1554,12 +1555,18 @@ fun ChatAssistantTab(
                 } else if (newAppliedSettings.isNotEmpty() || usedNumericFallback) {
                     pendingSettingCandidates = null
                 }
+                if (parsed.crossAppActions.isNotEmpty()) {
+                    pendingCrossAppQueue = pendingCrossAppQueue + parsed.crossAppActions
+                }
                 pendingOpenSettingItem?.let { targetItem ->
-                    ctx.startActivity(
-                        Intent(ctx, SettingsActivity::class.java).apply {
+                    val targetIntent = when (targetItem.page) {
+                        "LinkedAppsActivity" -> Intent(ctx, LinkedAppsActivity::class.java)
+                        "ApiKeySettingsActivity" -> Intent(ctx, ApiKeySettingsActivity::class.java)
+                        else -> Intent(ctx, SettingsActivity::class.java).apply {
                             putExtra("highlight_card_key", targetItem.cardKey)
                         }
-                    )
+                    }
+                    ctx.startActivity(targetIntent)
                 }
             }.onFailure { err ->
                 lastError = err.message ?: "AI 回覆失敗"
@@ -4309,6 +4316,56 @@ fun ChatAssistantTab(
                                             modifier = Modifier.weight(1f)
                                         ) {
                                             Text("確認記住")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    pendingCrossAppQueue.firstOrNull()?.let { crossAct ->
+                        item(key = "pending_cross_app_${crossAct.hashCode()}") {
+                            PhantomGlassCard(
+                                glassState = glassState,
+                                cornerRadius = 16.dp,
+                                contentPadding = 12.dp
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "${crossAct.title()}（確認後執行）",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = crossAct.summary(),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        text = "系統不會自動執行此操作；請確認參數無誤後點擊「執行」。",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                pendingCrossAppQueue = pendingCrossAppQueue.drop(1)
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("取消")
+                                        }
+                                        Button(
+                                            onClick = {
+                                                pendingCrossAppQueue = pendingCrossAppQueue.drop(1)
+                                                com.phantom.checker.util.CrossAppActionExecutor.execute(ctx, crossAct)
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("執行")
                                         }
                                     }
                                 }

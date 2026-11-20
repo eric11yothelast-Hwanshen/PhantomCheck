@@ -75,6 +75,10 @@
             android:name=".ui.WhitelistManagementActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".ui.LinkedAppsActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
 
         <service
             android:name=".service.StatsForegroundService"

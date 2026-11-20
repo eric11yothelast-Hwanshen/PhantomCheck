@@ -21,6 +21,7 @@ object NotifIds {
     const val BRIEFING_MORNING = 1008
     const val BRIEFING_EVENING = 1009
     const val PROACTIVE_PUSH = 1010
+    const val GITHUB_ALERT = 1011
 
     private const val SCAM_ALERT_BASE = 2000
     private const val SCAM_ALERT_SPAN = 20000L

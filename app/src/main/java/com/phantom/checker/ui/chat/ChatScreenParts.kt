@@ -393,6 +393,11 @@ internal suspend fun buildRagSystemPrompt(
             appendLine("- 更新記憶：{\"action\":\"memory_update\",\"memoryId\":123,\"category\":\"person|place|schedule|preference|routine|relationship|other(可選)\",\"subject\":\"主題鍵(可選)\",\"content\":\"更新後內容\",\"layer\":\"long_term|short_term(可選)\",\"privacyTier\":\"normal|sensitive(可選)\"}")
             appendLine("- 刪除記憶（支援單筆 memoryId、依關鍵字 query、或依人物/主題 subject 批次，一律出確認卡）：{\"action\":\"memory_delete\",\"memoryId\":123,\"query\":\"關鍵字(可選)\",\"subject\":\"人物或主題(可選)\"}")
         }
+        appendLine("跨 App 行動卡（僅彈出確認卡由使用者手動點擊執行，絕不自動執行）：")
+        appendLine("- 撰寫郵件：{\"action\":\"gmail_compose\",\"to\":\"收件者(可選)\",\"subject\":\"主旨\",\"body\":\"內文\"}")
+        appendLine("- 地圖導航：{\"action\":\"maps_navigate\",\"destination\":\"目的地\"}")
+        appendLine("- 設定鬧鐘：{\"action\":\"set_alarm\",\"hhmm\":\"HH:mm\",\"label\":\"標籤(可選)\"}")
+        appendLine("- 開啟指定 App：{\"action\":\"open_app\",\"packageName\":\"套件名\"}")
         if (com.phantom.checker.util.CalendarBridge.isCalendarEnabledForAi(ctx)) {
             appendLine("本機日曆操作指令（僅查詢使用者勾選的本機日曆，禁止編造任何行程或空檔）：")
             appendLine("- 查詢日曆空檔與行程（系統會由本機日曆直接查詢並附上真實結果；days 預設 7，from/to 選填 HH:mm 如 \"13:00\"/\"18:00\"，day 選填 today/tomorrow/monday..sunday）：{\"action\":\"calendar_free_query\",\"days\":7,\"from\":\"06:00\",\"to\":\"24:00\",\"day\":\"\"}")
@@ -916,6 +921,7 @@ internal data class ParsedChatActions(
     val memoryDeleteProposals: List<MemoryDeleteProposal> = emptyList(),
     val calendarFreeQueryProposals: List<CalendarFreeQueryProposal> = emptyList(),
     val calendarAddProposals: List<CalendarAddProposal> = emptyList(),
+    val crossAppActions: List<com.phantom.checker.util.CrossAppActionProposal> = emptyList(),
     val invalidActionErrors: List<String> = emptyList()
 )
 
@@ -972,7 +978,10 @@ private val KNOWN_CHAT_ACTIONS = setOf(
     "memory_update",
     "memory_delete",
     "calendar_free_query",
-    "calendar_add"
+    "calendar_add",
+    "gmail_compose",
+    "maps_navigate",
+    "set_alarm"
 )
 
 /**
@@ -1041,6 +1050,7 @@ private fun parseSingleActionJson(
     memoryDeleteOut: MutableList<MemoryDeleteProposal>,
     calendarFreeOut: MutableList<CalendarFreeQueryProposal>,
     calendarAddOut: MutableList<CalendarAddProposal>,
+    crossAppOut: MutableList<com.phantom.checker.util.CrossAppActionProposal>,
     errorsOut: MutableList<String>
 ): Boolean {
     val obj = try {
@@ -1246,7 +1256,10 @@ private fun parseSingleActionJson(
             val opRaw = obj.get("operation")?.takeIf { !it.isJsonNull }?.asString?.trim()?.lowercase()
             val operation = if (opRaw == "remove") "remove" else "add"
             val distinctIds = ids.distinct()
-            if (distinctIds.isEmpty() && messageRef == null) {
+            val directPkg = (obj.get("packageName") ?: obj.get("pkg"))?.takeIf { !it.isJsonNull }?.asString?.trim()?.takeIf { it.isNotEmpty() }
+            if (action == "open_app" && distinctIds.isEmpty() && messageRef == null && directPkg != null) {
+                crossAppOut.add(com.phantom.checker.util.CrossAppActionProposal.OpenApp(packageName = directPkg))
+            } else if (distinctIds.isEmpty() && messageRef == null) {
                 val actionLabel = when (action) {
                     "reply_message" -> "回覆訊息"
                     "open_app" -> "開啟原 App"
@@ -1442,6 +1455,30 @@ private fun parseSingleActionJson(
                 )
             }
         }
+        "gmail_compose" -> {
+            val to = obj.get("to")?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
+            val subject = obj.get("subject")?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
+            val body = obj.get("body")?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
+            crossAppOut.add(com.phantom.checker.util.CrossAppActionProposal.GmailCompose(to = to, subject = subject, body = body))
+        }
+        "maps_navigate" -> {
+            val dest = (obj.get("destination") ?: obj.get("address") ?: obj.get("query"))
+                ?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
+            if (dest.isBlank()) {
+                errorsOut.add("地圖導航動作缺少目的地（destination）。")
+            } else {
+                crossAppOut.add(com.phantom.checker.util.CrossAppActionProposal.MapsNavigate(destination = dest))
+            }
+        }
+        "set_alarm" -> {
+            val hhmm = (obj.get("hhmm") ?: obj.get("time"))?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
+            val label = (obj.get("label") ?: obj.get("message"))?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
+            if (hhmm.isBlank()) {
+                errorsOut.add("設定鬧鐘動作缺少時間（hhmm）。")
+            } else {
+                crossAppOut.add(com.phantom.checker.util.CrossAppActionProposal.SetAlarm(hhmm = hhmm, label = label))
+            }
+        }
     }
     return true
 }
@@ -1470,6 +1507,7 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
     val memoryDeletes = mutableListOf<MemoryDeleteProposal>()
     val calendarFreeQueries = mutableListOf<CalendarFreeQueryProposal>()
     val calendarAdds = mutableListOf<CalendarAddProposal>()
+    val crossAppActions = mutableListOf<com.phantom.checker.util.CrossAppActionProposal>()
     val errors = mutableListOf<String>()
 
     val rangesToRemove = mutableListOf<IntRange>()
@@ -1484,7 +1522,7 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
             errors.add("動作指令格式無法解析，請重新嘗試。")
         } else {
             objs.forEach { (_, jsonStr) ->
-                parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, whitelistDeletes, toggles, candidates, adjusts, openSettings, msgActions, searchProposals, todoManages, vipPins, muteApps, markReads, exports, memoryViews, memoryAdds, memoryUpdates, memoryDeletes, calendarFreeQueries, calendarAdds, errors)
+                parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, whitelistDeletes, toggles, candidates, adjusts, openSettings, msgActions, searchProposals, todoManages, vipPins, muteApps, markReads, exports, memoryViews, memoryAdds, memoryUpdates, memoryDeletes, calendarFreeQueries, calendarAdds, crossAppActions, errors)
             }
         }
     }
@@ -1502,7 +1540,7 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
     val inlineRangesToRemove = mutableListOf<IntRange>()
     splitBalancedJsonObjects(withoutFenced).forEach { (range, jsonStr) ->
         if (jsonStr.contains("\"action\"", ignoreCase = true)) {
-            val handled = parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, whitelistDeletes, toggles, candidates, adjusts, openSettings, msgActions, searchProposals, todoManages, vipPins, muteApps, markReads, exports, memoryViews, memoryAdds, memoryUpdates, memoryDeletes, calendarFreeQueries, calendarAdds, errors)
+            val handled = parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, whitelistDeletes, toggles, candidates, adjusts, openSettings, msgActions, searchProposals, todoManages, vipPins, muteApps, markReads, exports, memoryViews, memoryAdds, memoryUpdates, memoryDeletes, calendarFreeQueries, calendarAdds, crossAppActions, errors)
             if (handled) {
                 inlineRangesToRemove.add(range)
             }
@@ -1554,6 +1592,7 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
         memoryDeleteProposals = memoryDeletes.distinct(),
         calendarFreeQueryProposals = calendarFreeQueries.distinct(),
         calendarAddProposals = calendarAdds.distinct(),
+        crossAppActions = crossAppActions.distinct(),
         invalidActionErrors = errors.distinct()
     )
 }
