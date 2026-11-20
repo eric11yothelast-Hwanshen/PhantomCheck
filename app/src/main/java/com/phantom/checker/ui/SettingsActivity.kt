@@ -403,6 +403,7 @@ fun FilterSettingsScreen(
         }
     }
 
+    val settingsVersion by PhantomSettingsBus.version.collectAsState()
     LaunchedEffect(assistantHasAvatar, settingsVersion) {
         assistantAvatarBitmap = if (assistantHasAvatar) {
             AssistantAvatarHelper.loadAvatarBitmap(appCtx)
@@ -535,7 +536,6 @@ fun FilterSettingsScreen(
         }
     }
 
-    val settingsVersion by PhantomSettingsBus.version.collectAsState()
     LaunchedEffect(settingsVersion) {
         if (settingsVersion > 0L) {
             mutedApps = PhantomPrefs.getMutedApps(appCtx).sorted()
