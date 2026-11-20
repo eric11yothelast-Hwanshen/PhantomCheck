@@ -884,7 +884,7 @@ internal data class ParsedChatActions(
     val invalidActionErrors: List<String> = emptyList()
 )
 
-private val CHAT_TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("MM/dd HH:mm")
+private val CHAT_TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("MM/dd HH:mm", Locale.US)
 private val CHAT_DEVICE_NOW_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm (EEEE)", Locale.TAIWAN)
 
 internal fun formatChatTime(epochMs: Long): String =

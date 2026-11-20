@@ -3810,8 +3810,7 @@ private fun FraudIntelCard(
             SettingSwitchRow(
                 title = "Google Safe Browsing v4",
                 subtitle = when (sbKeySource) {
-                    ApiKeySource.ENCRYPTED_PREFS -> "Key 狀態：已於 App 加密儲存（優先於 BuildConfig）"
-                    ApiKeySource.BUILD_CONFIG -> "Key 狀態：已從 local.properties 注入"
+                    ApiKeySource.ENCRYPTED_PREFS -> "Key 狀態：已於 App 加密儲存"
                     ApiKeySource.NONE -> "Key 狀態：未設定（需 API key 方可使用）"
                 },
                 checked = safeBrowsingEnabled,

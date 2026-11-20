@@ -324,7 +324,8 @@ fun OnboardingOverlay(
         }
         if (requiredTarget != null && targetBounds.isNotEmpty() && !targetBounds.containsKey(requiredTarget)) {
             delay(400L)
-            if (!targetBounds.containsKey(requiredTarget)) {
+            // 雙條件防誤跳：等 400ms 讓分頁切換完成後，再確認 bounds 已量測且目標仍缺席才跳步
+            if (targetBounds.isNotEmpty() && !targetBounds.containsKey(requiredTarget)) {
                 lastAutoSkippedStep = step
                 onNextStep()
             }
