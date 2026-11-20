@@ -12,13 +12,19 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.rememberSplineBasedDecay
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -37,6 +43,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -67,6 +74,8 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -121,6 +130,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
@@ -494,7 +504,9 @@ fun ChatAssistantTab(
             )
 
             isSending = false
-            result.onSuccess { reply ->
+            result.onSuccess { outcome ->
+                val reply = outcome.replyText
+                val thinkingText = outcome.thinkingText
                 val summarySourceText = ragBuild.ragMessagesTextForSummary
                 if (!summarySourceText.isNullOrBlank() && ragBuild.maxMsgTimestamp > 0L) {
                     scope.launch(Dispatchers.IO) {
@@ -893,7 +905,8 @@ fun ChatAssistantTab(
                             sessionId = sessionId,
                             role = ChatMessageEntity.ROLE_ASSISTANT,
                             content = storedReply,
-                            createdAt = System.currentTimeMillis()
+                            createdAt = System.currentTimeMillis(),
+                            thinkingContent = thinkingText
                         )
                     )
                     allActionErrors.forEach { errText ->
@@ -2360,6 +2373,77 @@ fun ChatAssistantTab(
                                         cornerRadius = 18.dp,
                                         contentPadding = 12.dp
                                     ) {
+                                        val thinking = msg.thinkingContent?.takeIf { it.isNotBlank() }
+                                        if (thinking != null) {
+                                            var thinkingExpanded by remember(msg.id) { mutableStateOf(false) }
+                                            Surface(
+                                                shape = RoundedCornerShape(12.dp),
+                                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                                border = BorderStroke(
+                                                    width = 0.75.dp,
+                                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                                                ),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(bottom = 8.dp)
+                                            ) {
+                                                Column(modifier = Modifier.fillMaxWidth()) {
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable { thinkingExpanded = !thinkingExpanded }
+                                                            .padding(horizontal = 10.dp, vertical = 7.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.SpaceBetween
+                                                    ) {
+                                                        Text(
+                                                            text = if (thinkingExpanded) "💭 推演思路（點擊收合）" else "💭 推演思路（點擊展開）",
+                                                            style = MaterialTheme.typography.labelMedium,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis,
+                                                            modifier = Modifier.weight(1f)
+                                                        )
+                                                        Icon(
+                                                            imageVector = if (thinkingExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                                            contentDescription = if (thinkingExpanded) "收合推演思路" else "展開推演思路",
+                                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                    }
+                                                    AnimatedVisibility(
+                                                        visible = thinkingExpanded,
+                                                        enter = expandVertically() + fadeIn(),
+                                                        exit = shrinkVertically() + fadeOut()
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .height(IntrinsicSize.Min)
+                                                                .padding(start = 10.dp, end = 10.dp, bottom = 10.dp)
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .width(2.dp)
+                                                                    .fillMaxHeight()
+                                                                    .background(
+                                                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.55f),
+                                                                        shape = RoundedCornerShape(1.dp)
+                                                                    )
+                                                            )
+                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                            Text(
+                                                                text = thinking,
+                                                                fontSize = 12.sp,
+                                                                lineHeight = 17.sp,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                                                                modifier = Modifier.weight(1f)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                         PhantomMarkdownText(
                                             markdown = msg.content,
                                             style = MaterialTheme.typography.bodyMedium,

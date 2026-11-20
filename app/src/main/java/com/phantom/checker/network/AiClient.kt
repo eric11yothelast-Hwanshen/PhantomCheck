@@ -10,6 +10,7 @@ import android.util.LruCache
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
+import com.google.gson.JsonElement
 import com.google.gson.JsonParser
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
@@ -65,8 +66,20 @@ data class ChatUsage(
     @SerializedName("prompt_tokens_details") val promptTokensDetails: PromptTokensDetails? = null
 )
 
+data class ResponseMessage(
+    val role: String? = null,
+    val content: JsonElement? = null,
+    val reasoning: JsonElement? = null,
+    @SerializedName("reasoning_content") val reasoningContent: JsonElement? = null
+)
+
+data class AiChatOutcome(
+    val replyText: String,
+    val thinkingText: String? = null
+)
+
 data class ChatChoice(
-    val message: ChatMessage,
+    val message: ResponseMessage,
     @SerializedName("finish_reason") val finishReason: String? = null
 )
 data class ChatResponse(
@@ -508,6 +521,104 @@ object AiClient {
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
+    private val THINK_BLOCK_REGEX = Regex("""<think\b[^>]*>([\s\S]*?)</think>""", RegexOption.IGNORE_CASE)
+
+    private fun extractJsonTextValue(el: JsonElement?): String {
+        if (el == null || el.isJsonNull) return ""
+        return when {
+            el.isJsonPrimitive -> el.asString
+            el.isJsonArray -> buildString {
+                for (item in el.asJsonArray) {
+                    if (item == null || item.isJsonNull) continue
+                    when {
+                        item.isJsonPrimitive -> append(item.asString)
+                        item.isJsonObject -> {
+                            val obj = item.asJsonObject
+                            val textEl = obj.get("text")
+                            if (textEl != null && !textEl.isJsonNull && textEl.isJsonPrimitive) {
+                                append(textEl.asString)
+                            }
+                        }
+                    }
+                }
+            }
+            el.isJsonObject -> {
+                val textEl = el.asJsonObject.get("text")
+                if (textEl != null && !textEl.isJsonNull && textEl.isJsonPrimitive) textEl.asString else ""
+            }
+            else -> ""
+        }
+    }
+
+    /**
+     * 從多型回應 content（chunk 清單或含 <think> 標籤字串）及 Groq/DeepSeek 旁欄提取推演思路文字。
+     * 若模型無思考鏈則回傳 null。
+     */
+    fun extractThinking(
+        content: JsonElement?,
+        reasoning: JsonElement? = null,
+        reasoningContent: JsonElement? = null
+    ): String? {
+        val parts = mutableListOf<String>()
+        if (content != null && !content.isJsonNull) {
+            when {
+                content.isJsonArray -> {
+                    for (chunk in content.asJsonArray) {
+                        if (chunk == null || !chunk.isJsonObject) continue
+                        val obj = chunk.asJsonObject
+                        val type = obj.get("type")?.takeIf { !it.isJsonNull && it.isJsonPrimitive }?.asString?.lowercase()
+                        if (type == "thinking") {
+                            val thinkText = extractJsonTextValue(obj.get("thinking")).trim()
+                            if (thinkText.isNotEmpty()) parts.add(thinkText)
+                        }
+                    }
+                }
+                content.isJsonPrimitive -> {
+                    val raw = content.asString
+                    THINK_BLOCK_REGEX.findAll(raw).forEach { match ->
+                        val inner = match.groupValues.getOrNull(1)?.trim().orEmpty()
+                        if (inner.isNotEmpty()) parts.add(inner)
+                    }
+                }
+            }
+        }
+        listOf(reasoning, reasoningContent).forEach { side ->
+            val s = extractJsonTextValue(side).trim()
+            if (s.isNotEmpty() && s !in parts) parts.add(s)
+        }
+        return parts.joinToString("\n\n").trim().takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * 從多型回應 content 提取正式回覆純文字（過濾 thinking chunk 與 <think> 區塊）。
+     */
+    fun extractReplyText(content: JsonElement?): String {
+        if (content == null || content.isJsonNull) return ""
+        val raw = when {
+            content.isJsonArray -> buildString {
+                for (chunk in content.asJsonArray) {
+                    if (chunk == null || chunk.isJsonNull) continue
+                    when {
+                        chunk.isJsonObject -> {
+                            val obj = chunk.asJsonObject
+                            val type = obj.get("type")?.takeIf { !it.isJsonNull && it.isJsonPrimitive }?.asString?.lowercase()
+                            if (type == "text") {
+                                val textEl = obj.get("text")
+                                if (textEl != null && !textEl.isJsonNull && textEl.isJsonPrimitive) {
+                                    append(textEl.asString)
+                                }
+                            }
+                        }
+                        chunk.isJsonPrimitive -> append(chunk.asString)
+                    }
+                }
+            }
+            content.isJsonPrimitive -> content.asString
+            else -> ""
+        }
+        return THINK_BLOCK_REGEX.replace(raw, "").trim()
+    }
+
     /** 使用指定的設定發送 max_tokens=5 的最小請求以驗證連線 */
     suspend fun testConnection(
         baseUrl: String,
@@ -537,7 +648,10 @@ object AiClient {
                     temperature = 0.0
                 )
             )
-            if (res.choices.isNotEmpty()) {
+            val firstMsg = res.choices.firstOrNull()?.message
+            if (res.choices.isNotEmpty() && firstMsg != null) {
+                // 透過 extractReplyText 驗證多型 content 解析（reasoning 模型在 maxTokens=5 可能僅回傳 thinking chunk）
+                extractReplyText(firstMsg.content)
                 Result.success("連線成功！$hostLabel ($resolvedModel) 驗證通過")
             } else {
                 Result.failure(IllegalStateException("API 回應為空（$hostLabel / $resolvedModel）"))
@@ -775,7 +889,7 @@ object AiClient {
                         )
                     )
                     logUsageStats("analyzeMessage", targetModel, res.usage)
-                    return res.choices.firstOrNull()?.message?.content
+                    return extractReplyText(res.choices.firstOrNull()?.message?.content).takeIf { it.isNotEmpty() }
                 } catch (e: HttpException) {
                     if (e.code() == 429 && rateLimitRetries < 2) {
                         rateLimitRetries++
@@ -883,7 +997,7 @@ object AiClient {
                     responseFormat = responseFormat
                 )
             )
-            val text = res.choices.firstOrNull()?.message?.content?.trim()
+            val text = extractReplyText(res.choices.firstOrNull()?.message?.content).takeIf { it.isNotEmpty() }
                 ?: return@withContext Result.failure(IllegalStateException("AI 回應為空，請檢查模型設定。"))
             parseAnalysisJson(text, activeTags)?.let { return@withContext Result.success(it) }
 
@@ -903,7 +1017,7 @@ object AiClient {
                     responseFormat = responseFormat
                 )
             )
-            val retryText = retryRes.choices.firstOrNull()?.message?.content?.trim().orEmpty()
+            val retryText = extractReplyText(retryRes.choices.firstOrNull()?.message?.content)
             val parsedRetry = if (retryText.isNotEmpty()) parseAnalysisJson(retryText, activeTags) else null
             if (parsedRetry != null) {
                 return@withContext Result.success(parsedRetry)
@@ -1057,7 +1171,7 @@ object AiClient {
                             )
                         )
                         logUsageStats("analyzeMessageBatch", modelName, res.usage)
-                        val text = res.choices.firstOrNull()?.message?.content ?: return emptyMap()
+                        val text = extractReplyText(res.choices.firstOrNull()?.message?.content).ifEmpty { return emptyMap() }
                         return parseBatchAnalysisJson(text, activeTags, batchItems.map { it.messageId }.toSet())
                     } catch (e: HttpException) {
                         if (e.code() == 429 && rateLimitRetries < 2) {
@@ -1600,26 +1714,6 @@ object AiClient {
         return if (rawErr != null) "$base\n原始錯誤：$rawErr" else base
     }
 
-    fun isVisionModelSupported(profile: AiProviderProfile): Boolean {
-        val m = profile.model.trim().lowercase()
-        if (m.isEmpty()) return false
-        val knownTextOnly = listOf(
-            "gpt-oss", "llama-3.1", "llama-3.3", "deepseek",
-            "mixtral", "gemma", "qwen3-32b", "qwen-qwq"
-        )
-        if (knownTextOnly.any { m.contains(it) }) return false
-        val knownVision = listOf(
-            "vision", "pixtral", "mistral-large", "mistral-medium",
-            "mistral-small-2603", "mistral-small-4",
-            "gpt-4o", "gpt-4-turbo", "gpt-4.1", "gpt-5", "gpt-6",
-            "gemini", "claude-3", "claude-4",
-            "qwen3.8", "qwen2.5-vl", "qwen-vl", "vl",
-            "llama-3.2-11b-vision", "llama-3.2-90b-vision", "llama-4",
-            "llava", "muse-spark", "multimodal"
-        )
-        return knownVision.any { m.contains(it) }
-    }
-
     /** 依 base64 圖片實際壓縮尺寸動態估算 vision token 開銷（取代硬編 2048） */
     fun estimateImageTokenOverhead(imageDataUri: String?): Int {
         if (imageDataUri.isNullOrBlank()) return 0
@@ -1676,7 +1770,7 @@ object AiClient {
                 )
             )
             logUsageStats("summarizeRagContext", targetModel, res.usage)
-            res.choices.firstOrNull()?.message?.content?.trim()?.takeIf { it.isNotBlank() }
+            extractReplyText(res.choices.firstOrNull()?.message?.content).takeIf { it.isNotBlank() }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -1694,14 +1788,9 @@ object AiClient {
         imageDataUri: String? = null,
         promptCacheKey: String? = null,
         onRebuildSystemPromptForRetry: (suspend (newRagLimit: Int) -> String)? = null
-    ): Result<String> = withContext(Dispatchers.IO) {
+    ): Result<AiChatOutcome> = withContext(Dispatchers.IO) {
         val profile = getProfileForPurpose(context, AiPurpose.CHAT)
             ?: return@withContext Result.failure(IllegalStateException("尚未設定 AI Provider API Key"))
-        if (!imageDataUri.isNullOrBlank() && !isVisionModelSupported(profile)) {
-            return@withContext Result.failure(
-                IllegalStateException("目前模型「${profile.model}」不支援圖片視覺檢視，請切換至支援視覺的模型（如 Mistral Small 4、Pixtral、Qwen3.8、GPT-4o、Gemini）後再試。")
-            )
-        }
         val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
         val auth = "Bearer ${profile.apiKey.trim()}"
         val budget = getProviderTotalTokenBudget(profile)
@@ -1813,11 +1902,13 @@ object AiClient {
                 }
                 logUsageStats("chatAssistant", currentBody.model, res.usage)
                 val choice = res.choices.firstOrNull()
-                val reply = choice?.message?.content?.trim()
-                return@withContext if (reply.isNullOrEmpty()) {
+                val respMsg = choice?.message
+                val reply = extractReplyText(respMsg?.content)
+                val thinking = extractThinking(respMsg?.content, respMsg?.reasoning, respMsg?.reasoningContent)
+                return@withContext if (reply.isEmpty()) {
                     Result.failure(IllegalStateException("AI 回應為空"))
                 } else {
-                    val withTruncNote = if (choice.finishReason == "length") {
+                    val withTruncNote = if (choice?.finishReason == "length") {
                         "$reply\n\n⚠ 本回應因長度上限被截斷"
                     } else {
                         reply
@@ -1832,7 +1923,7 @@ object AiClient {
                     } else {
                         withTruncNote
                     }
-                    Result.success(finalReply)
+                    Result.success(AiChatOutcome(replyText = finalReply, thinkingText = thinking))
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -1932,7 +2023,7 @@ object AiClient {
                             temperature = 0.3
                         )
                     )
-                    result = res.choices.firstOrNull()?.message?.content?.trim()?.takeIf { it.isNotEmpty() }
+                    result = extractReplyText(res.choices.firstOrNull()?.message?.content).takeIf { it.isNotEmpty() }
                     break
                 } catch (e: CancellationException) {
                     throw e
@@ -1988,8 +2079,8 @@ object AiClient {
             try {
                 enforceRateLimit()
                 val res = getApi(profile.baseUrl).chat(url = fullUrl, auth = auth, body = body)
-                val text = res.choices.firstOrNull()?.message?.content?.trim()
-                return@withContext if (text.isNullOrEmpty()) {
+                val text = extractReplyText(res.choices.firstOrNull()?.message?.content)
+                return@withContext if (text.isEmpty()) {
                     Result.failure(IllegalStateException("AI 回應為空"))
                 } else {
                     Result.success(text)
@@ -2071,8 +2162,8 @@ object AiClient {
             try {
                 enforceRateLimit()
                 val res = getApi(profile.baseUrl).chat(url = fullUrl, auth = auth, body = body)
-                val text = res.choices.firstOrNull()?.message?.content?.trim()
-                return@withContext if (text.isNullOrEmpty()) {
+                val text = extractReplyText(res.choices.firstOrNull()?.message?.content)
+                return@withContext if (text.isEmpty()) {
                     Result.failure(IllegalStateException("AI 回應為空"))
                 } else {
                     Result.success(text)
@@ -2144,7 +2235,7 @@ object AiClient {
         try {
             enforceRateLimit()
             val res = getApi(profile.baseUrl).chat(url = fullUrl, auth = auth, body = body)
-            val raw = res.choices.firstOrNull()?.message?.content?.trim().orEmpty()
+            val raw = extractReplyText(res.choices.firstOrNull()?.message?.content)
             val start = raw.indexOf('[')
             val end = raw.lastIndexOf(']')
             if (start < 0 || end <= start) {
@@ -2218,7 +2309,7 @@ object AiClient {
         try {
             enforceRateLimit()
             val res = getApi(profile.baseUrl).chat(url = fullUrl, auth = auth, body = body)
-            val raw = res.choices.firstOrNull()?.message?.content?.trim().orEmpty()
+            val raw = extractReplyText(res.choices.firstOrNull()?.message?.content)
             val start = raw.indexOf('{')
             val end = raw.lastIndexOf('}')
             if (start < 0 || end <= start) {
