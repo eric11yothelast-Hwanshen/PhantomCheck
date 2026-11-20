@@ -1859,6 +1859,29 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     fun setAssistantName(ctx: Context, name: String) {
         val clean = name.trim().take(MAX_ASSISTANT_NAME_LENGTH).ifEmpty { DEFAULT_ASSISTANT_NAME }
         prefs(ctx).edit().putString(KEY_ASSISTANT_NAME, clean).apply()
+        ensurePartnerFirstActivatedAt(ctx)
+    }
+
+    /** #338 AI 夥伴分頁標籤文字：未自訂時 fallback「夥伴」，截斷 ≤6 字元避免破版 */
+    fun getPartnerTabLabel(ctx: Context): String {
+        val raw = prefs(ctx).getString(KEY_ASSISTANT_NAME, null)?.trim().orEmpty()
+        if (raw.isEmpty()) return "夥伴"
+        return raw.take(6)
+    }
+
+    /** #338 陪伴天數起算時間（首次開啟夥伴分頁或首次自訂助手名時記錄） */
+    fun ensurePartnerFirstActivatedAt(ctx: Context, nowMs: Long = System.currentTimeMillis()): Long {
+        val p = prefs(ctx)
+        val existing = p.getLong("partner_first_activated_at", 0L)
+        if (existing > 0L) return existing
+        p.edit().putLong("partner_first_activated_at", nowMs).apply()
+        return nowMs
+    }
+
+    fun getPartnerCompanionDays(ctx: Context, nowMs: Long = System.currentTimeMillis()): Int {
+        val start = ensurePartnerFirstActivatedAt(ctx, nowMs)
+        val diffDays = ((nowMs - start).coerceAtLeast(0L) / (24L * 60L * 60L * 1000L)).toInt()
+        return (diffDays + 1).coerceAtLeast(1)
     }
 
     /** AI 助手個性 Preset */

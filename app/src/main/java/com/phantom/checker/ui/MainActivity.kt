@@ -73,6 +73,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -364,7 +365,8 @@ private enum class MainTab(val title: String) {
     ASSISTANT("AI 助手"),
     MEMORY("記憶"),
     NOTES("記事"),
-    STATS("統計")
+    STATS("統計"),
+    PARTNER("夥伴")
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -518,6 +520,12 @@ private fun PhantomCheckApp(
     var tabBarDisplayMode by remember { mutableStateOf(PhantomPrefs.getTabBarDisplayMode(appCtx)) }
     var visibleStatsCards by remember { mutableStateOf(PhantomPrefs.getVisibleStatsCards(appCtx)) }
     val settingsVersion by PhantomSettingsBus.version.collectAsState()
+    var partnerTabLabel by remember(settingsVersion) { mutableStateOf(PhantomPrefs.getPartnerTabLabel(appCtx)) }
+    var partnerAvatarBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    LaunchedEffect(settingsVersion) {
+        partnerTabLabel = PhantomPrefs.getPartnerTabLabel(appCtx)
+        partnerAvatarBitmap = com.phantom.checker.util.AssistantAvatarHelper.loadAvatarBitmap(appCtx)
+    }
     LaunchedEffect(settingsVersion) {
         if (settingsVersion > 0L) {
             favoritePackages = PhantomPrefs.getFavoriteApps(appCtx)
@@ -711,6 +719,7 @@ private fun PhantomCheckApp(
                     MainTab.ASSISTANT -> Unit
                     MainTab.MEMORY -> Unit
                     MainTab.NOTES -> Unit
+                    MainTab.PARTNER -> Unit
                     MainTab.STATS -> {
                         val summary = db.aiSummaryDao().latest()
                         val cal = Calendar.getInstance().apply {
@@ -1467,12 +1476,14 @@ private fun PhantomCheckApp(
                                         MainTab.MEMORY -> MemoryIcon
                                         MainTab.NOTES -> Icons.Default.Edit
                                         MainTab.STATS -> Icons.Default.Info
+                                        MainTab.PARTNER -> Icons.Default.Person
                                     }
+                                    val tabLabel = if (tab == MainTab.PARTNER) partnerTabLabel else tab.title
                                     val targetKey = when (tab) {
                                         MainTab.ASSISTANT -> OnboardingTargets.AI_ASSISTANT_TAB
                                         MainTab.NOTES -> OnboardingTargets.NOTES_TAB
                                         MainTab.STATS -> OnboardingTargets.STATS_TAB
-                                        MainTab.MESSAGES, MainTab.MEMORY -> null
+                                        MainTab.MESSAGES, MainTab.MEMORY, MainTab.PARTNER -> null
                                     }
                                     val itemModifier = if (targetKey != null) {
                                         Modifier
@@ -1483,6 +1494,15 @@ private fun PhantomCheckApp(
                                     } else {
                                         Modifier.weight(1f)
                                     }
+                                    val customIcon: (@Composable () -> Unit)? = if (tab == MainTab.PARTNER && partnerAvatarBitmap != null) {
+                                        {
+                                            com.phantom.checker.util.AssistantAvatarCircle(
+                                                avatarBitmap = partnerAvatarBitmap,
+                                                assistantName = partnerTabLabel,
+                                                size = if (isCompactTabBar) 20.dp else 22.dp
+                                            )
+                                        }
+                                    } else null
                                     LiquidGlassTabBarItem(
                                         selected = selectedTab == tab,
                                         onClick = {
@@ -1490,9 +1510,10 @@ private fun PhantomCheckApp(
                                             selectedTab = tab
                                         },
                                         icon = icon,
-                                        label = tab.title,
+                                        label = tabLabel,
                                         modifier = itemModifier,
-                                        compact = isCompactTabBar
+                                        compact = isCompactTabBar,
+                                        customIcon = customIcon
                                     )
                                 }
                             }
@@ -1768,6 +1789,20 @@ private fun PhantomCheckApp(
                         glassState = glassState,
                         visibleCards = visibleStatsCards,
                         onSummaryGenerated = { refreshTrigger++ },
+                        onShowMessage = { msg ->
+                            scope.launch { snackbarHostState.showSnackbar(msg) }
+                        }
+                    )
+                    MainTab.PARTNER -> com.phantom.checker.ui.partner.PartnerTab(
+                        glassState = glassState,
+                        onStartChat = { selectedTab = MainTab.ASSISTANT },
+                        onOpenPersonaSettings = {
+                            ctx.startActivity(
+                                Intent(ctx, SettingsActivity::class.java).apply {
+                                    putExtra("highlight_card_key", "memory_assistant")
+                                }
+                            )
+                        },
                         onShowMessage = { msg ->
                             scope.launch { snackbarHostState.showSnackbar(msg) }
                         }

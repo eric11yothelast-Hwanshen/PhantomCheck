@@ -255,7 +255,7 @@ fun LiquidGlassTabBar(
     }
 }
 
-/** 單一分頁項：可點擊（無漣漪延遲，點擊立即回呼）＋圖示＋標籤；選中色由呼叫端傳入。 */
+/** 單一分頁項：可點擊（無漣漪延遲，點擊立即回呼）＋圖示（或自訂頭像縮圖）＋標籤；選中色由呼叫端傳入。 */
 @Composable
 fun LiquidGlassTabBarItem(
     selected: Boolean,
@@ -264,6 +264,7 @@ fun LiquidGlassTabBarItem(
     label: String,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    customIcon: (@Composable () -> Unit)? = null,
 ) {
     val contentColor = if (selected) {
         MaterialTheme.colorScheme.primary
@@ -276,24 +277,31 @@ fun LiquidGlassTabBarItem(
         verticalArrangement = Arrangement.Center,
         modifier = modifier
             .fillMaxHeight()
+            .padding(horizontal = if (compact) 1.dp else 2.dp)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick,
             ),
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = contentColor,
-            modifier = if (compact) Modifier.size(20.dp) else Modifier,
-        )
+        if (customIcon != null) {
+            customIcon()
+        } else {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = contentColor,
+                modifier = if (compact) Modifier.size(20.dp) else Modifier.size(22.dp),
+            )
+        }
         Spacer(Modifier.height(if (compact) 1.dp else 2.dp))
         Text(
             text = label,
             style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
             color = contentColor,
             maxLines = 1,
+            softWrap = false,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
         )
     }
 }
