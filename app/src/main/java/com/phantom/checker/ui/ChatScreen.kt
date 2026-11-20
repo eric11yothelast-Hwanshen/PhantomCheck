@@ -1275,9 +1275,10 @@ fun ChatAssistantTab(
                                 val filtered = allMemories.filter { m ->
                                     val layerOk = mvp.layer.isNullOrBlank() || mvp.layer == "all" || m.layer.equals(mvp.layer, ignoreCase = true)
                                     val statusOk = mvp.status.isNullOrBlank() || mvp.status == "all" || m.status.equals(mvp.status, ignoreCase = true)
+                                    val isSensitiveMem = m.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE
                                     val queryOk = mvp.query.isNullOrBlank() ||
                                         m.subject.contains(mvp.query, ignoreCase = true) ||
-                                        m.content.contains(mvp.query, ignoreCase = true) ||
+                                        (!isSensitiveMem && m.content.contains(mvp.query, ignoreCase = true)) ||
                                         com.phantom.checker.data.MemoryEngine.categoryLabel(m.category).contains(mvp.query, ignoreCase = true)
                                     layerOk && statusOk && queryOk
                                 }

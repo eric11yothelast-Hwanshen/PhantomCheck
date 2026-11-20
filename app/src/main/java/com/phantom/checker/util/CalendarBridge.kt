@@ -270,8 +270,8 @@ object CalendarBridge {
 
         val winStart = parseLocalTimeOrDefault(fromHHmm, LocalTime.of(6, 0))
         val winEnd = parseLocalTimeOrDefault(toHHmm, LocalTime.of(23, 59))
-        val rangeStartMs = targetDates.first().atStartOfDay(zone).toInstant().toEpochMilli()
-        val rangeEndMs = targetDates.last().plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val rangeStartMs = targetDates.first().minusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val rangeEndMs = targetDates.last().plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli()
 
         val allInstances = queryInstances(ctx, rangeStartMs, rangeEndMs, selectedIds)
         val dateFmt = DateTimeFormatter.ofPattern("MM/dd (E)", Locale.TRADITIONAL_CHINESE)
@@ -286,14 +286,21 @@ object CalendarBridge {
             if (dayEndMs <= dayStartMs) continue
 
             val dayEvents = allInstances.filter { inst ->
-                inst.beginMs < dayEndMs && inst.endMs > dayStartMs
-            }.sortedBy { it.beginMs }
+                if (inst.allDay) {
+                    val evStartDateUtc = Instant.ofEpochMilli(inst.beginMs).atZone(ZoneOffset.UTC).toLocalDate()
+                    val evEndDateUtcRaw = Instant.ofEpochMilli(inst.endMs).atZone(ZoneOffset.UTC).toLocalDate()
+                    val evEndDateUtc = if (evEndDateUtcRaw.isAfter(evStartDateUtc)) evEndDateUtcRaw else evStartDateUtc.plusDays(1)
+                    !date.isBefore(evStartDateUtc) && date.isBefore(evEndDateUtc)
+                } else {
+                    inst.beginMs < dayEndMs && inst.endMs > dayStartMs
+                }
+            }.sortedBy { if (it.allDay) dayStartMs else it.beginMs }
 
-            // 合併重疊忙碌區間以精確計算空檔
+            // 合併重疊忙碌區間以精確計算空檔（ALL_DAY 事件完整覆蓋該日查詢時段）
             val mergedBusy = mutableListOf<Pair<Long, Long>>()
             for (ev in dayEvents) {
-                val b = max(ev.beginMs, dayStartMs)
-                val e = min(ev.endMs, dayEndMs)
+                val b = if (ev.allDay) dayStartMs else max(ev.beginMs, dayStartMs)
+                val e = if (ev.allDay) dayEndMs else min(ev.endMs, dayEndMs)
                 if (e <= b) continue
                 if (mergedBusy.isEmpty() || b > mergedBusy.last().second) {
                     mergedBusy.add(b to e)
