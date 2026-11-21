@@ -2106,6 +2106,53 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         val trimmed = if (list.size > 200) list.takeLast(200) else list
         prefs(ctx).edit().putString("calendar_insight_seen_keys_v1", trimmed.joinToString("\n")).apply()
     }
+
+    // ---- #366 主動訊息聊天室、對話自動記憶擷取、未決事項膠囊列與壓縮錨點 ----
+
+    fun getProactiveChatLastReadAt(ctx: Context): Long =
+        prefs(ctx).getLong("proactive_chat_last_read_at", 0L)
+
+    fun setProactiveChatLastReadAt(ctx: Context, ts: Long) {
+        prefs(ctx).edit().putLong("proactive_chat_last_read_at", ts).apply()
+    }
+
+    fun isMemoryAutoExtractEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("memory_auto_extract_enabled", true)
+
+    fun setMemoryAutoExtractEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("memory_auto_extract_enabled", enabled).apply()
+    }
+
+    fun isChatPendingCapsulesEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("chat_pending_capsules_enabled", true)
+
+    fun setChatPendingCapsulesEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("chat_pending_capsules_enabled", enabled).apply()
+    }
+
+    fun saveChatContinuityAnchor(ctx: Context, text: String, nowMs: Long = System.currentTimeMillis()) {
+        prefs(ctx).edit()
+            .putString("chat_continuity_anchor_text", text.trim().take(80))
+            .putLong("chat_continuity_anchor_at", nowMs)
+            .putBoolean("chat_continuity_anchor_dismissed", false)
+            .apply()
+    }
+
+    /** 取得未過期（7 天內）且未手動關閉的壓縮錨點，過期則回傳 null */
+    fun getActiveChatContinuityAnchor(ctx: Context, nowMs: Long = System.currentTimeMillis()): String? {
+        val p = prefs(ctx)
+        if (p.getBoolean("chat_continuity_anchor_dismissed", false)) return null
+        val text = p.getString("chat_continuity_anchor_text", "").orEmpty().trim()
+        if (text.isEmpty()) return null
+        val createdAt = p.getLong("chat_continuity_anchor_at", 0L)
+        val sevenDaysMs = 7L * 24L * 60L * 60L * 1000L
+        if (createdAt <= 0L || (nowMs - createdAt) > sevenDaysMs) return null
+        return text
+    }
+
+    fun dismissChatContinuityAnchor(ctx: Context) {
+        prefs(ctx).edit().putBoolean("chat_continuity_anchor_dismissed", true).apply()
+    }
 }
 
 

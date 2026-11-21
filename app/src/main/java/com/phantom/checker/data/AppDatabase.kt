@@ -881,6 +881,28 @@ interface ChatDao {
     @Query("DELETE FROM chat_sessions")
     suspend fun deleteAllSessions()
 
+    @Query(
+        "SELECT COUNT(*) FROM chat_messages cm " +
+            "INNER JOIN chat_sessions cs ON cm.sessionId = cs.id " +
+            "WHERE cs.title = :proactiveTitle AND cm.role = 'assistant' AND cm.createdAt > :lastReadAt"
+    )
+    fun observeProactiveUnreadCount(proactiveTitle: String, lastReadAt: Long): Flow<Int>
+
+    @Query(
+        "DELETE FROM chat_messages WHERE sessionId IN " +
+            "(SELECT id FROM chat_sessions WHERE title != :proactiveTitle)"
+    )
+    suspend fun deleteNonProactiveMessages(proactiveTitle: String)
+
+    @Query("DELETE FROM chat_sessions WHERE title != :proactiveTitle")
+    suspend fun deleteNonProactiveSessions(proactiveTitle: String)
+
+    @Transaction
+    suspend fun clearAllNonProactiveSessions(proactiveTitle: String) {
+        deleteNonProactiveMessages(proactiveTitle)
+        deleteNonProactiveSessions(proactiveTitle)
+    }
+
     @Transaction
     suspend fun clearAllSessions() {
         deleteAllMessages()

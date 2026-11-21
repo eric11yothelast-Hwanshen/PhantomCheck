@@ -427,6 +427,9 @@ internal suspend fun buildRagSystemPrompt(
             appendLine("- 新增記憶（當使用者要求記住個人事實、人物、地點、行程、偏好、習慣、關係、防詐免疫時輸出）：{\"action\":\"memory_add\",\"category\":\"person|place|schedule|preference|routine|relationship|scam_immunity|other\",\"subject\":\"主題鍵(如人物名/地點名/事項)\",\"content\":\"記憶內容\",\"layer\":\"long_term|short_term\",\"expiresDays\":7,\"privacyTier\":\"normal|sensitive\"}")
             appendLine("- 更新記憶：{\"action\":\"memory_update\",\"memoryId\":123,\"category\":\"person|place|schedule|preference|routine|relationship|other(可選)\",\"subject\":\"主題鍵(可選)\",\"content\":\"更新後內容\",\"layer\":\"long_term|short_term(可選)\",\"privacyTier\":\"normal|sensitive(可選)\"}")
             appendLine("- 刪除記憶（支援單筆 memoryId、依關鍵字 query、或依人物/主題 subject 批次，一律出確認卡）：{\"action\":\"memory_delete\",\"memoryId\":123,\"query\":\"關鍵字(可選)\",\"subject\":\"人物或主題(可選)\"}")
+            if (PhantomPrefs.isMemoryAutoExtractEnabled(ctx)) {
+                appendLine("- 自動記憶擷取：若對話中出現值得長期記住的個人資訊（人、事、時、地、偏好、習慣、關係），即使使用者未要求，也可輸出 memory_add/memory_update，每則回覆至多 2 筆（非敏感且無衝突會自動落庫並於氣泡下顯示小字提醒，敏感或衝突一律進確認卡）。")
+            }
         }
         appendLine("跨 App 行動卡（僅彈出確認卡由使用者手動點擊執行，絕不自動執行）：")
         appendLine("- 撰寫郵件：{\"action\":\"gmail_compose\",\"to\":\"收件者(可選)\",\"subject\":\"主旨\",\"body\":\"內文\"}")

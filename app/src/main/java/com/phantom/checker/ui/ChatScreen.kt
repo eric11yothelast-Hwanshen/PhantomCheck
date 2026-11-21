@@ -300,6 +300,23 @@ fun ChatAssistantTab(
     val todoListItems = remember(rawTodoListItems) {
         ReminderScheduler.sortTodosSmart(rawTodoListItems)
     }
+    var proactiveLastReadAt by remember { mutableStateOf(PhantomPrefs.getProactiveChatLastReadAt(appCtx)) }
+    val proactiveUnreadCount by remember(appCtx, proactiveLastReadAt) {
+        AppDatabaseHolder.db(appCtx).chatDao().observeProactiveUnreadCount(
+            com.phantom.checker.service.ProactiveEngine.PROACTIVE_SESSION_TITLE,
+            proactiveLastReadAt
+        )
+    }.collectAsState(initial = 0)
+    var isViewingProactiveRoom by remember { mutableStateOf(false) }
+    var previousNormalSessionId by remember { mutableStateOf<Long?>(null) }
+    val allMemoriesLive by remember(appCtx) {
+        AppDatabaseHolder.db(appCtx).memoryDao().observeAll()
+    }.collectAsState(initial = emptyList())
+    var inspectAutoMemoriesMsgId by remember { mutableStateOf<Long?>(null) }
+    var sensitiveAutoMemDeleteTarget by remember { mutableStateOf<com.phantom.checker.data.MemoryEntity?>(null) }
+    var dismissedCapsuleIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var continuityAnchorText by remember { mutableStateOf(PhantomPrefs.getActiveChatContinuityAnchor(appCtx)) }
+    var pendingCapsulesEnabled by remember { mutableStateOf(PhantomPrefs.isChatPendingCapsulesEnabled(appCtx)) }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -908,8 +925,8 @@ fun ChatAssistantTab(
                     }
                 }
 
-                withContext(Dispatchers.IO) {
-                    db.chatDao().insertMessage(
+                val assistantMsgId = withContext(Dispatchers.IO) {
+                    val insertedId = db.chatDao().insertMessage(
                         ChatMessageEntity(
                             sessionId = sessionId,
                             role = ChatMessageEntity.ROLE_ASSISTANT,
@@ -928,6 +945,12 @@ fun ChatAssistantTab(
                             )
                         )
                     }
+                    // #366 本地壓縮錨點：若有待辦未決事項，記錄最新一條供下次開啟單行接續提示（零 AI）
+                    val firstPendingTodo = db.todoDao().pendingTodos().firstOrNull()
+                    if (firstPendingTodo != null) {
+                        PhantomPrefs.saveChatContinuityAnchor(appCtx, firstPendingTodo.title)
+                    }
+                    insertedId
                 }
                 loadMessages(sessionId)
                 if (parsed.ruleProposals.isNotEmpty()) {
@@ -1320,18 +1343,25 @@ fun ChatAssistantTab(
                             }
                         }
 
-                        // 9. #314 / #347 memory_add & memory_update（依開關決定確認卡或直接寫入；敏感記憶與衝突一律進確認卡）
-                        val sourceRefNow = com.phantom.checker.data.MemoryEngine.formatChatSourceRef(
-                            sessionId = sessionId,
-                            userSnippet = query,
-                            timeFormatted = formatChatTime(nowMs)
-                        )
+                        // 9. #314 / #347 / #366 memory_add & memory_update（自動擷取僅限非敏感無衝突至多 2 筆；敏感記憶與衝突一律進確認卡）
+                        val autoExtractEnabled = PhantomPrefs.isMemoryAutoExtractEnabled(appCtx)
+                        val sourceRefNow = if (autoExtractEnabled) {
+                            "chat_auto|sid:$sessionId|msg:$assistantMsgId|${formatChatTime(nowMs)}"
+                        } else {
+                            com.phantom.checker.data.MemoryEngine.formatChatSourceRef(
+                                sessionId = sessionId,
+                                userSnippet = query,
+                                timeFormatted = formatChatTime(nowMs)
+                            )
+                        }
                         if (PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)) {
                             val confirmRequired = PhantomPrefs.isMemoryWriteConfirmEnabled(appCtx)
+                            var autoExtractedCount = 0
                             val handleWriteCandidate: suspend (PendingMemoryWriteState) -> Unit = { candidate ->
                                 val isSensitive = candidate.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE
                                 val hasConflict = candidate.conflictingMemory != null
-                                if (confirmRequired || isSensitive || hasConflict) {
+                                val allowDirectAuto = autoExtractEnabled && !isSensitive && !hasConflict && autoExtractedCount < 2
+                                if (isSensitive || hasConflict || (!allowDirectAuto && confirmRequired)) {
                                     resolvedMemoryWrites.add(candidate)
                                 } else {
                                     val outcome = com.phantom.checker.data.MemoryEngine.writeMemoryWithConflictDetection(
@@ -1351,26 +1381,34 @@ fun ChatAssistantTab(
                                     val layerLbl = com.phantom.checker.data.MemoryEngine.layerLabel(candidate.layer)
                                     when (outcome) {
                                         is com.phantom.checker.data.MemoryEngine.WriteOutcome.Inserted -> {
-                                            val report = "✓ 已記住 #${outcome.memory.id} [$catLbl/$layerLbl] ${outcome.memory.subject}：${outcome.memory.content}"
-                                            db.chatDao().insertMessage(
-                                                ChatMessageEntity(
-                                                    sessionId = sessionId,
-                                                    role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                    content = report,
-                                                    createdAt = System.currentTimeMillis()
+                                            if (allowDirectAuto) {
+                                                autoExtractedCount++
+                                            } else {
+                                                val report = "✓ 已記住 #${outcome.memory.id} [$catLbl/$layerLbl] ${outcome.memory.subject}：${outcome.memory.content}"
+                                                db.chatDao().insertMessage(
+                                                    ChatMessageEntity(
+                                                        sessionId = sessionId,
+                                                        role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                        content = report,
+                                                        createdAt = System.currentTimeMillis()
+                                                    )
                                                 )
-                                            )
+                                            }
                                         }
                                         is com.phantom.checker.data.MemoryEngine.WriteOutcome.Deduplicated -> {
-                                            val report = "✓ 記憶庫已有相同內容 #${outcome.memory.id} [$catLbl/$layerLbl] ${outcome.memory.subject}，已更新時間。"
-                                            db.chatDao().insertMessage(
-                                                ChatMessageEntity(
-                                                    sessionId = sessionId,
-                                                    role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                    content = report,
-                                                    createdAt = System.currentTimeMillis()
+                                            if (allowDirectAuto) {
+                                                autoExtractedCount++
+                                            } else {
+                                                val report = "✓ 記憶庫已有相同內容 #${outcome.memory.id} [$catLbl/$layerLbl] ${outcome.memory.subject}，已更新時間。"
+                                                db.chatDao().insertMessage(
+                                                    ChatMessageEntity(
+                                                        sessionId = sessionId,
+                                                        role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                        content = report,
+                                                        createdAt = System.currentTimeMillis()
+                                                    )
                                                 )
-                                            )
+                                            }
                                         }
                                         is com.phantom.checker.data.MemoryEngine.WriteOutcome.ConflictDetected -> {
                                             resolvedMemoryWrites.add(
@@ -1723,8 +1761,8 @@ fun ChatAssistantTab(
     if (showClearAllSessionsConfirm) {
         AlertDialog(
             onDismissRequest = { showClearAllSessionsConfirm = false },
-            title = { Text("清除全部對話") },
-            text = { Text("確定要永久刪除所有歷史對話與訊息紀錄嗎？此操作無法復原。") },
+            title = { Text("清除全部一般對話") },
+            text = { Text("確定要永久刪除所有一般歷史對話嗎？（專屬「主動訊息」聊天室紀錄將予以保留，不受影響）") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -1735,16 +1773,20 @@ fun ChatAssistantTab(
                         }
                         scope.launch {
                             withContext(Dispatchers.IO) {
-                                AppDatabaseHolder.db(appCtx).chatDao().clearAllSessions()
+                                AppDatabaseHolder.db(appCtx).chatDao().clearAllNonProactiveSessions(
+                                    com.phantom.checker.service.ProactiveEngine.PROACTIVE_SESSION_TITLE
+                                )
                             }
-                            currentSessionId = null
-                            messages = emptyList()
+                            if (!isViewingProactiveRoom) {
+                                currentSessionId = null
+                                messages = emptyList()
+                            }
                             lastError = null
                             lastFailedQuery = null
                             showClearAllSessionsConfirm = false
                             showSessionDrawer = false
                             loadSessionsAndSuggestions()
-                            onShowMessage("已清除全部對話")
+                            onShowMessage("已清除全部一般對話（主動訊息已保留）")
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -1754,6 +1796,110 @@ fun ChatAssistantTab(
             },
             dismissButton = {
                 TextButton(onClick = { showClearAllSessionsConfirm = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    inspectAutoMemoriesMsgId?.let { targetMsgId ->
+        val memList = allMemoriesLive.filter { it.sourceRef?.contains("|msg:$targetMsgId|") == true }
+        ModalBottomSheet(onDismissRequest = { inspectAutoMemoriesMsgId = null }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "🧠 本則回覆自動擷取的記憶（${memList.size} 筆）",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                if (memList.isEmpty()) {
+                    Text(
+                        text = "此則回覆的自動記憶皆已移除。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    memList.forEach { mem ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = "[${com.phantom.checker.data.MemoryEngine.categoryLabel(mem.category)}／${com.phantom.checker.data.MemoryEngine.layerLabel(mem.layer)}] ${mem.subject}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = mem.content,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Text(
+                                        text = "來源：${mem.sourceRef ?: "對話自動擷取"}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                TextButton(
+                                    onClick = {
+                                        if (mem.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE) {
+                                            sensitiveAutoMemDeleteTarget = mem
+                                        } else {
+                                            scope.launch {
+                                                withContext(Dispatchers.IO) {
+                                                    AppDatabaseHolder.db(appCtx).memoryDao().deleteById(mem.id)
+                                                }
+                                                onShowMessage("已刪除自動記憶：${mem.subject}")
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    Text("刪除", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+
+    sensitiveAutoMemDeleteTarget?.let { targetMem ->
+        AlertDialog(
+            onDismissRequest = { sensitiveAutoMemDeleteTarget = null },
+            title = { Text("確認刪除敏感記憶") },
+            text = { Text("確定要刪除敏感記憶「${targetMem.subject}：${targetMem.content}」嗎？") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val toDel = targetMem
+                        sensitiveAutoMemDeleteTarget = null
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                AppDatabaseHolder.db(appCtx).memoryDao().deleteById(toDel.id)
+                            }
+                            onShowMessage("已刪除敏感記憶：${toDel.subject}")
+                        }
+                    }
+                ) {
+                    Text("確認刪除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { sensitiveAutoMemDeleteTarget = null }) {
                     Text("取消")
                 }
             }
@@ -2506,6 +2652,183 @@ fun ChatAssistantTab(
             Spacer(Modifier.height(8.dp))
         }
 
+        // #366 主動訊息聊天室入口（預設收起＋未讀徽章；點開即已讀並進入專屬主動訊息聊天室）
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = if (isViewingProactiveRoom) {
+                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                },
+                border = BorderStroke(
+                    width = 0.75.dp,
+                    color = if (isViewingProactiveRoom || proactiveUnreadCount > 0) {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                    } else {
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                    }
+                ),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable {
+                        scope.launch {
+                            if (isViewingProactiveRoom) {
+                                isViewingProactiveRoom = false
+                                val restoreId = previousNormalSessionId
+                                currentSessionId = restoreId
+                                if (restoreId != null) {
+                                    loadMessages(restoreId)
+                                } else {
+                                    messages = emptyList()
+                                }
+                            } else {
+                                previousNormalSessionId = currentSessionId
+                                val proactiveSid = withContext(Dispatchers.IO) {
+                                    com.phantom.checker.service.ProactiveEngine.getOrCreateProactiveSessionId(
+                                        AppDatabaseHolder.db(appCtx)
+                                    )
+                                }
+                                val now = System.currentTimeMillis()
+                                PhantomPrefs.setProactiveChatLastReadAt(appCtx, now)
+                                proactiveLastReadAt = now
+                                isViewingProactiveRoom = true
+                                currentSessionId = proactiveSid
+                                loadMessages(proactiveSid)
+                            }
+                        }
+                    }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = if (isViewingProactiveRoom) "🔔 主動訊息聊天室（點此收起）" else "🔔 主動訊息",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isViewingProactiveRoom) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        maxLines = 1
+                    )
+                    if (!isViewingProactiveRoom && proactiveUnreadCount > 0) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.error
+                        ) {
+                            Text(
+                                text = if (proactiveUnreadCount > 99) "99+" else proactiveUnreadCount.toString(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onError,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // #366 單一對話框連續性：壓縮錨點（單行，過期自動消失）＋未決事項膠囊列（至多 3 顆，無未決不佔位）
+        if (!isViewingProactiveRoom && pendingCapsulesEnabled) {
+            continuityAnchorText?.takeIf { it.isNotBlank() }?.let { anchor ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                inputText = "接續上次提到的「$anchor」，目前進度如何？"
+                            }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "↪ 接續：上次你提到「$anchor」尚未完成",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = "✕",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .padding(start = 8.dp)
+                                .clickable {
+                                    PhantomPrefs.dismissChatContinuityAnchor(appCtx)
+                                    continuityAnchorText = null
+                                }
+                        )
+                    }
+                }
+            }
+
+            val pendingCapsules = remember(todoListItems, dismissedCapsuleIds) {
+                todoListItems.filter { !it.isDone && it.id !in dismissedCapsuleIds }.take(3)
+            }
+            if (pendingCapsules.isNotEmpty()) {
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(pendingCapsules, key = { it.id }) { todo ->
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable {
+                                    inputText = "幫我確認未決事項「${todo.title}」的相關訊息與安排"
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "📌 ${todo.title.take(14)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = "✕",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.clickable {
+                                        dismissedCapsuleIds = dismissedCapsuleIds + todo.id
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // 對話內容區
         BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
             val userBubbleMaxWidth = maxWidth * 0.82f
@@ -2677,6 +3000,19 @@ fun ChatAssistantTab(
                                             markdown = msg.content,
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                    val autoMems = remember(allMemoriesLive, msg.id) {
+                                        allMemoriesLive.filter { it.sourceRef?.contains("|msg:${msg.id}|") == true }
+                                    }
+                                    if (autoMems.isNotEmpty()) {
+                                        Text(
+                                            text = "🧠 已自動記住 ${autoMems.size} 筆記憶 · 點擊查看",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier
+                                                .padding(start = 6.dp, top = 2.dp)
+                                                .clickable { inspectAutoMemoriesMsgId = msg.id }
                                         )
                                     }
                                 }

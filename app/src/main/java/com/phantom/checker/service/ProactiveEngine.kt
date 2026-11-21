@@ -339,6 +339,27 @@ object ProactiveEngine {
         msgId
     }
 
+    /** #366 跨分頁事件系統訊息（零 AI 呼叫，寫入當前或主動對話 session，標記系統事件 provenance） */
+    suspend fun appendSystemEventToCurrentSession(
+        ctx: Context,
+        summary: String,
+        targetSessionId: Long? = null,
+        nowMs: Long = System.currentTimeMillis()
+    ): Long = withContext(Dispatchers.IO) {
+        val db = AppDatabaseHolder.db(ctx.applicationContext)
+        val sid = targetSessionId
+            ?: db.chatDao().allSessions().firstOrNull { it.title != PROACTIVE_SESSION_TITLE }?.id
+            ?: getOrCreateProactiveSessionId(db, nowMs)
+        db.chatDao().insertMessage(
+            ChatMessageEntity(
+                sessionId = sid,
+                role = ChatMessageEntity.ROLE_ASSISTANT,
+                content = "📌 [系統事件] ${summary.trim()}",
+                createdAt = nowMs
+            )
+        )
+    }
+
     private suspend fun writeAssistantMessage(
         db: com.phantom.checker.data.AppDatabase,
         content: String,

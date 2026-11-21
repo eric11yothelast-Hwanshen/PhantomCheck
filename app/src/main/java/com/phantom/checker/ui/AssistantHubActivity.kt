@@ -113,6 +113,8 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
     var calInsightNotifEnabled by remember { mutableStateOf(PhantomPrefs.isProactiveCalendarInsightNotifEnabled(appCtx)) }
     var calInsightWebSearchEnabled by remember { mutableStateOf(PhantomPrefs.isProactiveCalendarWebSearchEnabled(appCtx)) }
     var calInsightIntervalMin by remember { mutableStateOf(PhantomPrefs.getCalendarInsightIntervalMinutes(appCtx)) }
+    var memoryAutoExtract by remember { mutableStateOf(PhantomPrefs.isMemoryAutoExtractEnabled(appCtx)) }
+    var chatPendingCapsules by remember { mutableStateOf(PhantomPrefs.isChatPendingCapsulesEnabled(appCtx)) }
     var regionKeyword by remember { mutableStateOf(PhantomPrefs.getProactiveRegionKeyword(appCtx)) }
 
     var extUrl by remember { mutableStateOf(EncryptedByokStore.getExternalSearchBaseUrl(appCtx)) }
@@ -502,6 +504,45 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                         label = { Text(if (mins < 60) "${mins}分" else "${mins / 60}小時", maxLines = 1) }
                                     )
                                 }
+                            }
+
+                            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+                            Text(
+                                "💬 對話自動記憶與連續性",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("對話自動記憶擷取（僅寫入非敏感無衝突，敏感一律進確認卡）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                FluidSwitch(
+                                    checked = memoryAutoExtract,
+                                    onCheckedChange = {
+                                        memoryAutoExtract = it
+                                        PhantomPrefs.setMemoryAutoExtractEnabled(appCtx, it)
+                                        PhantomSettingsBus.notifyChanged()
+                                    }
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("對話頂部未決事項膠囊列與壓縮錨點", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                FluidSwitch(
+                                    checked = chatPendingCapsules,
+                                    onCheckedChange = {
+                                        chatPendingCapsules = it
+                                        PhantomPrefs.setChatPendingCapsulesEnabled(appCtx, it)
+                                        PhantomSettingsBus.notifyChanged()
+                                    }
+                                )
                             }
 
                             HorizontalDivider(Modifier.padding(vertical = 4.dp))

@@ -128,6 +128,8 @@ object SettingsCatalog {
         SettingSearchItem("proactive_calendar_insight_notif_enabled", "hub", "日曆情報發送通知", "主動日曆情報產出時是否發送通知（關閉時僅寫入主動訊息聊天室，預設開啟）", listOf("日曆情報", "通知", "calendar", "notif"), page = "AssistantHubActivity"),
         SettingSearchItem("proactive_calendar_web_search_enabled", "hub", "日曆情報允許上網查詢", "允許對未來 48 小時事件標題＋日期透過已設定 BYOK 端點查詢外部情報（嚴禁參與人與備註，預設開啟）", listOf("日曆情報", "上網", "外部搜尋", "byok", "search"), page = "AssistantHubActivity"),
         SettingSearchItem("calendar_insight_interval_minutes", "hub", "日曆情報檢查頻率", "設定主動日曆情報定時檢查週期（30／60／120／180 分鐘，預設 60 分鐘）", listOf("日曆情報", "頻率", "週期", "interval"), page = "AssistantHubActivity"),
+        SettingSearchItem("memory_auto_extract_enabled", "hub", "對話自動記憶擷取", "對話中出現個人資訊（人、事、時、地、偏好、習慣）時自動寫入非敏感無衝突記憶並於氣泡下顯示小字提醒（敏感與衝突仍進確認卡，預設開啟）", listOf("自動記憶", "擷取", "記憶", "memory", "extract"), page = "AssistantHubActivity"),
+        SettingSearchItem("chat_pending_capsules_enabled", "hub", "未決事項膠囊列", "對話框頂部顯示至多 3 顆可滑除的未決事項快速膠囊與壓縮接續錨點（預設開啟）", listOf("膠囊", "未決事項", "錨點", "連續性", "capsules"), page = "AssistantHubActivity"),
         SettingSearchItem("ai_model_briefing", "ai", "簡報與畫像卡模型", "為早晚簡報與「我對你的瞭解」畫像卡指定獨立 AI 模型", listOf("簡報模型", "畫像卡模型", "briefing", "模型"), page = "ApiKeySettingsActivity"),
         SettingSearchItem("linked_apps_center", "hub", "連結應用程式中心", "集中檢視日曆、通訊錄、通知、鬧鐘、電池優化狀態與自填金鑰雲端擴充（GitHub／Discord）", listOf("連結應用", "github", "discord", "webhook", "鬧鐘", "gmail", "地圖", "跨app", "linked"), page = "LinkedAppsActivity"),
         SettingSearchItem("update_auto_check", "about", "自動檢查更新", "每次開啟 App 時自動檢查 GitHub 最新版本並提示；通知欄提醒每天最多一次", listOf("檢查更新", "更新", "版本", "自動更新", "update")),
@@ -157,6 +159,8 @@ object SettingsCatalog {
         "proactive_calendar_insight_enabled",
         "proactive_calendar_insight_notif_enabled",
         "proactive_calendar_web_search_enabled",
+        "memory_auto_extract_enabled",
+        "chat_pending_capsules_enabled",
         "notif_persistent_icons",
         "notif_ongoing",
         "notif_quiet_hours",
@@ -210,6 +214,8 @@ object SettingsCatalog {
             "proactive_calendar_insight_enabled" -> PhantomPrefs.isProactiveCalendarInsightEnabled(appCtx)
             "proactive_calendar_insight_notif_enabled" -> PhantomPrefs.isProactiveCalendarInsightNotifEnabled(appCtx)
             "proactive_calendar_web_search_enabled" -> PhantomPrefs.isProactiveCalendarWebSearchEnabled(appCtx)
+            "memory_auto_extract_enabled" -> PhantomPrefs.isMemoryAutoExtractEnabled(appCtx)
+            "chat_pending_capsules_enabled" -> PhantomPrefs.isChatPendingCapsulesEnabled(appCtx)
             "notif_persistent_icons" -> PhantomPrefs.isPersistentNotifShowIcons(appCtx)
             "notif_ongoing" -> PhantomPrefs.isRecordOngoingEnabled(appCtx)
             "notif_quiet_hours" -> PhantomPrefs.isQuietHoursEnabled(appCtx)
@@ -294,6 +300,8 @@ object SettingsCatalog {
             }
             "proactive_calendar_insight_notif_enabled" -> PhantomPrefs.setProactiveCalendarInsightNotifEnabled(appCtx, enabled)
             "proactive_calendar_web_search_enabled" -> PhantomPrefs.setProactiveCalendarWebSearchEnabled(appCtx, enabled)
+            "memory_auto_extract_enabled" -> PhantomPrefs.setMemoryAutoExtractEnabled(appCtx, enabled)
+            "chat_pending_capsules_enabled" -> PhantomPrefs.setChatPendingCapsulesEnabled(appCtx, enabled)
             "notif_persistent_icons" -> {
                 PhantomPrefs.setPersistentNotifShowIcons(appCtx, enabled)
                 StatsForegroundService.startOrRefresh(appCtx, force = true)
