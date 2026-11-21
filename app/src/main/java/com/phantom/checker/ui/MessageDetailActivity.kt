@@ -1096,6 +1096,21 @@ fun MessageDetailScreen(
                             )
                         }
 
+                        var showDecisionFeedback by remember { mutableStateOf(false) }
+                        if (showDecisionFeedback) {
+                            DecisionFeedbackDialog(
+                                message = msg,
+                                onDismiss = { showDecisionFeedback = false },
+                                onFeedbackApplied = { updatedMsg, toastMsg ->
+                                    if (updatedMsg != null) {
+                                        message = updatedMsg
+                                    }
+                                    showDecisionFeedback = false
+                                    scope.launch { snackbarHostState.showSnackbar(toastMsg) }
+                                }
+                            )
+                        }
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1107,6 +1122,14 @@ fun MessageDetailScreen(
                                     .pressableScale()
                             ) {
                                 Text("加入白名單")
+                            }
+                            OutlinedButton(
+                                onClick = { showDecisionFeedback = true },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .pressableScale()
+                            ) {
+                                Text("此判斷有誤")
                             }
                             OutlinedButton(
                                 onClick = { showReminderPicker = true },

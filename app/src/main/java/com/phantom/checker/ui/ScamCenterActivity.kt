@@ -456,6 +456,18 @@ private fun ScamDetailDialog(
     var showSuspendConfirm by remember { mutableStateOf(false) }
     var showWhitelistFlow by remember { mutableStateOf(false) }
     var showImmunityConfirm by remember { mutableStateOf(false) }
+    var showDecisionFeedback by remember { mutableStateOf(false) }
+    if (showDecisionFeedback) {
+        DecisionFeedbackDialog(
+            message = message,
+            onDismiss = { showDecisionFeedback = false },
+            onFeedbackApplied = { _, toastMsg ->
+                showDecisionFeedback = false
+                Toast.makeText(ctx, toastMsg, Toast.LENGTH_SHORT).show()
+                onWhitelistAdded()
+            }
+        )
+    }
     val initialImmunityDraft = remember(message.id) {
         com.phantom.checker.data.MemoryEngine.buildScamImmunityDraftFromMessage(message)
     }
@@ -749,6 +761,12 @@ private fun ScamDetailDialog(
                             Text("凍結 App", color = MaterialTheme.colorScheme.error)
                         }
                     }
+                }
+                OutlinedButton(
+                    onClick = { showDecisionFeedback = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("此判斷有誤（回饋寫回規則庫）")
                 }
             }
         },

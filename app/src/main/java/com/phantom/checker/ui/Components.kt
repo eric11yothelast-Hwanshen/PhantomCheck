@@ -63,6 +63,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -72,6 +73,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -81,7 +83,9 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
@@ -1851,6 +1855,218 @@ fun NeverAutoMemoConfirmDialog(
                 enabled = canConfirm
             ) {
                 Text("確定不再加入")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+/**
+ * #367 判錯一鍵回饋卡（feedback_wrong，零 AI token）：
+ * 使用者選擇誤判類型 → 產生對應規則庫建議並經明確確認寫入規則庫＋失效快取，避免同類再誤判。
+ */
+@Composable
+fun DecisionFeedbackDialog(
+    message: com.phantom.checker.data.MessageEntity,
+    onDismiss: () -> Unit,
+    onFeedbackApplied: (updatedMessage: com.phantom.checker.data.MessageEntity?, toastMsg: String) -> Unit
+) {
+    val ctx = LocalContext.current
+    val appCtx = ctx.applicationContext
+    val scope = rememberCoroutineScope()
+    // 0: 誤判詐騙(假陽性) 1: 漏判詐騙(假陰性) 2: 自動記事/待辦錯 3: 自動標籤錯
+    var selectedType by remember { mutableStateOf(0) }
+    var alsoAddMemoNever by remember { mutableStateOf(false) }
+    var keywordInput by remember {
+        mutableStateOf(
+            message.content.trim().split(Regex("\\s+")).firstOrNull { it.length >= 2 }?.take(18)
+                ?: message.sender.trim().take(18)
+        )
+    }
+    var availableTags by remember { mutableStateOf<List<com.phantom.checker.data.TagEntity>>(emptyList()) }
+    var selectedTagId by remember { mutableStateOf<Long?>(null) }
+
+    LaunchedEffect(Unit) {
+        val loaded = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.phantom.checker.service.AppDatabaseHolder.db(appCtx).tagDao().all()
+        }
+        availableTags = loaded
+        selectedTagId = loaded.firstOrNull()?.id
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("此判斷有誤（回饋寫回規則庫）") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "選擇誤判類型，系統將依可逆／不可逆矩陣建立本地確定性規則，同類訊息不再走錯誤路徑（零 AI token）。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                listOf(
+                    0 to "誤判詐騙（假陽性）→ 加入寄件者白名單",
+                    1 to "漏判詐騙（假陰性）→ 建立詐騙關鍵字規則",
+                    2 to "自動記事／待辦錯誤 → 建立「永不自動記事」規則",
+                    3 to "自動標籤分類錯誤 → 建立標籤修正規則"
+                ).forEach { (idx, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { selectedType = idx }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = selectedType == idx, onClick = { selectedType = idx })
+                        Spacer(Modifier.width(4.dp))
+                        Text(text = label, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                if (selectedType == 0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { alsoAddMemoNever = !alsoAddMemoNever },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(checked = alsoAddMemoNever, onCheckedChange = { alsoAddMemoNever = it })
+                        Text("同時將此寄件者設為「永不自動記事／待辦」", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                if (selectedType == 1 || selectedType == 2) {
+                    OutlinedTextField(
+                        value = keywordInput,
+                        onValueChange = { keywordInput = it },
+                        label = { Text(if (selectedType == 1) "詐騙特徵關鍵字" else "排除關鍵字（可留空僅比對寄件者）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                if (selectedType == 3 && availableTags.isNotEmpty()) {
+                    Text("選擇正確目標標籤：", style = MaterialTheme.typography.labelSmall)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        availableTags.take(4).forEach { tag ->
+                            FilterChip(
+                                selected = selectedTagId == tag.id,
+                                onClick = { selectedTagId = tag.id },
+                                label = { Text(tag.name, maxLines = 1) }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    scope.launch {
+                        val (updatedMsg, feedbackText) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            val db = com.phantom.checker.service.AppDatabaseHolder.db(appCtx)
+                            val senderTrim = message.sender.trim()
+                            when (selectedType) {
+                                0 -> {
+                                    val wlRes = com.phantom.checker.data.WhitelistRuleHelper.upsertWhitelist(
+                                        dao = db.aiRuleDao(),
+                                        ruleText = "白名單寄件者：${message.sender}（${message.appLabel}）",
+                                        sender = senderTrim.ifEmpty { null },
+                                        packageName = message.packageName,
+                                        onCacheInvalidate = {
+                                            com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                        }
+                                    )
+                                    if (alsoAddMemoNever && senderTrim.isNotEmpty()) {
+                                        db.memoRuleDao().insert(
+                                            com.phantom.checker.data.MemoRuleEntity(
+                                                packageName = message.packageName,
+                                                sender = senderTrim,
+                                                keyword = null,
+                                                action = com.phantom.checker.data.MemoRuleEntity.ACTION_NEVER,
+                                                source = com.phantom.checker.data.MemoRuleEntity.SOURCE_DETAIL
+                                            )
+                                        )
+                                        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                    }
+                                    val safeMsg = message.copy(
+                                        riskScore = 10,
+                                        riskLabel = "safe",
+                                        riskReason = "[feedback:false_positive] 使用者回報誤判並加入白名單"
+                                    )
+                                    db.messageDao().update(safeMsg)
+                                    com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "false_positive")
+                                    safeMsg to "已回饋假陽性：${wlRes.message}"
+                                }
+                                1 -> {
+                                    val kw = keywordInput.trim().ifEmpty { senderTrim }
+                                    if (kw.isNotEmpty()) {
+                                        db.filterDao().insert(
+                                            com.phantom.checker.data.FilterRule(
+                                                keyword = kw,
+                                                category = "scam",
+                                                isEnabled = true
+                                            )
+                                        )
+                                        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                    }
+                                    val scamMsg = message.copy(
+                                        riskScore = maxOf(message.riskScore, 90),
+                                        riskLabel = "scam",
+                                        riskReason = "[feedback:false_negative] [rule:$kw] 使用者回報漏判並建立詐騙過濾規則"
+                                    )
+                                    db.messageDao().update(scamMsg)
+                                    com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "false_negative")
+                                    scamMsg to "已建立詐騙過濾規則：「$kw」"
+                                }
+                                2 -> {
+                                    val kw = keywordInput.trim().takeIf { it.isNotEmpty() }
+                                    db.memoRuleDao().insert(
+                                        com.phantom.checker.data.MemoRuleEntity(
+                                            packageName = message.packageName,
+                                            sender = senderTrim.takeIf { it.isNotEmpty() },
+                                            keyword = kw,
+                                            action = com.phantom.checker.data.MemoRuleEntity.ACTION_NEVER,
+                                            source = com.phantom.checker.data.MemoRuleEntity.SOURCE_DETAIL
+                                        )
+                                    )
+                                    com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                    com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "memo_wrong")
+                                    null to "已建立「永不自動記事／待辦」規則"
+                                }
+                                else -> {
+                                    val tid = selectedTagId
+                                    if (tid != null) {
+                                        val tName = availableTags.firstOrNull { it.id == tid }?.name.orEmpty()
+                                        db.userTagRuleDao().insert(
+                                            com.phantom.checker.data.UserTagRuleEntity(
+                                                description = "回饋修正：${senderTrim.ifEmpty { message.appLabel }} → $tName",
+                                                appPackage = message.packageName,
+                                                senderPattern = senderTrim.takeIf { it.isNotEmpty() },
+                                                targetTagId = tid,
+                                                isEnabled = true,
+                                                source = "feedback"
+                                            )
+                                        )
+                                        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                        com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "tag_wrong")
+                                        null to "已建立標籤修正規則 → $tName"
+                                    } else {
+                                        null to "請先選擇目標標籤"
+                                    }
+                                }
+                            }
+                        }
+                        onFeedbackApplied(updatedMsg, feedbackText)
+                    }
+                }
+            ) {
+                Text("確認寫入規則庫")
             }
         },
         dismissButton = {

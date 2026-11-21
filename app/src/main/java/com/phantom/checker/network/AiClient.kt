@@ -239,7 +239,8 @@ object AiClient {
         val tagIds: List<Long> = emptyList(),
         val memo: String = "",
         val memoType: String = MEMO_TYPE_NOTE,
-        val todoDue: String = ""
+        val todoDue: String = "",
+        val riskSemanticScore: Int? = null
     )
 
     private data class CachedRisk(
@@ -1385,6 +1386,14 @@ object AiClient {
         } else {
             ""
         }
+        val riskSemanticScore = try {
+            val el = obj.get("risk_semantic_score")
+            if (el != null && !el.isJsonNull && el.isJsonPrimitive) {
+                el.asInt.coerceIn(0, 100)
+            } else null
+        } catch (_: Exception) {
+            null
+        }
         return AiAnalysisResult(
             riskScore = score,
             riskLabel = label,
@@ -1392,7 +1401,8 @@ object AiClient {
             tagIds = tagIds,
             memo = memo,
             memoType = memoType,
-            todoDue = todoDue
+            todoDue = todoDue,
+            riskSemanticScore = riskSemanticScore
         )
     }
 

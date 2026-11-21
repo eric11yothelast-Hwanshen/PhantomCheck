@@ -2153,6 +2153,29 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     fun dismissChatContinuityAnchor(ctx: Context) {
         prefs(ctx).edit().putBoolean("chat_continuity_anchor_dismissed", true).apply()
     }
+
+    // ---- #367 雙門檻自動決策閾值與判錯回饋統計 ----
+
+    fun getDecisionConfirmThreshold(ctx: Context): Int =
+        prefs(ctx).getInt("decision_confirm_threshold", DecisionEngine.DEFAULT_CONFIRM_BELOW_SCORE).coerceIn(40, 85)
+
+    fun setDecisionConfirmThreshold(ctx: Context, threshold: Int) {
+        prefs(ctx).edit().putInt("decision_confirm_threshold", threshold.coerceIn(40, 85)).apply()
+    }
+
+    fun recordDecisionFeedback(ctx: Context, errorType: String) {
+        val p = prefs(ctx)
+        val total = p.getInt("decision_feedback_total", 0) + 1
+        val typeKey = "decision_feedback_type_$errorType"
+        val typeCount = p.getInt(typeKey, 0) + 1
+        p.edit()
+            .putInt("decision_feedback_total", total)
+            .putInt(typeKey, typeCount)
+            .apply()
+    }
+
+    fun getDecisionFeedbackTotalCount(ctx: Context): Int =
+        prefs(ctx).getInt("decision_feedback_total", 0)
 }
 
 

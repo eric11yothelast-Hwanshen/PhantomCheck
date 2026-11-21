@@ -610,14 +610,62 @@ class NotificationCollectorService : NotificationListenerService() {
         }
         resetAiTagFailureCount(applicationContext)
 
+        val confirmThreshold = PhantomPrefs.getDecisionConfirmThreshold(applicationContext)
+        val activeWhitelistRules = try {
+            cachedActiveWhitelistRules(db)
+        } catch (_: Exception) {
+            emptyList()
+        }
         var hasNewScam = false
         results.forEach { (msgId, result) ->
             val msg = db.messageDao().byId(msgId) ?: return@forEach
-            db.messageDao().update(
-                msg.copy(
+            val indicators = IndicatorExtractor.extract(msg.content)
+            val isWl = IntelClient.isMessageWhitelisted(
+                sender = msg.sender,
+                packageName = msg.packageName,
+                appLabel = msg.appLabel,
+                content = msg.content,
+                aiRules = activeWhitelistRules,
+                indicators = indicators
+            )
+            val isKnownContact = try {
+                val aliases = db.contactAliasDao().all()
+                aliases.any {
+                    it.alias.equals(msg.sender, ignoreCase = true) ||
+                        it.displayName.equals(msg.sender, ignoreCase = true)
+                }
+            } catch (_: Exception) {
+                false
+            }
+            val hasAvatar = try {
+                db.senderAvatarDao().get(msg.packageName, msg.sender) != null
+            } catch (_: Exception) {
+                false
+            }
+            val localSignals = com.phantom.checker.util.DecisionEngine.DeterministicSignals(
+                whitelisted = isWl,
+                isKnownContactOrVip = isKnownContact,
+                hasOtp = com.phantom.checker.util.OtpDetector.extractOtp(msg.content) != null,
+                hasUrlOrCrypto = indicators.isNotEmpty(),
+                hasAmountCue = com.phantom.checker.util.DecisionEngine.hasAmountOrFraudCue(msg.content),
+                hasKnownAvatar = hasAvatar
+            )
+            val decision = com.phantom.checker.util.DecisionEngine.evaluateRisk(
+                messageId = msgId,
+                local = localSignals,
+                ai = com.phantom.checker.util.DecisionEngine.AiSemanticSignal(
                     riskScore = result.riskScore,
                     riskLabel = result.riskLabel,
+                    riskSemanticScore = result.riskSemanticScore,
                     riskReason = result.riskReason
+                ),
+                confirmThreshold = confirmThreshold
+            )
+            db.messageDao().update(
+                msg.copy(
+                    riskScore = decision.finalScore,
+                    riskLabel = decision.finalLabel,
+                    riskReason = decision.provenanceReason
                 )
             )
             if (enableAutoTag && result.tagIds.isNotEmpty()) {
@@ -647,9 +695,9 @@ class NotificationCollectorService : NotificationListenerService() {
                     ctx = applicationContext
                 )
             }
-            if (result.riskLabel == "scam") {
+            if (decision is com.phantom.checker.util.DecisionEngine.Decision.Auto && decision.finalLabel == "scam") {
                 hasNewScam = true
-                alertScam(applicationContext, msgId, pkg, msg.sender, result.riskReason)
+                alertScam(applicationContext, msgId, pkg, msg.sender, decision.provenanceReason)
             }
         }
         if (hasNewScam) {

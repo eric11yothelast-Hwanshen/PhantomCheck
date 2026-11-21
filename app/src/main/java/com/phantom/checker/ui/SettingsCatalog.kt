@@ -130,6 +130,7 @@ object SettingsCatalog {
         SettingSearchItem("calendar_insight_interval_minutes", "hub", "日曆情報檢查頻率", "設定主動日曆情報定時檢查週期（30／60／120／180 分鐘，預設 60 分鐘）", listOf("日曆情報", "頻率", "週期", "interval"), page = "AssistantHubActivity"),
         SettingSearchItem("memory_auto_extract_enabled", "hub", "對話自動記憶擷取", "對話中出現個人資訊（人、事、時、地、偏好、習慣）時自動寫入非敏感無衝突記憶並於氣泡下顯示小字提醒（敏感與衝突仍進確認卡，預設開啟）", listOf("自動記憶", "擷取", "記憶", "memory", "extract"), page = "AssistantHubActivity"),
         SettingSearchItem("chat_pending_capsules_enabled", "hub", "未決事項膠囊列", "對話框頂部顯示至多 3 顆可滑除的未決事項快速膠囊與壓縮接續錨點（預設開啟）", listOf("膠囊", "未決事項", "錨點", "連續性", "capsules"), page = "AssistantHubActivity"),
+        SettingSearchItem("decision_confirm_threshold", "hub", "雙門檻自動決策置信閾值", "調整 AI 自動判定高風險與降級確認卡的分數門檻（預設 60，範圍 40–85）", listOf("雙門檻", "決策", "閾值", "確認卡", "decision", "threshold"), page = "AssistantHubActivity"),
         SettingSearchItem("ai_model_briefing", "ai", "簡報與畫像卡模型", "為早晚簡報與「我對你的瞭解」畫像卡指定獨立 AI 模型", listOf("簡報模型", "畫像卡模型", "briefing", "模型"), page = "ApiKeySettingsActivity"),
         SettingSearchItem("linked_apps_center", "hub", "連結應用程式中心", "集中檢視日曆、通訊錄、通知、鬧鐘、電池優化狀態與自填金鑰雲端擴充（GitHub／Discord）", listOf("連結應用", "github", "discord", "webhook", "鬧鐘", "gmail", "地圖", "跨app", "linked"), page = "LinkedAppsActivity"),
         SettingSearchItem("update_auto_check", "about", "自動檢查更新", "每次開啟 App 時自動檢查 GitHub 最新版本並提示；通知欄提醒每天最多一次", listOf("檢查更新", "更新", "版本", "自動更新", "update")),
@@ -471,6 +472,14 @@ object SettingsCatalog {
             max = 180,
             step = 30,
             unit = "分鐘"
+        ),
+        NumericSettingSpec(
+            id = "decision_confirm_threshold",
+            title = "雙門檻自動決策置信閾值",
+            min = 40,
+            max = 85,
+            step = 5,
+            unit = "分"
         )
     )
 
@@ -496,6 +505,7 @@ object SettingsCatalog {
             "memory_saver_top_k" -> PhantomPrefs.getMemorySaverTopK(appCtx)
             "proactive_daily_cap" -> PhantomPrefs.getProactiveDailyCap(appCtx)
             "calendar_insight_interval_minutes" -> PhantomPrefs.getCalendarInsightIntervalMinutes(appCtx)
+            "decision_confirm_threshold" -> PhantomPrefs.getDecisionConfirmThreshold(appCtx)
             else -> null
         }
     }
@@ -531,6 +541,7 @@ object SettingsCatalog {
                 PhantomPrefs.setCalendarInsightIntervalMinutes(appCtx, snapped)
                 com.phantom.checker.service.CalendarInsightScheduler.scheduleOrUpdate(appCtx)
             }
+            "decision_confirm_threshold" -> PhantomPrefs.setDecisionConfirmThreshold(appCtx, target)
             else -> return null
         }
         PhantomSettingsBus.notifyChanged()
