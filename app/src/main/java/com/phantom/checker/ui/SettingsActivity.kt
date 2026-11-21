@@ -296,7 +296,9 @@ private fun isStatsForegroundServiceRunning(ctx: Context): Boolean {
 class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val initialCardKey = intent?.getStringExtra("highlight_card_key")
+        val initialCardKey = intent?.getStringExtra("highlight_card_key")?.let { raw ->
+            if (raw == "permission_hub" || raw == "assistant_hub") "hub" else raw
+        }
         setContent {
             PhantomCheckTheme {
                 FilterSettingsScreen(
@@ -309,7 +311,7 @@ class SettingsActivity : ComponentActivity() {
 }
 
 private val SETTINGS_CARD_ORDER = listOf(
-    "quick", "permission_hub", "assistant_hub", "personalization", "stats", "ai", "memory_assistant", "notif", "data", "appearance", "shizuku", "intel", "about"
+    "quick", "hub", "personalization", "stats", "ai", "memory_assistant", "notif", "data", "appearance", "shizuku", "intel", "about"
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
@@ -468,6 +470,7 @@ fun FilterSettingsScreen(
     var expandNotif by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "notif")) }
     var expandData by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "data")) }
     var expandAppearance by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "appearance")) }
+    var expandHub by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "hub")) }
     var expandShizuku by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "shizuku_advanced")) }
     var expandIntel by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "intel")) }
     var expandPersonalization by remember { mutableStateOf(PhantomPrefs.isSettingsCardExpanded(appCtx, "personalization")) }
@@ -511,8 +514,10 @@ fun FilterSettingsScreen(
                     expandQuick = true
                     PhantomPrefs.setSettingsCardExpanded(appCtx, "quick", true)
                 }
-                SettingsTourStep.PERMISSION_HUB,
-                SettingsTourStep.ASSISTANT_HUB -> Unit
+                SettingsTourStep.HUB -> {
+                    expandHub = true
+                    PhantomPrefs.setSettingsCardExpanded(appCtx, "hub", true)
+                }
                 SettingsTourStep.PERSONALIZATION -> {
                     expandPersonalization = true
                     PhantomPrefs.setSettingsCardExpanded(appCtx, "personalization", true)
@@ -1290,64 +1295,54 @@ fun FilterSettingsScreen(
             }
             }
 
-            // 1.2 #340 權限授予中心樞紐卡（集中全部權限，Shizuku 除外）
-            if ("permission_hub" in visibleCardKeys) {
-                item(key = "card_permission_hub") {
-                    PhantomGlassCard(
-                        glassState = glassState,
-                        cornerRadius = 20.dp,
-                        contentPadding = 16.dp,
-                        modifier = Modifier.onGloballyPositioned { coords ->
-                            cardBounds["permission_hub"] = coords.boundsInRoot()
-                        }
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = "🔐 權限授予中心",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = "集中檢視並快速授予通知存取、簡訊、通訊錄、日曆、精確鬧鐘、電池優化與使用情況權限（Shizuku 維持獨立卡片）。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Button(
-                                onClick = { ctx.startActivity(Intent(ctx, PermissionHubActivity::class.java)) },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("開啟權限授予中心")
-                            }
-                        }
+            // 1.2 #354 權限與 AI 夥伴整併樞紐卡（可展開收合，收合顯示權限數＋簡報摘要）
+            if ("hub" in visibleCardKeys) {
+                item(key = "card_hub") {
+                    val notifPostOk = com.phantom.checker.service.ProactiveEngine.areNotificationsEnabled(appCtx)
+                    val smsOk = androidx.core.content.ContextCompat.checkSelfPermission(
+                        appCtx, android.Manifest.permission.RECEIVE_SMS
+                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    val exactAlarmOk = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                        (appCtx.getSystemService(android.app.AlarmManager::class.java)?.canScheduleExactAlarms() == true)
+                    } else true
+                    val grantedCount = listOf(
+                        listenerEnabled,
+                        notifPostOk,
+                        smsOk,
+                        contactsPermissionGranted,
+                        calendarReadGranted,
+                        exactAlarmOk,
+                        batteryWhitelisted
+                    ).count { it }
+                    val morningOn = PhantomPrefs.isMorningBriefingEnabled(appCtx)
+                    val eveningOn = PhantomPrefs.isEveningBriefingEnabled(appCtx)
+                    val briefingStatus = when {
+                        morningOn && eveningOn -> "早 ${PhantomPrefs.getMorningBriefingTime(appCtx)}／晚 ${PhantomPrefs.getEveningBriefingTime(appCtx)}"
+                        morningOn -> "早間 ${PhantomPrefs.getMorningBriefingTime(appCtx)}"
+                        eveningOn -> "晚間 ${PhantomPrefs.getEveningBriefingTime(appCtx)}"
+                        else -> "已關閉"
                     }
-                }
-            }
-
-            // 1.3 #340 AI 夥伴與主動推播樞紐卡（收納本批全部新設定）
-            if ("assistant_hub" in visibleCardKeys) {
-                item(key = "card_assistant_hub") {
-                    PhantomGlassCard(
+                    CollapsibleSettingsCard(
+                        title = "權限與 AI 夥伴",
+                        collapsedSummary = "權限已授予 $grantedCount/7 項 · 早晚簡報：$briefingStatus",
+                        expanded = expandHub || ("hub" in highlightedCardKeys),
+                        highlighted = "hub" in highlightedCardKeys,
+                        onToggle = {
+                            expandHub = !expandHub
+                            PhantomPrefs.setSettingsCardExpanded(appCtx, "hub", expandHub)
+                        },
                         glassState = glassState,
-                        cornerRadius = 20.dp,
-                        contentPadding = 16.dp,
                         modifier = Modifier.onGloballyPositioned { coords ->
-                            cardBounds["assistant_hub"] = coords.boundsInRoot()
+                            cardBounds["hub"] = coords.boundsInRoot()
                         }
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(
-                                text = "✨ AI 夥伴與主動推播",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Text(
-                                text = "早晚個人簡報、主動推播主題與上限勿擾、畫像卡、外部搜尋端點 BYOK、通訊錄整合與連結應用程式中心。",
+                                text = "集中管理系統權限（通知存取、簡訊、通訊錄、日曆、精確鬧鐘、電池優化、使用情況）、早晚簡報、主動推播、畫像卡與外部連結應用。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            if (!com.phantom.checker.service.ProactiveEngine.areNotificationsEnabled(appCtx)) {
+                            if (!notifPostOk) {
                                 Text(
                                     text = "⚠️ 主動通知未開啟，簡報將不會出現在系統通知欄。",
                                     style = MaterialTheme.typography.bodySmall,
@@ -1360,15 +1355,21 @@ fun FilterSettingsScreen(
                                     Text("前往系統通知設定")
                                 }
                             }
+                            Button(
+                                onClick = { ctx.startActivity(Intent(ctx, PermissionHubActivity::class.java)) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("🔐 權限授予中心（已授予 $grantedCount/7 項）")
+                            }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Button(
+                                OutlinedButton(
                                     onClick = { ctx.startActivity(Intent(ctx, AssistantHubActivity::class.java)) },
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("夥伴與簡報設定", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("AI 夥伴與簡報", maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                                 OutlinedButton(
                                     onClick = { ctx.startActivity(Intent(ctx, LinkedAppsActivity::class.java)) },
@@ -4930,6 +4931,7 @@ private fun CollapsibleSettingsCard(
     glassState: HazeState,
     modifier: Modifier = Modifier,
     highlighted: Boolean = false,
+    collapsedSummary: String? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     PhantomGlassCard(
@@ -4954,28 +4956,42 @@ private fun CollapsibleSettingsCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.weight(1f)
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                if (highlighted) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Text(
-                            text = "符合",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (highlighted) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "符合",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
                     }
+                }
+                if (!expanded && !collapsedSummary.isNullOrBlank()) {
+                    Text(
+                        text = collapsedSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
             Icon(
@@ -5283,64 +5299,57 @@ private enum class SettingsTourStep(
         title = "快速設定與省 Token",
         description = "最常用的核心開關都集中於此，包含「省 token 模式」、常駐統計通知與快速操作；你可以直接點擊洞內開關立即試用。"
     ),
-    PERMISSION_HUB(
+    HUB(
         index = 2,
-        cardKey = "permission_hub",
-        scrollCardKey = "permission_hub",
-        title = "權限授予中心（除 Shizuku）",
-        description = "集中檢視並快速授予通知存取、簡訊、通訊錄、日曆、精確鬧鐘、電池優化與使用情況權限；返回自動即時刷新狀態。"
-    ),
-    ASSISTANT_HUB(
-        index = 3,
-        cardKey = "assistant_hub",
-        scrollCardKey = "assistant_hub",
-        title = "AI 夥伴與主動推播中心",
-        description = "獨立設定頁集中收納早晚簡報、主動推播主題與上限勿擾、畫像卡、外部搜尋端點 BYOK、通訊錄整合與連結應用程式中心。"
+        cardKey = "hub",
+        scrollCardKey = "hub",
+        title = "權限與 AI 夥伴中心",
+        description = "收合時一眼查看已授予權限數與早晚簡報時間；展開後可直達權限授予中心、AI 夥伴與主動推播及連結應用程式中心。"
     ),
     PERSONALIZATION(
-        index = 4,
+        index = 3,
         cardKey = "personalization",
         scrollCardKey = "personalization",
         title = "個人化、玻璃強度與背景圖片",
         description = "調整卡片密度、時間格式、首頁排序與篩選欄，並可自訂全域／AI 聊天／對話頁三層背景圖片與液態玻璃強度。"
     ),
     AI(
-        index = 5,
+        index = 4,
         cardKey = "ai",
         scrollCardKey = "ai",
         title = "AI 用途模型與雙模型路由",
         description = "管理多 Provider API Key 與各用途模型（含簡報與畫像卡），並可開啟「雙模型信心路由」進一步省 token。"
     ),
     NOTIF(
-        index = 6,
+        index = 5,
         cardKey = "notif",
         scrollCardKey = "notif",
         title = "訊息與通知",
         description = "設定勿擾時段、即時關鍵字提醒、重複通知節流秒數、滑動刪除與點擊開啟行為，並可使用「清除已讀訊息」。"
     ),
     DATA(
-        index = 7,
+        index = 6,
         cardKey = "data",
         scrollCardKey = "data",
         title = "資料管理與自訂標籤",
         description = "管理 App 靜音清單、自訂標籤規則、訊息保留天數與則數上限、CSV 匯出，也可隨時重播新手或設定教學。"
     ),
     WHITELIST(
-        index = 8,
+        index = 7,
         cardKey = "whitelist",
         scrollCardKey = "data",
         title = "白名單管理卡",
         description = "依 App 分組收合檢視所有寄件者／內容白名單，支援手動新增（防重複）、開關啟停與確認刪除；AI 助手也會同步讀取這份清單。"
     ),
     APPEARANCE(
-        index = 9,
+        index = 8,
         cardKey = "appearance",
         scrollCardKey = "appearance",
         title = "外觀、卡片底色與保活",
         description = "切換深淺主題、Material You 動態取色、分頁欄模式，以及「卡片底色模式」（跟隨玻璃強度／透明模式滑桿／深色底），並檢查電池最佳化與前景保活狀態。"
     ),
     SHIZUKU(
-        index = 10,
+        index = 9,
         cardKey = "shizuku",
         scrollCardKey = "shizuku",
         title = "Shizuku 進階",
