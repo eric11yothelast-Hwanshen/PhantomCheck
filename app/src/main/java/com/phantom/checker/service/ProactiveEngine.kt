@@ -325,6 +325,29 @@ object ProactiveEngine {
         }
     }
 
+    fun areNotificationsEnabled(ctx: Context): Boolean {
+        return androidx.core.app.NotificationManagerCompat.from(ctx.applicationContext).areNotificationsEnabled()
+    }
+
+    fun openAppNotificationSettings(ctx: Context) {
+        val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching {
+            ctx.startActivity(intent)
+        }.onFailure {
+            runCatching {
+                ctx.startActivity(
+                    Intent(
+                        android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.fromParts("package", ctx.packageName, null)
+                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+        }
+    }
+
     private fun postBriefingNotification(
         ctx: Context,
         notifId: Int,
@@ -332,6 +355,7 @@ object ProactiveEngine {
         preview: String,
         messageId: Long
     ) {
+        if (!areNotificationsEnabled(ctx)) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(
             NotificationChannel(

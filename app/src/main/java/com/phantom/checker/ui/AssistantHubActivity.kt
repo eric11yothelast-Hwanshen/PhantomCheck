@@ -117,6 +117,19 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
 
     var personalityPreset by remember { mutableStateOf(PhantomPrefs.getAssistantPersonalityPreset(appCtx)) }
     var verbosity by remember { mutableStateOf(PhantomPrefs.getAssistantVerbosity(appCtx)) }
+    var notifEnabled by remember { mutableStateOf(ProactiveEngine.areNotificationsEnabled(appCtx)) }
+    var batteryIgnored by remember { mutableStateOf(isBatteryOptimizationIgnored(appCtx)) }
+    val lifecycleOwner = ctx as? androidx.lifecycle.LifecycleOwner
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                notifEnabled = ProactiveEngine.areNotificationsEnabled(appCtx)
+                batteryIgnored = isBatteryOptimizationIgnored(appCtx)
+            }
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
+    }
 
     val locationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -271,6 +284,34 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 }
                             }
 
+                            if (!notifEnabled) {
+                                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                                Text(
+                                    text = "⚠️ 主動通知未開啟：簡報仍會寫入 AI 助手聊天，但無法顯示於手機通知欄。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                OutlinedButton(
+                                    onClick = { ProactiveEngine.openAppNotificationSettings(ctx) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("前往系統通知設定")
+                                }
+                            }
+                            if (!batteryIgnored) {
+                                Text(
+                                    text = "💡 建議將幻訊加入電池最佳化白名單，避免小米／Samsung／OPPO／vivo 背景限流影響定時簡報。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                OutlinedButton(
+                                    onClick = { openBatteryOptimizationSettings(ctx) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("開啟電池優化白名單設定")
+                                }
+                            }
+
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(onClick = {
                                     PhantomPrefs.setMorningBriefingTime(appCtx, morningTime)
@@ -280,8 +321,15 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 }) { Text("儲存時間並重排") }
                                 OutlinedButton(onClick = {
                                     scope.launch {
+                                        val canNotify = ProactiveEngine.areNotificationsEnabled(appCtx)
+                                        notifEnabled = canNotify
                                         ProactiveEngine.deliverBriefing(appCtx, isMorning = true, force = true)
-                                        Toast.makeText(ctx, "已發送一則測試簡報至 AI 助手", Toast.LENGTH_SHORT).show()
+                                        val msg = when {
+                                            !canNotify -> "已寫入 AI 助手（通知未開啟，未發送通知欄推播）"
+                                            ProactiveEngine.isInDndWindow(appCtx) -> "已寫入 AI 助手（目前為勿擾時段，不彈出通知）"
+                                            else -> "已發送測試簡報至 AI 助手與系統通知欄"
+                                        }
+                                        Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
                                     }
                                 }) { Text("立即試發") }
                             }

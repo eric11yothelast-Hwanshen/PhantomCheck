@@ -1347,6 +1347,19 @@ fun FilterSettingsScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            if (!com.phantom.checker.service.ProactiveEngine.areNotificationsEnabled(appCtx)) {
+                                Text(
+                                    text = "⚠️ 主動通知未開啟，簡報將不會出現在系統通知欄。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                OutlinedButton(
+                                    onClick = { com.phantom.checker.service.ProactiveEngine.openAppNotificationSettings(ctx) },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("前往系統通知設定")
+                                }
+                            }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
