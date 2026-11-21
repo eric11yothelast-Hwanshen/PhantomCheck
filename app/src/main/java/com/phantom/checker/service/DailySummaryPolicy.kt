@@ -29,23 +29,9 @@ class DailySummaryWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
-        if (!PhantomPrefs.isEffectiveDailySummaryEnabled(applicationContext)) {
-            DailySummaryPolicy.schedule(applicationContext)
-            return Result.success()
-        }
-        val genResult = DailySummaryPolicy.generateTodaySummary(applicationContext)
-        if (genResult.isSuccess) {
-            // #246 OneTimeWork 自我重新排程：錨定下一次精確時刻，避免排程漂移
-            DailySummaryPolicy.schedule(applicationContext)
-            return Result.success()
-        }
-        // 失敗時最多重試 3 次（backoff <= 30 分鐘），超過上限再重新排程明日
-        return if (runAttemptCount < 3) {
-            Result.retry()
-        } else {
-            DailySummaryPolicy.schedule(applicationContext)
-            Result.failure()
-        }
+        // #349 每日 AI 摘要已由早晚簡報取代，取消殘留排程
+        WorkManager.getInstance(applicationContext).cancelUniqueWork("phantom_daily_ai_summary")
+        return Result.success()
     }
 }
 
@@ -53,53 +39,11 @@ object DailySummaryPolicy {
     private const val UNIQUE_WORK_NAME = "phantom_daily_ai_summary"
 
     fun schedule(ctx: Context) {
-        val appCtx = ctx.applicationContext
-        val workManager = WorkManager.getInstance(appCtx)
-        if (!PhantomPrefs.isEffectiveDailySummaryEnabled(appCtx)) {
-            workManager.cancelUniqueWork(UNIQUE_WORK_NAME)
-            return
-        }
-
-        val initialDelayMs = delayMillisUntilNext(appCtx)
-
-        // #242 PeriodicWorkRequest 會因冤置時間累積漂移且 UPDATE 不會重新錨定，
-        // 改用 OneTimeWorkRequest 指向下一個精確 HH:mm，執行後由 Worker 自行排下一次
-        val request = OneTimeWorkRequestBuilder<DailySummaryWorker>()
-            .setInitialDelay(initialDelayMs, TimeUnit.MILLISECONDS)
-            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.MINUTES)
-            .build()
-
-        workManager.enqueueUniqueWork(
-            UNIQUE_WORK_NAME,
-            ExistingWorkPolicy.REPLACE,
-            request
-        )
+        WorkManager.getInstance(ctx.applicationContext).cancelUniqueWork(UNIQUE_WORK_NAME)
     }
 
-    /**
-     * #254 錯過補跑：若已啟用每日摘要、現在時間已過今日排程 HH:mm、且今日尚無摘要，
-     * 立即以 REPLACE 排入短延遲 OneTimeWork 補跑。
-     */
     fun maybeCatchUp(ctx: Context) {
-        val appCtx = ctx.applicationContext
-        if (!PhantomPrefs.isEffectiveDailySummaryEnabled(appCtx)) return
-        if (!isPastScheduledTimeToday(appCtx)) return
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                val db = AppDatabaseHolder.db(appCtx)
-                if (db.aiSummaryDao().byDate(todayDateKey()) != null) return@launch
-                val request = OneTimeWorkRequestBuilder<DailySummaryWorker>()
-                    .setInitialDelay(3, TimeUnit.SECONDS)
-                    .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.MINUTES)
-                    .build()
-                WorkManager.getInstance(appCtx).enqueueUniqueWork(
-                    UNIQUE_WORK_NAME,
-                    ExistingWorkPolicy.REPLACE,
-                    request
-                )
-            } catch (_: Exception) {
-            }
-        }
+        // #349 每日 AI 摘要已移除，不再補跑
     }
 
     private fun isPastScheduledTimeToday(appCtx: Context): Boolean {
@@ -146,54 +90,7 @@ object DailySummaryPolicy {
     }
 
     suspend fun generateTodaySummary(ctx: Context): Result<AiSummaryEntity> {
-        val appCtx = ctx.applicationContext
-        AiClient.init(appCtx)
-        if (AiClient.getActiveProfile(appCtx) == null) {
-            return Result.failure(IllegalStateException("尚未設定 AI Provider API Key"))
-        }
-
-        val startOfDay = NotificationCollectorService.startOfTodayMillis()
-        val db = AppDatabaseHolder.db(appCtx)
-        val todayMessages = db.messageDao().since(startOfDay)
-
-        if (todayMessages.isEmpty()) {
-            return Result.failure(IllegalStateException("今日尚無訊息可供摘要"))
-        }
-
-        val appCounts = todayMessages
-            .groupBy { it.appLabel.ifBlank { it.packageName } }
-            .entries
-            .sortedByDescending { it.value.size }
-            .joinToString("、") { "${it.key} ${it.value.size} 則" }
-
-        val excerptsBlock = buildSummaryExcerpts(todayMessages)
-
-        val prompt = buildString {
-            appendLine("請用繁體中文 5 句內摘要今日訊息重點與風險：")
-            appendLine("今日總訊息數：${todayMessages.size} 則")
-            appendLine("各 App 統計：$appCounts")
-            append(excerptsBlock)
-        }
-
-        val summaryText = AiClient.summarizeDaily(prompt, appCtx)
-            ?: return Result.failure(IllegalStateException("AI 摘要生成失敗，請確認網路與 API 設定"))
-
-        val entity = AiSummaryEntity(
-            date = todayDateKey(),
-            summary = summaryText,
-            generatedAt = System.currentTimeMillis()
-        )
-        db.aiSummaryDao().insertOrReplace(entity)
-        com.phantom.checker.widget.AiSummaryWidgetProvider.updateAllIfChanged(appCtx)
-
-        if (PhantomPrefs.isEffectiveDailySummaryEnabled(appCtx) &&
-            PhantomPrefs.isEffectiveDailySummaryNotifEnabled(appCtx) &&
-            StatsForegroundService.hasPostNotificationsPermission(appCtx)
-        ) {
-            postSummaryNotification(appCtx, summaryText)
-        }
-
-        return Result.success(entity)
+        return Result.failure(IllegalStateException("每日 AI 摘要已由早晚簡報取代"))
     }
 
     internal fun buildSummaryExcerpts(

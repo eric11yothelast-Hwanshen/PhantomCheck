@@ -298,7 +298,6 @@ class MainActivity : ComponentActivity() {
         AiClient.init(applicationContext)
         RetentionPolicy.scheduleOrUpdate(applicationContext)
         DailySummaryPolicy.schedule(applicationContext)
-        DailySummaryPolicy.maybeCatchUp(applicationContext)
         WeeklySummaryPolicy.schedule(applicationContext)
         WeeklySummaryPolicy.maybeCatchUp(applicationContext)
         HeartbeatPolicy.schedule(applicationContext)
@@ -334,7 +333,7 @@ class MainActivity : ComponentActivity() {
         val briefingMsgId = intent?.getLongExtra(com.phantom.checker.service.BriefingScheduler.EXTRA_BRIEFING_MSG_ID, -1L) ?: -1L
         if (briefingMsgId > 0L) {
             requestedTabState.value = MainTab.ASSISTANT
-            PhantomPrefs.incrementBriefingReadCount(applicationContext)
+            PhantomPrefs.markBriefingReadOnce(applicationContext, briefingMsgId)
         }
         val todoId = intent?.getLongExtra(com.phantom.checker.widget.ReminderWidgetProvider.EXTRA_EDIT_TODO_ID, -1L) ?: -1L
         if (todoId > 0L) {

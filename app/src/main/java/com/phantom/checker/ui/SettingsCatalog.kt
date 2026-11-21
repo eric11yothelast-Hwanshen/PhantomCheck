@@ -1,7 +1,6 @@
 package com.phantom.checker.ui
 
 import android.content.Context
-import com.phantom.checker.service.DailySummaryPolicy
 import com.phantom.checker.service.HeartbeatPolicy
 import com.phantom.checker.service.StatsForegroundService
 import com.phantom.checker.util.PhantomPrefs
@@ -35,8 +34,6 @@ object SettingsCatalog {
         SettingSearchItem("ai_quick_commands", "ai", "AI 助手常用指令與預設模式", "管理自訂常用指令，設定點擊後「直接執行」或「預輸入」", listOf("常用指令", "快捷指令", "直接執行", "預輸入", "指令", "command")),
         SettingSearchItem("ai_daily_limit", "ai", "每日 AI 額度上限", "限制每日 AI 呼叫次數", listOf("額度", "上限", "次數", "quota", "limit", "每日額度", "每日ai額度", "每日上限")),
         SettingSearchItem("ai_chat_rag_limit", "ai", "AI 助手單次閱讀訊息數", "調整 AI 助手每次讀取的歷史訊息上限（50–800 則；省 token 模式降為 100）", listOf("閱讀", "筆數", "訊息數", "rag", "context", "上下文", "400", "上限", "單次閱讀訊息數", "單次載入訊息數", "載入筆數", "閱讀訊息數", "載入訊息數")),
-        SettingSearchItem("ai_daily_summary", "quick", "每日 AI 摘要", "排程每日自動生成訊息摘要", listOf("摘要", "日報", "每日", "summary")),
-        SettingSearchItem("ai_daily_summary_notif", "ai", "每日摘要排程時間與完成推播", "調整每日摘要排程時間與生成後低干擾通知", listOf("摘要", "推播", "排程", "時間", "每日摘要")),
         SettingSearchItem("ai_auto_reply", "ai", "SMS 自動回覆設定", "開啟 SMS 自動回覆設定頁：啟用開關、回覆時段與回覆範本", listOf("自動回覆", "sms", "簡訊", "回覆", "時段", "reply"), page = "AutoReplySettingsActivity"),
         SettingSearchItem("ai_scam_center", "ai", "詐騙警示中心", "檢視高風險詐騙記錄與處置（可由訊息頁風險卡或統計頁進入）", listOf("詐騙", "警示", "中心", "高風險", "封鎖"), page = "ScamCenterActivity"),
         SettingSearchItem("ai_alert_keywords", "ai", "即時提醒關鍵字", "設定自訂即時提醒關鍵字，命中時觸發通知提醒", listOf("關鍵字", "提醒", "keyword")),
@@ -48,7 +45,6 @@ object SettingsCatalog {
         SettingSearchItem("ai_dual_model_routing_model", "ai", "雙模型路由輕量模型", "設定信心路由第一關使用的輕量模型名稱（預設 mistral-small-2603）", listOf("路由模型", "輕量模型", "mistral-small-2603", "routing")),
         SettingSearchItem("ai_model_chat", "ai", "分用途模型：AI 助手對話", "為 AI 助手對話（含圖片）獨立選擇 Provider 模型或跟隨預設", listOf("模型", "分用途", "對話模型", "切換模型", "chat"), page = "ApiKeySettingsActivity"),
         SettingSearchItem("ai_model_message_analysis", "ai", "分用途模型：每則訊息風險分析", "為新訊息自動風險分析獨立選擇 Provider 模型或跟隨預設", listOf("模型", "分用途", "分析模型", "風險分析", "message"), page = "ApiKeySettingsActivity"),
-        SettingSearchItem("ai_model_daily_summary", "ai", "分用途模型：每日摘要", "為每日 AI 摘要獨立選擇 Provider 模型或跟隨預設", listOf("模型", "分用途", "摘要模型", "每日摘要", "daily"), page = "ApiKeySettingsActivity"),
         SettingSearchItem("ai_model_weekly_summary", "ai", "分用途模型：每週摘要", "為每週 AI 摘要獨立選擇 Provider 模型或跟隨預設", listOf("模型", "分用途", "摘要模型", "每週摘要", "weekly"), page = "ApiKeySettingsActivity"),
         SettingSearchItem("ai_model_deep_analysis", "ai", "分用途模型：訊息深度分析", "為訊息深度分析獨立選擇 Provider 模型或跟隨預設", listOf("模型", "分用途", "深度分析模型", "deep"), page = "ApiKeySettingsActivity"),
         SettingSearchItem("ai_model_settings_search", "ai", "分用途模型：設定 AI 語意搜尋", "為設定頁 AI 語意搜尋獨立選擇 Provider 模型或跟隨預設", listOf("模型", "分用途", "搜尋模型", "設定搜尋", "search"), page = "ApiKeySettingsActivity"),
@@ -82,7 +78,7 @@ object SettingsCatalog {
         SettingSearchItem("personal_density", "personalization", "卡片密度（舒適 / 緊湊）", "調整首頁訊息卡片與對話氣泡的間距與行數密度", listOf("個人化", "密度", "緊湊", "舒適", "間距", "compact")),
         SettingSearchItem("personal_sort", "personalization", "首頁 App 排序", "切換首頁 App 清單依時間新→舊、未讀多→少或風險高→低排序", listOf("個人化", "排序", "未讀", "風險", "時間", "sort")),
         SettingSearchItem("personal_filters", "personalization", "首頁篩選欄顯示項目", "自訂首頁篩選欄是否顯示星標、詐騙、已過濾與標籤按鈕", listOf("個人化", "篩選", "filter", "星標", "標籤", "隱藏")),
-        SettingSearchItem("personal_summary_collapse", "personalization", "摘要卡預設收合", "控制每日與本週 AI 摘要卡是否預設收合為單行預覽", listOf("個人化", "摘要", "收合", "展開", "折疊")),
+        SettingSearchItem("personal_summary_collapse", "personalization", "摘要卡預設收合", "控制本週 AI 摘要與早晚簡報卡是否預設收合為單行預覽", listOf("個人化", "摘要", "收合", "展開", "折疊")),
         SettingSearchItem("personal_home_card_layout", "personalization", "首頁卡片排列模式", "切換首頁 App 卡片為一般條列或中央堆疊（焦點卡片在正中央、上下對稱縮小堆疊的垂直滾輪）", listOf("堆疊", "條列", "卡片排列", "中央堆疊", "滾輪", "重疊", "個人化")),
         SettingSearchItem("personal_notes_card_layout", "personalization", "記事卡片排列模式", "獨立設定記事分頁卡片排列：一般條列或中央堆疊滾輪（不影響首頁）", listOf("記事", "備忘錄", "卡片排列", "堆疊", "滾輪", "中央堆疊")),
         SettingSearchItem("personal_notes_todo_collapsed", "personalization", "記事分頁待辦事項收合", "收起記事分頁上方的待辦事項區，僅顯示最快到期的未完成待辦以節省空間", listOf("待辦", "收合", "收起", "展開", "待辦事項")),
@@ -91,7 +87,7 @@ object SettingsCatalog {
         SettingSearchItem("bg_global", "personalization", "全域背景圖片", "設定套用於訊息中心、統計、AI 助手與對話頁的全域底圖", listOf("個人化", "背景", "桌布", "wallpaper", "圖片", "全域")),
         SettingSearchItem("bg_chat", "personalization", "AI 聊天背景圖片", "自訂 AI 助手分頁背景圖片（未設定時沿用全域背景）", listOf("個人化", "背景", "桌布", "wallpaper", "AI", "聊天")),
         SettingSearchItem("stats_card_visibility", "stats", "統計頁卡片顯示自訂", "勾選要在統計分頁顯示的圖表與統計卡片", listOf("統計", "圖表", "排行榜", "自訂", "卡片", "折線圖", "環形圖")),
-        SettingSearchItem("stats_summary", "stats", "統計卡：每日 AI 摘要", "控制統計頁是否顯示每日 AI 摘要卡片", listOf("統計", "每日摘要", "ai摘要", "stats")),
+        SettingSearchItem("stats_briefing", "stats", "統計卡：早晚簡報", "控制統計頁是否顯示最近一次早晚簡報卡片", listOf("統計", "早晚簡報", "簡報", "briefing", "stats")),
         SettingSearchItem("stats_weekly_bar", "stats", "統計卡：本週 7 日訊息量", "控制統計頁是否顯示本週 7 日訊息量長條圖", listOf("統計", "本週", "7日", "長條圖", "訊息量")),
         SettingSearchItem("stats_risk_dist", "stats", "統計卡：風險分布三色", "控制統計頁是否顯示風險分布三色計數卡", listOf("統計", "風險分布", "安全", "疑似", "詐騙")),
         SettingSearchItem("stats_hourly", "stats", "統計卡：今日每小時分布", "控制統計頁是否顯示今日 24 小時訊息分布圖", listOf("統計", "每小時", "時段", "分布")),
@@ -147,8 +143,6 @@ object SettingsCatalog {
         "ai_dual_model_routing",
         "ai_chat_suggestions",
         "ai_chat_tab_behavior",
-        "ai_daily_summary",
-        "ai_daily_summary_notif",
         "memory_chat_capture",
         "memory_write_confirm",
         "calendar_write_confirm",
@@ -166,7 +160,7 @@ object SettingsCatalog {
         "appearance_haptic",
         "intel_enabled",
         "personal_summary_collapse",
-        "stats_summary",
+        "stats_briefing",
         "stats_weekly_bar",
         "stats_risk_dist",
         "stats_hourly",
@@ -199,8 +193,6 @@ object SettingsCatalog {
             "ai_dual_model_routing" -> PhantomPrefs.isDualModelRoutingEnabled(appCtx)
             "ai_chat_suggestions" -> PhantomPrefs.isChatSuggestionsEnabled(appCtx)
             "ai_chat_tab_behavior" -> PhantomPrefs.isAiChatTabContinue(appCtx)
-            "ai_daily_summary" -> PhantomPrefs.isDailySummaryEnabled(appCtx)
-            "ai_daily_summary_notif" -> PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
             "memory_chat_capture" -> PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
             "memory_write_confirm" -> PhantomPrefs.isMemoryWriteConfirmEnabled(appCtx)
             "calendar_write_confirm" -> PhantomPrefs.isCalendarWriteConfirmEnabled(appCtx)
@@ -218,7 +210,7 @@ object SettingsCatalog {
             "appearance_haptic" -> PhantomPrefs.isHapticFeedbackEnabled(appCtx)
             "intel_enabled" -> PhantomPrefs.isIntelEnabled(appCtx)
             "personal_summary_collapse" -> PhantomPrefs.isSummaryDefaultCollapsed(appCtx)
-            "stats_summary",
+            "stats_briefing",
             "stats_weekly_bar",
             "stats_risk_dist",
             "stats_hourly",
@@ -244,10 +236,7 @@ object SettingsCatalog {
         val appCtx = ctx.applicationContext
         val before = getBooleanState(appCtx, id) ?: return null
         when (id) {
-            "quick_token_saver" -> {
-                PhantomPrefs.setTokenSaverEnabled(appCtx, enabled)
-                DailySummaryPolicy.schedule(appCtx)
-            }
+            "quick_token_saver" -> PhantomPrefs.setTokenSaverEnabled(appCtx, enabled)
             "quick_persistent_notif" -> {
                 PhantomPrefs.setPersistentStatsEnabled(appCtx, enabled)
                 if (enabled) {
@@ -276,11 +265,6 @@ object SettingsCatalog {
                 appCtx,
                 if (enabled) PhantomPrefs.AI_CHAT_TAB_CONTINUE else PhantomPrefs.AI_CHAT_TAB_NEW
             )
-            "ai_daily_summary" -> {
-                PhantomPrefs.setDailySummaryEnabled(appCtx, enabled)
-                DailySummaryPolicy.schedule(appCtx)
-            }
-            "ai_daily_summary_notif" -> PhantomPrefs.setDailySummaryNotifEnabled(appCtx, enabled)
             "memory_chat_capture" -> PhantomPrefs.setMemoryChatCaptureEnabled(appCtx, enabled)
             "memory_write_confirm" -> PhantomPrefs.setMemoryWriteConfirmEnabled(appCtx, enabled)
             "calendar_write_confirm" -> PhantomPrefs.setCalendarWriteConfirmEnabled(appCtx, enabled)
@@ -307,7 +291,7 @@ object SettingsCatalog {
             "appearance_haptic" -> PhantomPrefs.setHapticFeedbackEnabled(appCtx, enabled)
             "intel_enabled" -> PhantomPrefs.setIntelEnabled(appCtx, enabled)
             "personal_summary_collapse" -> PhantomPrefs.setSummaryDefaultCollapsed(appCtx, enabled)
-            "stats_summary",
+            "stats_briefing",
             "stats_weekly_bar",
             "stats_risk_dist",
             "stats_hourly",

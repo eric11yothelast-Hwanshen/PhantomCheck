@@ -2310,9 +2310,6 @@ fun ChatAssistantTab(
                         val next = !tokenSaverEnabled
                         tokenSaverEnabled = next
                         SettingsCatalog.applyBooleanSetting(appCtx, "quick_token_saver", next)
-                        if (!next) {
-                            com.phantom.checker.service.DailySummaryPolicy.maybeCatchUp(appCtx)
-                        }
                         onShowMessage(if (next) "已開啟省 token 模式" else "已關閉省 token 模式（已還原設定預算）")
                     },
                     label = {
@@ -2409,9 +2406,6 @@ fun ChatAssistantTab(
                             val next = !tokenSaverEnabled
                             tokenSaverEnabled = next
                             SettingsCatalog.applyBooleanSetting(appCtx, "quick_token_saver", next)
-                            if (!next) {
-                                com.phantom.checker.service.DailySummaryPolicy.maybeCatchUp(appCtx)
-                            }
                             showTokenSaverInfoDialog = false
                             onShowMessage(if (next) "已開啟省 token 模式" else "已關閉省 token 模式")
                         }
@@ -2501,6 +2495,16 @@ fun ChatAssistantTab(
                                     )
                                 }
                             } else {
+                                val isBriefingMsg = msg.id > 0L && (
+                                    msg.id == PhantomPrefs.getLastBriefingMessageId(appCtx) ||
+                                        ((msg.content.startsWith("**☀️ ") || msg.content.startsWith("**🌙 ")) &&
+                                            msg.content.contains("簡報"))
+                                )
+                                if (isBriefingMsg) {
+                                    LaunchedEffect(msg.id) {
+                                        PhantomPrefs.markBriefingReadOnce(appCtx, msg.id)
+                                    }
+                                }
                                 Column(
                                     modifier = Modifier.widthIn(max = assistantBubbleMaxWidth),
                                     verticalArrangement = Arrangement.spacedBy(4.dp)

@@ -171,7 +171,6 @@ import com.phantom.checker.data.TagTotalCountRow
 import com.phantom.checker.data.TodoEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.service.AppDatabaseHolder
-import com.phantom.checker.service.DailySummaryPolicy
 import com.phantom.checker.service.WeeklySummaryPolicy
 import com.phantom.checker.service.HeartbeatPolicy
 import com.phantom.checker.service.NotificationCollectorService
@@ -248,11 +247,8 @@ internal fun StatsTab(
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
-    var isGeneratingSummary by remember { mutableStateOf(false) }
     var isExporting by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
-    var showHistoryDialog by remember { mutableStateOf(false) }
-    var summaryHistory by remember { mutableStateOf(listOf<AiSummaryEntity>()) }
     val statsSettingsVersion by PhantomSettingsBus.version.collectAsState()
     var statsResumeTrigger by remember { mutableIntStateOf(0) }
     val statsLifecycleOwner = ctx as? LifecycleOwner
@@ -268,9 +264,6 @@ internal fun StatsTab(
         }
     }
     val profiles = remember(statsSettingsVersion, statsResumeTrigger) { AiClient.getProfiles(appCtx) }
-    var activeProfile by remember(statsSettingsVersion, statsResumeTrigger) {
-        mutableStateOf(AiClient.getProfileForPurpose(appCtx, com.phantom.checker.util.AiPurpose.DAILY_SUMMARY))
-    }
 
     if (showExportDialog) {
         ExportCsvDialog(
@@ -294,47 +287,6 @@ internal fun StatsTab(
                             ?: err.javaClass.simpleName
                         onShowMessage("匯出失敗：$reason")
                     }
-                }
-            }
-        )
-    }
-
-    if (showHistoryDialog) {
-        AlertDialog(
-            onDismissRequest = { showHistoryDialog = false },
-            title = { Text("近 7 日 AI 摘要歷史") },
-            text = {
-                if (summaryHistory.isEmpty()) {
-                    Text("近 7 日尚無 AI 摘要紀錄。", style = MaterialTheme.typography.bodyMedium)
-                } else {
-                    Column(
-                        modifier = Modifier.verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        summaryHistory.forEach { item ->
-                            val dateStr = item.date.toString().let { d ->
-                                if (d.length == 8) "${d.substring(0, 4)}/${d.substring(4, 6)}/${d.substring(6, 8)}" else d
-                            }
-                            Column {
-                                Text(
-                                    text = dateStr,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(Modifier.height(2.dp))
-                                PhantomMarkdownText(
-                                    markdown = item.summary,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showHistoryDialog = false }) {
-                    Text("關閉")
                 }
             }
         )
@@ -396,11 +348,35 @@ internal fun StatsTab(
                 Text("分享本週統計報告圖卡（本機產生）")
             }
         }
-        // 每日 AI 摘要玻璃卡
-        if ("stats_summary" in visibleCards) {
-        item(key = "stats_summary") {
-            var dailyExpanded by remember { mutableStateOf(PhantomPrefs.isDailySummaryExpanded(appCtx)) }
-            val summary = state.latestSummary
+        // #349 早晚簡報玻璃卡（取代每日 AI 摘要，首次展開閱讀計入親密值）
+        if ("stats_briefing" in visibleCards) {
+        item(key = "stats_briefing") {
+            val lastSummary = remember(statsSettingsVersion, statsResumeTrigger) {
+                PhantomPrefs.getLastBriefingSummary(appCtx)
+            }
+            val lastTs = remember(statsSettingsVersion, statsResumeTrigger) {
+                PhantomPrefs.getLastBriefingTimestamp(appCtx)
+            }
+            val lastMsgId = remember(statsSettingsVersion, statsResumeTrigger) {
+                PhantomPrefs.getLastBriefingMessageId(appCtx)
+            }
+            var briefingExpanded by remember { mutableStateOf(false) }
+            var fullBriefingText by remember(lastMsgId) { mutableStateOf<String?>(null) }
+
+            LaunchedEffect(briefingExpanded, lastMsgId) {
+                if (briefingExpanded && lastMsgId > 0L) {
+                    if (fullBriefingText == null) {
+                        fullBriefingText = withContext(Dispatchers.IO) {
+                            val dao = AppDatabaseHolder.db(appCtx).chatDao()
+                            dao.allSessions().firstNotNullOfOrNull { s ->
+                                dao.messagesForSession(s.id).firstOrNull { it.id == lastMsgId }?.content
+                            }
+                        }
+                    }
+                    PhantomPrefs.markBriefingReadOnce(appCtx, lastMsgId)
+                }
+            }
+
             PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
@@ -410,202 +386,77 @@ internal fun StatsTab(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            dailyExpanded = !dailyExpanded
-                            PhantomPrefs.setDailySummaryExpanded(appCtx, dailyExpanded)
-                        },
+                        .clickable { briefingExpanded = !briefingExpanded },
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "每日 AI 摘要",
+                        text = "☀️🌙 早晚簡報",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
                     )
-                    TextButton(onClick = {
-                        scope.launch {
-                            summaryHistory = withContext(Dispatchers.IO) {
-                                AppDatabaseHolder.db(appCtx).aiSummaryDao().byDateRange(
-                                    DailySummaryPolicy.dateKeyDaysAgo(6),
-                                    DailySummaryPolicy.todayDateKey()
-                                )
-                            }
-                            showHistoryDialog = true
+                    if (lastTs > 0L) {
+                        val timeStr = remember(lastTs) {
+                            SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(lastTs))
                         }
-                    }) {
-                        Text("查看歷史")
+                        Text(
+                            text = timeStr,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                    IconButton(onClick = {
-                        dailyExpanded = !dailyExpanded
-                        PhantomPrefs.setDailySummaryExpanded(appCtx, dailyExpanded)
-                    }) {
+                    IconButton(onClick = { briefingExpanded = !briefingExpanded }) {
                         Icon(
-                            imageVector = if (dailyExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                            contentDescription = if (dailyExpanded) "收合今日摘要" else "展開今日摘要"
+                            imageVector = if (briefingExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = if (briefingExpanded) "收合早晚簡報" else "展開閱讀早晚簡報"
                         )
                     }
                 }
-                if (!dailyExpanded) {
-                    val previewText = summary?.let {
-                        stripMarkdown(it.summary).replace("\n", " ").replace(Regex("\\s+"), " ").trim().take(80)
-                    } ?: "尚無摘要，點擊展開或立即生成"
+                if (!briefingExpanded) {
+                    val previewText = lastSummary.takeIf { it.isNotBlank() }
+                        ?.replace("\n", " ")
+                        ?.replace(Regex("\\s+"), " ")
+                        ?.trim()
+                        ?: "尚無早晚簡報，可於「設定 → 權限與 AI 夥伴 → AI 夥伴與主動推播」試發或等待排程"
                     Text(
                         text = previewText,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                dailyExpanded = true
-                                PhantomPrefs.setDailySummaryExpanded(appCtx, true)
-                            }
+                            .clickable { briefingExpanded = true }
                     )
-                    Spacer(Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(
-                            onClick = {
-                                if (isGeneratingSummary) return@TextButton
-                                scope.launch {
-                                    isGeneratingSummary = true
-                                    val result = withContext(Dispatchers.IO) {
-                                        DailySummaryPolicy.generateTodaySummary(appCtx)
-                                    }
-                                    isGeneratingSummary = false
-                                    result.onSuccess {
-                                        onSummaryGenerated()
-                                        onShowMessage("今日 AI 摘要已生成")
-                                    }.onFailure { err ->
-                                        onShowMessage(err.message ?: "摘要生成失敗")
-                                    }
-                                }
-                            },
-                            enabled = !isGeneratingSummary
-                        ) {
-                            Text(if (isGeneratingSummary) "生成中…" else if (summary != null) "重新生成" else "立即生成")
-                        }
-                        if (summary != null) {
-                            TextButton(onClick = {
-                                val plain = stripMarkdown(summary.summary)
-                                val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                cm.setPrimaryClip(ClipData.newPlainText("daily_ai_summary", plain))
-                                onShowMessage("已複製今日 AI 摘要")
-                            }) {
-                                Text("複製")
-                            }
-                            TextButton(onClick = {
-                                val plain = stripMarkdown(summary.summary)
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_SUBJECT, "幻訊每日 AI 摘要")
-                                    putExtra(Intent.EXTRA_TEXT, plain)
-                                }
-                                ctx.startActivity(Intent.createChooser(shareIntent, "分享每日 AI 摘要"))
-                            }) {
-                                Text("分享")
-                            }
-                        }
-                    }
                 } else {
-                    AiProviderSwitcherChip(
-                        profiles = profiles,
-                        activeProfile = activeProfile,
-                        label = "每日摘要模型：",
-                        onSelectProfile = { selected ->
-                            PhantomPrefs.setPurposeProfileId(appCtx, com.phantom.checker.util.AiPurpose.DAILY_SUMMARY.id, selected.id)
-                            PhantomSettingsBus.notifyChanged()
-                            activeProfile = selected
-                            onShowMessage("已切換每日摘要模型：${selected.name}・${selected.model}")
-                        }
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    if (summary != null) {
-                        val timeStr = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
-                            .format(Date(summary.generatedAt))
+                    Spacer(Modifier.height(6.dp))
+                    val displayMarkdown = fullBriefingText?.takeIf { it.isNotBlank() } ?: lastSummary
+                    if (displayMarkdown.isNotBlank()) {
                         PhantomMarkdownText(
-                            markdown = summary.summary,
+                            markdown = displayMarkdown,
                             style = MaterialTheme.typography.bodyMedium
                         )
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(8.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalArrangement = Arrangement.End
                         ) {
-                            Text(
-                                text = "更新於 $timeStr",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                TextButton(onClick = {
-                                    val plain = stripMarkdown(summary.summary)
-                                    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                    cm.setPrimaryClip(ClipData.newPlainText("daily_ai_summary", plain))
-                                    onShowMessage("已複製今日 AI 摘要")
-                                }) {
-                                    Text("複製")
-                                }
-                                TextButton(onClick = {
-                                    val plain = stripMarkdown(summary.summary)
-                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "text/plain"
-                                        putExtra(Intent.EXTRA_SUBJECT, "幻訊每日 AI 摘要")
-                                        putExtra(Intent.EXTRA_TEXT, plain)
-                                    }
-                                    ctx.startActivity(Intent.createChooser(shareIntent, "分享每日 AI 摘要"))
-                                }) {
-                                    Text("分享")
-                                }
+                            TextButton(onClick = {
+                                val plain = stripMarkdown(displayMarkdown)
+                                val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                cm.setPrimaryClip(ClipData.newPlainText("briefing_summary", plain))
+                                onShowMessage("已複製早晚簡報")
+                            }) {
+                                Text("複製")
                             }
                         }
                     } else {
                         Text(
-                            text = "尚無摘要",
+                            text = "尚無早晚簡報紀錄，可於「設定 → 權限與 AI 夥伴 → AI 夥伴與主動推播」點擊試發，或等待每日早晚排程。",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Button(
-                        onClick = {
-                            if (isGeneratingSummary) return@Button
-                            scope.launch {
-                                isGeneratingSummary = true
-                                val result = withContext(Dispatchers.IO) {
-                                    DailySummaryPolicy.generateTodaySummary(appCtx)
-                                }
-                                isGeneratingSummary = false
-                                result.onSuccess {
-                                    onSummaryGenerated()
-                                    onShowMessage("今日 AI 摘要已生成")
-                                }.onFailure { err ->
-                                    onShowMessage(err.message ?: "摘要生成失敗")
-                                }
-                            }
-                        },
-                        enabled = !isGeneratingSummary,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .pressableScale()
-                    ) {
-                        if (isGeneratingSummary) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text("生成中…")
-                        } else {
-                            Text("立即生成今日摘要")
-                        }
                     }
                 }
             }

@@ -246,7 +246,7 @@ object WeeklySummaryPolicy {
         com.phantom.checker.widget.AiSummaryWidgetProvider.updateAllIfChanged(appCtx)
 
         if (fromSchedule &&
-            PhantomPrefs.isEffectiveDailySummaryNotifEnabled(appCtx) &&
+            !PhantomPrefs.isTokenSaverEnabled(appCtx) &&
             StatsForegroundService.hasPostNotificationsPermission(appCtx)
         ) {
             postWeeklyNotification(appCtx, summaryText)

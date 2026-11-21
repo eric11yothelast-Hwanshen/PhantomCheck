@@ -156,7 +156,6 @@ import com.phantom.checker.network.AiClient
 import com.phantom.checker.network.ApiKeySource
 import com.phantom.checker.network.IntelClient
 import com.phantom.checker.service.AppDatabaseHolder
-import com.phantom.checker.service.DailySummaryPolicy
 import com.phantom.checker.service.HeartbeatPolicy
 import com.phantom.checker.service.RetentionConfig
 import com.phantom.checker.service.RetentionPolicy
@@ -370,10 +369,7 @@ fun FilterSettingsScreen(
     var chatRagLimit by remember { mutableIntStateOf(PhantomPrefs.getChatRagMessageLimit(appCtx)) }
     var aiMinTriggerLength by remember { mutableIntStateOf(PhantomPrefs.getAiMinTriggerLength(appCtx)) }
     var todayAiUsage by remember { mutableIntStateOf(PhantomPrefs.getTodayAiUsage(appCtx)) }
-    var dailySummaryEnabled by remember { mutableStateOf(PhantomPrefs.isDailySummaryEnabled(appCtx)) }
-    var dailySummaryNotifEnabled by remember { mutableStateOf(PhantomPrefs.isDailySummaryNotifEnabled(appCtx)) }
-    var summaryHour by remember { mutableIntStateOf(PhantomPrefs.getDailySummaryHour(appCtx)) }
-    var summaryMinute by remember { mutableIntStateOf(PhantomPrefs.getDailySummaryMinute(appCtx)) }
+
 
     // #315 B4 記憶庫與 AI 助手設定
     var memoryChatCaptureEnabled by remember { mutableStateOf(PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)) }
@@ -614,10 +610,7 @@ fun FilterSettingsScreen(
             chatRagLimit = PhantomPrefs.getChatRagMessageLimit(appCtx)
             aiMinTriggerLength = PhantomPrefs.getAiMinTriggerLength(appCtx)
             todayAiUsage = PhantomPrefs.getTodayAiUsage(appCtx)
-            dailySummaryEnabled = PhantomPrefs.isDailySummaryEnabled(appCtx)
-            dailySummaryNotifEnabled = PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
-            summaryHour = PhantomPrefs.getDailySummaryHour(appCtx)
-            summaryMinute = PhantomPrefs.getDailySummaryMinute(appCtx)
+
             memoryChatCaptureEnabled = PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
             memoryWriteConfirmEnabled = PhantomPrefs.isMemoryWriteConfirmEnabled(appCtx)
             antiFraudCrossCheckEnabled = PhantomPrefs.isAntiFraudCrossCheckEnabled(appCtx)
@@ -683,8 +676,7 @@ fun FilterSettingsScreen(
                 quickCommandDefaultMode = PhantomPrefs.getQuickCommandDefaultMode(appCtx)
                 quickChatCommands = PhantomPrefs.getQuickChatCommands(appCtx)
                 chatRagLimit = PhantomPrefs.getChatRagMessageLimit(appCtx)
-                dailySummaryEnabled = PhantomPrefs.isDailySummaryEnabled(appCtx)
-                dailySummaryNotifEnabled = PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
+
                 memoryChatCaptureEnabled = PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
                 memoryWriteConfirmEnabled = PhantomPrefs.isMemoryWriteConfirmEnabled(appCtx)
                 calendarWriteConfirmEnabled = PhantomPrefs.isCalendarWriteConfirmEnabled(appCtx)
@@ -1233,8 +1225,6 @@ fun FilterSettingsScreen(
                         onCheckedChange = { checked ->
                             tokenSaverEnabled = checked
                             PhantomPrefs.setTokenSaverEnabled(appCtx, checked)
-                            DailySummaryPolicy.schedule(appCtx)
-                            DailySummaryPolicy.maybeCatchUp(appCtx)
                         }
                     )
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -1283,22 +1273,6 @@ fun FilterSettingsScreen(
                         onCheckedChange = { checked ->
                             aiAutoTagEnabled = checked
                             PhantomPrefs.setAiAutoTagEnabled(appCtx, checked)
-                        }
-                    )
-                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-                    SettingSwitchRow(
-                        title = "每日 AI 摘要",
-                        subtitle = buildString {
-                            append(String.format(Locale.getDefault(), "排程時間：每日 %02d:%02d", summaryHour, summaryMinute))
-                            if (tokenSaverEnabled) append("；省 token 模式生效中：已暫停")
-                        },
-                        checked = dailySummaryEnabled,
-                        onCheckedChange = { checked ->
-                            dailySummaryEnabled = checked
-                            PhantomPrefs.setDailySummaryEnabled(appCtx, checked)
-                            DailySummaryPolicy.schedule(appCtx)
-                            DailySummaryPolicy.maybeCatchUp(appCtx)
                         }
                     )
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -2359,40 +2333,6 @@ fun FilterSettingsScreen(
                             PhantomPrefs.setAiAutoMemoEnabled(appCtx, checked)
                         }
                     )
-
-                    if (dailySummaryEnabled) {
-                        HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                        OutlinedButton(
-                            onClick = {
-                                TimePickerDialog(
-                                    ctx,
-                                    { _, h, m ->
-                                        summaryHour = h
-                                        summaryMinute = m
-                                        PhantomPrefs.setDailySummaryTime(appCtx, h, m)
-                                        DailySummaryPolicy.schedule(appCtx)
-                            DailySummaryPolicy.maybeCatchUp(appCtx)
-                                    },
-                                    summaryHour,
-                                    summaryMinute,
-                                    true
-                                ).show()
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(String.format(Locale.getDefault(), "調整摘要排程時間（%02d:%02d）", summaryHour, summaryMinute))
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        SettingSwitchRow(
-                            title = "每日摘要完成推播",
-                            subtitle = "摘要生成後發送低干擾通知，點擊直達統計頁",
-                            checked = dailySummaryNotifEnabled,
-                            onCheckedChange = { checked ->
-                                dailySummaryNotifEnabled = checked
-                                PhantomPrefs.setDailySummaryNotifEnabled(appCtx, checked)
-                            }
-                        )
-                    }
 
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 

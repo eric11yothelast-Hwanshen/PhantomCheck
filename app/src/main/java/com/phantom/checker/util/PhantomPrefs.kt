@@ -61,7 +61,6 @@ enum class CardDensity(val prefValue: String, val label: String) {
 enum class AiPurpose(val id: String, val label: String, val catalogId: String) {
     CHAT("ai_chat", "AI 助手對話", "ai_model_chat"),
     MESSAGE_ANALYSIS("ai_message_analysis", "每則訊息風險分析", "ai_model_message_analysis"),
-    DAILY_SUMMARY("ai_daily_summary", "每日摘要", "ai_model_daily_summary"),
     WEEKLY_SUMMARY("ai_weekly_summary", "每週摘要", "ai_model_weekly_summary"),
     DEEP_ANALYSIS("ai_deep_analysis", "訊息深度分析", "ai_model_deep_analysis"),
     SETTINGS_SEARCH("ai_settings_search", "設定 AI 語意搜尋", "ai_model_settings_search"),
@@ -1634,6 +1633,9 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     fun getLastBriefingTimestamp(ctx: Context): Long =
         prefs(ctx).getLong("briefing_last_ts", 0L)
 
+    fun getLastBriefingMessageId(ctx: Context): Long =
+        prefs(ctx).getLong("briefing_last_msg_id", -1L)
+
     fun saveLastBriefingMeta(ctx: Context, summary: String, ts: Long, messageId: Long) {
         prefs(ctx).edit()
             .putString("briefing_last_summary", summary.take(200))
@@ -1648,6 +1650,27 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     fun incrementBriefingReadCount(ctx: Context) {
         val p = prefs(ctx)
         p.edit().putInt("briefing_read_count", p.getInt("briefing_read_count", 0) + 1).apply()
+        PhantomSettingsBus.notifyChanged()
+    }
+
+    /**
+     * #349 以 messageId 去重計入「簡報點閱」親密值；同則簡報在聊天與統計頁僅計一次。
+     * 回傳 true 表示本次為首次點閱並已計分。
+     */
+    fun markBriefingReadOnce(ctx: Context, messageId: Long): Boolean {
+        if (messageId <= 0L) return false
+        val p = prefs(ctx)
+        val raw = p.getString("briefing_counted_msg_ids", "").orEmpty()
+        val ids = raw.split(',').mapNotNull { it.trim().toLongOrNull() }.toMutableList()
+        if (messageId in ids) return false
+        ids.add(messageId)
+        val trimmed = if (ids.size > 30) ids.takeLast(30) else ids
+        p.edit()
+            .putString("briefing_counted_msg_ids", trimmed.joinToString(","))
+            .putInt("briefing_read_count", p.getInt("briefing_read_count", 0) + 1)
+            .apply()
+        PhantomSettingsBus.notifyChanged()
+        return true
     }
 
     // ---- #337 「我對你的瞭解」畫像卡 ----
@@ -1724,7 +1747,7 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     data class StatsCardOption(val key: String, val title: String, val subtitle: String, val defaultVisible: Boolean)
 
     val STATS_CARD_OPTIONS: List<StatsCardOption> = listOf(
-        StatsCardOption("stats_summary", "每日 AI 摘要", "顯示今日 AI 重點摘要卡片", true),
+        StatsCardOption("stats_briefing", "早晚簡報", "顯示最近一次早間／晚間個人簡報，點擊可展開閱讀", true),
         StatsCardOption("stats_weekly_bar", "本週 7 日訊息量", "顯示近 7 日每日訊息長條圖", true),
         StatsCardOption("stats_risk_dist", "風險分布三色", "顯示安全／疑似／詐騙計數卡", true),
         StatsCardOption("stats_hourly", "今日每小時分布", "顯示今日 24 小時訊息分布圖", true),
@@ -1741,9 +1764,15 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     val DEFAULT_VISIBLE_STATS_CARDS: Set<String> =
         STATS_CARD_OPTIONS.filter { it.defaultVisible }.map { it.key }.toSet()
 
-    fun getVisibleStatsCards(ctx: Context): Set<String> =
-        prefs(ctx).getStringSet("visible_stats_cards", DEFAULT_VISIBLE_STATS_CARDS)
+    fun getVisibleStatsCards(ctx: Context): Set<String> {
+        val raw = prefs(ctx).getStringSet("visible_stats_cards", DEFAULT_VISIBLE_STATS_CARDS)
             ?: DEFAULT_VISIBLE_STATS_CARDS
+        return if ("stats_summary" in raw && "stats_briefing" !in raw) {
+            (raw - "stats_summary") + "stats_briefing"
+        } else {
+            raw - "stats_summary"
+        }
+    }
 
     fun setVisibleStatsCards(ctx: Context, cards: Set<String>) {
         prefs(ctx).edit().putStringSet("visible_stats_cards", cards.toSet()).apply()

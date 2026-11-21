@@ -2071,65 +2071,6 @@ object AiClient {
         Result.failure(IllegalStateException("未知錯誤"))
     }
 
-    /** 每日 AI 摘要生成；未設定 key 或失敗回 null */
-    suspend fun summarizeDaily(
-        prompt: String,
-        context: Context? = null
-    ): String? = withContext(Dispatchers.IO) {
-        var result: String? = null
-        try {
-            val profile = getProfileForPurpose(context, AiPurpose.DAILY_SUMMARY) ?: return@withContext null
-            val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
-            val auth = "Bearer ${profile.apiKey.trim()}"
-            var currentPrompt = prompt
-            var maxTok = if (isGroqProvider(profile)) 900 else 1200
-            var degraded = false
-            var rateLimitRetries = 0
-            while (true) {
-                try {
-                    enforceRateLimit()
-                    val res = getApi(profile.baseUrl).chat(
-                        url = fullUrl,
-                        auth = auth,
-                        body = ChatRequest(
-                            model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
-                            messages = listOf(
-                                ChatMessage(
-                                    "system",
-                                    "你是個人通訊助理，請用簡潔的繁體中文整理今日訊息重點與詐騙風險提醒。請使用 Markdown 格式（如 ## 標題、**重點粗體**、- 清單）條列呈現。"
-                                ),
-                                ChatMessage("user", currentPrompt)
-                            ),
-                            maxTokens = maxTok,
-                            temperature = 0.3
-                        )
-                    )
-                    result = extractReplyText(res.choices.firstOrNull()?.message?.content).takeIf { it.isNotEmpty() }
-                    break
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: HttpException) {
-                    if (e.code() == 429 && rateLimitRetries < 1) {
-                        rateLimitRetries++
-                        delay(parseRetryAfterMs(e, rateLimitRetries))
-                        continue
-                    }
-                    if (!degraded && isRequestTooLargeError(e)) {
-                        degraded = true
-                        currentPrompt = currentPrompt.take((currentPrompt.length / 2).coerceAtLeast(400))
-                        maxTok = 700
-                        continue
-                    }
-                    break
-                }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            result = null
-        }
-        result
-    }
 
     /** 每週 AI 摘要生成（含 413 降載與 429 Retry-After 重試，回傳 Result 供誠實顯示失敗原因） */
     suspend fun summarizeWeekly(
