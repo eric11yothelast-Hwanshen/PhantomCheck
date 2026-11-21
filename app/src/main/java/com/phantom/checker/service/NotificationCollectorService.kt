@@ -13,6 +13,7 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import android.util.LruCache
 import androidx.core.app.NotificationCompat
+import java.util.Locale
 import com.phantom.checker.R
 import com.phantom.checker.data.AiRuleEntity
 import com.phantom.checker.data.AppCategoryRuleEntity
@@ -400,8 +401,8 @@ class NotificationCollectorService : NotificationListenerService() {
                 return@launch
             }
 
-            val activeAiRules = try {
-                cachedActiveAiRules(db)
+            val activeWhitelistRules = try {
+                cachedActiveWhitelistRules(db)
             } catch (_: Exception) {
                 emptyList()
             }
@@ -411,7 +412,7 @@ class NotificationCollectorService : NotificationListenerService() {
                     packageName = pkg,
                     appLabel = cachedAppLabel(pkg),
                     content = text,
-                    aiRules = activeAiRules,
+                    aiRules = activeWhitelistRules,
                     indicators = indicators
                 )
             ) {
@@ -1082,6 +1083,7 @@ class NotificationCollectorService : NotificationListenerService() {
         private val ruleCacheLock = Any()
         private var cachedFilterRules: Pair<Long, List<FilterRule>>? = null
         private var cachedAiRules: Pair<Long, List<AiRuleEntity>>? = null
+        private var cachedWhitelistRules: Pair<Long, List<AiRuleEntity>>? = null
         private var cachedUserTagRules: Pair<Long, List<UserTagRuleEntity>>? = null
         private var cachedMemoRules: Pair<Long, List<MemoRuleEntity>>? = null
         private val cachedAppCatRules = object : LruCache<String, Pair<Long, List<AppCategoryRuleEntity>>>(64) {}
@@ -1091,6 +1093,7 @@ class NotificationCollectorService : NotificationListenerService() {
             synchronized(ruleCacheLock) {
                 cachedFilterRules = null
                 cachedAiRules = null
+                cachedWhitelistRules = null
                 cachedUserTagRules = null
                 cachedMemoRules = null
                 cachedAppCatRules.evictAll()
@@ -1124,6 +1127,22 @@ class NotificationCollectorService : NotificationListenerService() {
             val fresh = db.aiRuleDao().active()
             synchronized(ruleCacheLock) {
                 cachedAiRules = System.currentTimeMillis() to fresh
+            }
+            return fresh
+        }
+
+        /** #362 全量啟用白名單快取（30s TTL，不受 active() LIMIT 20 截斷） */
+        private suspend fun cachedActiveWhitelistRules(db: AppDatabase): List<AiRuleEntity> {
+            val now = System.currentTimeMillis()
+            synchronized(ruleCacheLock) {
+                val entry = cachedWhitelistRules
+                if (entry != null && (now - entry.first) < RULE_CACHE_TTL_MS) {
+                    return entry.second
+                }
+            }
+            val fresh = db.aiRuleDao().activeWhitelistAll()
+            synchronized(ruleCacheLock) {
+                cachedWhitelistRules = System.currentTimeMillis() to fresh
             }
             return fresh
         }
@@ -1627,6 +1646,7 @@ object AppDatabaseHolder {
                     seedDefaultAiTagsIfNeeded(appCtx, db)
                     seedAppCategoryTagsAndRulesIfNeeded(appCtx, db)
                     purgePresetAiRulesIfNeeded(appCtx, db)
+                    dedupWhitelistRulesIfNeeded(appCtx, db)
                 }
             }).build().also { instance = it }
         }
@@ -1734,6 +1754,51 @@ object AppDatabaseHolder {
                 }
                 db.setTransactionSuccessful()
                 PhantomPrefs.setPresetAiRulesPurged(appCtx, true)
+            } finally {
+                db.endTransaction()
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * #362 一次性資料修復：合併完全相同 (sender, packageName, isEnabled)（或無 sender 時 (ruleText, packageName, isEnabled)）
+     * 的重複白名單列，保留最舊一筆（id 最小），絕不刪除任何欄位不同的使用者自訂規則，也不改動停用狀態。
+     */
+    private fun dedupWhitelistRulesIfNeeded(
+        appCtx: Context,
+        db: androidx.sqlite.db.SupportSQLiteDatabase
+    ) {
+        if (PhantomPrefs.isWhitelistDedupDoneV1(appCtx)) return
+        try {
+            db.beginTransaction()
+            try {
+                val seen = HashSet<String>()
+                val toDelete = mutableListOf<Long>()
+                db.query(
+                    "SELECT id, ruleText, sender, packageName, isEnabled FROM ai_rules WHERE kind = 'whitelist' ORDER BY createdAt ASC, id ASC"
+                ).use { c ->
+                    while (c.moveToNext()) {
+                        val id = c.getLong(0)
+                        val ruleText = c.getString(1)?.trim()?.lowercase(Locale.ROOT).orEmpty()
+                        val sender = c.getString(2)?.trim()?.lowercase(Locale.ROOT).orEmpty()
+                        val pkg = c.getString(3)?.trim()?.lowercase(Locale.ROOT).orEmpty()
+                        val enabled = c.getInt(4)
+                        val key = if (sender.isNotEmpty()) {
+                            "S|$sender|$pkg|$enabled"
+                        } else {
+                            "T|$ruleText|$pkg|$enabled"
+                        }
+                        if (!seen.add(key)) {
+                            toDelete.add(id)
+                        }
+                    }
+                }
+                toDelete.forEach { dupId ->
+                    db.execSQL("DELETE FROM ai_rules WHERE id = ?", arrayOf<Any>(dupId))
+                }
+                db.setTransactionSuccessful()
+                PhantomPrefs.setWhitelistDedupDoneV1(appCtx, true)
             } finally {
                 db.endTransaction()
             }

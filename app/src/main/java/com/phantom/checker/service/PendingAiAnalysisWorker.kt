@@ -62,13 +62,40 @@ class PendingAiAnalysisWorker(
 
         val enableAutoTag = PhantomPrefs.isEffectiveAiAutoTagEnabled(appCtx)
         val aiTags = if (enableAutoTag) db.tagDao().aiManagedTags() else emptyList()
-        val aiRules = db.aiRuleDao().all().filter { it.isEnabled }.take(20)
+        val aiRules = db.aiRuleDao().active()
+        val allWhitelistRules = db.aiRuleDao().activeWhitelistAll()
         val memoRules = db.memoRuleDao().active().take(10)
+
+        val toAnalyze = mutableListOf<com.phantom.checker.data.MessageEntity>()
+        messages.forEach { msg ->
+            if (com.phantom.checker.network.IntelClient.isMessageWhitelisted(
+                    sender = msg.sender,
+                    packageName = msg.packageName,
+                    appLabel = msg.appLabel,
+                    content = msg.content,
+                    aiRules = allWhitelistRules,
+                    indicators = com.phantom.checker.network.IndicatorExtractor.extract(msg.content)
+                )
+            ) {
+                db.messageDao().update(
+                    msg.copy(riskScore = 10, riskLabel = "safe", riskReason = "命中白名單規則")
+                )
+                dao.deleteByIds(listOf(msg.id))
+            } else {
+                toAnalyze.add(msg)
+            }
+        }
+        if (toAnalyze.isEmpty()) {
+            if (dao.pendingCount() == 0) {
+                PendingAiAnalysisPolicy.notifyCompleted(appCtx)
+            }
+            return Result.success()
+        }
 
         var anyTransientFailure = false
         var anyScamAlert = false
 
-        messages.chunked(5).forEach { chunk ->
+        toAnalyze.chunked(5).forEach { chunk ->
             if (!PhantomPrefs.canUseAiTodayAndIncrement(appCtx)) {
                 return Result.success()
             }

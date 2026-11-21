@@ -61,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.phantom.checker.data.AiRuleEntity
+import com.phantom.checker.data.WhitelistRuleHelper
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.NotificationCollectorService
 import com.phantom.checker.util.BackgroundLayer
@@ -269,25 +270,31 @@ private fun WhitelistManagementSection(
                     }
                     val trimmedTarget = inputTarget.trim()
                     val resolvedPkg = if (inputAllApps) null else inputPackage.trim().takeIf { it.isNotEmpty() }
-                    val isDuplicate = trimmedTarget.isNotEmpty() && rules.any { r ->
-                        if (addModeSender) {
-                            r.sender?.equals(trimmedTarget, ignoreCase = true) == true &&
-                                (r.packageName ?: "") == (resolvedPkg ?: "")
-                        } else {
-                            r.ruleText.equals(trimmedTarget, ignoreCase = true) &&
-                                (r.packageName ?: "") == (resolvedPkg ?: "")
+                    val matchingExisting = if (trimmedTarget.isNotEmpty()) {
+                        rules.firstOrNull { r ->
+                            val samePkg = (r.packageName?.trim() ?: "") == (resolvedPkg ?: "")
+                            if (!samePkg) false
+                            else if (addModeSender) r.sender?.trim()?.equals(trimmedTarget, ignoreCase = true) == true
+                            else r.sender.isNullOrBlank() && r.ruleText.trim().equals(trimmedTarget, ignoreCase = true)
                         }
-                    }
-                    if (isDuplicate) {
+                    } else null
+                    val isEnabledDuplicate = matchingExisting != null && matchingExisting.isEnabled
+                    if (isEnabledDuplicate) {
                         Text(
-                            text = "已存在相同的白名單規則，請勿重複新增。",
+                            text = "已存在相同的啟用白名單規則，請勿重複新增。",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error
+                        )
+                    } else if (matchingExisting != null && !matchingExisting.isEnabled) {
+                        Text(
+                            text = "已存在相同但已停用的規則，確認後將直接重新啟用。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                     val canSubmit = trimmedTarget.isNotEmpty() &&
                         (inputAllApps || resolvedPkg != null) &&
-                        !isDuplicate
+                        !isEnabledDuplicate
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.End
@@ -297,35 +304,29 @@ private fun WhitelistManagementSection(
                             onClick = {
                                 scope.launch {
                                     try {
-                                        val insertedOk = withContext(Dispatchers.IO) {
+                                        val upsertRes = withContext(Dispatchers.IO) {
                                             val dao = AppDatabaseHolder.db(appCtx).aiRuleDao()
                                             val ruleText = if (addModeSender) {
                                                 "白名單寄件者：$trimmedTarget"
                                             } else {
                                                 trimmedTarget
                                             }
-                                            val id = dao.insert(
-                                                AiRuleEntity(
-                                                    ruleText = ruleText,
-                                                    kind = AiRuleEntity.KIND_WHITELIST,
-                                                    isEnabled = true,
-                                                    createdAt = System.currentTimeMillis(),
-                                                    sender = if (addModeSender) trimmedTarget else null,
-                                                    packageName = resolvedPkg
-                                                )
+                                            WhitelistRuleHelper.upsertWhitelist(
+                                                dao = dao,
+                                                ruleText = ruleText,
+                                                sender = if (addModeSender) trimmedTarget else null,
+                                                packageName = resolvedPkg,
+                                                onCacheInvalidate = { NotificationCollectorService.invalidateRuleCaches() }
                                             )
-                                            val verified = dao.byId(id)
-                                            NotificationCollectorService.invalidateRuleCaches()
-                                            id > 0L && verified != null
                                         }
-                                        if (insertedOk) {
+                                        if (upsertRes.isSuccess) {
                                             inputTarget = ""
                                             inputPackage = ""
                                             showAddForm = false
                                             reloadRules()
-                                            onShowMessage("已新增白名單：$trimmedTarget")
+                                            onShowMessage("${upsertRes.message}：$trimmedTarget")
                                         } else {
-                                            onShowMessage("新增白名單失敗，請重試。")
+                                            onShowMessage("${upsertRes.message}，請重試。")
                                         }
                                     } catch (e: Exception) {
                                         Log.e("PhantomWhitelist", "insert whitelist failed", e)

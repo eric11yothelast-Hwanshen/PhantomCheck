@@ -751,6 +751,10 @@ interface AiRuleDao {
     @Query("SELECT * FROM ai_rules WHERE isEnabled = 1 ORDER BY createdAt ASC, id ASC LIMIT 20")
     suspend fun active(): List<AiRuleEntity>
 
+    /** 全量啟用白名單查詢（不設 LIMIT，專供正確性比對路徑使用，避免第 21 筆以後白名單靜默失效） */
+    @Query("SELECT * FROM ai_rules WHERE isEnabled = 1 AND kind = 'whitelist' ORDER BY createdAt ASC, id ASC")
+    suspend fun activeWhitelistAll(): List<AiRuleEntity>
+
     @Query("SELECT * FROM ai_rules WHERE kind = :kind AND isEnabled = 1 ORDER BY packageName ASC, id ASC")
     suspend fun activeByKind(kind: String): List<AiRuleEntity>
 
@@ -765,6 +769,78 @@ interface AiRuleDao {
 
     @Query("DELETE FROM ai_rules WHERE id = :id")
     suspend fun deleteById(id: Long)
+}
+
+/**
+ * 統一白名單寫入與去重 helper（#362）：
+ * - 以 (sender, packageName) 或 (ruleText, packageName) 去重（忽略大小寫；null/blank packageName 視為「全部 App」）
+ * - 若已存在且 isEnabled=false → 重新啟用並回饋「已重新啟用既有規則」
+ * - 若已存在且 isEnabled=true → 不重複插入並回饋「重複，已存在」
+ * - 寫入或重新啟用後一律呼叫 invalidateRuleCaches()
+ */
+object WhitelistRuleHelper {
+    enum class Status { INSERTED, REACTIVATED, DUPLICATE, FAILED }
+
+    data class UpsertResult(
+        val status: Status,
+        val rule: AiRuleEntity?,
+        val message: String
+    ) {
+        val isSuccess: Boolean get() = status == Status.INSERTED || status == Status.REACTIVATED || status == Status.DUPLICATE
+    }
+
+    suspend fun upsertWhitelist(
+        dao: AiRuleDao,
+        ruleText: String,
+        sender: String?,
+        packageName: String?,
+        onCacheInvalidate: (() -> Unit)? = null
+    ): UpsertResult {
+        val normRuleText = ruleText.trim()
+        val normSender = sender?.trim()?.takeIf { it.isNotEmpty() }
+        val normPkg = packageName?.trim()?.takeIf { it.isNotEmpty() }
+        if (normRuleText.isEmpty() && normSender == null) {
+            return UpsertResult(Status.FAILED, null, "白名單規則內容不可為空")
+        }
+        val effectiveRuleText = normRuleText.ifEmpty { "白名單寄件者：$normSender" }
+        val existingList = dao.all().filter { it.kind == AiRuleEntity.KIND_WHITELIST }
+        val matched = existingList.firstOrNull { r ->
+            val rPkg = r.packageName?.trim()?.takeIf { it.isNotEmpty() }
+            val samePkg = (rPkg == null && normPkg == null) ||
+                (rPkg != null && normPkg != null && rPkg.equals(normPkg, ignoreCase = true))
+            if (!samePkg) return@firstOrNull false
+            val rSender = r.sender?.trim()?.takeIf { it.isNotEmpty() }
+            val sameSender = normSender != null && rSender != null && rSender.equals(normSender, ignoreCase = true)
+            val sameText = r.ruleText.trim().equals(effectiveRuleText, ignoreCase = true)
+            sameSender || (normSender == null && rSender == null && sameText)
+        }
+        if (matched != null) {
+            return if (!matched.isEnabled) {
+                val reactivated = matched.copy(isEnabled = true)
+                dao.update(reactivated)
+                onCacheInvalidate?.invoke()
+                UpsertResult(Status.REACTIVATED, reactivated, "已重新啟用既有規則")
+            } else {
+                UpsertResult(Status.DUPLICATE, matched, "重複，已存在")
+            }
+        }
+        val entity = AiRuleEntity(
+            ruleText = effectiveRuleText,
+            kind = AiRuleEntity.KIND_WHITELIST,
+            isEnabled = true,
+            createdAt = System.currentTimeMillis(),
+            sender = normSender,
+            packageName = normPkg
+        )
+        val insertedId = dao.insert(entity)
+        val verified = dao.byId(insertedId)
+        onCacheInvalidate?.invoke()
+        return if (insertedId > 0L && verified != null) {
+            UpsertResult(Status.INSERTED, verified, "已加入白名單")
+        } else {
+            UpsertResult(Status.FAILED, null, "新增白名單失敗")
+        }
+    }
 }
 
 @Dao

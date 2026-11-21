@@ -138,6 +138,7 @@ import android.net.Uri
 import android.provider.Settings
 import com.google.gson.JsonParser
 import com.phantom.checker.data.AiRuleEntity
+import com.phantom.checker.data.WhitelistRuleHelper
 import com.phantom.checker.data.ChatMessageEntity
 import com.phantom.checker.data.ChatSessionEntity
 import com.phantom.checker.data.MessageEntity
@@ -1814,6 +1815,33 @@ fun ChatAssistantTab(
                                     )
                                 )
                                 ok
+                            } else if (proposal.kind == AiRuleEntity.KIND_WHITELIST) {
+                                val upsertRes = WhitelistRuleHelper.upsertWhitelist(
+                                    dao = db.aiRuleDao(),
+                                    ruleText = proposal.ruleText,
+                                    sender = null,
+                                    packageName = null,
+                                    onCacheInvalidate = { NotificationCollectorService.invalidateRuleCaches() }
+                                )
+                                val ok = upsertRes.isSuccess
+                                db.chatDao().insertMessage(
+                                    ChatMessageEntity(
+                                        sessionId = sid,
+                                        role = ChatMessageEntity.ROLE_ASSISTANT,
+                                        content = when (upsertRes.status) {
+                                            WhitelistRuleHelper.Status.INSERTED ->
+                                                "✓ 已新增白名單規則 #${upsertRes.rule?.id}：${proposal.ruleText}（已寫入並驗證）"
+                                            WhitelistRuleHelper.Status.REACTIVATED ->
+                                                "✓ ${upsertRes.message} #${upsertRes.rule?.id}：${proposal.ruleText}"
+                                            WhitelistRuleHelper.Status.DUPLICATE ->
+                                                "ℹ️ ${upsertRes.message}（#${upsertRes.rule?.id}）：${proposal.ruleText}"
+                                            WhitelistRuleHelper.Status.FAILED ->
+                                                "✗ 新增白名單規則失敗：${proposal.ruleText}（DB 寫入驗證失敗）"
+                                        },
+                                        createdAt = System.currentTimeMillis()
+                                    )
+                                )
+                                ok
                             } else {
                                 val targetTagId = if (proposal.kind == AiRuleEntity.KIND_TAG && !proposal.tagName.isNullOrBlank()) {
                                     db.tagDao().all().firstOrNull { it.name.equals(proposal.tagName.trim(), ignoreCase = true) }?.id
@@ -2754,21 +2782,16 @@ fun ChatAssistantTab(
                                                             } else {
                                                                 targetMsg.content.trim().take(120).ifBlank { "白名單訊息（${targetMsg.sender}）" }
                                                             }
-                                                            val insertedId = db.aiRuleDao().insert(
-                                                                AiRuleEntity(
-                                                                    ruleText = ruleText,
-                                                                    kind = AiRuleEntity.KIND_WHITELIST,
-                                                                    isEnabled = true,
-                                                                    createdAt = System.currentTimeMillis(),
-                                                                    sender = if (isSenderMode) targetMsg.sender.trim() else null,
-                                                                    packageName = targetMsg.packageName
-                                                                )
+                                                            val upsertRes = WhitelistRuleHelper.upsertWhitelist(
+                                                                dao = db.aiRuleDao(),
+                                                                ruleText = ruleText,
+                                                                sender = if (isSenderMode) targetMsg.sender.trim() else null,
+                                                                packageName = targetMsg.packageName,
+                                                                onCacheInvalidate = { NotificationCollectorService.invalidateRuleCaches() }
                                                             )
-                                                            val verified = db.aiRuleDao().byId(insertedId)
-                                                            NotificationCollectorService.invalidateRuleCaches()
                                                             val label = targetMsg.sender.ifBlank { targetMsg.appLabel }
                                                             val modeDesc = if (isSenderMode) "此寄件者全部訊息" else "單則訊息"
-                                                            if (insertedId > 0L && verified != null) {
+                                                            if (upsertRes.isSuccess) {
                                                                 db.messageDao().update(
                                                                     targetMsg.copy(
                                                                         riskScore = 10,
@@ -2776,9 +2799,15 @@ fun ChatAssistantTab(
                                                                         riskReason = "使用者透過 AI 助手加入白名單"
                                                                     )
                                                                 )
-                                                                lines.add("✓ #${verified.id} $label（${targetMsg.appLabel}，$modeDesc，已寫入並驗證）")
+                                                                val statusNote = when (upsertRes.status) {
+                                                                    WhitelistRuleHelper.Status.INSERTED -> "已寫入並驗證"
+                                                                    WhitelistRuleHelper.Status.REACTIVATED -> upsertRes.message
+                                                                    WhitelistRuleHelper.Status.DUPLICATE -> upsertRes.message
+                                                                    WhitelistRuleHelper.Status.FAILED -> upsertRes.message
+                                                                }
+                                                                lines.add("✓ #${upsertRes.rule?.id} $label（${targetMsg.appLabel}，$modeDesc，$statusNote）")
                                                             } else {
-                                                                lines.add("✗ $label（${targetMsg.appLabel}，$modeDesc）：DB 寫入驗證失敗")
+                                                                lines.add("✗ $label（${targetMsg.appLabel}，$modeDesc）：${upsertRes.message}")
                                                             }
                                                         } catch (e: Exception) {
                                                             lines.add("✗ ${targetMsg.sender.ifBlank { targetMsg.appLabel }}：${e.message ?: "寫入失敗"}")

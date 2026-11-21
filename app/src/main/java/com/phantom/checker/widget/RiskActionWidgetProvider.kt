@@ -78,17 +78,13 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
                         )
                         val sender = msg.sender.trim()
                         if (sender.isNotEmpty()) {
-                            db.aiRuleDao().insert(
-                                AiRuleEntity(
-                                    ruleText = "信任「$sender」的訊息（桌面小工具加入白名單）",
-                                    kind = AiRuleEntity.KIND_WHITELIST,
-                                    isEnabled = true,
-                                    createdAt = System.currentTimeMillis(),
-                                    packageName = msg.packageName,
-                                    sender = sender
-                                )
+                            com.phantom.checker.data.WhitelistRuleHelper.upsertWhitelist(
+                                dao = db.aiRuleDao(),
+                                ruleText = "信任「$sender」的訊息（桌面小工具加入白名單）",
+                                sender = sender,
+                                packageName = msg.packageName,
+                                onCacheInvalidate = { com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches() }
                             )
-                            com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                         }
                     }
                 }

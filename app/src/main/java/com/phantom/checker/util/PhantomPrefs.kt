@@ -125,6 +125,7 @@ object PhantomPrefs {
     private const val KEY_DEFAULT_AI_TAGS_SEEDED = "default_ai_tags_seeded_v1"
     private const val KEY_DEFAULT_APP_CAT_SEEDED = "default_app_cat_seeded_v1"
     private const val KEY_PRESET_AI_RULES_PURGED = "preset_ai_rules_purged_v1"
+    private const val KEY_WHITELIST_DEDUP_DONE_V1 = "whitelist_dedup_done_v1"
     private const val KEY_QUIET_HOURS_ENABLED = "quiet_hours_enabled"
     private const val KEY_QUIET_START_MIN = "quiet_hours_start_minute"
     private const val KEY_QUIET_END_MIN = "quiet_hours_end_minute"
@@ -693,6 +694,14 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
 
     fun setPresetAiRulesPurged(ctx: Context, purged: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_PRESET_AI_RULES_PURGED, purged).apply()
+    }
+
+    /** #362 一次性重複白名單合併修復是否已執行 */
+    fun isWhitelistDedupDoneV1(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_WHITELIST_DEDUP_DONE_V1, false)
+
+    fun setWhitelistDedupDoneV1(ctx: Context, done: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_WHITELIST_DEDUP_DONE_V1, done).apply()
     }
 
     /** 省 token 模式（override 層，不覆寫原開關值，預設關閉） */

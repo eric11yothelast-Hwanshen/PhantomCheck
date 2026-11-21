@@ -71,6 +71,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.room.withTransaction
 import com.phantom.checker.data.AiRuleEntity
+import com.phantom.checker.data.WhitelistRuleHelper
 import com.phantom.checker.data.IntelResultEntity
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.data.MessageTagCrossRef
@@ -639,67 +640,122 @@ fun MessageDetailScreen(
                                     }
                                 }
                             }
+                            var showWhitelistedAnalyzeConfirm by remember { mutableStateOf(false) }
+
+                            fun runDeepAnalysis(wasWhitelisted: Boolean) {
+                                if (isAnalyzing) return
+                                scope.launch {
+                                    isAnalyzing = true
+                                    val autoTagEnabled = PhantomPrefs.isAiAutoTagEnabled(appCtx)
+                                    val (aiTags, aiRules) = withContext(Dispatchers.IO) {
+                                        val db = AppDatabaseHolder.db(appCtx)
+                                        val tags = if (autoTagEnabled) db.tagDao().aiManagedTags() else emptyList()
+                                        val rules = db.aiRuleDao().active()
+                                        tags to rules
+                                    }
+                                    val res = AiClient.analyzeMessage(
+                                        sender = msg.sender,
+                                        content = msg.content,
+                                        tags = aiTags,
+                                        rules = aiRules,
+                                        enableAutoTag = autoTagEnabled,
+                                        context = appCtx,
+                                        bypassCache = true
+                                    )
+                                    isAnalyzing = false
+                                    if (res != null) {
+                                        val annotatedReason = if (wasWhitelisted) {
+                                            "手動觸發（白名單寄件者）：${res.riskReason}"
+                                        } else {
+                                            res.riskReason
+                                        }
+                                        val updated = msg.copy(
+                                            riskScore = res.riskScore,
+                                            riskLabel = res.riskLabel,
+                                            riskReason = annotatedReason
+                                        )
+                                        val refreshedRefs = withContext(Dispatchers.IO) {
+                                            val db = AppDatabaseHolder.db(appCtx)
+                                            db.withTransaction {
+                                                db.messageDao().update(updated)
+                                                if (autoTagEnabled && res.tagIds.isNotEmpty()) {
+                                                    val existingRefs = db.tagDao().crossRefsForMessage(msg.id)
+                                                    val manualIds = existingRefs
+                                                        .filter { it.source == MessageTagCrossRef.SOURCE_MANUAL }
+                                                        .map { it.tagId }
+                                                        .toSet()
+                                                    val refs = res.tagIds
+                                                        .filter { it !in manualIds }
+                                                        .map { tid ->
+                                                            MessageTagCrossRef(
+                                                                messageId = msg.id,
+                                                                tagId = tid,
+                                                                source = MessageTagCrossRef.SOURCE_AUTO
+                                                            )
+                                                        }
+                                                    if (refs.isNotEmpty()) {
+                                                        db.tagDao().addTagsToMessageBatch(refs)
+                                                    }
+                                                }
+                                            }
+                                            db.tagDao().crossRefsForMessage(msg.id)
+                                        }
+                                        message = updated
+                                        selectedTagIds = refreshedRefs.map { it.tagId }.toSet()
+                                        tagSourceByTagId = refreshedRefs.associate { it.tagId to it.source }
+                                        snackbarHostState.showSnackbar("AI 分析完成：${res.riskLabel} (${res.riskScore}分)")
+                                    } else {
+                                        snackbarHostState.showSnackbar("AI 分析失敗，請確認 API 設定或網路")
+                                    }
+                                }
+                            }
+
+                            if (showWhitelistedAnalyzeConfirm) {
+                                AlertDialog(
+                                    onDismissRequest = { showWhitelistedAnalyzeConfirm = false },
+                                    title = { Text("此寄件者已於白名單") },
+                                    text = {
+                                        Text(
+                                            "「${msg.sender.ifBlank { msg.appLabel }}」已加入信任白名單，系統正常會直接略過風險分析。確定要手動執行深度分析嗎？"
+                                        )
+                                    },
+                                    confirmButton = {
+                                        TextButton(onClick = {
+                                            showWhitelistedAnalyzeConfirm = false
+                                            runDeepAnalysis(wasWhitelisted = true)
+                                        }) {
+                                            Text("仍要深度分析")
+                                        }
+                                    },
+                                    dismissButton = {
+                                        TextButton(onClick = { showWhitelistedAnalyzeConfirm = false }) {
+                                            Text("取消")
+                                        }
+                                    }
+                                )
+                            }
+
                             Spacer(Modifier.height(10.dp))
                             Button(
                                 onClick = {
                                     if (isAnalyzing) return@Button
                                     scope.launch {
-                                        isAnalyzing = true
-                                        val autoTagEnabled = PhantomPrefs.isAiAutoTagEnabled(appCtx)
-                                        val (aiTags, aiRules) = withContext(Dispatchers.IO) {
+                                        val whitelistedNow = withContext(Dispatchers.IO) {
                                             val db = AppDatabaseHolder.db(appCtx)
-                                            val tags = if (autoTagEnabled) db.tagDao().aiManagedTags() else emptyList()
-                                            val rules = db.aiRuleDao().active()
-                                            tags to rules
-                                        }
-                                        val res = AiClient.analyzeMessage(
-                                            sender = msg.sender,
-                                            content = msg.content,
-                                            tags = aiTags,
-                                            rules = aiRules,
-                                            enableAutoTag = autoTagEnabled,
-                                            context = appCtx,
-                                            bypassCache = true
-                                        )
-                                        isAnalyzing = false
-                                        if (res != null) {
-                                            val updated = msg.copy(
-                                                riskScore = res.riskScore,
-                                                riskLabel = res.riskLabel,
-                                                riskReason = res.riskReason
+                                            val wlRules = db.aiRuleDao().activeWhitelistAll()
+                                            com.phantom.checker.network.IntelClient.isMessageWhitelisted(
+                                                sender = msg.sender,
+                                                packageName = msg.packageName,
+                                                appLabel = msg.appLabel,
+                                                content = msg.content,
+                                                aiRules = wlRules,
+                                                indicators = com.phantom.checker.network.IndicatorExtractor.extract(msg.content)
                                             )
-                                            val refreshedRefs = withContext(Dispatchers.IO) {
-                                                val db = AppDatabaseHolder.db(appCtx)
-                                                db.withTransaction {
-                                                    db.messageDao().update(updated)
-                                                    if (autoTagEnabled && res.tagIds.isNotEmpty()) {
-                                                        val existingRefs = db.tagDao().crossRefsForMessage(msg.id)
-                                                        val manualIds = existingRefs
-                                                            .filter { it.source == MessageTagCrossRef.SOURCE_MANUAL }
-                                                            .map { it.tagId }
-                                                            .toSet()
-                                                        val refs = res.tagIds
-                                                            .filter { it !in manualIds }
-                                                            .map { tid ->
-                                                                MessageTagCrossRef(
-                                                                    messageId = msg.id,
-                                                                    tagId = tid,
-                                                                    source = MessageTagCrossRef.SOURCE_AUTO
-                                                                )
-                                                            }
-                                                        if (refs.isNotEmpty()) {
-                                                            db.tagDao().addTagsToMessageBatch(refs)
-                                                        }
-                                                    }
-                                                }
-                                                db.tagDao().crossRefsForMessage(msg.id)
-                                            }
-                                            message = updated
-                                            selectedTagIds = refreshedRefs.map { it.tagId }.toSet()
-                                            tagSourceByTagId = refreshedRefs.associate { it.tagId to it.source }
-                                            snackbarHostState.showSnackbar("AI 分析完成：${res.riskLabel} (${res.riskScore}分)")
+                                        }
+                                        if (whitelistedNow) {
+                                            showWhitelistedAnalyzeConfirm = true
                                         } else {
-                                            snackbarHostState.showSnackbar("AI 分析失敗，請確認 API 設定或網路")
+                                            runDeepAnalysis(wasWhitelisted = false)
                                         }
                                     }
                                 },
@@ -1009,27 +1065,32 @@ fun MessageDetailScreen(
                                             riskLabel = "safe",
                                             riskReason = "使用者手動加入白名單"
                                         )
-                                        withContext(Dispatchers.IO) {
+                                        val upsertRes = withContext(Dispatchers.IO) {
                                             val db = AppDatabaseHolder.db(appCtx)
                                             val ruleText = if (isSenderScope) {
                                                 "白名單寄件者：${msg.sender}（${msg.appLabel}）"
                                             } else {
                                                 msg.content.trim().take(120).ifBlank { "白名單訊息（${msg.sender}）" }
                                             }
-                                            db.aiRuleDao().insert(
-                                                AiRuleEntity(
-                                                    ruleText = ruleText,
-                                                    kind = AiRuleEntity.KIND_WHITELIST,
-                                                    sender = if (isSenderScope) msg.sender.trim() else null,
-                                                    packageName = msg.packageName
-                                                )
+                                            val res = WhitelistRuleHelper.upsertWhitelist(
+                                                dao = db.aiRuleDao(),
+                                                ruleText = ruleText,
+                                                sender = if (isSenderScope) msg.sender.trim() else null,
+                                                packageName = msg.packageName,
+                                                onCacheInvalidate = {
+                                                    com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                                }
                                             )
-                                            com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
-                                            db.messageDao().update(updatedMsg)
+                                            if (res.isSuccess) {
+                                                db.messageDao().update(updatedMsg)
+                                            }
+                                            res
                                         }
-                                        message = updatedMsg
+                                        if (upsertRes.isSuccess) {
+                                            message = updatedMsg
+                                        }
                                         showWhitelistFlow = false
-                                        snackbarHostState.showSnackbar("已加入白名單")
+                                        snackbarHostState.showSnackbar(upsertRes.message)
                                     }
                                 }
                             )

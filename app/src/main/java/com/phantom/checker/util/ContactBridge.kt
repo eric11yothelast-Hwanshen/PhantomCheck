@@ -340,16 +340,17 @@ object ContactBridge {
         }
         for (name in vipNames) {
             if (name.lowercase(Locale.ROOT) !in existingSendersLower) {
-                db.aiRuleDao().insert(
-                    AiRuleEntity(
-                        ruleText = "${AiRuleEntity.CONTACTS_VIP_RULE_PREFIX}通訊錄 VIP 信任圈：$name",
-                        kind = AiRuleEntity.KIND_WHITELIST,
-                        isEnabled = true,
-                        sender = name,
-                        packageName = null
-                    )
+                val res = com.phantom.checker.data.WhitelistRuleHelper.upsertWhitelist(
+                    dao = db.aiRuleDao(),
+                    ruleText = "${AiRuleEntity.CONTACTS_VIP_RULE_PREFIX}通訊錄 VIP 信任圈：$name",
+                    sender = name,
+                    packageName = null
                 )
-                added++
+                if (res.status == com.phantom.checker.data.WhitelistRuleHelper.Status.INSERTED ||
+                    res.status == com.phantom.checker.data.WhitelistRuleHelper.Status.REACTIVATED
+                ) {
+                    added++
+                }
             }
         }
         PhantomPrefs.setContactsVipLastSyncAt(ctx, now)
