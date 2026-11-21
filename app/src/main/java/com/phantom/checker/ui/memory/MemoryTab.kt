@@ -70,6 +70,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -799,164 +800,201 @@ internal fun MemoryTab(
             MemoryFilterChip.MEMO_RULES
         )
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+        // #363 修復篩選 chips 被「批次管理」與收合鈕遮擋：
+        // - 展開模式：將批次管理／收合鈕移至獨立頂部控制列，兩排分層 LazyRow 獨佔全寬並加 trailing contentPadding + clipToBounds
+        // - 收合模式：僅 1–2 顆 chip，保留同列並加 clipToBounds + 8dp 明確間距 + trailing contentPadding
+        // - 所有 chip 與膠囊改用 heightIn(min = 34.dp)，確保大字體 fontScale=1.3 與窄螢幕 360dp 不截字、不重疊
+        val batchAndCollapseControls: @Composable () -> Unit = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                if (filterChipsCollapsed) {
-                    val compactList = buildList {
-                        add(MemoryFilterChip.ALL)
-                        if (selectedFilter != MemoryFilterChip.ALL) add(selectedFilter)
-                    }
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isBatchMode) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+                    } else {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    },
+                    border = BorderStroke(
+                        width = 0.75.dp,
+                        color = if (isBatchMode) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                        } else {
+                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                        }
+                    ),
+                    modifier = Modifier
+                        .heightIn(min = 34.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable {
+                            isBatchMode = !isBatchMode
+                            if (!isBatchMode) selectedBatchIds = emptySet()
+                        }
+                ) {
+                    Box(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        items(compactList, key = { it.name }) { chip ->
-                            val count = badgeCountOf(chip)
-                            FilterChip(
-                                selected = selectedFilter == chip,
-                                onClick = { selectedFilter = chip },
-                                shape = chipShape,
-                                modifier = Modifier.height(34.dp),
-                                label = {
-                                    Text(
-                                        text = if (count > 0) "${chip.label} $count" else chip.label,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            )
-                        }
-                    }
-                } else {
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        item(key = "tier_label_mem") {
-                            Text(
-                                text = "記憶",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(end = 2.dp)
-                            )
-                        }
-                        items(memoryTierChips, key = { it.name }) { chip ->
-                            val count = badgeCountOf(chip)
-                            FilterChip(
-                                selected = selectedFilter == chip,
-                                onClick = { selectedFilter = chip },
-                                shape = chipShape,
-                                modifier = Modifier.height(34.dp),
-                                label = {
-                                    Text(
-                                        text = if (count > 0) "${chip.label} $count" else chip.label,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            )
-                        }
-                    }
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        item(key = "tier_label_rules") {
-                            Text(
-                                text = "規則",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(end = 2.dp)
-                            )
-                        }
-                        items(ruleTierChips, key = { it.name }) { chip ->
-                            val count = badgeCountOf(chip)
-                            FilterChip(
-                                selected = selectedFilter == chip,
-                                onClick = { selectedFilter = chip },
-                                shape = chipShape,
-                                modifier = Modifier.height(34.dp),
-                                label = {
-                                    Text(
-                                        text = if (count > 0) "${chip.label} $count" else chip.label,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            )
-                        }
+                        Text(
+                            text = if (isBatchMode) "結束批次" else "批次管理",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (isBatchMode) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            maxLines = 1
+                        )
                     }
                 }
-            }
-            Spacer(Modifier.width(4.dp))
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = if (isBatchMode) {
-                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                },
-                border = BorderStroke(
-                    width = 0.75.dp,
-                    color = if (isBatchMode) {
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                    } else {
-                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                    }
-                ),
-                modifier = Modifier
-                    .height(34.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable {
-                        isBatchMode = !isBatchMode
-                        if (!isBatchMode) selectedBatchIds = emptySet()
-                    }
-            ) {
                 Box(
-                    modifier = Modifier.padding(horizontal = 10.dp),
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
+                        .clickable {
+                            filterChipsCollapsed = !filterChipsCollapsed
+                            PhantomPrefs.setMemoryFilterChipsCollapsed(ctx, filterChipsCollapsed)
+                        },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = if (isBatchMode) "結束批次" else "批次管理",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (isBatchMode) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        maxLines = 1
+                    Icon(
+                        imageVector = if (filterChipsCollapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                        contentDescription = if (filterChipsCollapsed) "展開篩選標籤" else "收合篩選標籤",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
-            Spacer(Modifier.width(4.dp))
-            Box(
-                modifier = Modifier
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
-                    .clickable {
-                        filterChipsCollapsed = !filterChipsCollapsed
-                        PhantomPrefs.setMemoryFilterChipsCollapsed(ctx, filterChipsCollapsed)
-                    },
-                contentAlignment = Alignment.Center
+        }
+
+        if (filterChipsCollapsed) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = if (filterChipsCollapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                    contentDescription = if (filterChipsCollapsed) "展開篩選標籤" else "收合篩選標籤",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
-                )
+                val compactList = buildList {
+                    add(MemoryFilterChip.ALL)
+                    if (selectedFilter != MemoryFilterChip.ALL) add(selectedFilter)
+                }
+                LazyRow(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clipToBounds(),
+                    contentPadding = PaddingValues(end = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    items(compactList, key = { it.name }) { chip ->
+                        val count = badgeCountOf(chip)
+                        FilterChip(
+                            selected = selectedFilter == chip,
+                            onClick = { selectedFilter = chip },
+                            shape = chipShape,
+                            modifier = Modifier.heightIn(min = 34.dp),
+                            label = {
+                                Text(
+                                    text = if (count > 0) "${chip.label} $count" else chip.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                batchAndCollapseControls()
+            }
+        } else {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "分類篩選",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    batchAndCollapseControls()
+                }
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clipToBounds(),
+                    contentPadding = PaddingValues(end = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    item(key = "tier_label_mem") {
+                        Text(
+                            text = "記憶",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(end = 2.dp)
+                        )
+                    }
+                    items(memoryTierChips, key = { it.name }) { chip ->
+                        val count = badgeCountOf(chip)
+                        FilterChip(
+                            selected = selectedFilter == chip,
+                            onClick = { selectedFilter = chip },
+                            shape = chipShape,
+                            modifier = Modifier.heightIn(min = 34.dp),
+                            label = {
+                                Text(
+                                    text = if (count > 0) "${chip.label} $count" else chip.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        )
+                    }
+                }
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clipToBounds(),
+                    contentPadding = PaddingValues(end = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    item(key = "tier_label_rules") {
+                        Text(
+                            text = "規則",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(end = 2.dp)
+                        )
+                    }
+                    items(ruleTierChips, key = { it.name }) { chip ->
+                        val count = badgeCountOf(chip)
+                        FilterChip(
+                            selected = selectedFilter == chip,
+                            onClick = { selectedFilter = chip },
+                            shape = chipShape,
+                            modifier = Modifier.heightIn(min = 34.dp),
+                            label = {
+                                Text(
+                                    text = if (count > 0) "${chip.label} $count" else chip.label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        )
+                    }
+                }
             }
         }
 
