@@ -1369,6 +1369,8 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
 
     /** #329 本機日曆整合：使用者勾選開放給 AI 查詢／寫入的日曆 ID 清單（預設全不勾） */
     private const val KEY_CALENDAR_SELECTED_IDS = "calendar_selected_ids"
+    private const val KEY_CALENDAR_WRITE_CONFIRM_ENABLED = "calendar_write_confirm_enabled"
+    private const val KEY_CALENDAR_LIST_EXPANDED = "calendar_list_expanded"
 
     fun getSelectedCalendarIds(ctx: Context): Set<Long> {
         val raw = prefs(ctx).getString(KEY_CALENDAR_SELECTED_IDS, "").orEmpty().trim()
@@ -1381,6 +1383,24 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     fun setSelectedCalendarIds(ctx: Context, ids: Set<Long>) {
         val encoded = ids.sorted().joinToString(",")
         prefs(ctx).edit().putString(KEY_CALENDAR_SELECTED_IDS, encoded).apply()
+    }
+
+    /** #348 日曆寫入前是否顯示確認卡（預設開） */
+    fun isCalendarWriteConfirmEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_CALENDAR_WRITE_CONFIRM_ENABLED, true)
+
+    fun setCalendarWriteConfirmEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_CALENDAR_WRITE_CONFIRM_ENABLED, enabled).apply()
+        PhantomSettingsBus.notifyChanged()
+    }
+
+    /** #348 本機日曆勾選清單展開狀態（預設收合） */
+    fun isCalendarListExpanded(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_CALENDAR_LIST_EXPANDED, false)
+
+    fun setCalendarListExpanded(ctx: Context, expanded: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_CALENDAR_LIST_EXPANDED, expanded).apply()
+        PhantomSettingsBus.notifyChanged()
     }
 
     /** #333 行程類備忘分流：suggest_calendar（預設，優先日曆建議卡不再進待辦/記事）或 legacy_todo_note（沿用 v3.1） */

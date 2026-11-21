@@ -119,6 +119,7 @@ object SettingsCatalog {
         SettingSearchItem("memory_privacy_tier_info", "memory_assistant", "記憶庫隱私分級說明", "一般記憶可參與本地檢索注入；標為「🔒 敏感」的記憶在任何對外 AI 請求皆由程式碼硬性排除，100% 僅留存本機", listOf("隱私", "敏感", "分級", "外送", "安全", "sensitive", "記憶隱私")),
         SettingSearchItem("ai_anti_fraud_cross_check", "memory_assistant", "記憶 × 防詐交叉檢查", "結合本機通訊錄與一般記憶做離線矛盾比對（熟人冒充、情境破綻、防詐免疫），絕不外送原始通訊錄或敏感記憶", listOf("防詐", "交叉檢查", "熟人冒充", "通訊錄", "矛盾", "免疫", "記憶防詐")),
         SettingSearchItem("calendar_integration", "memory_assistant", "本機日曆整合", "勾選開放給 AI 助手查詢空檔與寫入行程的本機日曆帳號（預設全不勾，日曆資料僅留存本機絕不外送）", listOf("日曆", "行事曆", "行程", "空檔", "撞期", "calendar")),
+        SettingSearchItem("calendar_write_confirm", "memory_assistant", "日曆寫入前先顯示確認卡", "開啟時，寫入行程前會在 AI 助手對話中顯示行程確認卡並檢查撞期；關閉時仍會執行撞期檢查，無撞期且已授權寫入權限則直接寫入。", listOf("日曆確認", "行程確認", "寫入同意", "日曆", "確認卡")),
         SettingSearchItem("schedule_memo_route", "memory_assistant", "行程類通知分流", "行程類通知優先提示加入日曆，不再自動建立待辦/記事", listOf("行程", "分流", "日曆", "待辦", "記事", "建議卡", "schedule", "calendar")),
         SettingSearchItem("permission_hub", "permission_hub", "權限授予中心", "集中檢視並快速授予通知、簡訊、通訊錄、日曆、精確鬧鐘、電池優化與使用情況權限（Shizuku 保留於獨立卡片）", listOf("權限", "授權", "通知存取", "精確鬧鐘", "電池優化", "受限制的設定", "permission", "hub"), page = "PermissionHubActivity"),
         SettingSearchItem("assistant_hub", "assistant_hub", "AI 夥伴與主動推播", "集中管理早晚簡報、主動推播主題、每日上限、勿擾時段、畫像卡、外部搜尋端點與通訊錄整合", listOf("夥伴", "主動推播", "簡報", "畫像卡", "勿擾", "外部搜尋", "通訊錄", "assistant", "hub"), page = "AssistantHubActivity"),
@@ -150,6 +151,7 @@ object SettingsCatalog {
         "ai_daily_summary_notif",
         "memory_chat_capture",
         "memory_write_confirm",
+        "calendar_write_confirm",
         "ai_anti_fraud_cross_check",
         "briefing_morning_enabled",
         "briefing_evening_enabled",
@@ -201,6 +203,7 @@ object SettingsCatalog {
             "ai_daily_summary_notif" -> PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
             "memory_chat_capture" -> PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
             "memory_write_confirm" -> PhantomPrefs.isMemoryWriteConfirmEnabled(appCtx)
+            "calendar_write_confirm" -> PhantomPrefs.isCalendarWriteConfirmEnabled(appCtx)
             "ai_anti_fraud_cross_check" -> PhantomPrefs.isAntiFraudCrossCheckEnabled(appCtx)
             "briefing_morning_enabled" -> PhantomPrefs.isMorningBriefingEnabled(appCtx)
             "briefing_evening_enabled" -> PhantomPrefs.isEveningBriefingEnabled(appCtx)
@@ -280,6 +283,7 @@ object SettingsCatalog {
             "ai_daily_summary_notif" -> PhantomPrefs.setDailySummaryNotifEnabled(appCtx, enabled)
             "memory_chat_capture" -> PhantomPrefs.setMemoryChatCaptureEnabled(appCtx, enabled)
             "memory_write_confirm" -> PhantomPrefs.setMemoryWriteConfirmEnabled(appCtx, enabled)
+            "calendar_write_confirm" -> PhantomPrefs.setCalendarWriteConfirmEnabled(appCtx, enabled)
             "ai_anti_fraud_cross_check" -> PhantomPrefs.setAntiFraudCrossCheckEnabled(appCtx, enabled)
             "briefing_morning_enabled" -> {
                 PhantomPrefs.setMorningBriefingEnabled(appCtx, enabled)

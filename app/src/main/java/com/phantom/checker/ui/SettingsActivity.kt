@@ -395,6 +395,8 @@ fun FilterSettingsScreen(
     var calendarWriteGranted by remember { mutableStateOf(com.phantom.checker.util.CalendarBridge.hasWritePermission(appCtx)) }
     var deviceCalendars by remember { mutableStateOf<List<com.phantom.checker.util.CalendarBridge.CalendarAccountInfo>>(emptyList()) }
     var selectedCalendarIds by remember { mutableStateOf(PhantomPrefs.getSelectedCalendarIds(appCtx)) }
+    var calendarWriteConfirmEnabled by remember { mutableStateOf(PhantomPrefs.isCalendarWriteConfirmEnabled(appCtx)) }
+    var calendarListExpanded by remember { mutableStateOf(PhantomPrefs.isCalendarListExpanded(appCtx)) }
     var scheduleMemoRoute by remember { mutableStateOf(PhantomPrefs.getScheduleMemoRoute(appCtx)) }
     val calendarPermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -623,6 +625,8 @@ fun FilterSettingsScreen(
             calendarReadGranted = com.phantom.checker.util.CalendarBridge.hasReadPermission(appCtx)
             calendarWriteGranted = com.phantom.checker.util.CalendarBridge.hasWritePermission(appCtx)
             selectedCalendarIds = PhantomPrefs.getSelectedCalendarIds(appCtx)
+            calendarWriteConfirmEnabled = PhantomPrefs.isCalendarWriteConfirmEnabled(appCtx)
+            calendarListExpanded = PhantomPrefs.isCalendarListExpanded(appCtx)
             scheduleMemoRoute = PhantomPrefs.getScheduleMemoRoute(appCtx)
             memoryNormalTopK = PhantomPrefs.getMemoryNormalTopK(appCtx)
             memoryNormalPerItemChars = PhantomPrefs.getMemoryNormalPerItemChars(appCtx)
@@ -683,6 +687,9 @@ fun FilterSettingsScreen(
                 dailySummaryNotifEnabled = PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
                 memoryChatCaptureEnabled = PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
                 memoryWriteConfirmEnabled = PhantomPrefs.isMemoryWriteConfirmEnabled(appCtx)
+                calendarWriteConfirmEnabled = PhantomPrefs.isCalendarWriteConfirmEnabled(appCtx)
+                calendarListExpanded = PhantomPrefs.isCalendarListExpanded(appCtx)
+                selectedCalendarIds = PhantomPrefs.getSelectedCalendarIds(appCtx)
                 antiFraudCrossCheckEnabled = PhantomPrefs.isAntiFraudCrossCheckEnabled(appCtx)
                 memoryNormalTopK = PhantomPrefs.getMemoryNormalTopK(appCtx)
                 memoryNormalPerItemChars = PhantomPrefs.getMemoryNormalPerItemChars(appCtx)
@@ -2555,7 +2562,7 @@ fun FilterSettingsScreen(
 
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
 
-                    // #329 本機日曆整合（多日曆勾選，預設全不勾，日曆資料絕不外送 API）
+                    // #329 / #348 本機日曆整合（多日曆勾選，預設全不勾，日曆資料絕不外送 API）
                     Text(
                         text = "本機日曆整合（僅本機存取，絕不外送 API）",
                         style = MaterialTheme.typography.titleSmall,
@@ -2564,9 +2571,19 @@ fun FilterSettingsScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "僅會查詢與寫入您明確勾選的本機日曆（預設全不勾）；AI 助手空檔查詢由本機直接計算，寫入前自動檢查撞期並彈出確認卡。",
+                        text = "僅會查詢與寫入您明確勾選的本機日曆（預設全不勾）；AI 助手空檔查詢由本機直接計算，寫入前自動檢查撞期。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    SettingSwitchRow(
+                        title = "日曆寫入前先顯示確認卡",
+                        subtitle = "開啟時，寫入行程前會在 AI 助手對話中顯示行程確認卡；關閉時仍會檢查撞期，無撞期且已授權寫入權限則直接寫入已勾選日曆。",
+                        checked = calendarWriteConfirmEnabled,
+                        onCheckedChange = { checked ->
+                            calendarWriteConfirmEnabled = checked
+                            PhantomPrefs.setCalendarWriteConfirmEnabled(appCtx, checked)
+                        }
                     )
                     Spacer(Modifier.height(6.dp))
                     if (!calendarReadGranted) {
@@ -2628,45 +2645,72 @@ fun FilterSettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                deviceCalendars.forEach { cal ->
-                                    val checked = cal.id in selectedCalendarIds
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                val next = if (checked) selectedCalendarIds - cal.id else selectedCalendarIds + cal.id
-                                                selectedCalendarIds = next
-                                                PhantomPrefs.setSelectedCalendarIds(appCtx, next)
-                                                PhantomSettingsBus.notifyChanged()
-                                            }
-                                            .padding(vertical = 2.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Checkbox(
-                                            checked = checked,
-                                            onCheckedChange = { isChecked ->
-                                                val next = if (isChecked) selectedCalendarIds + cal.id else selectedCalendarIds - cal.id
-                                                selectedCalendarIds = next
-                                                PhantomPrefs.setSelectedCalendarIds(appCtx, next)
-                                                PhantomSettingsBus.notifyChanged()
-                                            }
-                                        )
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = cal.displayName + if (cal.isWritable) "（可讀寫）" else "（唯讀）",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
+                            val selectedCount = deviceCalendars.count { it.id in selectedCalendarIds }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val next = !calendarListExpanded
+                                        calendarListExpanded = next
+                                        PhantomPrefs.setCalendarListExpanded(appCtx, next)
+                                    }
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "已勾選 $selectedCount / ${deviceCalendars.size} 個日曆",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Icon(
+                                    imageVector = if (calendarListExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = if (calendarListExpanded) "收合日曆清單" else "展開日曆清單",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            AnimatedVisibility(visible = calendarListExpanded) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    deviceCalendars.forEach { cal ->
+                                        val checked = cal.id in selectedCalendarIds
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    val next = if (checked) selectedCalendarIds - cal.id else selectedCalendarIds + cal.id
+                                                    selectedCalendarIds = next
+                                                    PhantomPrefs.setSelectedCalendarIds(appCtx, next)
+                                                    PhantomSettingsBus.notifyChanged()
+                                                }
+                                                .padding(vertical = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Checkbox(
+                                                checked = checked,
+                                                onCheckedChange = { isChecked ->
+                                                    val next = if (isChecked) selectedCalendarIds + cal.id else selectedCalendarIds - cal.id
+                                                    selectedCalendarIds = next
+                                                    PhantomPrefs.setSelectedCalendarIds(appCtx, next)
+                                                    PhantomSettingsBus.notifyChanged()
+                                                }
                                             )
-                                            if (cal.accountName.isNotBlank()) {
+                                            Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    text = cal.accountName,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    text = cal.displayName + if (cal.isWritable) "（可讀寫）" else "（唯讀）",
+                                                    style = MaterialTheme.typography.bodyMedium,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
                                                 )
+                                                if (cal.accountName.isNotBlank()) {
+                                                    Text(
+                                                        text = cal.accountName,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                }
                                             }
                                         }
                                     }

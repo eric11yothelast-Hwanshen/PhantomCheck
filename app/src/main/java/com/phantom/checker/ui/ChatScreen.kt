@@ -1507,9 +1507,11 @@ fun ChatAssistantTab(
                             }
                         }
 
-                        // #329 本機日曆新增行程（組裝確認卡並先做重疊撞期檢查）
+                        // #329 / #348 本機日曆新增行程（一律先做重疊撞期檢查；依開關決定直接寫入或彈出確認卡）
                         if (parsed.calendarAddProposals.isNotEmpty()) {
                             val writableCals = com.phantom.checker.util.CalendarBridge.listSelectedWritableCalendars(appCtx)
+                            val confirmRequired = PhantomPrefs.isCalendarWriteConfirmEnabled(appCtx)
+                            val hasWritePerm = com.phantom.checker.util.CalendarBridge.hasWritePermission(appCtx)
                             parsed.calendarAddProposals.forEach { cap ->
                                 val parsedStart = com.phantom.checker.util.ClientTimeParser.parseStructuredDueAt(cap.startRaw)
                                     ?: (com.phantom.checker.util.ClientTimeParser.parseNaturalReminderTime(null, cap.startRaw) as? com.phantom.checker.util.NaturalTimeParseResult.Success)?.epochMillis
@@ -1525,19 +1527,42 @@ fun ChatAssistantTab(
                                         startMs = parsedStart,
                                         endMs = parsedEnd
                                     )
-                                    resolvedCalendarAdds.add(
-                                        PendingCalendarAddition(
-                                            sessionId = sessionId,
+                                    if (!confirmRequired && hasWritePerm && writableCals.isNotEmpty() && conflicts.isEmpty()) {
+                                        val targetCal = writableCals.first()
+                                        val res = com.phantom.checker.util.CalendarBridge.insertEvent(
+                                            ctx = appCtx,
+                                            calendarId = targetCal.id,
                                             title = cap.title,
                                             startMs = parsedStart,
                                             endMs = parsedEnd,
                                             allDay = cap.allDay,
                                             location = cap.location,
-                                            notes = cap.notes,
-                                            writableCalendars = writableCals,
-                                            conflicts = conflicts
+                                            description = cap.notes
                                         )
-                                    )
+                                        val startFormatted = formatChatTime(parsedStart)
+                                        res.fold(
+                                            onSuccess = {
+                                                immediateExtraReplies.add("📅 已直接寫入本機日曆（${targetCal.displayName}）：「${cap.title}」（$startFormatted）。")
+                                            },
+                                            onFailure = { err ->
+                                                immediateExtraReplies.add("寫入日曆失敗：${err.localizedMessage ?: "未知錯誤"}。")
+                                            }
+                                        )
+                                    } else {
+                                        resolvedCalendarAdds.add(
+                                            PendingCalendarAddition(
+                                                sessionId = sessionId,
+                                                title = cap.title,
+                                                startMs = parsedStart,
+                                                endMs = parsedEnd,
+                                                allDay = cap.allDay,
+                                                location = cap.location,
+                                                notes = cap.notes,
+                                                writableCalendars = writableCals,
+                                                conflicts = conflicts
+                                            )
+                                        )
+                                    }
                                 }
                             }
                         }
