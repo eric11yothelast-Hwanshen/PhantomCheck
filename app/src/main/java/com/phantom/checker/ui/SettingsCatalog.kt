@@ -124,6 +124,10 @@ object SettingsCatalog {
         SettingSearchItem("briefing_evening_enabled", "hub", "晚間個人簡報", "每日定時（預設 22:25）回顧今日重點並預覽明日行程與待辦", listOf("晚間簡報", "晚報", "簡報", "主動推播", "briefing"), page = "AssistantHubActivity"),
         SettingSearchItem("proactive_daily_cap", "hub", "每日主動推播上限", "限制 AI 助手每日主動簡報與提醒則數上限（預設 6 則，1–20 可調）", listOf("主動推播", "上限", "節流", "cap", "簡報"), page = "AssistantHubActivity"),
         SettingSearchItem("proactive_dnd_enabled", "hub", "主動推播獨立勿擾時段", "設定主動推播的獨立勿擾時段（預設 00:00–07:00，期間仍寫入聊天但不發通知）", listOf("勿擾", "主動推播", "靜音", "dnd"), page = "AssistantHubActivity"),
+        SettingSearchItem("proactive_calendar_insight_enabled", "hub", "主動日曆情報", "定時讀取勾選日曆並依即將到來事件主動彙整情報寫入主動訊息聊天室（預設開啟）", listOf("日曆情報", "主動日曆", "行事曆", "calendar", "insight"), page = "AssistantHubActivity"),
+        SettingSearchItem("proactive_calendar_insight_notif_enabled", "hub", "日曆情報發送通知", "主動日曆情報產出時是否發送通知（關閉時僅寫入主動訊息聊天室，預設開啟）", listOf("日曆情報", "通知", "calendar", "notif"), page = "AssistantHubActivity"),
+        SettingSearchItem("proactive_calendar_web_search_enabled", "hub", "日曆情報允許上網查詢", "允許對未來 48 小時事件標題＋日期透過已設定 BYOK 端點查詢外部情報（嚴禁參與人與備註，預設開啟）", listOf("日曆情報", "上網", "外部搜尋", "byok", "search"), page = "AssistantHubActivity"),
+        SettingSearchItem("calendar_insight_interval_minutes", "hub", "日曆情報檢查頻率", "設定主動日曆情報定時檢查週期（30／60／120／180 分鐘，預設 60 分鐘）", listOf("日曆情報", "頻率", "週期", "interval"), page = "AssistantHubActivity"),
         SettingSearchItem("ai_model_briefing", "ai", "簡報與畫像卡模型", "為早晚簡報與「我對你的瞭解」畫像卡指定獨立 AI 模型", listOf("簡報模型", "畫像卡模型", "briefing", "模型"), page = "ApiKeySettingsActivity"),
         SettingSearchItem("linked_apps_center", "hub", "連結應用程式中心", "集中檢視日曆、通訊錄、通知、鬧鐘、電池優化狀態與自填金鑰雲端擴充（GitHub／Discord）", listOf("連結應用", "github", "discord", "webhook", "鬧鐘", "gmail", "地圖", "跨app", "linked"), page = "LinkedAppsActivity"),
         SettingSearchItem("update_auto_check", "about", "自動檢查更新", "每次開啟 App 時自動檢查 GitHub 最新版本並提示；通知欄提醒每天最多一次", listOf("檢查更新", "更新", "版本", "自動更新", "update")),
@@ -150,6 +154,9 @@ object SettingsCatalog {
         "briefing_morning_enabled",
         "briefing_evening_enabled",
         "proactive_dnd_enabled",
+        "proactive_calendar_insight_enabled",
+        "proactive_calendar_insight_notif_enabled",
+        "proactive_calendar_web_search_enabled",
         "notif_persistent_icons",
         "notif_ongoing",
         "notif_quiet_hours",
@@ -200,6 +207,9 @@ object SettingsCatalog {
             "briefing_morning_enabled" -> PhantomPrefs.isMorningBriefingEnabled(appCtx)
             "briefing_evening_enabled" -> PhantomPrefs.isEveningBriefingEnabled(appCtx)
             "proactive_dnd_enabled" -> PhantomPrefs.isProactiveDndEnabled(appCtx)
+            "proactive_calendar_insight_enabled" -> PhantomPrefs.isProactiveCalendarInsightEnabled(appCtx)
+            "proactive_calendar_insight_notif_enabled" -> PhantomPrefs.isProactiveCalendarInsightNotifEnabled(appCtx)
+            "proactive_calendar_web_search_enabled" -> PhantomPrefs.isProactiveCalendarWebSearchEnabled(appCtx)
             "notif_persistent_icons" -> PhantomPrefs.isPersistentNotifShowIcons(appCtx)
             "notif_ongoing" -> PhantomPrefs.isRecordOngoingEnabled(appCtx)
             "notif_quiet_hours" -> PhantomPrefs.isQuietHoursEnabled(appCtx)
@@ -278,6 +288,12 @@ object SettingsCatalog {
                 com.phantom.checker.service.BriefingScheduler.rescheduleAll(appCtx)
             }
             "proactive_dnd_enabled" -> PhantomPrefs.setProactiveDndEnabled(appCtx, enabled)
+            "proactive_calendar_insight_enabled" -> {
+                PhantomPrefs.setProactiveCalendarInsightEnabled(appCtx, enabled)
+                com.phantom.checker.service.CalendarInsightScheduler.scheduleOrUpdate(appCtx)
+            }
+            "proactive_calendar_insight_notif_enabled" -> PhantomPrefs.setProactiveCalendarInsightNotifEnabled(appCtx, enabled)
+            "proactive_calendar_web_search_enabled" -> PhantomPrefs.setProactiveCalendarWebSearchEnabled(appCtx, enabled)
             "notif_persistent_icons" -> {
                 PhantomPrefs.setPersistentNotifShowIcons(appCtx, enabled)
                 StatsForegroundService.startOrRefresh(appCtx, force = true)
@@ -439,6 +455,14 @@ object SettingsCatalog {
             max = 20,
             step = 1,
             unit = "則"
+        ),
+        NumericSettingSpec(
+            id = "calendar_insight_interval_minutes",
+            title = "日曆情報檢查頻率",
+            min = 30,
+            max = 180,
+            step = 30,
+            unit = "分鐘"
         )
     )
 
@@ -463,6 +487,7 @@ object SettingsCatalog {
             "memory_normal_per_item_chars" -> PhantomPrefs.getMemoryNormalPerItemChars(appCtx)
             "memory_saver_top_k" -> PhantomPrefs.getMemorySaverTopK(appCtx)
             "proactive_daily_cap" -> PhantomPrefs.getProactiveDailyCap(appCtx)
+            "calendar_insight_interval_minutes" -> PhantomPrefs.getCalendarInsightIntervalMinutes(appCtx)
             else -> null
         }
     }
@@ -493,6 +518,11 @@ object SettingsCatalog {
             "memory_normal_per_item_chars" -> PhantomPrefs.setMemoryNormalPerItemChars(appCtx, target)
             "memory_saver_top_k" -> PhantomPrefs.setMemorySaverTopK(appCtx, target)
             "proactive_daily_cap" -> PhantomPrefs.setProactiveDailyCap(appCtx, target)
+            "calendar_insight_interval_minutes" -> {
+                val snapped = listOf(30, 60, 120, 180).minByOrNull { kotlin.math.abs(it - target) } ?: 60
+                PhantomPrefs.setCalendarInsightIntervalMinutes(appCtx, snapped)
+                com.phantom.checker.service.CalendarInsightScheduler.scheduleOrUpdate(appCtx)
+            }
             else -> return null
         }
         PhantomSettingsBus.notifyChanged()

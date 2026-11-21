@@ -22,6 +22,17 @@ object NotifIds {
     const val BRIEFING_EVENING = 1009
     const val PROACTIVE_PUSH = 1010
     const val GITHUB_ALERT = 1011
+    const val CALENDAR_INSIGHT = 1012
+    const val TASK_TEMPLATE_BASE = 1050
+
+    private const val CALENDAR_INSIGHT_BASE = 1020
+    private const val CALENDAR_INSIGHT_SPAN = 25
+
+    fun calendarInsight(hash: Int): Int =
+        CALENDAR_INSIGHT_BASE + Math.floorMod(hash, CALENDAR_INSIGHT_SPAN)
+
+    fun taskTemplate(templateId: Long): Int =
+        TASK_TEMPLATE_BASE + Math.floorMod(templateId, 40L).toInt()
 
     private const val SCAM_ALERT_BASE = 2000
     private const val SCAM_ALERT_SPAN = 20000L

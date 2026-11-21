@@ -2057,6 +2057,55 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
             rawBlock.take(160).trimEnd()
         }
     }
+
+    // ---- #365 CalendarInsightEngine：定時日曆情報與主動發言設定（全預設開） ----
+
+    fun isProactiveCalendarInsightEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("proactive_calendar_insight_enabled", true)
+
+    fun setProactiveCalendarInsightEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("proactive_calendar_insight_enabled", enabled).apply()
+    }
+
+    fun isProactiveCalendarInsightNotifEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("proactive_calendar_insight_notif_enabled", true)
+
+    fun setProactiveCalendarInsightNotifEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("proactive_calendar_insight_notif_enabled", enabled).apply()
+    }
+
+    fun isProactiveCalendarWebSearchEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("proactive_calendar_web_search_enabled", true)
+
+    fun setProactiveCalendarWebSearchEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("proactive_calendar_web_search_enabled", enabled).apply()
+    }
+
+    /** 日曆情報檢查頻率（分鐘）：30 / 60 / 120 / 180，預設 60 */
+    fun getCalendarInsightIntervalMinutes(ctx: Context): Int =
+        prefs(ctx).getInt("calendar_insight_interval_minutes", 60).let { v ->
+            if (v in listOf(30, 60, 120, 180)) v else 60
+        }
+
+    fun setCalendarInsightIntervalMinutes(ctx: Context, minutes: Int) {
+        val safe = if (minutes in listOf(30, 60, 120, 180)) minutes else 60
+        prefs(ctx).edit().putInt("calendar_insight_interval_minutes", safe).apply()
+    }
+
+    fun hasCalendarInsightSeenKey(ctx: Context, key: String): Boolean {
+        val raw = prefs(ctx).getString("calendar_insight_seen_keys_v1", "").orEmpty()
+        if (raw.isEmpty()) return false
+        return raw.split('\n').any { it == key }
+    }
+
+    fun markCalendarInsightSeenKey(ctx: Context, key: String) {
+        val raw = prefs(ctx).getString("calendar_insight_seen_keys_v1", "").orEmpty()
+        val list = raw.split('\n').filter { it.isNotBlank() }.toMutableList()
+        if (key in list) return
+        list.add(key)
+        val trimmed = if (list.size > 200) list.takeLast(200) else list
+        prefs(ctx).edit().putString("calendar_insight_seen_keys_v1", trimmed.joinToString("\n")).apply()
+    }
 }
 
 

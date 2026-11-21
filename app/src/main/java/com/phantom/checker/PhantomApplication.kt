@@ -9,6 +9,7 @@ class PhantomApplication : Application() {
         super.onCreate()
         ShizukuManager.init(this)
         com.phantom.checker.service.BriefingScheduler.rescheduleAll(this)
+        com.phantom.checker.service.CalendarInsightScheduler.scheduleOrUpdate(this)
     }
 
     override fun onTrimMemory(level: Int) {

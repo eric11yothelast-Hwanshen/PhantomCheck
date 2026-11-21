@@ -109,6 +109,10 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
     var dndEnabled by remember { mutableStateOf(PhantomPrefs.isProactiveDndEnabled(appCtx)) }
     var dndStart by remember { mutableStateOf(PhantomPrefs.getProactiveDndStart(appCtx)) }
     var dndEnd by remember { mutableStateOf(PhantomPrefs.getProactiveDndEnd(appCtx)) }
+    var calInsightEnabled by remember { mutableStateOf(PhantomPrefs.isProactiveCalendarInsightEnabled(appCtx)) }
+    var calInsightNotifEnabled by remember { mutableStateOf(PhantomPrefs.isProactiveCalendarInsightNotifEnabled(appCtx)) }
+    var calInsightWebSearchEnabled by remember { mutableStateOf(PhantomPrefs.isProactiveCalendarWebSearchEnabled(appCtx)) }
+    var calInsightIntervalMin by remember { mutableStateOf(PhantomPrefs.getCalendarInsightIntervalMinutes(appCtx)) }
     var regionKeyword by remember { mutableStateOf(PhantomPrefs.getProactiveRegionKeyword(appCtx)) }
 
     var extUrl by remember { mutableStateOf(EncryptedByokStore.getExternalSearchBaseUrl(appCtx)) }
@@ -421,6 +425,83 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                     singleLine = true,
                                     modifier = Modifier.weight(1f)
                                 )
+                            }
+
+                            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+                            Text(
+                                "📅 主動日曆情報（CalendarInsightEngine）",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("定時讀日曆並主動彙整情報", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                FluidSwitch(
+                                    checked = calInsightEnabled,
+                                    onCheckedChange = {
+                                        calInsightEnabled = it
+                                        PhantomPrefs.setProactiveCalendarInsightEnabled(appCtx, it)
+                                        com.phantom.checker.service.CalendarInsightScheduler.scheduleOrUpdate(appCtx)
+                                        PhantomSettingsBus.notifyChanged()
+                                    }
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("產出時發送通知（關＝僅寫入主動聊天室）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                FluidSwitch(
+                                    checked = calInsightNotifEnabled,
+                                    onCheckedChange = {
+                                        calInsightNotifEnabled = it
+                                        PhantomPrefs.setProactiveCalendarInsightNotifEnabled(appCtx, it)
+                                        PhantomSettingsBus.notifyChanged()
+                                    }
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("允許上網查即將到來事件（僅傳標題＋日期 ≤60字）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                FluidSwitch(
+                                    checked = calInsightWebSearchEnabled,
+                                    onCheckedChange = {
+                                        calInsightWebSearchEnabled = it
+                                        PhantomPrefs.setProactiveCalendarWebSearchEnabled(appCtx, it)
+                                        PhantomSettingsBus.notifyChanged()
+                                    }
+                                )
+                            }
+                            Text(
+                                "檢查頻率（套用 WorkManager UPDATE 立即生效）",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(30, 60, 120, 180).forEach { mins ->
+                                    FilterChip(
+                                        selected = calInsightIntervalMin == mins,
+                                        onClick = {
+                                            calInsightIntervalMin = mins
+                                            PhantomPrefs.setCalendarInsightIntervalMinutes(appCtx, mins)
+                                            com.phantom.checker.service.CalendarInsightScheduler.scheduleOrUpdate(appCtx)
+                                            PhantomSettingsBus.notifyChanged()
+                                        },
+                                        label = { Text(if (mins < 60) "${mins}分" else "${mins / 60}小時", maxLines = 1) }
+                                    )
+                                }
                             }
 
                             HorizontalDivider(Modifier.padding(vertical = 4.dp))
