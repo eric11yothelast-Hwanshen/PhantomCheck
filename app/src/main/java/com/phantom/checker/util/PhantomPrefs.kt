@@ -1765,6 +1765,7 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     // ==================== #314 / #315 記憶庫與 AI 助手設定 ====================
 
     private const val KEY_MEMORY_CHAT_CAPTURE_ENABLED = "memory_chat_capture_enabled"
+    private const val KEY_MEMORY_WRITE_CONFIRM_ENABLED = "memory_write_confirm_enabled"
     private const val KEY_MEMORY_NORMAL_TOP_K = "memory_normal_top_k"
     private const val KEY_MEMORY_SAVER_TOP_K = "memory_saver_top_k"
     private const val KEY_MEMORY_NORMAL_PER_ITEM_CHARS = "memory_normal_per_item_chars"
@@ -1786,12 +1787,21 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     const val MEMORY_NORMAL_TOTAL_TOKEN_BUDGET = 250
     const val MEMORY_SAVER_TOTAL_TOKEN_BUDGET = 120
 
-    /** 聊天記憶擷取開關（預設開；AI 擷取後一律跳確認卡，確認才寫入） */
+    /** 聊天記憶擷取開關（預設開） */
     fun isMemoryChatCaptureEnabled(ctx: Context): Boolean =
         prefs(ctx).getBoolean(KEY_MEMORY_CHAT_CAPTURE_ENABLED, true)
 
     fun setMemoryChatCaptureEnabled(ctx: Context, enabled: Boolean) {
         prefs(ctx).edit().putBoolean(KEY_MEMORY_CHAT_CAPTURE_ENABLED, enabled).apply()
+    }
+
+    /** 記憶寫入前是否顯示確認卡（預設開；敏感記憶與衝突仍一律確認） */
+    fun isMemoryWriteConfirmEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_MEMORY_WRITE_CONFIRM_ENABLED, true)
+
+    fun setMemoryWriteConfirmEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_MEMORY_WRITE_CONFIRM_ENABLED, enabled).apply()
+        PhantomSettingsBus.notifyChanged()
     }
 
     /** 正常模式記憶注入筆數 Top-K（範圍 1–8，預設 8；與省 token 模式獨立儲存、互不覆寫） */

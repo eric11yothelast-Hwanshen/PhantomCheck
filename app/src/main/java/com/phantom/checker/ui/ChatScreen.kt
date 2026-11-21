@@ -1312,14 +1312,68 @@ fun ChatAssistantTab(
                             }
                         }
 
-                        // 9. #314 A2/A4 memory_add & memory_update（一律進確認卡，含衝突預覽）
+                        // 9. #314 / #347 memory_add & memory_update（依開關決定確認卡或直接寫入；敏感記憶與衝突一律進確認卡）
                         val sourceRefNow = com.phantom.checker.data.MemoryEngine.formatChatSourceRef(
                             sessionId = sessionId,
                             userSnippet = query,
                             timeFormatted = formatChatTime(nowMs)
                         )
                         if (PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)) {
-                            parsed.memoryAddProposals.forEach { map ->
+                            val confirmRequired = PhantomPrefs.isMemoryWriteConfirmEnabled(appCtx)
+                            val handleWriteCandidate: suspend (PendingMemoryWriteState) -> Unit = { candidate ->
+                                val isSensitive = candidate.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE
+                                val hasConflict = candidate.conflictingMemory != null
+                                if (confirmRequired || isSensitive || hasConflict) {
+                                    resolvedMemoryWrites.add(candidate)
+                                } else {
+                                    val outcome = com.phantom.checker.data.MemoryEngine.writeMemoryWithConflictDetection(
+                                        db = db,
+                                        category = candidate.category,
+                                        subject = candidate.subject,
+                                        content = candidate.content,
+                                        layer = candidate.layer,
+                                        expiresAt = candidate.expiresAt,
+                                        privacyTier = candidate.privacyTier,
+                                        confidence = com.phantom.checker.data.MemoryEntity.CONFIDENCE_INFERRED,
+                                        sourceType = com.phantom.checker.data.MemoryEntity.SOURCE_CHAT,
+                                        sourceRef = candidate.sourceRef,
+                                        forceReplaceConflict = false
+                                    )
+                                    val catLbl = com.phantom.checker.data.MemoryEngine.categoryLabel(candidate.category)
+                                    val layerLbl = com.phantom.checker.data.MemoryEngine.layerLabel(candidate.layer)
+                                    when (outcome) {
+                                        is com.phantom.checker.data.MemoryEngine.WriteOutcome.Inserted -> {
+                                            val report = "✓ 已記住 #${outcome.memory.id} [$catLbl/$layerLbl] ${outcome.memory.subject}：${outcome.memory.content}"
+                                            db.chatDao().insertMessage(
+                                                ChatMessageEntity(
+                                                    sessionId = sessionId,
+                                                    role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                    content = report,
+                                                    createdAt = System.currentTimeMillis()
+                                                )
+                                            )
+                                        }
+                                        is com.phantom.checker.data.MemoryEngine.WriteOutcome.Deduplicated -> {
+                                            val report = "✓ 記憶庫已有相同內容 #${outcome.memory.id} [$catLbl/$layerLbl] ${outcome.memory.subject}，已更新時間。"
+                                            db.chatDao().insertMessage(
+                                                ChatMessageEntity(
+                                                    sessionId = sessionId,
+                                                    role = ChatMessageEntity.ROLE_ASSISTANT,
+                                                    content = report,
+                                                    createdAt = System.currentTimeMillis()
+                                                )
+                                            )
+                                        }
+                                        is com.phantom.checker.data.MemoryEngine.WriteOutcome.ConflictDetected -> {
+                                            resolvedMemoryWrites.add(
+                                                candidate.copy(conflictingMemory = outcome.existingMemory)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            for (map in parsed.memoryAddProposals) {
                                 val expiresAt = if (map.layer == com.phantom.checker.data.MemoryEntity.LAYER_SHORT_TERM) {
                                     val days = (map.expiresDays ?: 7).coerceIn(1, 365)
                                     nowMs + java.util.concurrent.TimeUnit.DAYS.toMillis(days.toLong())
@@ -1331,7 +1385,7 @@ fun ChatAssistantTab(
                                     proposedContent = map.content,
                                     nowMs = nowMs
                                 )
-                                resolvedMemoryWrites.add(
+                                handleWriteCandidate(
                                     PendingMemoryWriteState(
                                         sessionId = sessionId,
                                         isUpdate = false,
@@ -1348,7 +1402,7 @@ fun ChatAssistantTab(
                                 )
                             }
 
-                            parsed.memoryUpdateProposals.forEach { mup ->
+                            for (mup in parsed.memoryUpdateProposals) {
                                 val existingById = mup.memoryId?.let { db.memoryDao().byId(it) }
                                 val existingBySubj = if (existingById == null && !mup.subject.isNullOrBlank()) {
                                     val normKey = com.phantom.checker.data.MemoryEngine.normalizeSubjectKey(mup.subject)
@@ -1374,7 +1428,7 @@ fun ChatAssistantTab(
                                         nowMs = nowMs
                                     )
                                 }
-                                resolvedMemoryWrites.add(
+                                handleWriteCandidate(
                                     PendingMemoryWriteState(
                                         sessionId = sessionId,
                                         isUpdate = true,

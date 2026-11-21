@@ -377,6 +377,7 @@ fun FilterSettingsScreen(
 
     // #315 B4 記憶庫與 AI 助手設定
     var memoryChatCaptureEnabled by remember { mutableStateOf(PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)) }
+    var memoryWriteConfirmEnabled by remember { mutableStateOf(PhantomPrefs.isMemoryWriteConfirmEnabled(appCtx)) }
     var antiFraudCrossCheckEnabled by remember { mutableStateOf(PhantomPrefs.isAntiFraudCrossCheckEnabled(appCtx)) }
     var contactsPermissionGranted by remember { mutableStateOf(com.phantom.checker.util.ContactContext.hasContactsPermission(appCtx)) }
     val contactsPermLauncher = rememberLauncherForActivityResult(
@@ -616,6 +617,7 @@ fun FilterSettingsScreen(
             summaryHour = PhantomPrefs.getDailySummaryHour(appCtx)
             summaryMinute = PhantomPrefs.getDailySummaryMinute(appCtx)
             memoryChatCaptureEnabled = PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
+            memoryWriteConfirmEnabled = PhantomPrefs.isMemoryWriteConfirmEnabled(appCtx)
             antiFraudCrossCheckEnabled = PhantomPrefs.isAntiFraudCrossCheckEnabled(appCtx)
             contactsPermissionGranted = com.phantom.checker.util.ContactContext.hasContactsPermission(appCtx)
             calendarReadGranted = com.phantom.checker.util.CalendarBridge.hasReadPermission(appCtx)
@@ -680,6 +682,7 @@ fun FilterSettingsScreen(
                 dailySummaryEnabled = PhantomPrefs.isDailySummaryEnabled(appCtx)
                 dailySummaryNotifEnabled = PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
                 memoryChatCaptureEnabled = PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
+                memoryWriteConfirmEnabled = PhantomPrefs.isMemoryWriteConfirmEnabled(appCtx)
                 antiFraudCrossCheckEnabled = PhantomPrefs.isAntiFraudCrossCheckEnabled(appCtx)
                 memoryNormalTopK = PhantomPrefs.getMemoryNormalTopK(appCtx)
                 memoryNormalPerItemChars = PhantomPrefs.getMemoryNormalPerItemChars(appCtx)
@@ -2486,12 +2489,22 @@ fun FilterSettingsScreen(
                     Spacer(Modifier.height(4.dp))
                     SettingSwitchRow(
                         title = "聊天記憶擷取",
-                        subtitle = "允許 AI 在對話中提議記住人物、地點、行程、偏好與關係；一律先彈出確認卡，確認後才寫入",
+                        subtitle = "允許 AI 在對話中提議記住人物、地點、行程、偏好與關係",
                         checked = memoryChatCaptureEnabled,
                         onCheckedChange = { checked ->
                             memoryChatCaptureEnabled = checked
                             PhantomPrefs.setMemoryChatCaptureEnabled(appCtx, checked)
                             PhantomSettingsBus.notifyChanged()
+                        }
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    SettingSwitchRow(
+                        title = "記憶寫入前先顯示確認卡",
+                        subtitle = "開啟時，AI 產生的新記憶會先在 AI 助手對話中顯示確認卡，由您選擇寫入／保留；關閉時直接寫入（🔒 敏感記憶與衝突仍必經確認）。您隨時可在記憶頁手動新增、編輯或刪除記憶。",
+                        checked = memoryWriteConfirmEnabled,
+                        onCheckedChange = { checked ->
+                            memoryWriteConfirmEnabled = checked
+                            PhantomPrefs.setMemoryWriteConfirmEnabled(appCtx, checked)
                         }
                     )
                     Spacer(Modifier.height(6.dp))

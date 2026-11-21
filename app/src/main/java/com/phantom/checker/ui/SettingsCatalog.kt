@@ -107,7 +107,8 @@ object SettingsCatalog {
         SettingSearchItem("bg_scrim", "personalization", "背景暗色遮罩強度", "調整背景圖片上的暗色遮罩透明度以確保文字可讀性", listOf("個人化", "背景", "遮罩", "scrim", "暗度", "對比")),
         SettingSearchItem("glass_strength", "personalization", "玻璃卡片強度", "調整液態玻璃卡片的表面不透明度與視覺強度", listOf("個人化", "玻璃", "強度", "毛玻璃", "透明", "glass")),
         SettingSearchItem("appearance_card_bg", "appearance", "卡片底色模式", "選擇跟隨玻璃強度、透明模式（0–100% 滑桿）或深色底", listOf("卡片", "底色", "背景", "透明", "深色", "黑底", "外觀")),
-        SettingSearchItem("memory_chat_capture", "memory_assistant", "聊天記憶擷取", "允許 AI 在對話中擷取個人事實、人物、行程與偏好並彈出確認卡（確認後才寫入，衝突時提供雙版本裁定）", listOf("記憶", "記憶庫", "擷取", "聊天記憶", "自動記憶", "memory", "確認卡")),
+        SettingSearchItem("memory_chat_capture", "memory_assistant", "聊天記憶擷取", "允許 AI 在對話中擷取個人事實、人物、行程與偏好", listOf("記憶", "記憶庫", "擷取", "聊天記憶", "自動記憶", "memory", "確認卡")),
+        SettingSearchItem("memory_write_confirm", "memory_assistant", "記憶寫入前先顯示確認卡", "開啟時，AI 產生的新記憶會先在 AI 助手對話中顯示確認卡，由您選擇寫入／保留；關閉時直接寫入（敏感記憶與衝突仍必經確認）。您隨時可在記憶頁手動新增、編輯或刪除記憶。", listOf("確認卡", "記憶確認", "寫入確認", "AI 記憶")),
         SettingSearchItem("memory_normal_top_k", "memory_assistant", "記憶注入筆數（正常模式）", "設定正常模式下每次 AI 對話注入的相關記憶筆數上限（1–8 筆，預設 8 筆，總預算 ≤250 tokens）", listOf("記憶", "注入", "筆數", "topk", "正常模式", "記憶預算", "記憶筆數")),
         SettingSearchItem("memory_normal_per_item_chars", "memory_assistant", "記憶單筆截斷字數（正常模式）", "設定正常模式下每筆注入記憶的預覽截斷字數（30–120 字，預設 70 字 ≈ 50 tokens）", listOf("記憶", "字數", "截斷", "單筆", "token", "記憶長度")),
         SettingSearchItem("memory_saver_top_k", "memory_assistant", "記憶注入筆數（省 token 模式）", "獨立設定省 token 模式下每次 AI 對話注入的記憶筆數上限（1–4 筆，預設 4 筆，總預算 ≤120 tokens，與正常模式互不覆寫）", listOf("記憶", "省 token", "省電", "注入", "筆數", "省token記憶")),
@@ -148,6 +149,7 @@ object SettingsCatalog {
         "ai_daily_summary",
         "ai_daily_summary_notif",
         "memory_chat_capture",
+        "memory_write_confirm",
         "ai_anti_fraud_cross_check",
         "briefing_morning_enabled",
         "briefing_evening_enabled",
@@ -198,6 +200,7 @@ object SettingsCatalog {
             "ai_daily_summary" -> PhantomPrefs.isDailySummaryEnabled(appCtx)
             "ai_daily_summary_notif" -> PhantomPrefs.isDailySummaryNotifEnabled(appCtx)
             "memory_chat_capture" -> PhantomPrefs.isMemoryChatCaptureEnabled(appCtx)
+            "memory_write_confirm" -> PhantomPrefs.isMemoryWriteConfirmEnabled(appCtx)
             "ai_anti_fraud_cross_check" -> PhantomPrefs.isAntiFraudCrossCheckEnabled(appCtx)
             "briefing_morning_enabled" -> PhantomPrefs.isMorningBriefingEnabled(appCtx)
             "briefing_evening_enabled" -> PhantomPrefs.isEveningBriefingEnabled(appCtx)
@@ -276,6 +279,7 @@ object SettingsCatalog {
             }
             "ai_daily_summary_notif" -> PhantomPrefs.setDailySummaryNotifEnabled(appCtx, enabled)
             "memory_chat_capture" -> PhantomPrefs.setMemoryChatCaptureEnabled(appCtx, enabled)
+            "memory_write_confirm" -> PhantomPrefs.setMemoryWriteConfirmEnabled(appCtx, enabled)
             "ai_anti_fraud_cross_check" -> PhantomPrefs.setAntiFraudCrossCheckEnabled(appCtx, enabled)
             "briefing_morning_enabled" -> {
                 PhantomPrefs.setMorningBriefingEnabled(appCtx, enabled)
