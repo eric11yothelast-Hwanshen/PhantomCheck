@@ -412,7 +412,8 @@ class ProactiveMonitorWorker(
                 )
             }
             Result.success()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.w("PhantomProactive", "Monitor worker failed: ${e.javaClass.simpleName}")
             Result.success()
         }
     }

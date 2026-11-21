@@ -116,6 +116,14 @@ private enum class MemoryFilterChip(val label: String) {
     MEMO_RULES("備忘規則")
 }
 
+private data class MemoryStatTile(
+    val emoji: String,
+    val label: String,
+    val count: Int,
+    val filter: MemoryFilterChip,
+    val highlightError: Boolean = false
+)
+
 @OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 internal fun MemoryTab(
@@ -702,13 +710,6 @@ internal fun MemoryTab(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            data class MemoryStatTile(
-                val emoji: String,
-                val label: String,
-                val count: Int,
-                val filter: MemoryFilterChip,
-                val highlightError: Boolean = false
-            )
             val statTiles = listOf(
                 MemoryStatTile("🧠", "長期", longTermMemories.size, MemoryFilterChip.LONG_TERM),
                 MemoryStatTile("⏳", "短期", shortTermMemories.size, MemoryFilterChip.SHORT_TERM),
