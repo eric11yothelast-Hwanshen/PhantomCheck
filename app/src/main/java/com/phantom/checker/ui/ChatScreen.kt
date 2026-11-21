@@ -2311,19 +2311,15 @@ fun ChatAssistantTab(
                             style = MaterialTheme.typography.bodySmall
                         )
                         Text(
-                            text = "3. 每日 AI 摘要排程與完成推播：暫停每日定時自動生成摘要與推播通知（isEffectiveDailySummaryEnabled = false；仍可手動生成，每週摘要不受影響）。",
+                            text = "3. AI 助手單次閱讀訊息上限（RAG）：由原設定值（目前設定 $normalRag 則）暫時降載為 100 則（getEffectiveChatRagMessageLimit = 100），不覆寫原設定值。",
                             style = MaterialTheme.typography.bodySmall
                         )
                         Text(
-                            text = "4. AI 助手單次閱讀訊息上限（RAG）：由原設定值（目前設定 $normalRag 則）暫時降載為 100 則（getEffectiveChatRagMessageLimit = 100），不覆寫原設定值。",
+                            text = "4. 記憶庫對話注入預算：由正常模式（設定 $normalMemTopK 筆／每筆約 50 tokens／總預算 ≤250 tokens）切換為省 token 預算（設定 $saverMemTopK 筆／每筆約 25 tokens／總預算 ≤120 tokens），兩組設定獨立保存。",
                             style = MaterialTheme.typography.bodySmall
                         )
                         Text(
-                            text = "5. 記憶庫對話注入預算：由正常模式（設定 $normalMemTopK 筆／每筆約 50 tokens／總預算 ≤250 tokens）切換為省 token 預算（設定 $saverMemTopK 筆／每筆約 25 tokens／總預算 ≤120 tokens），兩組設定獨立保存。",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Text(
-                            text = "6. 聊天附加圖片壓縮：上傳圖片邊長上限由 768px 降至 512px、JPEG 品質由 72 降至 65，減少視覺模型圖片 token 消耗。",
+                            text = "5. 聊天附加圖片壓縮：上傳圖片邊長上限由 768px 降至 512px、JPEG 品質由 72 降至 65，減少視覺模型圖片 token 消耗。",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }

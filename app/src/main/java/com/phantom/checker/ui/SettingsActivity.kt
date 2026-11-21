@@ -1218,7 +1218,7 @@ fun FilterSettingsScreen(
                             ) {
                     SettingSwitchRow(
                         title = "省 token 模式",
-                        subtitle = "暫停每則 AI 掃描與每日摘要排程，僅命中可疑特徵才分析；關閉即恢復原設定",
+                        subtitle = "暫停每則 AI 掃描並降載對話注入，僅命中可疑特徵才分析；關閉即恢復原設定",
                         checked = tokenSaverEnabled,
                         onCheckedChange = { checked ->
                             tokenSaverEnabled = checked

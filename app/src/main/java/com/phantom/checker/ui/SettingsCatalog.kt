@@ -23,7 +23,7 @@ data class SettingSearchItem(
 object SettingsCatalog {
 
     val ITEMS: List<SettingSearchItem> = listOf(
-        SettingSearchItem("quick_token_saver", "quick", "省 token 模式", "暫停每則 AI 掃描與每日摘要排程，僅命中可疑特徵才分析", listOf("省電", "省錢", "節流", "api", "token", "額度")),
+        SettingSearchItem("quick_token_saver", "quick", "省 token 模式", "暫停每則 AI 掃描並降載對話注入，僅命中可疑特徵才分析", listOf("省電", "省錢", "節流", "api", "token", "額度")),
         SettingSearchItem("quick_persistent_notif", "quick", "常駐統計通知", "通知欄即時統計與 App 圖示列", listOf("通知", "常駐", "狀態列", "統計通知", "背景")),
         SettingSearchItem("quick_ai_risk", "quick", "AI 風險分析", "內文達觸發字數門檻且未命中過濾規則時自動評估風險（門檻可於 ai_min_trigger_length 調整）", listOf("防詐", "風險", "偵測", "分析", "ai", "掃描")),
         SettingSearchItem("quick_scam_popup", "quick", "詐騙警示彈出通知", "高風險訊息即時彈出警示通知", listOf("詐騙", "警示", "推播", "高風險", "alert")),

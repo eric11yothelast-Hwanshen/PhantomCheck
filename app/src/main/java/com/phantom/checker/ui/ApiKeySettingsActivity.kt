@@ -689,8 +689,9 @@ private fun PurposeModelsCard(
         contentPadding = 14.dp
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val purposeList = remember { AiPurpose.entries.filter { it != AiPurpose.AUTO_MEMO } }
             Text(
-                text = "用途模型（6 類分流）",
+                text = "用途模型（${purposeList.size} 類分流）",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold
             )
@@ -700,7 +701,7 @@ private fun PurposeModelsCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            AiPurpose.entries.filter { it != AiPurpose.AUTO_MEMO }.forEachIndexed { idx, purpose ->
+            purposeList.forEachIndexed { idx, purpose ->
                 if (idx > 0) {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
                 }

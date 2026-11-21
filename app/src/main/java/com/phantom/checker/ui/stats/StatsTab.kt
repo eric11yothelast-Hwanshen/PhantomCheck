@@ -363,7 +363,7 @@ internal fun StatsTab(
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = "已暫停每則 AI 掃描與每日摘要排程，僅命中可疑特徵時才進行風險分析。",
+                        text = "已暫停每則 AI 掃描並降載對話注入，僅命中可疑特徵時才進行風險分析。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
