@@ -2009,8 +2009,8 @@ fun DecisionFeedbackDialog(
                                         db.filterDao().insert(
                                             com.phantom.checker.data.FilterRule(
                                                 keyword = kw,
-                                                category = "scam",
-                                                isEnabled = true
+                                                isActive = true,
+                                                action = com.phantom.checker.data.FilterRule.ACTION_SCAM
                                             )
                                         )
                                         com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
