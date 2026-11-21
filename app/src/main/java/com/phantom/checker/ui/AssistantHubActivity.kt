@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -37,10 +39,14 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -692,6 +698,325 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 Text("前往進階助手改名／換頭像設定")
                             }
                         }
+                    }
+                }
+
+                // 7. #367 雙門檻決策閾值 ＋ #368 定時任務模板（三步嚮導＋所見即所得預覽）
+                item(key = "hub_task_templates_and_decision") {
+                    val templates by remember(appCtx) {
+                        com.phantom.checker.service.AppDatabaseHolder.db(appCtx).taskTemplateDao().observeAll()
+                    }.collectAsState(initial = emptyList())
+                    var decisionThreshold by remember {
+                        mutableFloatStateOf(PhantomPrefs.getDecisionConfirmThreshold(appCtx).toFloat())
+                    }
+                    var showWizard by remember { mutableStateOf(false) }
+                    var wizardStep by remember { mutableStateOf(1) }
+                    var tplName by remember { mutableStateOf("每日重點彙整") }
+                    var tplQueryKey by remember { mutableStateOf(com.phantom.checker.data.TaskTemplateEntity.QUERY_MESSAGES_DIGEST) }
+                    var tplTriggerType by remember { mutableStateOf(com.phantom.checker.data.TaskTemplateEntity.TRIGGER_DAILY) }
+                    var tplTriggerTime by remember { mutableStateOf("09:00") }
+                    var tplIntervalMin by remember { mutableStateOf(60) }
+                    var tplPolish by remember { mutableStateOf(!PhantomPrefs.isTokenSaverEnabled(appCtx)) }
+                    var tplDeliverNotif by remember { mutableStateOf(true) }
+                    var previewText by remember { mutableStateOf("") }
+                    var deleteTemplateTarget by remember { mutableStateOf<com.phantom.checker.data.TaskTemplateEntity?>(null) }
+
+                    LaunchedEffect(showWizard, wizardStep, tplQueryKey) {
+                        if (showWizard && wizardStep == 3) {
+                            previewText = "載入即時聚合預覽中…"
+                            val agg = com.phantom.checker.service.TaskTemplateEngine.runAggregation(appCtx, tplQueryKey)
+                            previewText = agg.fullText
+                        }
+                    }
+
+                    PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                "⚖️ 雙門檻自動決策閾值",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                "置信閾值：${decisionThreshold.toInt()} 分（低於此門檻或僅 AI 語義無本地訊號一律進確認卡；已回饋修正 ${PhantomPrefs.getDecisionFeedbackTotalCount(appCtx)} 次）",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Slider(
+                                value = decisionThreshold,
+                                onValueChange = { decisionThreshold = it },
+                                onValueChangeFinished = {
+                                    val snapped = (decisionThreshold.toInt() / 5) * 5
+                                    decisionThreshold = snapped.toFloat()
+                                    PhantomPrefs.setDecisionConfirmThreshold(appCtx, snapped)
+                                    PhantomSettingsBus.notifyChanged()
+                                },
+                                valueRange = 40f..85f,
+                                steps = 8
+                            )
+
+                            HorizontalDivider()
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "📋 定時任務模板（${templates.size} 個）",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Button(onClick = {
+                                    wizardStep = 1
+                                    tplName = "每日重點彙整"
+                                    tplQueryKey = com.phantom.checker.data.TaskTemplateEntity.QUERY_MESSAGES_DIGEST
+                                    tplTriggerType = com.phantom.checker.data.TaskTemplateEntity.TRIGGER_DAILY
+                                    tplPolish = !PhantomPrefs.isTokenSaverEnabled(appCtx)
+                                    showWizard = true
+                                }) {
+                                    Text("新增模板")
+                                }
+                            }
+                            Text(
+                                "聚合段純本地 SQL/規則零 token，潤飾段可獨立開關（與省 token 模式連動）。",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (templates.isEmpty()) {
+                                Text(
+                                    "尚未建立自訂定時任務模板，點擊「新增模板」體驗三步嚮導與所見即所得預覽。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                templates.forEach { tpl ->
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(10.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(tpl.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                                    val freqDesc = when (tpl.triggerType) {
+                                                        com.phantom.checker.data.TaskTemplateEntity.TRIGGER_WEEKLY -> "每週 ${tpl.triggerTime}"
+                                                        com.phantom.checker.data.TaskTemplateEntity.TRIGGER_INTERVAL -> "每 ${tpl.intervalMinutes} 分鐘"
+                                                        else -> "每日 ${tpl.triggerTime}"
+                                                    }
+                                                    Text(
+                                                        "${com.phantom.checker.service.TaskTemplateEngine.queryKeyLabel(tpl.queryKey)} · $freqDesc · ${if (tpl.polishEnabled) "AI潤飾開" else "純聚合零token"}",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                                FluidSwitch(
+                                                    checked = tpl.isEnabled,
+                                                    onCheckedChange = { on ->
+                                                        scope.launch {
+                                                            val updated = tpl.copy(isEnabled = on)
+                                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                                com.phantom.checker.service.AppDatabaseHolder.db(appCtx).taskTemplateDao().update(updated)
+                                                            }
+                                                            com.phantom.checker.service.TaskTemplateScheduler.scheduleOrUpdate(appCtx, updated)
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                TextButton(onClick = {
+                                                    scope.launch {
+                                                        com.phantom.checker.service.TaskTemplateEngine.executeTemplate(appCtx, tpl)
+                                                        Toast.makeText(ctx, "已試跑「${tpl.name}」並寫入主動訊息聊天室", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }) {
+                                                    Text("立即試跑")
+                                                }
+                                                TextButton(onClick = { deleteTemplateTarget = tpl }) {
+                                                    Text("刪除", color = MaterialTheme.colorScheme.error)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (showWizard) {
+                        AlertDialog(
+                            onDismissRequest = { showWizard = false },
+                            title = { Text("定時任務模板嚮導（步驟 $wizardStep / 3）") },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    when (wizardStep) {
+                                        1 -> {
+                                            Text("① 選擇資料源與名稱（本地 SQL/規則白名單）", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                            OutlinedTextField(
+                                                value = tplName,
+                                                onValueChange = { tplName = it },
+                                                label = { Text("模板名稱") },
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                com.phantom.checker.data.TaskTemplateEntity.ALLOWED_QUERY_KEYS.forEach { key ->
+                                                    FilterChip(
+                                                        selected = tplQueryKey == key,
+                                                        onClick = {
+                                                            tplQueryKey = key
+                                                            tplName = com.phantom.checker.service.TaskTemplateEngine.queryKeyLabel(key)
+                                                        },
+                                                        label = { Text(com.phantom.checker.service.TaskTemplateEngine.queryKeyLabel(key)) }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        2 -> {
+                                            Text("② 選擇頻率與潤飾／推送模式", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                listOf(
+                                                    com.phantom.checker.data.TaskTemplateEntity.TRIGGER_DAILY to "每日",
+                                                    com.phantom.checker.data.TaskTemplateEntity.TRIGGER_WEEKLY to "每週",
+                                                    com.phantom.checker.data.TaskTemplateEntity.TRIGGER_INTERVAL to "定時循環"
+                                                ).forEach { (t, lbl) ->
+                                                    FilterChip(
+                                                        selected = tplTriggerType == t,
+                                                        onClick = { tplTriggerType = t },
+                                                        label = { Text(lbl) }
+                                                    )
+                                                }
+                                            }
+                                            if (tplTriggerType == com.phantom.checker.data.TaskTemplateEntity.TRIGGER_INTERVAL) {
+                                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    listOf(30, 60, 120, 180).forEach { mins ->
+                                                        FilterChip(
+                                                            selected = tplIntervalMin == mins,
+                                                            onClick = { tplIntervalMin = mins },
+                                                            label = { Text("${mins}分") }
+                                                        )
+                                                    }
+                                                }
+                                            } else {
+                                                OutlinedTextField(
+                                                    value = tplTriggerTime,
+                                                    onValueChange = { tplTriggerTime = it },
+                                                    label = { Text("觸發時間（HH:mm）") },
+                                                    singleLine = true,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                )
+                                            }
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("AI 潤飾（關閉＝純聚合零 token）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                                FluidSwitch(checked = tplPolish, onCheckedChange = { tplPolish = it })
+                                            }
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("同時發送通知（關＝僅寫入主動聊天室）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                                FluidSwitch(checked = tplDeliverNotif, onCheckedChange = { tplDeliverNotif = it })
+                                            }
+                                        }
+                                        else -> {
+                                            Text("③ 所見即所得預覽（即時執行本地聚合段，零 token）", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                            Surface(
+                                                shape = RoundedCornerShape(12.dp),
+                                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text(
+                                                    text = previewText.ifBlank { "載入中…" },
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    modifier = Modifier.padding(10.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                Button(onClick = {
+                                    if (wizardStep < 3) {
+                                        wizardStep++
+                                    } else {
+                                        scope.launch {
+                                            val entity = com.phantom.checker.data.TaskTemplateEntity(
+                                                name = tplName.trim().ifBlank { com.phantom.checker.service.TaskTemplateEngine.queryKeyLabel(tplQueryKey) },
+                                                isEnabled = true,
+                                                triggerType = tplTriggerType,
+                                                triggerTime = tplTriggerTime.trim().ifBlank { "09:00" },
+                                                intervalMinutes = tplIntervalMin,
+                                                queryKey = tplQueryKey,
+                                                polishEnabled = tplPolish,
+                                                deliverTo = if (tplDeliverNotif) {
+                                                    com.phantom.checker.data.TaskTemplateEntity.DELIVER_PROACTIVE_AND_NOTIF
+                                                } else {
+                                                    com.phantom.checker.data.TaskTemplateEntity.DELIVER_PROACTIVE_CHAT
+                                                }
+                                            )
+                                            val newId = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                com.phantom.checker.service.AppDatabaseHolder.db(appCtx).taskTemplateDao().insert(entity)
+                                            }
+                                            com.phantom.checker.service.TaskTemplateScheduler.scheduleOrUpdate(appCtx, entity.copy(id = newId))
+                                            showWizard = false
+                                            Toast.makeText(ctx, "已建立定時任務模板「${entity.name}」", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }) {
+                                    Text(if (wizardStep < 3) "下一步" else "確認建立")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = {
+                                    if (wizardStep > 1) wizardStep-- else showWizard = false
+                                }) {
+                                    Text(if (wizardStep > 1) "上一步" else "取消")
+                                }
+                            }
+                        )
+                    }
+
+                    deleteTemplateTarget?.let { target ->
+                        AlertDialog(
+                            onDismissRequest = { deleteTemplateTarget = null },
+                            title = { Text("確認刪除定時任務模板") },
+                            text = { Text("確定要刪除「${target.name}」嗎？此操作不可復原並將取消對應排程。") },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    val toDel = target
+                                    deleteTemplateTarget = null
+                                    scope.launch {
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            com.phantom.checker.service.AppDatabaseHolder.db(appCtx).taskTemplateDao().deleteById(toDel.id)
+                                        }
+                                        com.phantom.checker.service.TaskTemplateScheduler.cancel(appCtx, toDel.id)
+                                        Toast.makeText(ctx, "已刪除模板「${toDel.name}」", Toast.LENGTH_SHORT).show()
+                                    }
+                                }) {
+                                    Text("確認刪除", color = MaterialTheme.colorScheme.error)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { deleteTemplateTarget = null }) {
+                                    Text("取消")
+                                }
+                            }
+                        )
                     }
                 }
 

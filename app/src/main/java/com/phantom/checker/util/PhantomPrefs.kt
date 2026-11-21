@@ -2176,6 +2176,22 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
 
     fun getDecisionFeedbackTotalCount(ctx: Context): Int =
         prefs(ctx).getInt("decision_feedback_total", 0)
+
+    // ---- #368 連結應用中心動作登錄檔：同步時間與靜默錯誤狀態 ----
+
+    fun getLinkedAppLastSyncAt(ctx: Context, connectorId: String): Long =
+        prefs(ctx).getLong("linked_app_last_sync_$connectorId", 0L)
+
+    fun setLinkedAppLastSyncAt(ctx: Context, connectorId: String, ts: Long) {
+        prefs(ctx).edit().putLong("linked_app_last_sync_$connectorId", ts).apply()
+    }
+
+    fun getLinkedAppLastError(ctx: Context, connectorId: String): String =
+        prefs(ctx).getString("linked_app_last_err_$connectorId", "").orEmpty()
+
+    fun setLinkedAppLastError(ctx: Context, connectorId: String, err: String) {
+        prefs(ctx).edit().putString("linked_app_last_err_$connectorId", err.take(120)).apply()
+    }
 }
 
 

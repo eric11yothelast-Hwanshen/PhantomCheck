@@ -436,6 +436,7 @@ internal suspend fun buildRagSystemPrompt(
         appendLine("- 地圖導航：{\"action\":\"maps_navigate\",\"destination\":\"目的地\"}")
         appendLine("- 設定鬧鐘：{\"action\":\"set_alarm\",\"hhmm\":\"HH:mm\",\"label\":\"標籤(可選)\"}")
         appendLine("- 開啟指定 App：{\"action\":\"open_app\",\"packageName\":\"套件名\"}")
+        appendLine(com.phantom.checker.util.LinkedAppActionRegistry.buildCapabilityPromptSummary(ctx))
         if (calEnabledForAi) {
             appendLine("本機日曆操作指令（僅查詢使用者勾選的本機日曆，禁止編造任何行程或空檔）：")
             appendLine("- 查詢日曆空檔與行程（系統會由本機日曆直接查詢並附上真實結果；days 預設 7，from/to 選填 HH:mm 如 \"13:00\"/\"18:00\"，day 選填 today/tomorrow/monday..sunday）：{\"action\":\"calendar_free_query\",\"days\":7,\"from\":\"06:00\",\"to\":\"24:00\",\"day\":\"\"}")

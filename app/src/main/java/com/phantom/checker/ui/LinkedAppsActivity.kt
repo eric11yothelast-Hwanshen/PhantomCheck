@@ -93,20 +93,8 @@ class LinkedAppsActivity : ComponentActivity() {
     }
 }
 
-private fun hasUsageStatsAccess(ctx: Context): Boolean {
-    return try {
-        val appOps = ctx.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager ?: return false
-        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.packageName)
-        } else {
-            @Suppress("DEPRECATION")
-            appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.packageName)
-        }
-        mode == AppOpsManager.MODE_ALLOWED
-    } catch (_: Exception) {
-        false
-    }
-}
+private fun hasUsageStatsAccess(ctx: Context): Boolean =
+    com.phantom.checker.util.UsageStatsBridge.hasUsageStatsPermission(ctx)
 
 private fun openSystemActionSafely(ctx: Context, intent: Intent, fallbackToAppDetails: Boolean = true) {
     try {
@@ -408,6 +396,65 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                             }
                             if (discordStatus.isNotBlank()) {
                                 Text(discordStatus, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+
+                // 4. #368 宣告式動作登錄檔（Action Registry：與 AI 助手能力宣告共用單一來源）
+                item(key = "linked_action_registry") {
+                    PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "📋 動作登錄檔（Action Registry）",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                "唯讀能力先上、寫入一律必經確認卡；未設 BYOK 顯示灰色待設定，輪詢異常靜默以黃色提示。AI 助手僅會呼叫下列已註冊能力。",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            com.phantom.checker.util.LinkedAppActionRegistry.ACTIONS.forEach { act ->
+                                val st = act.evaluateStatus(appCtx)
+                                val isGray = st.availability == com.phantom.checker.util.LinkedAppActionRegistry.Availability.NEEDS_BYOK ||
+                                    st.availability == com.phantom.checker.util.LinkedAppActionRegistry.Availability.NEEDS_PERMISSION
+                                val isWarn = st.availability == com.phantom.checker.util.LinkedAppActionRegistry.Availability.WARNING
+                                val rwBadge = if (act.isReadOnly) "唯讀" else "寫入(必確認)"
+                                HorizontalDivider()
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = "${act.title} [$rwBadge]",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = when {
+                                            isWarn -> Color(0xFFB45309)
+                                            isGray -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                                            else -> MaterialTheme.colorScheme.onSurface
+                                        }
+                                    )
+                                    Text(
+                                        text = act.description,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = when {
+                                            isWarn -> "⚠️ ${st.statusText}"
+                                            isGray -> "⏳ ${st.statusText}"
+                                            else -> "✅ ${st.statusText}"
+                                        } + if (st.lastSyncAtMs > 0L || st.nextSyncAtMs > 0L) {
+                                            " · ${com.phantom.checker.util.LinkedAppActionRegistry.formatSyncWindow(st.lastSyncAtMs, st.nextSyncAtMs)}"
+                                        } else "",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = when {
+                                            isWarn -> Color(0xFFB45309)
+                                            isGray -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                            else -> MaterialTheme.colorScheme.primary
+                                        }
+                                    )
+                                }
                             }
                         }
                     }

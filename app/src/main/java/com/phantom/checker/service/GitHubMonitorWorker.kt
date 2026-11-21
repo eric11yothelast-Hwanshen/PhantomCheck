@@ -222,9 +222,13 @@ class GitHubMonitorWorker(
     override suspend fun doWork(): Result {
         return try {
             CloudExtensionsClient.pollGitHubRepos(applicationContext)
+            PhantomPrefs.setLinkedAppLastSyncAt(applicationContext, "github", System.currentTimeMillis())
+            PhantomPrefs.setLinkedAppLastError(applicationContext, "github", "")
             Result.success()
         } catch (e: Exception) {
             android.util.Log.w("PhantomCloudExt", "GitHub monitor worker failed: ${e.javaClass.simpleName}")
+            PhantomPrefs.setLinkedAppLastSyncAt(applicationContext, "github", System.currentTimeMillis())
+            PhantomPrefs.setLinkedAppLastError(applicationContext, "github", e.javaClass.simpleName)
             Result.success()
         }
     }

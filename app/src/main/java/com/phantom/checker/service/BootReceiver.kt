@@ -55,6 +55,7 @@ class BootReceiver : BroadcastReceiver() {
                         ReminderScheduler.deliverTodoReminder(appCtx, todo.id)
                     }
                 }
+                TaskTemplateScheduler.rescheduleAllEnabled(appCtx)
             } catch (_: Exception) {
             } finally {
                 pendingResult.finish()

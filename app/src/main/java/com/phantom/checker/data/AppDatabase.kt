@@ -1374,6 +1374,75 @@ interface MemoryDao {
     suspend fun deleteByIds(ids: List<Long>)
 }
 
+/**
+ * #368 定時任務模板（資料表驅動，聚合段本地零 token 與 AI 潤飾段分離）
+ */
+@Entity(
+    tableName = "task_template",
+    indices = [Index(value = ["isEnabled", "triggerType"])]
+)
+data class TaskTemplateEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val isEnabled: Boolean = true,
+    val triggerType: String = TRIGGER_DAILY, // "daily" | "weekly" | "interval"
+    val triggerTime: String = "09:00", // HH:mm
+    val intervalMinutes: Int = 60,
+    val queryKey: String = QUERY_MESSAGES_DIGEST, // messages_digest | notes_digest | todos_digest | antifraud_digest
+    val polishEnabled: Boolean = true,
+    val deliverTo: String = DELIVER_PROACTIVE_AND_NOTIF, // proactive_chat | proactive_and_notif
+    val createdAt: Long = System.currentTimeMillis(),
+    val lastRunAt: Long = 0L
+) {
+    companion object {
+        const val TRIGGER_DAILY = "daily"
+        const val TRIGGER_WEEKLY = "weekly"
+        const val TRIGGER_INTERVAL = "interval"
+
+        const val QUERY_MESSAGES_DIGEST = "messages_digest"
+        const val QUERY_NOTES_DIGEST = "notes_digest"
+        const val QUERY_TODOS_DIGEST = "todos_digest"
+        const val QUERY_ANTIFRAUD_DIGEST = "antifraud_digest"
+
+        const val DELIVER_PROACTIVE_CHAT = "proactive_chat"
+        const val DELIVER_PROACTIVE_AND_NOTIF = "proactive_and_notif"
+
+        val ALLOWED_QUERY_KEYS: List<String> = listOf(
+            QUERY_MESSAGES_DIGEST,
+            QUERY_NOTES_DIGEST,
+            QUERY_TODOS_DIGEST,
+            QUERY_ANTIFRAUD_DIGEST
+        )
+    }
+}
+
+@Dao
+interface TaskTemplateDao {
+    @Query("SELECT * FROM task_template ORDER BY createdAt DESC, id DESC")
+    fun observeAll(): Flow<List<TaskTemplateEntity>>
+
+    @Query("SELECT * FROM task_template ORDER BY createdAt DESC, id DESC")
+    suspend fun all(): List<TaskTemplateEntity>
+
+    @Query("SELECT * FROM task_template WHERE isEnabled = 1 ORDER BY id ASC")
+    suspend fun enabled(): List<TaskTemplateEntity>
+
+    @Query("SELECT * FROM task_template WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): TaskTemplateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(entity: TaskTemplateEntity): Long
+
+    @Update
+    suspend fun update(entity: TaskTemplateEntity)
+
+    @Query("UPDATE task_template SET lastRunAt = :ts WHERE id = :id")
+    suspend fun markLastRun(id: Long, ts: Long)
+
+    @Query("DELETE FROM task_template WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
 @Database(
     entities = [
         MessageEntity::class,
@@ -1395,9 +1464,10 @@ interface MemoryDao {
         OwnReplyEchoEntity::class,
         SenderAvatarEntity::class,
         MemoryEntity::class,
-        ContactAliasEntity::class
+        ContactAliasEntity::class,
+        TaskTemplateEntity::class
     ],
-    version = 20,
+    version = 21,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1413,6 +1483,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun todoDao(): TodoDao
     abstract fun pendingAiAnalysisDao(): PendingAiAnalysisDao
     abstract fun noteDao(): NoteDao
+    abstract fun taskTemplateDao(): TaskTemplateDao
     abstract fun memoRuleDao(): MemoRuleDao
     abstract fun ownReplyEchoDao(): OwnReplyEchoDao
     abstract fun senderAvatarDao(): SenderAvatarDao
@@ -1785,6 +1856,31 @@ abstract class AppDatabase : RoomDatabase() {
                     """.trimIndent()
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_contact_aliases_alias_packageName` ON `contact_aliases` (`alias`, `packageName`)")
+            }
+        }
+
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `task_template` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `isEnabled` INTEGER NOT NULL,
+                        `triggerType` TEXT NOT NULL,
+                        `triggerTime` TEXT NOT NULL,
+                        `intervalMinutes` INTEGER NOT NULL,
+                        `queryKey` TEXT NOT NULL,
+                        `polishEnabled` INTEGER NOT NULL,
+                        `deliverTo` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `lastRunAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_task_template_isEnabled_triggerType` ON `task_template` (`isEnabled`, `triggerType`)"
+                )
             }
         }
     }
