@@ -62,7 +62,7 @@ object TaskTemplateEngine {
                 val bullets = buildList {
                     add("記事庫共 ${notes.size} 筆，近 7 日新增 ${recent.size} 筆")
                     recent.take(2).forEach { n ->
-                        add("📝 ${n.title.ifBlank { n.content.take(28) }}（${timeFmt.format(Date(n.createdAt))}）")
+                        add("📝 ${n.content.trim().take(28)}（${timeFmt.format(Date(n.createdAt))}）")
                     }
                     if (recent.isEmpty()) add("近 7 日尚無新增記事")
                 }.take(3)
@@ -113,13 +113,13 @@ object TaskTemplateEngine {
             else -> {
                 val stats = runCatching { db.messageDao().statsOverview(todayStart) }.getOrNull()
                 val groups = runCatching { db.messageDao().groupByApp() }.getOrDefault(emptyList())
-                val topApps = groups.sortedByDescending { it.totalCount }.take(3)
-                    .joinToString("、") { "${it.appLabel.ifBlank { it.packageName }}(${it.totalCount})" }
+                val topApps = groups.sortedByDescending { it.cnt }.take(3)
+                    .joinToString("、") { "${it.appLabel.ifBlank { it.packageName }}(${it.cnt})" }
                     .ifBlank { "尚無資料" }
                 val bullets = listOf(
-                    "今日收到 ${stats?.todayCount ?: 0} 則訊息（全庫未讀 ${stats?.unreadCount ?: 0} 則）",
+                    "今日收到 ${stats?.today ?: 0} 則訊息（全庫未讀 ${stats?.unread ?: 0} 則）",
                     "主要來源 App：$topApps",
-                    "今日累計高風險訊息：${stats?.scamCount ?: 0} 則"
+                    "全庫高風險訊息：${stats?.scam ?: 0} 則"
                 )
                 AggregationResult(
                     queryKey = TaskTemplateEntity.QUERY_MESSAGES_DIGEST,
