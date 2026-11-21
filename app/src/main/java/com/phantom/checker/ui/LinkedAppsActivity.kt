@@ -190,6 +190,7 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
     ) {
         Scaffold(
             containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onBackground,
             topBar = {
                 TopAppBar(
                     title = { Text("連結應用程式中心", fontWeight = FontWeight.Bold) },
@@ -198,7 +199,11 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onBackground
+                    )
                 )
             }
         ) { padding ->
@@ -214,7 +219,12 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                 item(key = "ready_alarm_timer") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("⏰ 鬧鐘與計時器（即用，免特殊權限）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text(
+                                "⏰ 鬧鐘與計時器（即用，免特殊權限）",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
                             Text(
                                 "AI 助手可提出設定鬧鐘／計時器行動卡，一律由您點擊確認後交由系統時鐘 App 執行。",
                                 style = MaterialTheme.typography.bodySmall,
@@ -277,7 +287,12 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("🐙 GitHub 雲端擴充（BYOK 加密儲存）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "🐙 GitHub 雲端擴充（BYOK 加密儲存）",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                                 FluidSwitch(
                                     checked = githubEnabled,
                                     onCheckedChange = {
@@ -351,7 +366,12 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("💬 Discord Webhook（BYOK 加密儲存）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "💬 Discord Webhook（BYOK 加密儲存）",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                                 FluidSwitch(
                                     checked = discordEnabled,
                                     onCheckedChange = {

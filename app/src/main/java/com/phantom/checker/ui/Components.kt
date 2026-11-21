@@ -307,6 +307,12 @@ fun PhantomGlassCard(
         MaterialTheme.colorScheme.outlineVariant
     }
 
+    val cardContentColor = if (cardBgMode == PhantomPrefs.CardBgMode.DARK && !isDark) {
+        Color(0xFFF2F4F8)
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+
     if (ThemePreferences.isGlassEffectEnabled(ctx) && !isPowerSave) {
         val fallbackColor = if (overlapOpaqueBoost) {
             boostedOverlay
@@ -348,10 +354,14 @@ fun PhantomGlassCard(
                 .let { m -> if (tintColor != null) m.background(tintColor, shape) else m }
                 .let { m -> if (overlapOpaqueBoost) m.border(width = 1.dp, color = outline, shape = shape) else m }
         ) {
-            Column(
-                modifier = Modifier.padding(contentPadding),
-                content = content
-            )
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.material3.LocalContentColor provides cardContentColor
+            ) {
+                Column(
+                    modifier = Modifier.padding(contentPadding),
+                    content = content
+                )
+            }
         }
     } else {
         val solidBg = if (overlapOpaqueBoost) {
@@ -369,10 +379,14 @@ fun PhantomGlassCard(
                 .let { m -> if (tintColor != null) m.background(tintColor, shape) else m }
                 .border(width = 1.dp, color = outline, shape = shape)
         ) {
-            Column(
-                modifier = Modifier.padding(contentPadding),
-                content = content
-            )
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.material3.LocalContentColor provides cardContentColor
+            ) {
+                Column(
+                    modifier = Modifier.padding(contentPadding),
+                    content = content
+                )
+            }
         }
     }
 }
