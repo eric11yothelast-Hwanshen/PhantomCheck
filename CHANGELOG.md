@@ -2,6 +2,26 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [3.4.0] - 2026-11-21
+
+### 新增功能
+- **主動日曆情報引擎（`CalendarInsightEngine`）（#365 / PR #369）**：新增 `CalendarInsightWorker`（`PeriodicWork` 預設 60 分鐘，支援 30／60／120／180 分鐘 `ExistingPeriodicWorkPolicy.UPDATE` 切換，開機於 `BootReceiver` 重排），僅讀取使用者已勾選之本機日曆未來 48 小時事件，外部查詢嚴格限「事件標題＋日期（≤60 字、`sanitizeForPrompt`）」（嚴禁參與人、備註、位置），以 `eventId|beginMs|intelHash` 去重（無新情報零 AI 呼叫）、未設 BYOK 外部搜尋或省 token 模式自動跳過，並遵守每日主動上限與獨立勿擾時段；新增 `proactive_calendar_insight_enabled`、`proactive_calendar_insight_notif_enabled`、`proactive_calendar_web_search_enabled`、`calendar_insight_interval_minutes` 並接通 `SettingsCatalog` 與 `AssistantHubActivity`。
+- **主動訊息聊天室、對話自動記憶擷取、未決事項膠囊與壓縮錨點（#366 / PR #369）**：
+  - `ProactiveEngine` 建立專屬主動訊息聊天室（`PROACTIVE_SESSION_TITLE = "AI 助手簡報與主動提醒"`），不再誤寫入一般對話第一筆 session；聊天室抽屜預設收合並顯示即時未讀徽章（超過 99 顯示 `99+`，點開即清零），「清除全部對話」保護主動訊息聊天室不被誤刪；跨分頁系統事件可經 `appendSystemEventToCurrentSession` 零 AI 寫入。
+  - 新增對話自動記憶擷取（`memory_auto_extract_enabled`，預設開啟）：每則對話至多直接寫入 2 筆非敏感無衝突記憶並於回覆氣泡下顯示小字提醒與一鍵刪除 BottomSheet；`🔒 敏感` 記憶與衝突項目仍 100% 維持確認卡。
+  - 新增單一對話框連續性元件（`chat_pending_capsules_enabled`，預設開啟）：頂部顯示至多 3 顆可滑除未決事項快速膠囊與本地壓縮接續錨點（7 天自動過期、可手動關閉）。
+- **雙門檻自動決策層（`DecisionEngine`）與一鍵誤判回饋（#367 / PR #369）**：
+  - 新增 `DecisionEngine`（純函式、零 AI token）：確定性訊號優先（白名單、過濾規則、記事規則、熟人／VIP、結構化時間／OTP／URL／金額、已知頭像），無本地風險訊號時 AI 語義單獨給分上限為 `confirmThreshold - 10`（可於 `decision_confirm_threshold` 調整，預設 60、範圍 40–85），且絕不單獨觸發高置信詐騙彈窗或不可逆動作。
+  - 集中定義可逆（自動執行）／不可逆（必經確認或開關）動作矩陣，並統一輸出 provenance 標記；`MessageDetailActivity`、`ScamCenterActivity` 與 `Components.kt` 誤判回饋對話框支援「此判斷有誤」四類回饋直接寫回規則庫並立即失效相關快取。
+- **定時任務模板、宣告式 Action Registry 與狀態修復（#368 / PR #369）**：
+  - Room 資料庫由 v20 非破壞性升級至 v21（`MIGRATION_20_21`），新增 `task_template` 資料表與索引；新增 `TaskTemplateEngine` 將純本地零 token 聚合段與選配 AI 潤飾段分離，並於 `AssistantHubActivity` 提供三步嚮導與即時「所見即所得」預覽。
+  - 新增 `LinkedAppActionRegistry` 單一來源宣告式登錄檔同時驅動 `LinkedAppsActivity` 能力卡與 `ChatScreenParts` AI 能力宣告（含 `discord_digest_stats_readonly` 唯讀示範連接器）；補齊 `GitHubMonitorWorker` 同步時間與異常狀態持久化寫入（不再靜默吞掉狀態）。
+
+### 變更與修正
+- **白名單全量比對、統一去重寫入與一次性清理（#362 / PR #369）**：`AiRuleDao.activeWhitelistAll()` 解除 `LIMIT 20` 截斷，修正第 21 筆以後白名單靜默失效；`WhitelistRuleHelper.upsertWhitelist` 統一 6 處寫入路徑進行去重與停用規則重新啟用；`MessageDetailActivity`、`PendingAiAnalysisWorker` 與 `NotificationCollectorService` 深度分析重查 DB 白名單並標註手動觸發 provenance；`NotificationCollectorService.dedupWhitelistRulesIfNeeded` 執行一次性精確重複列合併（保留最舊一筆，不改動停用狀態）。
+- **記憶頁篩選 chips 遮擋與大字體適配修復（#363 / PR #369）**：`MemoryTab` 展開模式將批次管理與收合鈕移至獨立頂部控制列，兩排分層 `LazyRow` 獨佔全寬並加上 `clipToBounds()` 與 trailing `contentPadding`；收合模式保留 `8.dp` 明確間距；所有 chip 與膠囊統一採用 `heightIn(min = 34.dp)` 支援 `fontScale = 1.3` 與 `360dp` 窄螢幕不截字、不重疊。
+- **AI 工具調用精度、防幻覺鐵律與本地直連查詢（#364 / PR #369）**：`ChatScreenParts` 注入系統能力宣告與防幻覺約束，實作單意圖單卡優先序（`calendar_free_query > usage_query > search_messages > memory_list > todo_list`）與次要查詢誠實提示；新增 `LocalDataConnector` 直連本機日曆與 `UsageStatsBridge`；實作 `usage_query` 查詢系統 `UsageStatsManager` 真實前景時間與啟動次數（未授權誠實回報並引導至授權頁），同步修復 `PermissionHubActivity` 使用情況權限狀態與跳轉。
+
 ## [3.3.0] - 2026-11-21
 
 ### 新增功能
