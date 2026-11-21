@@ -89,8 +89,9 @@ object CloudExtensionsClient {
         if (!url.startsWith("https://")) return@withContext false to "請先輸入有效的 Discord Webhook HTTPS 網址"
         var conn: HttpURLConnection? = null
         try {
-            val safeText = content.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").take(1500)
-            val payload = """{"content":"$safeText"}"""
+            val payload = com.google.gson.JsonObject().apply {
+                addProperty("content", content.take(1500))
+            }.toString()
             conn = (URL(url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 doOutput = true
@@ -186,6 +187,7 @@ object CloudExtensionsClient {
     }
 
     private fun postCloudAlert(ctx: Context, title: String, body: String) {
+        if (!ProactiveEngine.areNotificationsEnabled(ctx)) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_CLOUD_EXT, "雲端擴充通知（GitHub）", NotificationManager.IMPORTANCE_DEFAULT)
@@ -221,7 +223,8 @@ class GitHubMonitorWorker(
         return try {
             CloudExtensionsClient.pollGitHubRepos(applicationContext)
             Result.success()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.w("PhantomCloudExt", "GitHub monitor worker failed: ${e.javaClass.simpleName}")
             Result.success()
         }
     }
