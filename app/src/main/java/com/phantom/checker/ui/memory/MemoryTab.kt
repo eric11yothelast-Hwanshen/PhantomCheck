@@ -28,6 +28,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -695,47 +697,204 @@ internal fun MemoryTab(
 
         Spacer(Modifier.height(6.dp))
 
-        // 可收合篩選 chips 列（對齊訊息頁：收合僅顯示「全部」＋目前生效 chip；右側批次鈕＋34dp 圓形箭頭鈕）
+        // #357 圖像化記憶統計四格總覽（點擊直達對應篩選）
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            FlowRow(
+            data class MemoryStatTile(
+                val emoji: String,
+                val label: String,
+                val count: Int,
+                val filter: MemoryFilterChip,
+                val highlightError: Boolean = false
+            )
+            val statTiles = listOf(
+                MemoryStatTile("🧠", "長期", longTermMemories.size, MemoryFilterChip.LONG_TERM),
+                MemoryStatTile("⏳", "短期", shortTermMemories.size, MemoryFilterChip.SHORT_TERM),
+                MemoryStatTile("⚖️", "衝突", conflictMemories.size, MemoryFilterChip.CONFLICT, conflictMemories.isNotEmpty()),
+                MemoryStatTile("🛡️", "免疫", scamImmunityMemories.size, MemoryFilterChip.SCAM_IMMUNITY)
+            )
+            statTiles.forEach { tile ->
+                val isSelected = selectedFilter == tile.filter
+                val containerColor = when {
+                    isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+                    tile.highlightError -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f)
+                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                }
+                val valueColor = when {
+                    isSelected -> MaterialTheme.colorScheme.primary
+                    tile.highlightError -> MaterialTheme.colorScheme.error
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = containerColor,
+                    border = BorderStroke(
+                        width = if (isSelected) 1.2.dp else 0.75.dp,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable {
+                            selectedFilter = if (selectedFilter == tile.filter) MemoryFilterChip.ALL else tile.filter
+                        }
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(
+                            text = "${tile.emoji} ${tile.label}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "${tile.count}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = valueColor,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        // #357 分層等高篩選列（展開分「記憶」／「來源與規則」兩排水平滑動，收合單排顯示全部＋目前選中）
+        val badgeCountOf: (MemoryFilterChip) -> Int = { chip ->
+            when (chip) {
+                MemoryFilterChip.ALL -> filteredMemories.size
+                MemoryFilterChip.LONG_TERM -> longTermMemories.size
+                MemoryFilterChip.SHORT_TERM -> shortTermMemories.size
+                MemoryFilterChip.SCAM_IMMUNITY -> scamImmunityMemories.size
+                MemoryFilterChip.CONFLICT -> conflictMemories.size
+                MemoryFilterChip.ARCHIVED -> archivedMemories.size
+                MemoryFilterChip.AUTO_MEMO -> autoNotes.size
+                MemoryFilterChip.WHITELIST -> filteredWhitelists.size
+                MemoryFilterChip.TAG_RULES -> filteredAiTagRules.size + filteredUserTagRules.size
+                MemoryFilterChip.MEMO_RULES -> filteredMemoRules.size
+            }
+        }
+        val memoryTierChips = listOf(
+            MemoryFilterChip.ALL,
+            MemoryFilterChip.CONFLICT,
+            MemoryFilterChip.LONG_TERM,
+            MemoryFilterChip.SHORT_TERM,
+            MemoryFilterChip.ARCHIVED
+        )
+        val ruleTierChips = listOf(
+            MemoryFilterChip.SCAM_IMMUNITY,
+            MemoryFilterChip.AUTO_MEMO,
+            MemoryFilterChip.WHITELIST,
+            MemoryFilterChip.TAG_RULES,
+            MemoryFilterChip.MEMO_RULES
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(
                 modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                MemoryFilterChip.entries.forEach { chip ->
-                    val shouldShow = !filterChipsCollapsed ||
-                        chip == MemoryFilterChip.ALL ||
-                        chip == selectedFilter
-                    if (shouldShow) {
-                        val badgeCount = when (chip) {
-                            MemoryFilterChip.ALL -> filteredMemories.size
-                            MemoryFilterChip.LONG_TERM -> longTermMemories.size
-                            MemoryFilterChip.SHORT_TERM -> shortTermMemories.size
-                            MemoryFilterChip.SCAM_IMMUNITY -> scamImmunityMemories.size
-                            MemoryFilterChip.CONFLICT -> conflictMemories.size
-                            MemoryFilterChip.ARCHIVED -> archivedMemories.size
-                            MemoryFilterChip.AUTO_MEMO -> autoNotes.size
-                            MemoryFilterChip.WHITELIST -> filteredWhitelists.size
-                            MemoryFilterChip.TAG_RULES -> filteredAiTagRules.size + filteredUserTagRules.size
-                            MemoryFilterChip.MEMO_RULES -> filteredMemoRules.size
+                if (filterChipsCollapsed) {
+                    val compactList = buildList {
+                        add(MemoryFilterChip.ALL)
+                        if (selectedFilter != MemoryFilterChip.ALL) add(selectedFilter)
+                    }
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        items(compactList, key = { it.name }) { chip ->
+                            val count = badgeCountOf(chip)
+                            FilterChip(
+                                selected = selectedFilter == chip,
+                                onClick = { selectedFilter = chip },
+                                shape = chipShape,
+                                modifier = Modifier.height(34.dp),
+                                label = {
+                                    Text(
+                                        text = if (count > 0) "${chip.label} $count" else chip.label,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            )
                         }
-                        FilterChip(
-                            selected = selectedFilter == chip,
-                            onClick = { selectedFilter = chip },
-                            shape = chipShape,
-                            modifier = Modifier.height(32.dp),
-                            label = {
-                                Text(
-                                    text = if (badgeCount > 0) "${chip.label} ($badgeCount)" else chip.label,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        )
+                    }
+                } else {
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        item(key = "tier_label_mem") {
+                            Text(
+                                text = "記憶",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(end = 2.dp)
+                            )
+                        }
+                        items(memoryTierChips, key = { it.name }) { chip ->
+                            val count = badgeCountOf(chip)
+                            FilterChip(
+                                selected = selectedFilter == chip,
+                                onClick = { selectedFilter = chip },
+                                shape = chipShape,
+                                modifier = Modifier.height(34.dp),
+                                label = {
+                                    Text(
+                                        text = if (count > 0) "${chip.label} $count" else chip.label,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            )
+                        }
+                    }
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        item(key = "tier_label_rules") {
+                            Text(
+                                text = "規則",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(end = 2.dp)
+                            )
+                        }
+                        items(ruleTierChips, key = { it.name }) { chip ->
+                            val count = badgeCountOf(chip)
+                            FilterChip(
+                                selected = selectedFilter == chip,
+                                onClick = { selectedFilter = chip },
+                                shape = chipShape,
+                                modifier = Modifier.height(34.dp),
+                                label = {
+                                    Text(
+                                        text = if (count > 0) "${chip.label} $count" else chip.label,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            )
+                        }
                     }
                 }
             }

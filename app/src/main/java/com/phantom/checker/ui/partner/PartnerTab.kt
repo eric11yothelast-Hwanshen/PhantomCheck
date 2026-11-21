@@ -255,22 +255,43 @@ internal fun PartnerTab(
                         )
                         Column(
                             modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
                                 text = assistantName,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Text(
-                                text = "已陪伴你第 $companionDays 天 · ${personalityPreset.label}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                ) {
+                                    Text(
+                                        text = "陪伴第 $companionDays 天",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+                                ) {
+                                    Text(
+                                        text = personalityPreset.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                     Row(
@@ -301,10 +322,10 @@ internal fun PartnerTab(
                 modifier = Modifier
                     .fillMaxWidth()
                     .pressableScale()
-                    .clip(RoundedCornerShape(18.dp))
+                    .clip(RoundedCornerShape(20.dp))
                     .clickable { showIntimacySheet = true },
-                cornerRadius = 18.dp,
-                contentPadding = 14.dp
+                cornerRadius = 20.dp,
+                contentPadding = 16.dp
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
@@ -333,6 +354,7 @@ internal fun PartnerTab(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
                     )
                     Text(
                         text = "已確認記憶 $confirmedMemoryCount（×$INTIMACY_WEIGHT_CONFIRMED_MEMORY）＋ 對話互動 $chatMsgCount（×$INTIMACY_WEIGHT_CHAT_MESSAGE）＋ 簡報點閱 $briefingReadCount（×$INTIMACY_WEIGHT_BRIEFING_READ）· 點擊查看旅程",
@@ -343,13 +365,14 @@ internal fun PartnerTab(
             }
         }
 
-        // 3. 近 7 天事件橫向滑動卡
+        // 3. 近 7 天事件橫向滑動卡（#357 等高視覺化對齊）
         item(key = "partner_recent_events") {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "近 7 天互動動態",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.padding(horizontal = 2.dp)
                 )
                 LazyRow(
@@ -360,10 +383,13 @@ internal fun PartnerTab(
                         PhantomGlassCard(
                             glassState = glassState,
                             modifier = Modifier.width(204.dp),
-                            cornerRadius = 16.dp,
-                            contentPadding = 12.dp
+                            cornerRadius = 18.dp,
+                            contentPadding = 14.dp
                         ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
                                 Text(
                                     text = "${card.emoji} ${card.title}",
                                     style = MaterialTheme.typography.labelMedium,
@@ -373,8 +399,9 @@ internal fun PartnerTab(
                                 )
                                 Text(
                                     text = card.value,
-                                    style = MaterialTheme.typography.titleMedium,
+                                    style = MaterialTheme.typography.titleLarge,
                                     fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -382,6 +409,7 @@ internal fun PartnerTab(
                                     text = card.subtitle,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    minLines = 2,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
