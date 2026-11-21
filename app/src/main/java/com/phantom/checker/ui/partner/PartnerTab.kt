@@ -1,5 +1,6 @@
 package com.phantom.checker.ui.partner
 
+import android.content.Intent
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -54,14 +55,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.phantom.checker.data.MemoryEntity
 import com.phantom.checker.service.AppDatabaseHolder
+import com.phantom.checker.ui.AssistantHubActivity
 import com.phantom.checker.ui.PhantomGlassCard
 import com.phantom.checker.ui.components.PortraitCardSection
 import com.phantom.checker.ui.components.pressableScale
 import com.phantom.checker.util.AssistantAvatarCircle
 import com.phantom.checker.util.AssistantAvatarHelper
 import com.phantom.checker.util.PhantomPrefs
-import com.phantom.checker.util.PhantomPrefs.AssistantPersonalityPreset
-import com.phantom.checker.util.PhantomPrefs.AssistantVerbosity
 import com.phantom.checker.util.PhantomSettingsBus
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
@@ -156,8 +156,7 @@ internal fun PartnerTab(
 
     var assistantName by remember(settingsTick) { mutableStateOf(PhantomPrefs.getAssistantName(appCtx)) }
     var avatarBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
-    var personalityPreset by remember(settingsTick) { mutableStateOf(PhantomPrefs.getAssistantPersonalityPreset(appCtx)) }
-    var verbosity by remember(settingsTick) { mutableStateOf(PhantomPrefs.getAssistantVerbosity(appCtx)) }
+    val personalityPreset = remember(settingsTick) { PhantomPrefs.getAssistantPersonalityPreset(appCtx) }
     var activeTopics by remember(settingsTick) { mutableStateOf(PhantomPrefs.getProactiveTopics(appCtx)) }
     var chatMsgCount by remember { mutableStateOf(0) }
     var showIntimacySheet by remember { mutableStateOf(false) }
@@ -440,51 +439,18 @@ internal fun PartnerTab(
                         }
                     }
 
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = "個性風格快速切換",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    HorizontalDivider()
+                    OutlinedButton(
+                        onClick = {
+                            ctx.startActivity(Intent(ctx, AssistantHubActivity::class.java))
+                        },
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        AssistantPersonalityPreset.entries.forEach { preset ->
-                            FilterChip(
-                                selected = personalityPreset == preset,
-                                onClick = {
-                                    personalityPreset = preset
-                                    PhantomPrefs.setAssistantPersonalityPreset(appCtx, preset)
-                                    PhantomSettingsBus.notifyChanged()
-                                    onShowMessage("已切換為「${preset.label}」")
-                                },
-                                label = { Text(preset.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                            )
-                        }
-                    }
-
-                    Text(
-                        text = "回答詳細度",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        AssistantVerbosity.entries.forEach { v ->
-                            FilterChip(
-                                selected = verbosity == v,
-                                onClick = {
-                                    verbosity = v
-                                    PhantomPrefs.setAssistantVerbosity(appCtx, v)
-                                    PhantomSettingsBus.notifyChanged()
-                                },
-                                label = { Text(v.label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                            )
-                        }
+                        Text(
+                            text = "助手個性、詳細度與主動推播設定",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
