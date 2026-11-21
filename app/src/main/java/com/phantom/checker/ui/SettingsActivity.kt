@@ -2509,7 +2509,7 @@ fun FilterSettingsScreen(
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "• 確認卡保護：所有 AI 記憶寫入皆標示為「AI 推測（inferred）」，必須經您點擊確認卡才會寫入；若與同主題（subject）既有記憶衝突，絕不自動覆蓋，會提供「更新記憶／保留原樣」雙選項或移至「記憶」分頁衝突區裁定。\n• 刪除安全保護：任何記憶刪除動作一律彈出勾選確認卡，絕不自動執行。",
+                        text = "• 確認保護：開啟「記憶寫入前先顯示確認卡」時，AI 產生的新記憶會先在 AI 助手對話中由您確認；即使關閉，標為「🔒 敏感」的記憶、與既有記憶衝突的項目，以及任何刪除動作，仍一律彈出確認卡保護。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
