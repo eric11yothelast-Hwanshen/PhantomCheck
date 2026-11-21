@@ -287,6 +287,7 @@ fun ChatAssistantTab(
     var editingTodoTimeTarget by remember { mutableStateOf<PendingTodoInsertion?>(null) }
     var pendingCalendarQueue by remember { mutableStateOf<List<PendingCalendarAddition>>(emptyList()) }
     var searchResultCard by remember { mutableStateOf<SearchResultCardState?>(null) }
+    var showUsagePermissionGuideCard by remember { mutableStateOf(false) }
     var pendingExtendedActionQueue by remember { mutableStateOf<List<PendingExtendedAction>>(emptyList()) }
     var pendingMemoryWriteQueue by remember { mutableStateOf<List<PendingMemoryWriteState>>(emptyList()) }
     var pendingMemoryDeleteQueue by remember { mutableStateOf<List<PendingMemoryDeleteState>>(emptyList()) }
@@ -968,6 +969,10 @@ fun ChatAssistantTab(
                 val resolvedMemoryDeletes = mutableListOf<PendingMemoryDeleteState>()
                 val resolvedCalendarAdds = mutableListOf<PendingCalendarAddition>()
 
+                if (ragBuild.needsUsagePermissionPrompt) {
+                    showUsagePermissionGuideCard = true
+                }
+
                 val hasExtendedProposals = parsed.searchProposals.isNotEmpty() ||
                     parsed.todoManageProposals.isNotEmpty() ||
                     parsed.vipPinProposals.isNotEmpty() ||
@@ -980,7 +985,9 @@ fun ChatAssistantTab(
                     parsed.memoryUpdateProposals.isNotEmpty() ||
                     parsed.memoryDeleteProposals.isNotEmpty() ||
                     parsed.calendarFreeQueryProposals.isNotEmpty() ||
-                    parsed.calendarAddProposals.isNotEmpty()
+                    parsed.calendarAddProposals.isNotEmpty() ||
+                    parsed.usageQueryProposals.isNotEmpty() ||
+                    parsed.demotedQueryHints.isNotEmpty()
 
                 if (hasExtendedProposals) {
                     withContext(Dispatchers.IO) {
@@ -1506,6 +1513,28 @@ fun ChatAssistantTab(
                                 )
                                 immediateExtraReplies.add(summary)
                             }
+                        }
+
+                        // #364 App 使用情況查詢（UsageStatsManager 真實數據；未授權則誠實回報並顯示授權引導）
+                        if (parsed.usageQueryProposals.isNotEmpty()) {
+                            parsed.usageQueryProposals.forEach { uq ->
+                                val usageRes = com.phantom.checker.util.UsageStatsBridge.queryUsageSummary(
+                                    ctx = appCtx,
+                                    days = uq.days,
+                                    top = uq.top
+                                )
+                                if (!usageRes.granted) {
+                                    showUsagePermissionGuideCard = true
+                                }
+                                immediateExtraReplies.add(usageRes.markdownTable)
+                            }
+                        }
+
+                        // #364 單意圖單卡降級提示（不靜默遺漏任何次要查詢意圖）
+                        if (parsed.demotedQueryHints.isNotEmpty()) {
+                            immediateExtraReplies.add(
+                                "ℹ️ 本次回覆亦偵測到其他查詢建議（${parsed.demotedQueryHints.joinToString("、")}），已優先呈現主查詢結果；如需查看可直接追問。"
+                            )
                         }
 
                         // #329 / #348 本機日曆新增行程（一律先做重疊撞期檢查；依開關決定直接寫入或彈出確認卡）
@@ -3838,6 +3867,60 @@ fun ChatAssistantTab(
                                         }
                                     ) {
                                         Text("確認新增")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (showUsagePermissionGuideCard) {
+                        item(key = "usage_permission_guide_card") {
+                            PhantomGlassCard(
+                                glassState = glassState,
+                                modifier = Modifier.fillMaxWidth(),
+                                cornerRadius = 18.dp,
+                                contentPadding = 12.dp
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "📊 需要「應用使用情況存取」權限",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "目前尚未授權使用情況存取（PACKAGE_USAGE_STATS），AI 助手無法查詢真實的 App 使用時間或啟動次數。開啟後再提問即可讀取系統真實數據。",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                com.phantom.checker.util.UsageStatsBridge.openUsageAccessSettings(ctx)
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("前往系統授權", maxLines = 1)
+                                        }
+                                        OutlinedButton(
+                                            onClick = {
+                                                ctx.startActivity(Intent(ctx, PermissionHubActivity::class.java))
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("權限中心", maxLines = 1)
+                                        }
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        TextButton(onClick = { showUsagePermissionGuideCard = false }) {
+                                            Text("關閉提示")
+                                        }
                                     }
                                 }
                             }

@@ -110,20 +110,8 @@ private fun checkExactAlarmGranted(ctx: Context): Boolean {
     }
 }
 
-private fun checkUsageAccessGranted(ctx: Context): Boolean {
-    return try {
-        val ops = ctx.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager ?: return false
-        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ops.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.packageName)
-        } else {
-            @Suppress("DEPRECATION")
-            ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), ctx.packageName)
-        }
-        mode == AppOpsManager.MODE_ALLOWED
-    } catch (_: Exception) {
-        false
-    }
-}
+private fun checkUsageAccessGranted(ctx: Context): Boolean =
+    com.phantom.checker.util.UsageStatsBridge.hasUsageStatsPermission(ctx)
 
 private fun checkBatteryUnrestricted(ctx: Context): Boolean {
     return try {
@@ -357,10 +345,12 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                             PermissionRow(
                                 name = "應用使用情況存取",
                                 granted = usageGranted,
-                                desc = "供連結應用程式中心判斷前景使用狀態（選配）",
+                                desc = "供 AI 助手查詢真實 App 使用時間／啟動次數與連結中心使用（選配）",
                                 actionLabel = if (usageGranted) "前往管理" else "前往開啟"
                             ) {
-                                launchIntentWithAppDetailsFallback(ctx, Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                                if (!com.phantom.checker.util.UsageStatsBridge.openUsageAccessSettings(ctx)) {
+                                    launchIntentWithAppDetailsFallback(ctx, Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                                }
                             }
                         }
                     }
