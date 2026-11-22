@@ -1526,6 +1526,18 @@ fun ChatAssistantTab(
                             }
                         }
 
+                        // #387 本機日曆行程／課表查詢（純本機 CalendarBridge.queryInstances，嚴禁編造）
+                        if (parsed.calendarQueryProposals.isNotEmpty()) {
+                            parsed.calendarQueryProposals.forEach { q ->
+                                val summary = com.phantom.checker.util.CalendarBridge.queryScheduleSummary(
+                                    ctx = appCtx,
+                                    dateRaw = q.date,
+                                    dayFilter = q.day
+                                )
+                                immediateExtraReplies.add(summary)
+                            }
+                        }
+
                         // #329 本機日曆空檔查詢（本地查詢如實呈現，LLM 不編造）
                         if (parsed.calendarFreeQueryProposals.isNotEmpty()) {
                             parsed.calendarFreeQueryProposals.forEach { q ->

@@ -371,6 +371,111 @@ object CalendarBridge {
     }
 
     /**
+     * #387 純本機行程／課表查詢（calendar_query）：
+     * 依 date（today|tomorrow|yyyy-MM-dd）或 day（monday..sunday）查詢已勾選本機日曆，
+     * 逐字回傳真實行程時間、標題與地點；查無或未授權時誠實拒答並引導，嚴禁編造。
+     */
+    suspend fun queryScheduleSummary(
+        ctx: Context,
+        dateRaw: String? = null,
+        dayFilter: String? = null
+    ): String = withContext(Dispatchers.IO) {
+        if (!hasReadPermission(ctx)) {
+            return@withContext "查不到本機日曆中相關資料（尚未授予「日曆讀取權限」）。請前往「權限中心」或「設定 → 記憶庫與 AI 助手 → 本機日曆整合」授予權限並勾選欲查詢的日曆。"
+        }
+        val selectedIds = PhantomPrefs.getSelectedCalendarIds(ctx)
+        val allCals = runCatching { listCalendars(ctx) }.getOrDefault(emptyList())
+        if (selectedIds.isEmpty()) {
+            val visibleCount = allCals.count { it.visible }
+            val extraHint = if (visibleCount > 0) "（裝置偵測到 $visibleCount 個顯示中日曆尚未勾選）" else ""
+            return@withContext "查不到本機日曆中相關資料（尚未勾選任何本機日曆$extraHint）。請前往「權限中心」或「設定 → 記憶庫與 AI 助手 → 本機日曆整合」勾選日曆。"
+        }
+
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
+
+        val parsedDate: LocalDate? = dateRaw?.trim()?.lowercase(Locale.ROOT)?.let { raw ->
+            when (raw) {
+                "", "null" -> null
+                "today", "今天", "今日" -> today
+                "tomorrow", "明天", "明日" -> today.plusDays(1)
+                else -> runCatching { LocalDate.parse(raw) }.getOrNull()
+            }
+        }
+
+        val targetDates: List<LocalDate> = when {
+            parsedDate != null -> listOf(parsedDate)
+            !dayFilter.isNullOrBlank() -> when (dayFilter.trim().lowercase(Locale.ROOT)) {
+                "today", "今天", "今日" -> listOf(today)
+                "tomorrow", "明天", "明日" -> listOf(today.plusDays(1))
+                "monday", "mon", "週一", "星期一", "禮拜一" -> listOf(nextOrSameDayOfWeek(today, DayOfWeek.MONDAY))
+                "tuesday", "tue", "週二", "星期二", "禮拜二" -> listOf(nextOrSameDayOfWeek(today, DayOfWeek.TUESDAY))
+                "wednesday", "wed", "週三", "星期三", "禮拜三" -> listOf(nextOrSameDayOfWeek(today, DayOfWeek.WEDNESDAY))
+                "thursday", "thu", "週四", "星期四", "禮拜四" -> listOf(nextOrSameDayOfWeek(today, DayOfWeek.THURSDAY))
+                "friday", "fri", "週五", "星期五", "禮拜五" -> listOf(nextOrSameDayOfWeek(today, DayOfWeek.FRIDAY))
+                "saturday", "sat", "週六", "星期六", "禮拜六" -> listOf(nextOrSameDayOfWeek(today, DayOfWeek.SATURDAY))
+                "sunday", "sun", "週日", "星期日", "禮拜日", "禮拜天" -> listOf(nextOrSameDayOfWeek(today, DayOfWeek.SUNDAY))
+                else -> (0 until 7).map { today.plusDays(it.toLong()) }
+            }
+            else -> (0 until 7).map { today.plusDays(it.toLong()) }
+        }
+
+        val rangeStartMs = targetDates.first().minusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val rangeEndMs = targetDates.last().plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli()
+        val allInstances = queryInstances(ctx, rangeStartMs, rangeEndMs, selectedIds)
+
+        val dateFmt = DateTimeFormatter.ofPattern("yyyy/MM/dd (E)", Locale.TRADITIONAL_CHINESE)
+        val timeFmt = DateTimeFormatter.ofPattern("HH:mm", Locale.US)
+
+        val matchedByDate = targetDates.map { date ->
+            val dayStartMs = date.atStartOfDay(zone).toInstant().toEpochMilli()
+            val dayEndMs = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+            val dayEvents = allInstances.filter { inst ->
+                if (inst.allDay) {
+                    val evStartDateUtc = Instant.ofEpochMilli(inst.beginMs).atZone(ZoneOffset.UTC).toLocalDate()
+                    val evEndDateUtcRaw = Instant.ofEpochMilli(inst.endMs).atZone(ZoneOffset.UTC).toLocalDate()
+                    val evEndDateUtc = if (evEndDateUtcRaw.isAfter(evStartDateUtc)) evEndDateUtcRaw else evStartDateUtc.plusDays(1)
+                    !date.isBefore(evStartDateUtc) && date.isBefore(evEndDateUtc)
+                } else {
+                    inst.beginMs < dayEndMs && inst.endMs > dayStartMs
+                }
+            }.sortedBy { if (it.allDay) dayStartMs else it.beginMs }
+            date to dayEvents
+        }
+
+        val totalEvents = matchedByDate.sumOf { it.second.size }
+        if (totalEvents == 0) {
+            val rangeDesc = if (targetDates.size == 1) {
+                targetDates.first().format(dateFmt)
+            } else {
+                "${targetDates.first().format(dateFmt)} 至 ${targetDates.last().format(dateFmt)}"
+            }
+            return@withContext "📅 查不到本機日曆中相關資料（$rangeDesc，已查詢已勾選之 ${selectedIds.size} 個日曆皆無排定行程；若課表／行程在其他日曆，請至權限中心勾選對應日曆）。"
+        }
+
+        val sb = StringBuilder()
+        sb.appendLine("📅 本機日曆真實行程（已勾選 ${selectedIds.size} 個日曆，共 $totalEvents 筆）：")
+        for ((date, events) in matchedByDate) {
+            if (events.isEmpty()) continue
+            sb.appendLine("**${date.format(dateFmt)}**")
+            for (ev in events.take(20)) {
+                val timeDesc = if (ev.allDay) {
+                    "全天"
+                } else {
+                    val s = Instant.ofEpochMilli(ev.beginMs).atZone(zone).format(timeFmt)
+                    val e = Instant.ofEpochMilli(ev.endMs).atZone(zone).format(timeFmt)
+                    "$s–$e"
+                }
+                val loc = ev.location?.takeIf { it.isNotBlank() }?.let { "｜$it" }.orEmpty()
+                sb.appendLine("- $timeDesc ${ev.title}$loc")
+            }
+        }
+        val unselectedCount = allCals.count { it.id !in selectedIds }
+        sb.append("（以上逐字來自本機已勾選之 ${selectedIds.size} 個日曆；裝置另有 $unselectedCount 個未勾選）")
+        sb.toString().trim()
+    }
+
+    /**
      * 寫入單筆事件至本機日曆（ContentResolver.insert，全程 Dispatchers.IO）。
      * 妥善處理 EVENT_TIMEZONE 與 ALL_DAY UTC 邊界規範。
      */
