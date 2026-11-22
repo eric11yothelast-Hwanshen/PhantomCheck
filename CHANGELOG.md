@@ -2,6 +2,30 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [3.7.0] - 2026-11-23
+
+- **Tag 對照**：[`v3.6.0...v3.7.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.6.0...v3.7.0)（`versionCode = 46`、`versionName = "3.7.0"`）
+- **發佈資產（雙 APK）**：
+  - `app-release.apk`：正式簽章＋R8 程式碼縮減與資源壓縮（`isMinifyEnabled = true`、`isShrinkResources = true`），供一般使用者安裝與原簽章覆蓋升級。
+  - `app-debug.apk`：除錯建置版本，供開發測試與排錯使用。
+
+### 新增與優化
+- **Phantom Aurora 全域 UI/UX 視覺與動效大改版（#398 / PR #399）**：
+  - **共用動效核心 `PhantomMotion.kt`（新檔）**：集中定義 Material 3 Emphasized 曲線（`EmphasizedDecelerate`、`EmphasizedAccelerate`）、收合展開統一進出場規格（`ExpandEnter` 彈性高度展開＋淡入、`ExpandExit` 加速收起＋淡出）、清單交錯上浮進場（`Modifier.phantomEnter` 與 `LazyListScope.phantomItem`，前 8 項依序每項延遲 `36ms`，並以 `LocalPhantomEnterRegistry` 記錄同分頁已播放過的 key 避免捲動重複播放）、彈出進場（`Modifier.phantomPopIn`）、旋轉箭頭（`PhantomChevron` 0°↔180° spring 取代靜態 `KeyboardArrowUp`/`KeyboardArrowDown` 切換）、玻璃高光邊（`Modifier.phantomSheen`，`drawWithCache` 繪製深淺色自適應上緣高光描邊與頂部內暈）、按壓點擊封裝（`Modifier.phantomPressable`）與數值方向滾動文字（`PhantomAnimatedCount`）；透過 `rememberMotionEnabled()` 讀取系統 `Settings.Global.ANIMATOR_DURATION_SCALE`，當系統動畫縮放＝0 時自動關閉手動 stagger 與無限循環動畫並靜態退場。
+  - **`FluidSwitch` 流體開關升級（draw-phase）**：軌道與 thumb 色彩隨位移/拖曳進度於 `drawBehind` 連續 `lerp` 插值，開啟時繪製主色軌道外暈與 thumb 柔影，並於進度後半段（`p > 0.45f`）在 thumb 內動態描繪圓角勾勾路徑；維持既有按壓 squish 變形、拖曳過半閾值切換與無障礙 `Role.Switch`/`ToggleableState` 語意不變。
+  - **`LiquidGlassTabBar` 圖示動效升級**：選中分頁時圖示以 `graphicsLayer` 執行 spring 輕彈放大（`1f → 1.12f`）並搭配 `animateColorAsState`（`180ms`）平滑色彩過渡。
+  - **`pressableScale` 按壓回饋升級（`Glass.kt`）**：改以 `Animatable` 驅動 `graphicsLayer` 縮放並支援選配 `glowShape` 於按壓時以 `drawWithContent` 疊加主色邊光；偵測手指移動超過 `touchSlop` 或手勢被捲動消費（`change.isConsumed`）時立即提前釋放回彈，防止捲動清單時卡片卡在縮小狀態。
+  - **共用卡片、搜尋與浮動元件質感升級（`Components.kt`）**：`PhantomGlassCard`（玻璃與非玻璃分支）、`PhantomFloatingSurface`、`MessageCard`（含高風險詐騙卡）與 `PhantomSearchBarPill` 全面疊加 `phantomSheen` 高光描邊；OTP 驗證碼複製膠囊與 `PhantomSearchBarPill` 套用 `pressableScale`；`PhantomDialog`（`0.92f`）與 `EmptyStateView` 圖示（`0.6f`）套用 `phantomPopIn` 彈出進場；`PhantomFullScreenSearchOverlay` 升級為 Emphasized 進出場曲線。
+  - **主分頁方向感切換與五大分頁／設定子頁／教學遮罩動效一致化**：
+    - `MainActivity.kt`：6 主分頁切換套用 `AnimatedContent`（依分頁 `ordinal` 決定左右滑入方向＋短淡出退場），並完整保留 `SaveableStateProvider(tab.name)` 分頁狀態與提供 `LocalPhantomEnterRegistry`。
+    - 主分頁：`MessagesTab`（首頁今日／未讀／詐騙統計改用 `FlowRow`＋`PhantomAnimatedCount` 支援 `fontScale = 1.3+` 自動換行、篩選收合鈕 `PhantomChevron`＋`pressableScale`、離線重試提示卡統一展開規格、App 群組與訊息清單 `animateItem()`＋`phantomEnter`）、`NotesTab`（待辦與本機日曆收合 `PhantomChevron`＋統一展開規格、記事清單 `animateItem()`＋`phantomEnter`）、`TodoSection`（待辦列 `pressableScale`＋完成態透明度 `graphicsLayer` 過渡）、`MemoryTab`（收合區塊 `PhantomChevron`＋統一展開規格、10 區塊 `phantomItem` 進場）、`WatchTopicSheet`（關注清單 `animateItem()`＋`phantomEnter`）、`StatsTab`（簡報與週報 `PhantomChevron`、分享鈕 `pressableScale`、13 統計區塊 `phantomItem` 進場）、`PartnerTab`（7 區塊 `phantomItem` 進場）、`DiarySection`（AI 註記統一展開規格）、`GoalSection`（目標卡 `pressableScale`＋進度條 `animateFloatAsState` spring 過渡）。
+    - 設定系統與全部 12 子頁：`SettingsActivity`（`CollapsibleSettingsCard` 標題列 `pressableScale`＋`PhantomChevron`＋統一展開規格，自訂常用指令、本機日曆清單、隱藏日曆、個別 App 節流覆寫展開動效全面一致化）、`ApiKeySettingsActivity`（Profile 卡 `animateItem()`＋`phantomEnter`、用途模型卡 `phantomItem`）、`AssistantHubActivity`（7 區 `phantomItem`）、`AutoReplySettingsActivity`（4 卡 `phantomEnter`）、`LinkedAppsActivity`（5 區 `phantomItem`）、`PermissionHubActivity`（4 區 `phantomItem`）、`ScamCenterActivity`（`animateItem()`＋`phantomEnter`）、`TagManagementActivity`（`animateItem()`＋`phantomEnter`）、`WhitelistManagementActivity`（新增表單與 App 分組 `PhantomChevron`＋統一展開規格）、`ContactsIntegrationSection`（`pressableScale`）、`AppThreadsScreen`（對話串 `animateItem()`＋`phantomEnter`）、`ConversationScreen`（日期分隔列與訊息列 `animateItem()`）、`MessageDetailActivity`（5 張詳情卡 `phantomEnter`）。
+    - 新手與設定教學（`Onboarding.kt`）：高亮挖洞框（spotlight hole）4 邊座標由線性 `tween` 升級為 `spring` 流暢滑移、教學字卡改用 Emphasized 減速＋spring 進場、受限設定疑難排解區塊套用統一展開規格。
+  - **聊天室動效與效能優化（`ChatScreen.kt`、`ChatScreenParts.kt`）**：聊天訊息氣泡套用 `animateItem()`；使用者氣泡疊加 `phantomSheen` 高光邊（100% 沿用使用者自訂 `bubbleCornerDp` `8–24dp` 圓角與 `70%–95%` 最大寬度比例）；「推演思路」折疊區換用 `PhantomChevron`＋統一展開規格；送出按鈕與側邊歷史抽屜會話列套用 `pressableScale`／`animateItem()`（底部輸入框本身不參與位移或縮放動畫、打字零抖動）；`TypingDotsIndicator` 重寫為 draw-phase `graphicsLayer`（相位驅動 alpha、scale 與垂直波浪彈跳），消除既有每幀 composition 重組並於系統動畫縮放＝0 時自動退場為靜態三圓點。
+  - **Markdown 排版精修（`PhantomMarkdownText.kt`）**：引用塊改為右側 `10.dp` 圓角＋左側 `3.5.dp` 圓角膠囊飾條與更舒適內距；程式碼區塊升級 `12.dp` 圓角＋`1.dp` 細邊框與 `12.dp` 內距；表格外框升級 `12.dp` 圓角並新增奇數資料列斑馬紋底色（`headerBg.copy(alpha = 0.35f)`），Markdown 文字與語法解析邏輯零變動。
+  - **全域 Activity 視窗轉場（`styles.xml`＋`res/anim/phantom_{open,close}_{enter,exit}.xml`）**：`Theme.PhantomCheck` 新增 `PhantomWindowAnimation` 定義子頁面開啟／返回之輕量水平位移（`8%p`／`-4%p`）與透明度轉場，系統視窗動畫縮放＝0 時由 Android 框架自動省略。
+  - **嚴格邊界與零回歸保證**：本輪**零新增第三方依賴**、未使用 `SharedTransitionLayout`／`LookaheadScope`、`CenterFocusCardStack` 中央聚焦堆疊捲動物理與幾何 **0 diff**，全數 37 處檔案變更皆位於 `ui/` 與 `res/`（`data/`、`service/`、`network/`、`util/` 皆 **0 diff**），零功能回歸。
+
 ## [3.6.0] - 2026-11-22
 
 - **Tag 對照**：[`v3.5.0...v3.6.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.5.0...v3.6.0)（`versionCode = 45`、`versionName = "3.6.0"`）

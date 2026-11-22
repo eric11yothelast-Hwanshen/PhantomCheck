@@ -48,6 +48,10 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
 
+### v3.7.0 更新重點（versionCode 46，2026-11-23）
+
+- **Phantom Aurora 全域 UI/UX 視覺與動效大改版（#398 / PR #399）**：新增共用動效核心 `PhantomMotion.kt`（Material 3 Emphasized 曲線、`phantomEnter`/`phantomItem` 清單交錯進場與 `LocalPhantomEnterRegistry` 防重播、`phantomPopIn` 彈出進場、`PhantomChevron` 彈性旋轉箭頭、`phantomSheen` 玻璃高光描邊、`PhantomAnimatedCount` 數值滾動與系統動畫縮放＝0 自動靜態退場）；升級 `FluidSwitch`（draw-phase 連續變色、開啟外暈、thumb 動態勾勾描繪）、`LiquidGlassTabBar`（選中圖示 spring 彈跳與色彩過渡）與 `pressableScale`（`Animatable`＋`touchSlop`/捲動提前釋放＋按壓主色邊光）；`PhantomGlassCard`、`PhantomFloatingSurface`、`MessageCard`、`PhantomSearchBarPill` 疊加 `phantomSheen` 高光邊，`PhantomDialog` 與 `EmptyStateView` 套用彈出進場；主畫面 6 分頁套用 `AnimatedContent` 方向感過場（保留 `SaveableStateProvider` 狀態）並完成五大分頁、設定主頁與全部 12 子頁、新手教學 spotlight `spring` 滑移之動效一致化；聊天室氣泡 `animateItem()`、使用者氣泡高光（完整沿用 `8–24dp` 圓角與 `70%–95%` 寬度自訂）、`TypingDotsIndicator` 重寫為 draw-phase 波浪彈跳消除每幀重組；`PhantomMarkdownText` 引用塊／程式碼塊／表格斑馬紋視覺精修；新增全域 Activity 視窗轉場 XML（`styles.xml`＋4 支 `res/anim`）。全輪零新增依賴、`CenterFocusCardStack` 堆疊物理零 diff、37 檔變更全數位於 `ui/` 與 `res/`、零功能回歸。
+
 ### v3.5.0 更新重點（versionCode 44，2026-11-22）
 
 - **主動提醒里程碑式去重與回饋擴充（#372、#377 / PR #383，行為變更）**：主動提醒由狀態式改為事件里程碑式去重（同一待辦／日曆事件於 24h 前、提前 N 分鐘、逾期各僅提醒一次，跨日自動清理）並統一匯入 10 分鐘內容雜湊閘門；新增主動訊息「👍 有幫助／👎 打擾」回饋、簡報與主動提醒獨立每日上限，以及提前分鐘數、全天提醒時刻、監控間隔、去重冷卻等可調設定。
