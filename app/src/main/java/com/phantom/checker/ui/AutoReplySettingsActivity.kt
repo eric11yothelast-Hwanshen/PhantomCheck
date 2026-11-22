@@ -1,5 +1,6 @@
 package com.phantom.checker.ui
 
+import com.phantom.checker.ui.components.phantomEnter
 import android.app.TimePickerDialog
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -134,7 +135,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
         ) {
             PhantomGlassCard(
                 glassState = glassState,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.phantomEnter(0, key = "ar_card_0").fillMaxWidth(),
                 cornerRadius = 20.dp,
                 contentPadding = 12.dp
             ) {
@@ -156,7 +157,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
 
             PhantomGlassCard(
                 glassState = glassState,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.phantomEnter(1, key = "ar_card_1").fillMaxWidth(),
                 cornerRadius = 20.dp,
                 contentPadding = 16.dp
             ) {
@@ -189,7 +190,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
 
             PhantomGlassCard(
                 glassState = glassState,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.phantomEnter(2, key = "ar_card_2").fillMaxWidth(),
                 cornerRadius = 20.dp,
                 contentPadding = 16.dp
             ) {
@@ -262,7 +263,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
 
             PhantomGlassCard(
                 glassState = glassState,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.phantomEnter(3, key = "ar_card_3").fillMaxWidth(),
                 cornerRadius = 20.dp,
                 contentPadding = 16.dp
             ) {

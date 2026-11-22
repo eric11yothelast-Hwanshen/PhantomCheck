@@ -1,5 +1,6 @@
 package com.phantom.checker.ui
 
+import com.phantom.checker.ui.components.phantomEnter
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -451,7 +452,10 @@ fun TagManagementScreen(onBack: () -> Unit) {
                     itemsIndexed(tags, key = { _, item -> "tag_${item.id}" }) { idx, tag ->
                         PhantomGlassCard(
                             glassState = glassState,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .animateItem()
+                                .phantomEnter(idx, key = "tag_${tag.id}")
+                                .fillMaxWidth(),
                             cornerRadius = 20.dp,
                             contentPadding = 12.dp
                         ) {

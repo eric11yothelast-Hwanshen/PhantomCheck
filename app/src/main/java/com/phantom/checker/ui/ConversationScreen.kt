@@ -1055,6 +1055,7 @@ fun ConversationScreen(
                                 val currentDay = headerDay
                                 Row(
                                     modifier = Modifier
+                                        .animateItem()
                                         .fillMaxWidth()
                                         .padding(vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically

@@ -1,5 +1,7 @@
 package com.phantom.checker.ui
 
+import com.phantom.checker.ui.components.PhantomMotion
+import com.phantom.checker.ui.components.PhantomChevron
 import android.app.DownloadManager
 import android.app.NotificationManager
 import android.app.TimePickerDialog
@@ -2285,16 +2287,16 @@ fun FilterSettingsScreen(
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.weight(1f)
                         )
-                        Icon(
-                            imageVector = if (quickCommandsExpanded.value) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        PhantomChevron(
+ expanded = quickCommandsExpanded.value,
                             contentDescription = if (quickCommandsExpanded.value) "收起自訂常用指令" else "展開自訂常用指令",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     AnimatedVisibility(
                         visible = quickCommandsExpanded.value,
-                        enter = expandVertically(),
-                        exit = shrinkVertically()
+                        enter = PhantomMotion.ExpandEnter,
+                        exit = PhantomMotion.ExpandExit
                     ) {
                         Column {
                             Row(
@@ -2855,8 +2857,8 @@ fun FilterSettingsScreen(
                                         )
                                     }
                                 }
-                                Icon(
-                                    imageVector = if (calendarListExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                PhantomChevron(
+ expanded = calendarListExpanded,
                                     contentDescription = if (calendarListExpanded) "收合日曆清單" else "展開日曆清單",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -2892,7 +2894,11 @@ fun FilterSettingsScreen(
                                 }
                             }
 
-                            AnimatedVisibility(visible = calendarListExpanded) {
+                            AnimatedVisibility(
+ visible = calendarListExpanded,
+ enter = PhantomMotion.ExpandEnter,
+ exit = PhantomMotion.ExpandExit
+ ) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     val renderCalendarGroups: @Composable (List<com.phantom.checker.util.CalendarBridge.CalendarAccountInfo>, Boolean) -> Unit =
                                         { cals, isHiddenSection ->
@@ -3010,13 +3016,17 @@ fun FilterSettingsScreen(
                                                 fontWeight = FontWeight.Medium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
-                                            Icon(
-                                                imageVector = if (showHiddenCalendars) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                            PhantomChevron(
+ expanded = showHiddenCalendars,
                                                 contentDescription = if (showHiddenCalendars) "收合隱藏日曆" else "展開隱藏日曆",
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
-                                        AnimatedVisibility(visible = showHiddenCalendars) {
+                                        AnimatedVisibility(
+ visible = showHiddenCalendars,
+ enter = PhantomMotion.ExpandEnter,
+ exit = PhantomMotion.ExpandExit
+ ) {
                                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                                 renderCalendarGroups(hiddenCals, true)
                                             }
@@ -3591,8 +3601,8 @@ fun FilterSettingsScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
-                        Icon(
-                            imageVector = if (appThrottleExpanded.value) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        PhantomChevron(
+ expanded = appThrottleExpanded.value,
                             contentDescription = if (appThrottleExpanded.value) "收起個別 App 節流覆寫" else "展開個別 App 節流覆寫",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -3604,8 +3614,8 @@ fun FilterSettingsScreen(
                     )
                     AnimatedVisibility(
                         visible = appThrottleExpanded.value,
-                        enter = expandVertically(),
-                        exit = shrinkVertically()
+                        enter = PhantomMotion.ExpandEnter,
+                        exit = PhantomMotion.ExpandExit
                     ) {
                         Column {
                     if (appThrottleMap.isEmpty()) {
@@ -5600,6 +5610,7 @@ private fun CollapsibleSettingsCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = 48.dp)
+                .pressableScale(0.99f)
                 .clickable(onClick = onToggle),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
@@ -5642,13 +5653,17 @@ private fun CollapsibleSettingsCard(
                     )
                 }
             }
-            Icon(
-                imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+            PhantomChevron(
+ expanded = expanded,
                 contentDescription = if (expanded) "收合" else "展開",
                 modifier = Modifier.size(24.dp)
             )
         }
-        AnimatedVisibility(visible = expanded) {
+        AnimatedVisibility(
+ visible = expanded,
+ enter = PhantomMotion.ExpandEnter,
+ exit = PhantomMotion.ExpandExit
+ ) {
             Column(modifier = Modifier.padding(top = 12.dp)) {
                 content()
             }

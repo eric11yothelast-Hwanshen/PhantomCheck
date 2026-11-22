@@ -1,5 +1,6 @@
 package com.phantom.checker.ui
 
+import com.phantom.checker.ui.components.phantomItem
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -220,7 +221,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // 1. 早晚個人簡報排程
-                item(key = "hub_briefing") {
+                phantomItem(0, key = "hub_briefing") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("☀️🌙 早晚個人簡報排程", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -360,7 +361,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                 }
 
                 // 2. 主動推播主題、每日上限、勿擾時段與地區
-                item(key = "hub_proactive_controls") {
+                phantomItem(1, key = "hub_proactive_controls") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("🔔 主動推播主題、節流與獨立勿擾", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -667,7 +668,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                 }
 
                 // 3. 「我對你的瞭解」畫像卡
-                item(key = "hub_portrait") {
+                phantomItem(2, key = "hub_portrait") {
                     PortraitCardSection(
                         glassState = glassState,
                         onShowMessage = { msg -> Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show() }
@@ -675,7 +676,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                 }
 
                 // 4. 外部情報搜尋端點 BYOK（選配 OpenAI 相容端點）
-                item(key = "hub_external_search") {
+                phantomItem(3, key = "hub_external_search") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("🌐 外部情報搜尋端點（選配 BYOK 加密儲存）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -719,7 +720,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                 }
 
                 // 5. 通訊錄整合（復用 ContactsIntegrationSection）
-                item(key = "hub_contacts") {
+                phantomItem(4, key = "hub_contacts") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         ContactsIntegrationSection(
                             onOpenPermissionHub = {
@@ -730,7 +731,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                 }
 
                 // 6. 連結應用程式中心入口 ＋ 助手 Persona 快捷
-                item(key = "hub_linked_and_persona") {
+                phantomItem(5, key = "hub_linked_and_persona") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text("🔗 連結應用程式與助手個性", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -786,7 +787,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                 }
 
                 // 7. #367 雙門檻決策閾值 ＋ #368 定時任務模板（三步嚮導＋所見即所得預覽）
-                item(key = "hub_task_templates_and_decision") {
+                phantomItem(6, key = "hub_task_templates_and_decision") {
                     val templates by remember(appCtx) {
                         com.phantom.checker.service.AppDatabaseHolder.db(appCtx).taskTemplateDao().observeAll()
                     }.collectAsState(initial = emptyList())

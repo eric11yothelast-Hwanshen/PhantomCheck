@@ -1,5 +1,6 @@
 package com.phantom.checker.ui
 
+import com.phantom.checker.ui.components.phantomItem
 import android.Manifest
 import android.app.AlarmManager
 import android.app.AppOpsManager
@@ -210,7 +211,7 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // 1. 通知與通知存取（含 Android 13+ 側載受限設定四廠牌引導）
-                item(key = "perm_notifications") {
+                phantomItem(0, key = "perm_notifications") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text("🔔 通知權限與監聽存取", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -250,7 +251,7 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                 }
 
                 // 2. 核心資料權限（SMS / 通訊錄 / 日曆）
-                item(key = "perm_data") {
+                phantomItem(1, key = "perm_data") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text("📂 簡訊、通訊錄與日曆權限", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -354,7 +355,7 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                 }
 
                 // 3. 系統排程與保活權限（精確鬧鐘 / 電池優化 / 使用情況）
-                item(key = "perm_system") {
+                phantomItem(2, key = "perm_system") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text("⚙️ 排程、電池與使用情況權限", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -401,7 +402,7 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                 }
 
                 // 4. Shizuku 說明列（不移入本頁，保留於主設定頁 Shizuku 卡）
-                item(key = "perm_shizuku_note") {
+                phantomItem(3, key = "perm_shizuku_note") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),

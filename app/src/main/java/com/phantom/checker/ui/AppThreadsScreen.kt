@@ -1,5 +1,7 @@
 package com.phantom.checker.ui
 
+import com.phantom.checker.ui.components.phantomEnter
+import androidx.compose.foundation.lazy.itemsIndexed
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -571,8 +573,9 @@ fun AppThreadsScreen(
                                 onClick = { showThreadSearch = true }
                             )
                         }
-                        items(threads, key = { it.conversationKey }) { thread ->
+                        itemsIndexed(threads, key = { _, it -> it.conversationKey }) { idx, thread ->
                             val isSelected = thread.conversationKey in selectedConversationKeys
+                            Box(modifier = Modifier.animateItem().phantomEnter(idx, key = thread.conversationKey)) {
                             SenderThreadCard(
                                 packageName = packageName,
                                 thread = thread,
@@ -599,6 +602,7 @@ fun AppThreadsScreen(
                                     selectedConversationKeys = setOf(thread.conversationKey)
                                 }
                             )
+                            }
                         }
                     }
                 }

@@ -1,5 +1,6 @@
 package com.phantom.checker.ui
 
+import com.phantom.checker.ui.components.pressableScale
 import android.Manifest
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -122,7 +123,7 @@ fun ContactsIntegrationSection(
 
         if (!hasContactsPerm) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().pressableScale(0.97f),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -145,7 +146,7 @@ fun ContactsIntegrationSection(
 
         // A. 暱稱綁定管理（不強制要求通訊錄權限也可手動綁定）
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().pressableScale(0.97f),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {

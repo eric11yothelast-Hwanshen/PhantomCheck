@@ -1,5 +1,6 @@
 package com.phantom.checker.ui
 
+import com.phantom.checker.ui.components.phantomEnter
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -345,7 +346,7 @@ fun MessageDetailScreen(
                     ) {
                         PhantomGlassCard(
                             glassState = glassState,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.phantomEnter(0, key = "md_card_0").fillMaxWidth(),
                             cornerRadius = 20.dp,
                             contentPadding = 14.dp
                         ) {
@@ -417,8 +418,8 @@ fun MessageDetailScreen(
                                 PhantomPrefs.formatMessageTime(ctx, sug.endMs, includeDate = false)
                             }
                             PhantomGlassCard(
-                                glassState = glassState,
-                                modifier = Modifier.fillMaxWidth(),
+                            glassState = glassState,
+                            modifier = Modifier.phantomEnter(1, key = "md_card_1").fillMaxWidth(),
                                 cornerRadius = 20.dp,
                                 contentPadding = 14.dp
                             ) {
@@ -558,7 +559,7 @@ fun MessageDetailScreen(
                         // 風險分數條與 AI 分析
                         PhantomGlassCard(
                             glassState = glassState,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.phantomEnter(2, key = "md_card_2").fillMaxWidth(),
                             cornerRadius = 20.dp,
                             contentPadding = 14.dp
                         ) {
@@ -781,7 +782,7 @@ fun MessageDetailScreen(
                         // AI 深度分析（段落式風險解說）
                         PhantomGlassCard(
                             glassState = glassState,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.phantomEnter(3, key = "md_card_3").fillMaxWidth(),
                             cornerRadius = 20.dp,
                             contentPadding = 14.dp
                         ) {
@@ -946,7 +947,7 @@ fun MessageDetailScreen(
                         // 標籤選擇
                         PhantomGlassCard(
                             glassState = glassState,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.phantomEnter(4, key = "md_card_4").fillMaxWidth(),
                             cornerRadius = 20.dp,
                             contentPadding = 14.dp
                         ) {

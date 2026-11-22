@@ -1,5 +1,7 @@
 package com.phantom.checker.ui
 
+import com.phantom.checker.ui.components.PhantomMotion
+import com.phantom.checker.ui.components.PhantomChevron
 import android.content.Context
 import android.os.Bundle
 import android.util.Log
@@ -216,7 +218,11 @@ private fun WhitelistManagementSection(
             }
         }
 
-        AnimatedVisibility(visible = showAddForm) {
+        AnimatedVisibility(
+ visible = showAddForm,
+ enter = PhantomMotion.ExpandEnter,
+ exit = PhantomMotion.ExpandExit
+ ) {
             Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -429,12 +435,16 @@ private fun WhitelistManagementSection(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Icon(
-                                imageVector = if (isGroupExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            PhantomChevron(
+ expanded = isGroupExpanded,
                                 contentDescription = if (isGroupExpanded) "收合" else "展開"
                             )
                         }
-                        AnimatedVisibility(visible = isGroupExpanded) {
+                        AnimatedVisibility(
+ visible = isGroupExpanded,
+ enter = PhantomMotion.ExpandEnter,
+ exit = PhantomMotion.ExpandExit
+ ) {
                             Column(
                                 modifier = Modifier.padding(top = 8.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp)

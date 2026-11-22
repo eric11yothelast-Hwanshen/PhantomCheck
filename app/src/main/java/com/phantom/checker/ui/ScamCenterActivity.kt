@@ -1,5 +1,7 @@
 package com.phantom.checker.ui
 
+import com.phantom.checker.ui.components.phantomEnter
+import androidx.compose.foundation.lazy.itemsIndexed
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -286,13 +288,15 @@ fun ScamCenterScreen(onBack: () -> Unit) {
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(scamMessages, key = { it.id }) { msg ->
-                            ScamMessageCard(
-                                message = msg,
-                                intelResult = intelResults[msg.id],
-                                glassState = glassState,
-                                onClick = { selectedMessage = msg }
-                            )
+                        itemsIndexed(scamMessages, key = { _, it -> it.id }) { idx, msg ->
+                            Box(modifier = Modifier.animateItem().phantomEnter(idx, key = msg.id)) {
+                                ScamMessageCard(
+                                    message = msg,
+                                    intelResult = intelResults[msg.id],
+                                    glassState = glassState,
+                                    onClick = { selectedMessage = msg }
+                                )
+                            }
                         }
                     }
                 }

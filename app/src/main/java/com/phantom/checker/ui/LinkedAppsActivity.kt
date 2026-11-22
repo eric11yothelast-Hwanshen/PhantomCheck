@@ -1,5 +1,6 @@
 package com.phantom.checker.ui
 
+import com.phantom.checker.ui.components.phantomItem
 import android.Manifest
 import android.app.AppOpsManager
 import android.content.Context
@@ -204,7 +205,7 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // 1. 即用能力（不需特殊權限）
-                item(key = "ready_alarm_timer") {
+                phantomItem(0, key = "ready_alarm_timer") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(
@@ -231,7 +232,7 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                 }
 
                 // 2. 本機能力卡
-                item(key = "local_capabilities") {
+                phantomItem(1, key = "local_capabilities") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text("本機系統能力狀態（返回即自動刷新）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -267,7 +268,7 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                 }
 
                 // 3. 雲端擴充 BYOK：GitHub
-                item(key = "cloud_github") {
+                phantomItem(2, key = "cloud_github") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(
@@ -346,7 +347,7 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                 }
 
                 // 4. 雲端擴充 BYOK：Discord Webhook
-                item(key = "cloud_discord") {
+                phantomItem(3, key = "cloud_discord") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(
@@ -402,7 +403,7 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                 }
 
                 // 4. #368 宣告式動作登錄檔（Action Registry：與 AI 助手能力宣告共用單一來源）
-                item(key = "linked_action_registry") {
+                phantomItem(4, key = "linked_action_registry") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(

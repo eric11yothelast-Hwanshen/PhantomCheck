@@ -1,5 +1,8 @@
 package com.phantom.checker.ui
 
+import com.phantom.checker.ui.components.phantomItem
+import com.phantom.checker.ui.components.phantomEnter
+import androidx.compose.foundation.lazy.itemsIndexed
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -263,12 +266,13 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                         .weight(1f),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(profiles, key = { it.id }) { profile ->
+                    itemsIndexed(profiles, key = { _, it -> it.id }) { idx, profile ->
                         val isActive = profile.id == activeId ||
                             (activeId == null && profiles.firstOrNull()?.id == profile.id)
                         val isTestingThis = testingProfileId == profile.id
                         val testResult = testResults[profile.id]
 
+                        Box(modifier = Modifier.animateItem().phantomEnter(idx, key = profile.id)) {
                         ProviderProfileCard(
                             profile = profile,
                             isActive = isActive,
@@ -308,9 +312,10 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                                 }
                             }
                         )
+                        }
                     }
 
-                    item(key = "purpose_models_card") {
+                    phantomItem(profiles.size.coerceAtMost(6), key = "purpose_models_card") {
                         PurposeModelsCard(
                             profiles = profiles,
                             activeProfile = activeProfile,
