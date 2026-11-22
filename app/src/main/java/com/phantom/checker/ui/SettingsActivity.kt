@@ -1678,6 +1678,100 @@ fun FilterSettingsScreen(
                                     }
                                 }
                             }
+
+                            // #392 夥伴（助手）頁頭部橫幅背景
+                            val hasPartnerHeaderBg = remember(bgUiVersion) {
+                                BackgroundImageHelper.resolveAssistantHeaderBackgroundFile(appCtx) != null
+                            }
+                            var partnerHeaderThumb by remember(bgUiVersion, hasPartnerHeaderBg) {
+                                mutableStateOf<ImageBitmap?>(null)
+                            }
+                            LaunchedEffect(bgUiVersion, hasPartnerHeaderBg) {
+                                partnerHeaderThumb = if (hasPartnerHeaderBg) {
+                                    BackgroundImageHelper.loadPreviewThumbnail(
+                                        BackgroundImageHelper.assistantHeaderBackgroundFile(appCtx)
+                                    )
+                                } else {
+                                    null
+                                }
+                            }
+                            val partnerHeaderPicker = rememberLauncherForActivityResult(
+                                ActivityResultContracts.PickVisualMedia()
+                            ) { uri ->
+                                if (uri == null) return@rememberLauncherForActivityResult
+                                scope.launch {
+                                    val res = BackgroundImageHelper.saveAssistantHeaderBackgroundFromUri(appCtx, uri)
+                                    res.fold(
+                                        onSuccess = {
+                                            ThemePreferences.bumpBackgroundVersion()
+                                            PhantomSettingsBus.notifyChanged()
+                                            bgUiVersion = ThemePreferences.getBackgroundVersion()
+                                            bgStatusMsg = "已更新「夥伴頁頭部背景」"
+                                            bgPickerFailed = false
+                                        },
+                                        onFailure = { err ->
+                                            bgStatusMsg = "設定夥伴頁頭部背景失敗：${err.localizedMessage ?: "未知錯誤"}"
+                                            bgPickerFailed = true
+                                        }
+                                    )
+                                }
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                if (partnerHeaderThumb != null) {
+                                    Image(
+                                        bitmap = partnerHeaderThumb!!,
+                                        contentDescription = "夥伴頁頭部背景",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "夥伴頁頭部背景",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = if (hasPartnerHeaderBg) "已自訂" else "預設主題底色",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        try {
+                                            partnerHeaderPicker.launch(
+                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                            )
+                                        } catch (e: Exception) {
+                                            bgStatusMsg = "無法開啟系統相簿選擇器（${e.localizedMessage ?: "不支援"}）"
+                                            bgPickerFailed = true
+                                        }
+                                    }
+                                ) {
+                                    Text("選擇圖片")
+                                }
+                                if (hasPartnerHeaderBg) {
+                                    TextButton(
+                                        onClick = {
+                                            BackgroundImageHelper.removeAssistantHeaderBackground(appCtx)
+                                            ThemePreferences.bumpBackgroundVersion()
+                                            PhantomSettingsBus.notifyChanged()
+                                            bgUiVersion = ThemePreferences.getBackgroundVersion()
+                                            bgStatusMsg = "已移除「夥伴頁頭部背景」"
+                                            bgPickerFailed = false
+                                        }
+                                    ) {
+                                        Text("移除")
+                                    }
+                                }
+                            }
                         }
 
                         bgStatusMsg?.let { msg ->

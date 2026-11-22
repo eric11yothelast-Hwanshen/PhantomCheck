@@ -1,7 +1,12 @@
 package com.phantom.checker.ui.partner
 
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,12 +27,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Wallpaper
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -38,17 +52,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,14 +77,17 @@ import com.phantom.checker.data.MemoryEntity
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.ui.AssistantHubActivity
 import com.phantom.checker.ui.PhantomGlassCard
+import com.phantom.checker.ui.ThemePreferences
 import com.phantom.checker.ui.components.PortraitCardSection
 import com.phantom.checker.ui.components.pressableScale
 import com.phantom.checker.util.AssistantAvatarCircle
 import com.phantom.checker.util.AssistantAvatarHelper
+import com.phantom.checker.util.BackgroundImageHelper
 import com.phantom.checker.util.PhantomPrefs
 import com.phantom.checker.util.PhantomSettingsBus
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
@@ -154,8 +177,31 @@ internal fun PartnerTab(
     val settingsTick by PhantomSettingsBus.version.collectAsState()
     val rawMemories by remember(db) { db.memoryDao().observeAll() }.collectAsState(initial = emptyList())
 
+    val scope = rememberCoroutineScope()
     var assistantName by remember(settingsTick) { mutableStateOf(PhantomPrefs.getAssistantName(appCtx)) }
     var avatarBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    var headerBgVersion by remember { mutableIntStateOf(ThemePreferences.getBackgroundVersion()) }
+    var headerBgBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    var showHeaderBgMenu by remember { mutableStateOf(false) }
+    val headerBgPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val res = BackgroundImageHelper.saveAssistantHeaderBackgroundFromUri(appCtx, uri)
+            res.fold(
+                onSuccess = {
+                    ThemePreferences.bumpBackgroundVersion()
+                    headerBgVersion = ThemePreferences.getBackgroundVersion()
+                    PhantomSettingsBus.notifyChanged()
+                    onShowMessage("已更新夥伴頁頭部背景")
+                },
+                onFailure = { err ->
+                    onShowMessage("設定背景失敗：${err.localizedMessage ?: "未知錯誤"}")
+                }
+            )
+        }
+    }
     val personalityPreset = remember(settingsTick) { PhantomPrefs.getAssistantPersonalityPreset(appCtx) }
     var activeTopics by remember(settingsTick) { mutableStateOf(PhantomPrefs.getProactiveTopics(appCtx)) }
     var chatMsgCount by remember { mutableStateOf(0) }
@@ -167,9 +213,21 @@ internal fun PartnerTab(
     val proactivePushTotal = remember(settingsTick) { PhantomPrefs.getProactivePushTotalCount(appCtx) }
 
     var goalProgressCount by remember { mutableStateOf(0) }
-    LaunchedEffect(settingsTick) {
+    LaunchedEffect(settingsTick, headerBgVersion) {
         assistantName = PhantomPrefs.getAssistantName(appCtx)
         avatarBitmap = AssistantAvatarHelper.loadAvatarBitmap(appCtx)
+        val headerBgFile = BackgroundImageHelper.resolveAssistantHeaderBackgroundFile(appCtx)
+        headerBgBitmap = if (headerBgFile != null) {
+            val dm = appCtx.resources.displayMetrics
+            BackgroundImageHelper.loadBackgroundBitmap(
+                ctx = appCtx,
+                file = headerBgFile,
+                targetW = dm.widthPixels.coerceAtLeast(1080),
+                targetH = (dm.density * 220f).toInt().coerceAtLeast(480)
+            )
+        } else {
+            null
+        }
         chatMsgCount = withContext(Dispatchers.IO) {
             runCatching {
                 db.chatDao().allSessions().sumOf { s -> db.chatDao().messagesForSession(s.id).size }
@@ -232,43 +290,150 @@ internal fun PartnerTab(
         )
     }
 
+    val isDarkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val scrimPref = remember(settingsTick, headerBgVersion) { PhantomPrefs.getBackgroundScrimPercent(appCtx) }
+    val scrimAlpha = remember(scrimPref, isDarkTheme) {
+        if (scrimPref < 0) {
+            if (isDarkTheme) 0.55f else 0.40f
+        } else {
+            (scrimPref / 100f).coerceIn(0.15f, 0.85f)
+        }
+    }
+    val pageBgColor = MaterialTheme.colorScheme.background
+
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 14.dp),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 100.dp),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(top = 0.dp, bottom = 100.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // #378 每日回顧／生活時間軸卡片（夥伴分頁頂部入口，無 API key 亦 100% 可用）
-        item(key = "partner_diary_card") {
-            PartnerDiaryCard(glassState = glassState)
-        }
-
-        // #379 長程目標追蹤卡（進度條＋連續天數＋里程碑；無 API key 手動建立全流程可用）
-        item(key = "partner_goals_card") {
-            PartnerGoalsCard(
-                glassState = glassState,
-                settingsVersion = settingsTick
-            )
-        }
-
-        // 1. 夥伴頭像、名字、陪伴天數與快捷按鈕
+        // #392 1. 夥伴頂部橫幅：去卡片化全寬區塊、76dp 頭像、名字與 chips、右上角 48dp 更換背景按鈕
         item(key = "partner_profile_header") {
-            PhantomGlassCard(
-                glassState = glassState,
-                cornerRadius = 20.dp,
-                contentPadding = 16.dp
+            val hasCustomBg = headerBgBitmap != null
+            val titleColor = if (hasCustomBg) Color.White else MaterialTheme.colorScheme.onSurface
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 164.dp)
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (headerBgBitmap != null) {
+                    Image(
+                        bitmap = headerBgBitmap!!,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.matchParentSize()
+                    )
+                    // 漸層遮罩確保文字可讀性並平順過渡至下方頁面底色
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colorStops = arrayOf(
+                                        0.0f to Color.Black.copy(alpha = (scrimAlpha * 0.65f).coerceIn(0.15f, 0.75f)),
+                                        0.68f to Color.Black.copy(alpha = scrimAlpha),
+                                        1.0f to pageBgColor
+                                    )
+                                )
+                            )
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                        pageBgColor
+                                    )
+                                )
+                            )
+                    )
+                }
+
+                // 右上角更換／移除背景按鈕（48dp 觸控目標）
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 6.dp, end = 8.dp)
+                ) {
+                    IconButton(
+                        onClick = {
+                            if (hasCustomBg) {
+                                showHeaderBgMenu = true
+                            } else {
+                                try {
+                                    headerBgPicker.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                } catch (e: Exception) {
+                                    onShowMessage("無法開啟相簿選擇器：${e.localizedMessage ?: "不支援"}")
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (hasCustomBg) Color.Black.copy(alpha = 0.35f)
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                            )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Wallpaper,
+                            contentDescription = "更換頭部背景",
+                            tint = if (hasCustomBg) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showHeaderBgMenu,
+                        onDismissRequest = { showHeaderBgMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("更換頭部背景") },
+                            onClick = {
+                                showHeaderBgMenu = false
+                                try {
+                                    headerBgPicker.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                } catch (e: Exception) {
+                                    onShowMessage("無法開啟相簿選擇器：${e.localizedMessage ?: "不支援"}")
+                                }
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("移除背景（恢復預設）") },
+                            onClick = {
+                                showHeaderBgMenu = false
+                                BackgroundImageHelper.removeAssistantHeaderBackground(appCtx)
+                                ThemePreferences.bumpBackgroundVersion()
+                                headerBgVersion = ThemePreferences.getBackgroundVersion()
+                                PhantomSettingsBus.notifyChanged()
+                                onShowMessage("已移除夥伴頁頭部背景")
+                            }
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 44.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         AssistantAvatarCircle(
                             avatarBitmap = avatarBitmap,
                             assistantName = assistantName,
-                            size = 68.dp
+                            size = 76.dp
                         )
                         Column(
                             modifier = Modifier.weight(1f),
@@ -278,7 +443,7 @@ internal fun PartnerTab(
                                 text = assistantName,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface,
+                                color = titleColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -288,23 +453,31 @@ internal fun PartnerTab(
                             ) {
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                    color = if (hasCustomBg) {
+                                        Color.Black.copy(alpha = 0.45f)
+                                    } else {
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                    }
                                 ) {
                                     Text(
                                         text = "陪伴第 $companionDays 天",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        color = if (hasCustomBg) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                     )
                                 }
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+                                    color = if (hasCustomBg) {
+                                        Color.Black.copy(alpha = 0.45f)
+                                    } else {
+                                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+                                    }
                                 ) {
                                     Text(
                                         text = personalityPreset.label,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        color = if (hasCustomBg) Color.White else MaterialTheme.colorScheme.onSecondaryContainer,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                     )
                                 }
@@ -323,6 +496,14 @@ internal fun PartnerTab(
                         }
                         OutlinedButton(
                             onClick = onOpenPersonaSettings,
+                            colors = if (hasCustomBg) {
+                                ButtonDefaults.outlinedButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
+                                    contentColor = MaterialTheme.colorScheme.onSurface
+                                )
+                            } else {
+                                ButtonDefaults.outlinedButtonColors()
+                            },
                             modifier = Modifier.weight(1f)
                         ) {
                             Text("改名／換頭像", maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -332,11 +513,29 @@ internal fun PartnerTab(
             }
         }
 
+        // #378 每日回顧／生活時間軸卡片（無 API key 亦 100% 可用）
+        item(key = "partner_diary_card") {
+            Box(modifier = Modifier.padding(horizontal = 14.dp)) {
+                PartnerDiaryCard(glassState = glassState)
+            }
+        }
+
+        // #379 長程目標追蹤卡（進度條＋連續天數＋里程碑；無 API key 手動建立全流程可用）
+        item(key = "partner_goals_card") {
+            Box(modifier = Modifier.padding(horizontal = 14.dp)) {
+                PartnerGoalsCard(
+                    glassState = glassState,
+                    settingsVersion = settingsTick
+                )
+            }
+        }
+
         // 2. 親密度進度條與等級（#350 可點擊進入詳情頁）
         item(key = "partner_intimacy_card") {
             PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier
+                    .padding(horizontal = 14.dp)
                     .fillMaxWidth()
                     .pressableScale()
                     .clip(RoundedCornerShape(20.dp))
@@ -384,7 +583,10 @@ internal fun PartnerTab(
 
         // 3. 近 7 天事件橫向滑動卡（#357 等高視覺化對齊）
         item(key = "partner_recent_events") {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.padding(horizontal = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text(
                     text = "近 7 天互動動態",
                     style = MaterialTheme.typography.titleSmall,
@@ -439,16 +641,19 @@ internal fun PartnerTab(
 
         // 4. 共用「我對你的瞭解」畫像卡（#337 同一元件復用）
         item(key = "partner_portrait_card") {
-            PortraitCardSection(
-                glassState = glassState,
-                onShowMessage = onShowMessage
-            )
+            Box(modifier = Modifier.padding(horizontal = 14.dp)) {
+                PortraitCardSection(
+                    glassState = glassState,
+                    onShowMessage = onShowMessage
+                )
+            }
         }
 
         // 5. 快捷區：主動推播主題開關 ＋ 個性／詳細度快速切換
         item(key = "partner_quick_controls") {
             PhantomGlassCard(
                 glassState = glassState,
+                modifier = Modifier.padding(horizontal = 14.dp),
                 cornerRadius = 18.dp,
                 contentPadding = 14.dp
             ) {

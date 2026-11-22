@@ -138,6 +138,88 @@ object BackgroundImageHelper {
         trimMemory()
     }
 
+    /** #392 夥伴（助手）頁頂部橫幅背景：沿用 bounds-first inSampleSize 降採樣＋內部儲存防 OOM */
+    fun assistantHeaderBackgroundFile(ctx: Context): File =
+        File(backgroundDir(ctx), "assistant_header.jpg")
+
+    fun resolveAssistantHeaderBackgroundFile(ctx: Context): File? {
+        val f = assistantHeaderBackgroundFile(ctx)
+        return if (PhantomPrefs.hasAssistantHeaderBackground(ctx) && f.exists() && f.length() > 0L) f else null
+    }
+
+    suspend fun saveAssistantHeaderBackgroundFromUri(
+        ctx: Context,
+        uri: Uri
+    ): Result<File> = withContext(Dispatchers.IO) {
+        val appCtx = ctx.applicationContext
+        try {
+            val dm = appCtx.resources.displayMetrics
+            val reqW = dm.widthPixels.coerceAtLeast(1080)
+            val reqH = (dm.density * 220f).toInt().coerceAtLeast(480)
+
+            val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            val openedBounds = appCtx.contentResolver.openInputStream(uri)
+                ?: return@withContext Result.failure(IllegalStateException("無法開啟圖片（可能是雲端圖未下載），請先將圖片下載至本機再選取"))
+            openedBounds.use { stream ->
+                BitmapFactory.decodeStream(stream, null, boundsOpts)
+            }
+            if (boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) {
+                return@withContext Result.failure(IllegalStateException("不支援或已損毀的圖片格式"))
+            }
+
+            val sampleSize = calculateInSampleSize(
+                rawWidth = boundsOpts.outWidth,
+                rawHeight = boundsOpts.outHeight,
+                reqWidth = reqW,
+                reqHeight = reqH
+            )
+            val decodeOpts = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val decoded = appCtx.contentResolver.openInputStream(uri)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, decodeOpts)
+            } ?: return@withContext Result.failure(IllegalStateException("圖片解碼失敗"))
+
+            val dir = backgroundDir(appCtx)
+            if (!dir.exists()) dir.mkdirs()
+            val outFile = assistantHeaderBackgroundFile(appCtx)
+            try {
+                FileOutputStream(outFile).use { fos ->
+                    if (!decoded.compress(Bitmap.CompressFormat.JPEG, 85, fos)) {
+                        return@withContext Result.failure(IllegalStateException("圖片壓縮儲存失敗"))
+                    }
+                }
+            } finally {
+                decoded.recycle()
+            }
+
+            PhantomPrefs.setHasAssistantHeaderBackground(appCtx, true)
+            trimMemory()
+            Result.success(outFile)
+        } catch (e: OutOfMemoryError) {
+            trimMemory()
+            Result.failure(IllegalStateException("圖片過大，記憶體不足（${e.message ?: "OOM"}）"))
+        } catch (e: SecurityException) {
+            Result.failure(IllegalStateException("無權限讀取此圖片，請改選本地圖片", e))
+        } catch (e: java.io.FileNotFoundException) {
+            Result.failure(IllegalStateException("無法開啟圖片（可能是雲端圖未下載），請先將圖片下載至本機再選取", e))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun removeAssistantHeaderBackground(ctx: Context) {
+        val appCtx = ctx.applicationContext
+        try {
+            val f = assistantHeaderBackgroundFile(appCtx)
+            if (f.exists()) f.delete()
+        } catch (_: Exception) {
+        }
+        PhantomPrefs.setHasAssistantHeaderBackground(appCtx, false)
+        trimMemory()
+    }
+
     suspend fun loadBackgroundBitmap(
         ctx: Context,
         file: File,

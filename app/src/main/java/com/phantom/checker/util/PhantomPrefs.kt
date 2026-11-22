@@ -1089,6 +1089,14 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putBoolean("bg_enabled_${layer.name.lowercase()}", enabled).apply()
     }
 
+    /** #392 夥伴（助手）頁頂部橫幅背景自訂狀態 */
+    fun hasAssistantHeaderBackground(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("assistant_header_background", false)
+
+    fun setHasAssistantHeaderBackground(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("assistant_header_background", enabled).apply()
+    }
+
     /** 背景暗色遮罩強度（-1 = 預設：日間 35%、夜間 60%；0..100 = 自訂百分比） */
     fun getBackgroundScrimPercent(ctx: Context): Int =
         prefs(ctx).getInt("bg_scrim_percent", -1).let { if (it < 0) -1 else it.coerceIn(0, 100) }

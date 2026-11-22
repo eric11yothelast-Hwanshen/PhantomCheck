@@ -103,6 +103,7 @@ object SettingsCatalog {
         SettingSearchItem("bg_scrim", "personalization", "背景暗色遮罩強度", "調整背景圖片上的暗色遮罩透明度以確保文字可讀性", listOf("個人化", "背景", "遮罩", "scrim", "暗度", "對比")),
         SettingSearchItem("glass_strength", "personalization", "玻璃卡片強度", "調整液態玻璃卡片的表面不透明度與視覺強度", listOf("個人化", "玻璃", "強度", "毛玻璃", "透明", "glass")),
         SettingSearchItem("appearance_card_bg", "appearance", "卡片底色模式", "選擇跟隨玻璃強度、透明模式（0–100% 滑桿）或深色底", listOf("卡片", "底色", "背景", "透明", "深色", "黑底", "外觀")),
+        SettingSearchItem("assistant_header_background", "personalization", "夥伴頁頭部背景", "自訂或移除夥伴（助手）頁頂部橫幅背景圖片", listOf("夥伴", "助手", "頭部", "橫幅", "背景", "封面", "圖片")),
         SettingSearchItem("memory_chat_capture", "memory_assistant", "聊天記憶擷取", "允許 AI 在對話中擷取個人事實、人物、行程與偏好", listOf("記憶", "記憶庫", "擷取", "聊天記憶", "自動記憶", "memory", "確認卡")),
         SettingSearchItem("memory_write_confirm", "memory_assistant", "記憶寫入前先顯示確認卡", "開啟時，AI 產生的新記憶會先在 AI 助手對話中顯示確認卡，由您選擇寫入／保留；關閉時直接寫入（敏感記憶與衝突仍必經確認）。您隨時可在記憶頁手動新增、編輯或刪除記憶。", listOf("確認卡", "記憶確認", "寫入確認", "AI 記憶")),
         SettingSearchItem("memory_normal_top_k", "memory_assistant", "記憶注入筆數（正常模式）", "設定正常模式下每次 AI 對話注入的相關記憶筆數上限（1–8 筆，預設 8 筆，總預算 ≤250 tokens）", listOf("記憶", "注入", "筆數", "topk", "正常模式", "記憶預算", "記憶筆數")),
