@@ -1,6 +1,8 @@
 // #301 來源：MainActivity.kt（StatsTab、RiskCountCard、StatsUiState、DayCountUi、DailyAppRankUi）
 package com.phantom.checker.ui.stats
 
+import com.phantom.checker.ui.components.phantomItem
+import com.phantom.checker.ui.components.PhantomChevron
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -343,14 +345,16 @@ internal fun StatsTab(
                         onShowMessage("產生分享圖卡失敗：${res.exceptionOrNull()?.message ?: "未知錯誤"}")
                     }
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pressableScale(0.97f)
             ) {
                 Text("分享本週統計報告圖卡（本機產生）")
             }
         }
         // #349 早晚簡報玻璃卡（取代每日 AI 摘要，首次展開閱讀計入親密值）
         if ("stats_briefing" in visibleCards) {
-        item(key = "stats_briefing") {
+        phantomItem(0, key = "stats_briefing") {
             val lastSummary = remember(statsSettingsVersion, statsResumeTrigger) {
                 PhantomPrefs.getLastBriefingSummary(appCtx)
             }
@@ -407,8 +411,8 @@ internal fun StatsTab(
                         )
                     }
                     IconButton(onClick = { briefingExpanded = !briefingExpanded }) {
-                        Icon(
-                            imageVector = if (briefingExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        PhantomChevron(
+ expanded = briefingExpanded,
                             contentDescription = if (briefingExpanded) "收合早晚簡報" else "展開閱讀早晚簡報"
                         )
                     }
@@ -522,8 +526,8 @@ internal fun StatsTab(
                         weeklyExpanded = !weeklyExpanded
                         PhantomPrefs.setWeeklySummaryExpanded(appCtx, weeklyExpanded)
                     }) {
-                        Icon(
-                            imageVector = if (weeklyExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        PhantomChevron(
+ expanded = weeklyExpanded,
                             contentDescription = if (weeklyExpanded) "收合本週摘要" else "展開本週摘要"
                         )
                     }
@@ -753,7 +757,7 @@ internal fun StatsTab(
 
         // 本週 7 日訊息量簡易 Bar Chart（純 Compose Canvas）
         if ("stats_weekly_bar" in visibleCards) {
-        item(key = "stats_weekly_bar") {
+        phantomItem(1, key = "stats_weekly_bar") {
             val barColor = MaterialTheme.colorScheme.primary
             val trackColor = MaterialTheme.colorScheme.surfaceVariant
             PhantomGlassCard(
@@ -826,7 +830,7 @@ internal fun StatsTab(
 
         // 風險分布三色計數卡
         if ("stats_risk_dist" in visibleCards) {
-        item(key = "stats_risk_dist") {
+        phantomItem(2, key = "stats_risk_dist") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -858,7 +862,7 @@ internal fun StatsTab(
 
         // 今日 AI 智慧標記分布
         if ("stats_ai_tags" in visibleCards && state.todayAiTagCounts.isNotEmpty()) {
-            item(key = "stats_ai_tags") {
+            phantomItem(3, key = "stats_ai_tags") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = "今日 AI 智慧標記",
@@ -885,7 +889,7 @@ internal fun StatsTab(
 
         // 今日每小時分布（Task J1：純 Canvas 24 小時 mini bar）
         if ("stats_hourly" in visibleCards) {
-        item(key = "stats_hourly") {
+        phantomItem(4, key = "stats_hourly") {
             val hourBarColor = MaterialTheme.colorScheme.secondary
             val hourTrackColor = MaterialTheme.colorScheme.surfaceVariant
             PhantomGlassCard(
@@ -953,7 +957,7 @@ internal fun StatsTab(
 
         // 今日 App 訊息量排行榜 Top 5（#218）
         if ("stats_daily_top_apps" in visibleCards) {
-            item(key = "stats_daily_top_apps") {
+            phantomItem(5, key = "stats_daily_top_apps") {
                 val barColor = MaterialTheme.colorScheme.primary
                 val trackColor = MaterialTheme.colorScheme.surfaceVariant
                 PhantomGlassCard(
@@ -1039,7 +1043,7 @@ internal fun StatsTab(
 
         // 騷擾佔比（Task J2：行銷 + 垃圾通知 / 總訊息，Canvas arc）
         if ("stats_harassment" in visibleCards) {
-        item(key = "stats_harassment") {
+        phantomItem(6, key = "stats_harassment") {
             val total = state.totalMessageCount.coerceAtLeast(0)
             val harass = state.harassmentCount.coerceIn(0, total.coerceAtLeast(0))
             val ratio = if (total > 0) harass.toFloat() / total.toFloat() else 0f
@@ -1107,7 +1111,7 @@ internal fun StatsTab(
 
         // Top 5 高風險 App 清單
         if ("stats_top_risky" in visibleCards) {
-        item(key = "stats_top_risky") {
+        phantomItem(7, key = "stats_top_risky") {
             PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
@@ -1179,7 +1183,7 @@ internal fun StatsTab(
 
         // 7 日風險趨勢折線圖（#218）
         if ("stats_risk_trend" in visibleCards) {
-            item(key = "stats_risk_trend") {
+            phantomItem(8, key = "stats_risk_trend") {
                 val lineColor = MaterialTheme.colorScheme.error
                 val gridColor = MaterialTheme.colorScheme.surfaceVariant
                 PhantomGlassCard(
@@ -1261,7 +1265,7 @@ internal fun StatsTab(
 
         // 未讀 / 已讀比例環形（#218）
         if ("stats_unread_ratio" in visibleCards) {
-            item(key = "stats_unread_ratio") {
+            phantomItem(9, key = "stats_unread_ratio") {
                 val total = state.totalMessageCount.coerceAtLeast(0)
                 val unread = state.unreadTotalCount.coerceIn(0, total.coerceAtLeast(0))
                 val read = (total - unread).coerceAtLeast(0)
@@ -1329,7 +1333,7 @@ internal fun StatsTab(
 
         // 各 App 訊息佔比橫條前 8（#218）
         if ("stats_app_share" in visibleCards) {
-            item(key = "stats_app_share") {
+            phantomItem(10, key = "stats_app_share") {
                 val top8 = state.rawAppGroups.sortedByDescending { it.cnt }.take(8)
                 val totalAll = state.rawAppGroups.sumOf { it.cnt }.coerceAtLeast(1)
                 val barColor = MaterialTheme.colorScheme.tertiary
@@ -1406,7 +1410,7 @@ internal fun StatsTab(
 
         // 待辦完成率環形（#218）
         if ("stats_todo_done" in visibleCards) {
-            item(key = "stats_todo_done") {
+            phantomItem(11, key = "stats_todo_done") {
                 val total = state.todoTotalCount.coerceAtLeast(0)
                 val done = state.todoDoneCount.coerceIn(0, total.coerceAtLeast(0))
                 val ratio = if (total > 0) done.toFloat() / total.toFloat() else 0f
@@ -1472,7 +1476,7 @@ internal fun StatsTab(
         }
 
         // #381 Health Connect 7 日睡眠與步數迷你趨勢條（本機聚合，無 API key 亦可用；未授權誠實降級）
-        item(key = "stats_health_7d") {
+        phantomItem(12, key = "stats_health_7d") {
             val ctx = LocalContext.current
             val appCtx = ctx.applicationContext
             var trend by remember { mutableStateOf<List<com.phantom.checker.util.HealthConnectBridge.DailyHealthPoint>>(emptyList()) }

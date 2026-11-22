@@ -1,5 +1,6 @@
 package com.phantom.checker.ui.partner
 
+import com.phantom.checker.ui.components.pressableScale
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -108,13 +109,22 @@ internal fun PartnerGoalsCard(
             } else {
                 items.take(5).forEach { item ->
                     val g = item.goal
-                    val progressFraction = (item.completedCount.toFloat() / g.targetCount.coerceAtLeast(1).toFloat())
+                    val targetProgress = (item.completedCount.toFloat() / g.targetCount.coerceAtLeast(1).toFloat())
                         .coerceIn(0f, 1f)
+                    val progressFraction by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = targetProgress,
+                        animationSpec = androidx.compose.animation.core.spring(
+                            dampingRatio = 0.85f,
+                            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                        ),
+                        label = "goalProgress"
+                    )
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
                         modifier = Modifier
                             .fillMaxWidth()
+                            .pressableScale(0.98f, RoundedCornerShape(14.dp))
                             .clickable { managingItem = item }
                     ) {
                         Column(

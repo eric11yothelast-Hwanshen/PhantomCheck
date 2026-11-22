@@ -1,5 +1,11 @@
 package com.phantom.checker.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
+import com.phantom.checker.ui.components.PhantomMotion
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -1646,8 +1652,28 @@ private fun PhantomCheckApp(
                 }
             }
 
-            saveableStateHolder.SaveableStateProvider(selectedTab.name) {
-                when (selectedTab) {
+            // #398 M4：分頁切換進出場（AnimatedContent，stable）——依分頁順序決定滑動方向；
+            // 退場僅短淡出以縮短新舊分頁同時組合的時間。各分頁狀態仍以 SaveableStateProvider(tab.name) 保留。
+            AnimatedContent(
+                targetState = selectedTab,
+                modifier = Modifier.fillMaxSize(),
+                transitionSpec = {
+                    val dir = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                    (fadeIn(
+                        animationSpec = tween(220, delayMillis = 60, easing = PhantomMotion.EmphasizedDecelerate)
+                    ) + slideInHorizontally(
+                        animationSpec = tween(260, easing = PhantomMotion.EmphasizedDecelerate)
+                    ) { full -> dir * full / 12 })
+                        .togetherWith(fadeOut(animationSpec = tween(110)))
+                        .using(SizeTransform(clip = false) { _, _ -> snap() })
+                },
+                label = "mainTabContent"
+            ) { tab ->
+            saveableStateHolder.SaveableStateProvider(tab.name) {
+              androidx.compose.runtime.CompositionLocalProvider(
+                  com.phantom.checker.ui.components.LocalPhantomEnterRegistry provides remember { HashSet<Any>() }
+              ) {
+                when (tab) {
                     MainTab.MESSAGES -> MessagesHomeTab(
                         todayCount = todayCount,
                         unreadCount = unreadCount,
@@ -1848,6 +1874,8 @@ private fun PhantomCheckApp(
                         }
                     )
                 }
+              }
+            }
             }
             }
         }

@@ -1,6 +1,9 @@
 // #301 來源：MainActivity.kt（NotesTab、NoteCardItem、NoteEditorDialog、ManualMemoRuleDialog、TuneIcon）
 package com.phantom.checker.ui.notes
 
+import com.phantom.checker.ui.components.PhantomMotion
+import com.phantom.checker.ui.components.phantomEnter
+import com.phantom.checker.ui.components.PhantomChevron
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -912,12 +915,8 @@ internal fun NotesTab(
                             PhantomPrefs.setNotesTodoCollapsed(ctx, todoSectionCollapsed.value)
                         }
                     ) {
-                        Icon(
-                            imageVector = if (todoSectionCollapsed.value) {
-                                Icons.Default.KeyboardArrowDown
-                            } else {
-                                Icons.Default.KeyboardArrowUp
-                            },
+                        PhantomChevron(
+                            expanded = !todoSectionCollapsed.value,
                             contentDescription = if (todoSectionCollapsed.value) "展開待辦事項" else "收起待辦事項",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -927,8 +926,8 @@ internal fun NotesTab(
                 // 展開狀態：篩選膠囊列 + 完整待辦清單（依智慧排序：未逾期近者在上、已逾期下移、已完成殿後）
                 AnimatedVisibility(
                     visible = !todoSectionCollapsed.value,
-                    enter = expandVertically(),
-                    exit = shrinkVertically()
+                    enter = PhantomMotion.ExpandEnter,
+                    exit = PhantomMotion.ExpandExit
                 ) {
                     val todoListScrollState = key(todoFilter) { rememberScrollState() }
                     Column(modifier = Modifier.heightIn(max = maxTodoExpandedHeight)) {
@@ -992,8 +991,8 @@ internal fun NotesTab(
                 // 收合狀態：只顯示最快到期的未完成待辦（或最少量的提示文字）
                 AnimatedVisibility(
                     visible = todoSectionCollapsed.value,
-                    enter = expandVertically(),
-                    exit = shrinkVertically()
+                    enter = PhantomMotion.ExpandEnter,
+                    exit = PhantomMotion.ExpandExit
                 ) {
                     when {
                         nextUpcomingTodo != null -> NotesTodoRow(
@@ -1075,7 +1074,8 @@ internal fun NotesTab(
                                 verticalArrangement = Arrangement.spacedBy(12.dp),
                                 contentPadding = PaddingValues(bottom = 120.dp)
                             ) {
-                                items(notes, key = { it.id }) { note ->
+                                itemsIndexed(notes, key = { _, it -> it.id }) { noteIndex, note ->
+                                  Box(modifier = Modifier.animateItem().phantomEnter(noteIndex, key = note.id)) {
                                     NoteCardItem(
                                         note = note,
                                         glassState = glassState,
@@ -1085,6 +1085,7 @@ internal fun NotesTab(
                                         onTogglePin = onTogglePinNote,
                                         onAutoNoteLongPress = onAutoNoteLongPress
                                     )
+                                  }
                                 }
                             }
                         }
@@ -1909,8 +1910,8 @@ private fun LocalCalendarSectionCard(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                PhantomChevron(
+ expanded = expanded,
                     contentDescription = if (expanded) "收合行事曆" else "展開行事曆",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )

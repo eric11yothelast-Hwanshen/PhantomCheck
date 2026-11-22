@@ -1,5 +1,6 @@
 package com.phantom.checker.ui.partner
 
+import com.phantom.checker.ui.components.PhantomMotion
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -350,7 +351,11 @@ internal fun PartnerDiaryCard(
                                             Text("隱藏", style = MaterialTheme.typography.labelSmall)
                                         }
                                     }
-                                    AnimatedVisibility(visible = annotationExpanded) {
+                                    AnimatedVisibility(
+ visible = annotationExpanded,
+ enter = PhantomMotion.ExpandEnter,
+ exit = PhantomMotion.ExpandExit
+ ) {
                                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             when {
                                                 annotationLoading -> Text(

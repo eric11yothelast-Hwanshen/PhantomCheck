@@ -1,5 +1,8 @@
 package com.phantom.checker.ui.memory
 
+import com.phantom.checker.ui.components.PhantomMotion
+import com.phantom.checker.ui.components.phantomItem
+import com.phantom.checker.ui.components.PhantomChevron
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -568,8 +571,8 @@ internal fun MemoryTab(
         // 可收合搜尋框（點擊頂部搜尋鈕展開並自動聚焦；有字維持展開；清空失焦收合；返回鍵先清字再收合）
         AnimatedVisibility(
             visible = isSearchVisible,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = PhantomMotion.ExpandEnter,
+            exit = PhantomMotion.ExpandExit
         ) {
             OutlinedTextField(
                 value = searchQuery,
@@ -621,8 +624,8 @@ internal fun MemoryTab(
         // 搜尋結果狀態條（有輸入關鍵字且非批次模式時，顯示符合筆數與快速進入批次管理）
         AnimatedVisibility(
             visible = qTrim.isNotEmpty() && !isBatchMode,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = PhantomMotion.ExpandEnter,
+            exit = PhantomMotion.ExpandExit
         ) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
@@ -659,8 +662,8 @@ internal fun MemoryTab(
         // 批次模式操作條（支援依搜尋結果全選→確認刪除）
         AnimatedVisibility(
             visible = isBatchMode,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = PhantomMotion.ExpandEnter,
+            exit = PhantomMotion.ExpandExit
         ) {
             val allVisibleIds = remember(visibleSelectableMemories) {
                 visibleSelectableMemories.map { it.id }.toSet()
@@ -872,8 +875,8 @@ internal fun MemoryTab(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = if (filterChipsCollapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                    PhantomChevron(
+ expanded = !(filterChipsCollapsed),
                         contentDescription = if (filterChipsCollapsed) "展開篩選標籤" else "收合篩選標籤",
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
@@ -1133,7 +1136,7 @@ internal fun MemoryTab(
             ) {
                 // 0. #337 「我對你的瞭解」畫像卡（≤200 tokens，敏感記憶絕不入卡）
                 if (selectedFilter == MemoryFilterChip.ALL && qTrim.isEmpty()) {
-                    item(key = "section_portrait_card") {
+                    phantomItem(0, key = "section_portrait_card") {
                         com.phantom.checker.ui.components.PortraitCardSection(
                             glassState = glassState,
                             onShowMessage = onShowMessage
@@ -1143,7 +1146,7 @@ internal fun MemoryTab(
 
                 // 1. 衝突待確認區塊（醒目提示＋兩按鈕裁定）
                 if (showConflicts && (conflictMemories.isNotEmpty() || selectedFilter == MemoryFilterChip.CONFLICT)) {
-                    item(key = "section_conflict") {
+                    phantomItem(1, key = "section_conflict") {
                         val conflictGroups = remember(conflictMemories) {
                             conflictMemories.groupBy { m ->
                                 "${m.category}|${MemoryEngine.normalizeSubjectKey(m.subject)}"
@@ -1280,7 +1283,7 @@ internal fun MemoryTab(
 
                 // 1.5 #335 防詐免疫記憶專區（category=scam_immunity，附來源訊息跳轉）
                 if (showScamImmunity && (scamImmunityMemories.isNotEmpty() || selectedFilter == MemoryFilterChip.SCAM_IMMUNITY)) {
-                    item(key = "section_scam_immunity") {
+                    phantomItem(2, key = "section_scam_immunity") {
                         CollapsibleMemorySectionCard(
                             title = "🛡️ 防詐免疫（${scamImmunityMemories.size} 筆）",
                             subtitle = "曾遇過的詐騙話術與免疫特徵；收到金錢、催促或驗證碼訊息時自動交叉比對",
@@ -1360,7 +1363,7 @@ internal fun MemoryTab(
 
                 // 2. 長期記憶區塊
                 if (showLongTerm) {
-                    item(key = "section_long_term") {
+                    phantomItem(3, key = "section_long_term") {
                         CollapsibleMemorySectionCard(
                             title = "長期記憶（${longTermMemories.size} 筆）",
                             subtitle = "持久保存的人物、地點、偏好、習慣與關係（敏感記憶僅本機顯示不外送）",
@@ -1439,7 +1442,7 @@ internal fun MemoryTab(
 
                 // 3. 短期記憶區塊（顯示到期日）
                 if (showShortTerm) {
-                    item(key = "section_short_term") {
+                    phantomItem(4, key = "section_short_term") {
                         CollapsibleMemorySectionCard(
                             title = "短期記憶（${shortTermMemories.size} 筆）",
                             subtitle = "具時效性的近期狀態或臨時行程，到期後自動轉入「已封存」",
@@ -1518,7 +1521,7 @@ internal fun MemoryTab(
 
                 // 4. 已封存區塊（過期短期記憶或被取代的衝突版本，可一鍵恢復）
                 if (showArchived) {
-                    item(key = "section_archived") {
+                    phantomItem(5, key = "section_archived") {
                         CollapsibleMemorySectionCard(
                             title = "已封存（${archivedMemories.size} 筆）",
                             subtitle = "已過期的短期記憶或衝突裁定後封存的歷史紀錄，不會注入 AI 對話，可隨時恢復",
@@ -1591,7 +1594,7 @@ internal fun MemoryTab(
 
                 // 5. 整合區塊：自動備忘錄（notes source=auto）
                 if (showAutoMemo) {
-                    item(key = "section_auto_memo") {
+                    phantomItem(6, key = "section_auto_memo") {
                         CollapsibleMemorySectionCard(
                             title = "自動備忘錄（${autoNotes.size} 筆）",
                             subtitle = "AI 分析新通知時自動擷取的備忘紀錄（與「記事」分頁同步）",
@@ -1675,7 +1678,7 @@ internal fun MemoryTab(
 
                 // 6. 整合區塊：白名單規則（ai_rules kind=whitelist）
                 if (showWhitelist) {
-                    item(key = "section_whitelist") {
+                    phantomItem(7, key = "section_whitelist") {
                         CollapsibleMemorySectionCard(
                             title = "白名單規則（${filteredWhitelists.size} 筆）",
                             subtitle = "信任的寄件者或通知規則（命中時優先標為安全並跳過防詐情報預查）",
@@ -1775,7 +1778,7 @@ internal fun MemoryTab(
 
                 // 7. 整合區塊：標籤規則（user_tag_rules ＋ ai_rules kind=tag）
                 if (showTagRules) {
-                    item(key = "section_tag_rules") {
+                    phantomItem(8, key = "section_tag_rules") {
                         val totalTagRules = filteredUserTagRules.size + filteredAiTagRules.size
                         CollapsibleMemorySectionCard(
                             title = "標籤規則（$totalTagRules 筆）",
@@ -1921,7 +1924,7 @@ internal fun MemoryTab(
 
                 // 8. 整合區塊：備忘規則（memo_rules）
                 if (showMemoRules) {
-                    item(key = "section_memo_rules") {
+                    phantomItem(9, key = "section_memo_rules") {
                         CollapsibleMemorySectionCard(
                             title = "備忘規則（${filteredMemoRules.size} 筆）",
                             subtitle = "控制特定 App／寄件者／關鍵字「一律記事、一律待辦或永不記事」",
@@ -2048,16 +2051,16 @@ private fun CollapsibleMemorySectionCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Icon(
-                imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+            PhantomChevron(
+ expanded = expanded,
                 contentDescription = if (expanded) "收合區塊" else "展開區塊",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         AnimatedVisibility(
             visible = expanded,
-            enter = expandVertically(),
-            exit = shrinkVertically()
+            enter = PhantomMotion.ExpandEnter,
+            exit = PhantomMotion.ExpandExit
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))

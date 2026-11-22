@@ -1,5 +1,6 @@
 package com.phantom.checker.ui.partner
 
+import com.phantom.checker.ui.components.phantomItem
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -307,7 +308,7 @@ internal fun PartnerTab(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // #392 1. 夥伴頂部橫幅：去卡片化全寬區塊、76dp 頭像、名字與 chips、右上角 48dp 更換背景按鈕
-        item(key = "partner_profile_header") {
+        phantomItem(0, key = "partner_profile_header") {
             val hasCustomBg = headerBgBitmap != null
             val titleColor = if (hasCustomBg) Color.White else MaterialTheme.colorScheme.onSurface
             Box(
@@ -514,14 +515,14 @@ internal fun PartnerTab(
         }
 
         // #378 每日回顧／生活時間軸卡片（無 API key 亦 100% 可用）
-        item(key = "partner_diary_card") {
+        phantomItem(1, key = "partner_diary_card") {
             Box(modifier = Modifier.padding(horizontal = 14.dp)) {
                 PartnerDiaryCard(glassState = glassState)
             }
         }
 
         // #379 長程目標追蹤卡（進度條＋連續天數＋里程碑；無 API key 手動建立全流程可用）
-        item(key = "partner_goals_card") {
+        phantomItem(2, key = "partner_goals_card") {
             Box(modifier = Modifier.padding(horizontal = 14.dp)) {
                 PartnerGoalsCard(
                     glassState = glassState,
@@ -531,7 +532,7 @@ internal fun PartnerTab(
         }
 
         // 2. 親密度進度條與等級（#350 可點擊進入詳情頁）
-        item(key = "partner_intimacy_card") {
+        phantomItem(3, key = "partner_intimacy_card") {
             PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier
@@ -582,7 +583,7 @@ internal fun PartnerTab(
         }
 
         // 3. 近 7 天事件橫向滑動卡（#357 等高視覺化對齊）
-        item(key = "partner_recent_events") {
+        phantomItem(4, key = "partner_recent_events") {
             Column(
                 modifier = Modifier.padding(horizontal = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -640,7 +641,7 @@ internal fun PartnerTab(
         }
 
         // 4. 共用「我對你的瞭解」畫像卡（#337 同一元件復用）
-        item(key = "partner_portrait_card") {
+        phantomItem(5, key = "partner_portrait_card") {
             Box(modifier = Modifier.padding(horizontal = 14.dp)) {
                 PortraitCardSection(
                     glassState = glassState,
@@ -650,7 +651,7 @@ internal fun PartnerTab(
         }
 
         // 5. 快捷區：主動推播主題開關 ＋ 個性／詳細度快速切換
-        item(key = "partner_quick_controls") {
+        phantomItem(6, key = "partner_quick_controls") {
             PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.padding(horizontal = 14.dp),

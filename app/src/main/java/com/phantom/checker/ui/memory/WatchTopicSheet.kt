@@ -1,5 +1,7 @@
 package com.phantom.checker.ui.memory
 
+import com.phantom.checker.ui.components.phantomEnter
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -200,14 +202,17 @@ fun WatchTopicManagerDialog(
                             .heightIn(max = 320.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(topics, key = { it.id }) { topic ->
+                        itemsIndexed(topics, key = { _, it -> it.id }) { idx, topic ->
                             val isCandidate = topic.source == WatchTopicEntity.SOURCE_AI_EXTRACTED &&
                                 topic.confidence == WatchTopicEntity.CONFIDENCE_LOW
                             val isMuted = topic.status == WatchTopicEntity.STATUS_MUTED
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier
+                                    .animateItem()
+                                    .phantomEnter(idx, key = topic.id)
+                                    .fillMaxWidth()
                             ) {
                                 Column(
                                     modifier = Modifier.padding(10.dp),

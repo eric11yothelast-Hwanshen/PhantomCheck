@@ -1,6 +1,10 @@
 // #301 來源：MainActivity.kt（MessagesHomeTab、SearchResultsSection、MessageFilter、SearchRiskFilter、AppGroupUi）
 package com.phantom.checker.ui.home
 
+import com.phantom.checker.ui.components.PhantomAnimatedCount
+import com.phantom.checker.ui.components.PhantomChevron
+import com.phantom.checker.ui.components.phantomEnter
+import com.phantom.checker.ui.components.PhantomMotion
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -430,7 +434,11 @@ internal fun MessagesHomeTab(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(if (isOverlapMode) 8.dp else 12.dp)
     ) {
-        AnimatedVisibility(visible = offlineRetryEnabled && pendingRetryCount > 0) {
+        AnimatedVisibility(
+ visible = offlineRetryEnabled && pendingRetryCount > 0,
+ enter = PhantomMotion.ExpandEnter,
+ exit = PhantomMotion.ExpandExit
+ ) {
             PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.fillMaxWidth(),
@@ -506,11 +514,17 @@ internal fun MessagesHomeTab(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "今日 $todayCount 則・未讀 $unreadCount・詐騙 $todayScamCount",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    FlowRow(
+                        verticalArrangement = Arrangement.Center,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text("今日 ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        PhantomAnimatedCount(count = todayCount, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(" 則・未讀 ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        PhantomAnimatedCount(count = unreadCount, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text("・詐騙 ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        PhantomAnimatedCount(count = todayScamCount, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    }
                     Spacer(Modifier.height(2.dp))
                     Text(
                         text = "點選 App 查看訊息；長按可釘選、靜音或刪除",
@@ -706,6 +720,7 @@ internal fun MessagesHomeTab(
             Spacer(Modifier.width(2.dp))
             Box(
                 modifier = Modifier
+                    .pressableScale(0.92f)
                     .size(34.dp)
                     .clip(CircleShape)
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
@@ -715,11 +730,11 @@ internal fun MessagesHomeTab(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = if (filterChipsCollapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                PhantomChevron(
+                    expanded = !filterChipsCollapsed,
                     contentDescription = if (filterChipsCollapsed) "展開篩選標籤" else "收合篩選標籤",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp)
+                    iconSize = 18.dp
                 )
             }
         }
@@ -1046,6 +1061,8 @@ internal fun MessagesHomeTab(
                         }
                         val itemStackModifier = Modifier
                         val rowModifier = Modifier
+                            .animateItem()
+                            .phantomEnter(idx, key = app.packageName)
                             .fillMaxWidth()
                             .then(
                                 if (idx == 0) {
@@ -1234,11 +1251,11 @@ internal fun MessagesHomeTab(
                             }
                         }
                     }
-                    items(filteredMessages, key = { it.id }, contentType = { "message_card" }) { m ->
+                    itemsIndexed(filteredMessages, key = { _, it -> it.id }, contentType = { _, _ -> "message_card" }) { msgIndex, m ->
                         val checked = m.id in selectedIds
                         val msgTags = messageTagsMap[m.id].orEmpty()
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.animateItem().phantomEnter(msgIndex, key = m.id).fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             if (isMultiSelectMode) {

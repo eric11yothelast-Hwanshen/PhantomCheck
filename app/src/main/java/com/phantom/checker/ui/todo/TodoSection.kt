@@ -242,9 +242,16 @@ internal fun NotesTodoRow(
     }
     val overdueColor = Color(0xFFFF6D00)
 
+    val doneAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (todo.isDone) 0.62f else 1f,
+        animationSpec = androidx.compose.animation.core.tween(200),
+        label = "todoDoneAlpha"
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .pressableScale(0.98f)
+            .graphicsLayer { alpha = doneAlpha }
             .clickable { onEdit(todo) }
             .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
