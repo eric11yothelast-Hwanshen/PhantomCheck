@@ -1,5 +1,9 @@
 package com.phantom.checker.ui
 
+import com.phantom.checker.ui.components.pressableScale
+import com.phantom.checker.ui.components.phantomSheen
+import com.phantom.checker.ui.components.PhantomMotion
+import com.phantom.checker.ui.components.PhantomChevron
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -2909,7 +2913,9 @@ fun ChatAssistantTab(
                         val isUser = msg.role == ChatMessageEntity.ROLE_USER
                         androidx.compose.runtime.CompositionLocalProvider(LocalDensity provides chatDensity) {
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .animateItem()
+                                .fillMaxWidth(),
                             horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
                         ) {
                             val bubbleTimeText = remember(msg.id, msg.createdAt) {
@@ -2922,6 +2928,7 @@ fun ChatAssistantTab(
                                     modifier = Modifier
                                         .widthIn(max = userBubbleMaxWidth)
                                         .clip(RoundedCornerShape(bubbleCornerDp.dp))
+                                        .phantomSheen(bubbleCornerDp.dp, isDark = true)
                                         .combinedClickable(
                                             onClick = {},
                                             onLongClick = {
@@ -3040,8 +3047,8 @@ fun ChatAssistantTab(
                                                             overflow = TextOverflow.Ellipsis,
                                                             modifier = Modifier.weight(1f)
                                                         )
-                                                        Icon(
-                                                            imageVector = if (thinkingExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                                        PhantomChevron(
+ expanded = thinkingExpanded,
                                                             contentDescription = if (thinkingExpanded) "收合推演思路" else "展開推演思路",
                                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                                             modifier = Modifier.size(18.dp)
@@ -3049,8 +3056,8 @@ fun ChatAssistantTab(
                                                     }
                                                     AnimatedVisibility(
                                                         visible = thinkingExpanded,
-                                                        enter = expandVertically() + fadeIn(),
-                                                        exit = shrinkVertically() + fadeOut()
+                                                        enter = PhantomMotion.ExpandEnter,
+                                                        exit = PhantomMotion.ExpandExit
                                                     ) {
                                                         Row(
                                                             modifier = Modifier
@@ -5607,7 +5614,9 @@ fun ChatAssistantTab(
                 enabled = (inputText.isNotBlank() || pendingImageAttachment != null) && !isSending,
                 shape = CircleShape,
                 contentPadding = PaddingValues(0.dp),
-                modifier = Modifier.size(44.dp)
+                modifier = Modifier
+                    .size(44.dp)
+                    .pressableScale(0.90f)
             ) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "送出", modifier = Modifier.size(20.dp))
             }
@@ -5727,7 +5736,9 @@ fun ChatAssistantTab(
                                             MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
                                         },
                                         modifier = Modifier
+                                            .animateItem()
                                             .fillMaxWidth()
+                                            .pressableScale(0.98f, RoundedCornerShape(12.dp))
                                             .clickable {
                                                 currentSessionId = session.id
                                                 lastError = null

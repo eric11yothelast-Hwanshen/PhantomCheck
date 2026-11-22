@@ -1,6 +1,7 @@
 // #301 來源：ChatScreen.kt（動作解析模型與執行、RAG 提示詞建置、時間格式化、圖片編碼、輔助元件）
 package com.phantom.checker.ui.chat
 
+import androidx.compose.ui.graphics.graphicsLayer
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -204,24 +205,49 @@ internal val PhotoIcon: ImageVector by lazy {
 
 @Composable
 internal fun TypingDotsIndicator() {
+    val motionOn = com.phantom.checker.ui.components.rememberMotionEnabled()
+    val dotColor = MaterialTheme.colorScheme.primary
+    if (!motionOn) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            repeat(3) {
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(dotColor.copy(alpha = 0.75f))
+                )
+            }
+        }
+        return
+    }
     val transition = rememberInfiniteTransition(label = "typing")
+    val jumpPx = with(androidx.compose.ui.platform.LocalDensity.current) { 3.5.dp.toPx() }
+    val phases = List(3) { idx ->
+        transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 520, delayMillis = idx * 140),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "dot$idx"
+        )
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        repeat(3) { idx ->
-            val alpha by transition.animateFloat(
-                initialValue = 0.25f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(durationMillis = 500, delayMillis = idx * 150),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "dot$idx"
-            )
+        phases.forEach { phaseState ->
             Box(
                 modifier = Modifier
                     .size(8.dp)
-                    .alpha(alpha)
+                    .graphicsLayer {
+                        val p = phaseState.value
+                        alpha = 0.30f + 0.70f * p
+                        val sc = 0.85f + 0.20f * p
+                        scaleX = sc
+                        scaleY = sc
+                        translationY = -jumpPx * p
+                    }
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
+                    .background(dotColor)
             )
         }
     }
