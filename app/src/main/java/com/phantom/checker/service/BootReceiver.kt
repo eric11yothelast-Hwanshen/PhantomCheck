@@ -30,6 +30,8 @@ class BootReceiver : BroadcastReceiver() {
         DiaryPolicy.schedule(appCtx)
         DiaryPolicy.maybeCatchUp(appCtx)
         CalendarInsightScheduler.scheduleOrUpdate(appCtx)
+        WatchTopicEngine.syncSchedule(appCtx)
+        ProactiveIntelScheduler.syncSchedule(appCtx)
         RetentionPolicy.scheduleOrUpdate(appCtx)
         KeepAlivePolicy.scheduleAll(appCtx)
         StatsForegroundService.startOrRefresh(appCtx, force = true)

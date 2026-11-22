@@ -3154,6 +3154,31 @@ fun ChatAssistantTab(
                                             )
                                         }
                                     }
+                                    if (msg.content.startsWith("📡 **關注情報：")) {
+                                        val topicHeader = remember(msg.content) {
+                                            msg.content.lineSequence().firstOrNull()
+                                                ?.removePrefix("📡 **關注情報：")
+                                                ?.removeSuffix("**")
+                                                ?.trim()
+                                                .orEmpty()
+                                        }
+                                        TextButton(
+                                            onClick = {
+                                                inputText = if (topicHeader.isNotBlank()) {
+                                                    "請針對「$topicHeader」的最新情報深入說明重點與影響："
+                                                } else {
+                                                    "請針對上述關注情報深入說明重點與影響："
+                                                }
+                                                if (webSearchSupported) {
+                                                    webSearchEnabled = true
+                                                }
+                                                onShowMessage("已預填深入追問內容，可直接編輯送出")
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                        ) {
+                                            Text("💬 深入追問", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                    }
                                     val autoMems = remember(allMemoriesLive, msg.id) {
                                         allMemoriesLive.filter { it.sourceRef?.contains("|msg:${msg.id}|") == true }
                                     }

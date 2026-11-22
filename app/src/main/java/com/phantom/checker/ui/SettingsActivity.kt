@@ -4388,16 +4388,28 @@ fun FilterSettingsScreen(
             // 7. 防詐情報
             if ("intel" in visibleCardKeys) {
             item(key = "card_intel") {
-                FraudIntelCard(
-                    expanded = expandIntel || ("intel" in highlightedCardKeys),
-                    highlighted = "intel" in highlightedCardKeys,
-                    onToggle = {
-                        expandIntel = !expandIntel
-                        PhantomPrefs.setSettingsCardExpanded(appCtx, "intel", expandIntel)
-                    },
-                    glassState = glassState,
-                    onShowMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    FraudIntelCard(
+                        expanded = expandIntel || ("intel" in highlightedCardKeys),
+                        highlighted = "intel" in highlightedCardKeys,
+                        onToggle = {
+                            expandIntel = !expandIntel
+                            PhantomPrefs.setSettingsCardExpanded(appCtx, "intel", expandIntel)
+                        },
+                        glassState = glassState,
+                        onShowMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
+                    )
+                    ProactiveIntelSettingsCard(
+                        expanded = expandIntel || ("intel" in highlightedCardKeys),
+                        highlighted = "intel" in highlightedCardKeys,
+                        onToggle = {
+                            expandIntel = !expandIntel
+                            PhantomPrefs.setSettingsCardExpanded(appCtx, "intel", expandIntel)
+                        },
+                        glassState = glassState,
+                        onShowMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
+                    )
+                }
             }
             }
 
@@ -4920,6 +4932,188 @@ private fun ShizukuAdvancedCard(
                 }
             }
         }
+    }
+}
+
+/** #390 Phase D 主動情報設定區塊：總開關（首次開啟完整說明）、萃取開關、查詢頻率、關注清單入口、立即查詢預覽 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ProactiveIntelSettingsCard(
+    expanded: Boolean,
+    highlighted: Boolean,
+    onToggle: () -> Unit,
+    glassState: HazeState,
+    onShowMessage: (String) -> Unit
+) {
+    val ctx = LocalContext.current
+    val appCtx = ctx.applicationContext
+    val scope = rememberCoroutineScope()
+
+    var enabled by remember { mutableStateOf(PhantomPrefs.isProactiveIntelEnabled(appCtx)) }
+    var extractEnabled by remember { mutableStateOf(PhantomPrefs.isProactiveExtractEnabled(appCtx)) }
+    var freqHours by remember { mutableIntStateOf(PhantomPrefs.getProactiveIntelFreqHours(appCtx)) }
+    var showConsentDialog by remember { mutableStateOf(false) }
+    var showWatchTopicDialog by remember { mutableStateOf(false) }
+    var isQueryingNow by remember { mutableStateOf(false) }
+    var previewStatus by remember { mutableStateOf<String?>(null) }
+    var previewDigest by remember { mutableStateOf<String?>(null) }
+
+    CollapsibleSettingsCard(
+        title = "主動情報中樞",
+        subtitle = if (enabled) "已開啟｜每 ${freqHours} 小時查證關注主題最新動態" else "預設關閉｜零 AI 呼叫、零外部查詢",
+        expanded = expanded,
+        onToggle = onToggle,
+        glassState = glassState,
+        highlighted = highlighted
+    ) {
+        SettingSwitchRow(
+            title = "啟用主動情報查詢",
+            subtitle = "僅外送關注清單中的查詢詞（queryHint），絕不送原始訊息、聯絡人或敏感記憶。",
+            checked = enabled,
+            onCheckedChange = { wantEnable ->
+                if (wantEnable && !PhantomPrefs.hasSeenProactiveIntelConsent(appCtx)) {
+                    showConsentDialog = true
+                } else {
+                    enabled = wantEnable
+                    PhantomPrefs.setProactiveIntelEnabled(appCtx, wantEnable)
+                    com.phantom.checker.service.WatchTopicEngine.syncSchedule(appCtx)
+                    com.phantom.checker.service.ProactiveIntelScheduler.syncSchedule(appCtx)
+                    PhantomSettingsBus.notifyChanged()
+                }
+            }
+        )
+        Text(
+            text = "路由建議（二選一）：主力使用 Mistral 時，可於「API 金鑰設定」將「主動情報萃取與摘要」用途單獨綁定一個 Gemini 3+ 設定檔（原生 Google Search grounding），或填寫 BYOK 外部搜尋端點。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp, bottom = 6.dp)
+        )
+        SettingSwitchRow(
+            title = "每日自動萃取關注主題",
+            subtitle = "每日至多一次從近期非敏感素材萃取最多 5 個待確認候選（絕不直接推播；敏感記憶硬排除）。",
+            checked = extractEnabled,
+            onCheckedChange = { v ->
+                extractEnabled = v
+                PhantomPrefs.setProactiveExtractEnabled(appCtx, v)
+                com.phantom.checker.service.WatchTopicEngine.syncSchedule(appCtx)
+                PhantomSettingsBus.notifyChanged()
+            }
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "背景查詢頻率（僅連網且電量充足時執行）",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(top = 4.dp)
+        ) {
+            listOf(6 to "每 6 小時", 12 to "每 12 小時", 24 to "每 24 小時").forEach { (h, label) ->
+                FilterChip(
+                    selected = freqHours == h,
+                    onClick = {
+                        freqHours = h
+                        PhantomPrefs.setProactiveIntelFreqHours(appCtx, h)
+                        com.phantom.checker.service.ProactiveIntelScheduler.syncSchedule(appCtx)
+                        PhantomSettingsBus.notifyChanged()
+                    },
+                    label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = { showWatchTopicDialog = true },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("管理關注清單")
+            }
+            Button(
+                onClick = {
+                    if (!isQueryingNow) {
+                        isQueryingNow = true
+                        previewStatus = "查詢中…"
+                        previewDigest = null
+                        scope.launch {
+                            val res = com.phantom.checker.service.DigestComposer.runIntelCycle(appCtx, forceManual = true)
+                            previewStatus = res.statusMessage
+                            previewDigest = res.digestMarkdown
+                            isQueryingNow = false
+                        }
+                    }
+                },
+                enabled = !isQueryingNow,
+                modifier = Modifier.weight(1f)
+            ) {
+                if (isQueryingNow) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                    Spacer(Modifier.width(6.dp))
+                    Text("查詢中…")
+                } else {
+                    Text("立即查詢")
+                }
+            }
+        }
+        previewStatus?.let { status ->
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = status,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        previewDigest?.let { md ->
+            Spacer(Modifier.height(6.dp))
+            ReleaseNotesPreviewBox(
+                title = "主動情報預覽 Digest",
+                releaseNotes = md
+            )
+        }
+    }
+
+    if (showConsentDialog) {
+        AlertDialog(
+            onDismissRequest = { showConsentDialog = false },
+            title = { Text("開啟主動情報中樞前說明") },
+            text = {
+                Text(
+                    "開啟後，本 App 會將您「關注主題清單」中的查詢關鍵字字串（queryHint）送往您自行設定的 AI provider 查詢最新動態。\n\n" +
+                        "• 外送最小化：僅送出主題查詢字串，絕不傳送原始通知全文、聯絡人或敏感記憶。\n" +
+                        "• 省 Token 模式開啟時將自動暫停所有萃取與查詢。\n" +
+                        "• 每日自動萃取的候選僅留存本機待確認，不會直接推播。"
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        PhantomPrefs.setSeenProactiveIntelConsent(appCtx, true)
+                        enabled = true
+                        PhantomPrefs.setProactiveIntelEnabled(appCtx, true)
+                        com.phantom.checker.service.WatchTopicEngine.syncSchedule(appCtx)
+                        com.phantom.checker.service.ProactiveIntelScheduler.syncSchedule(appCtx)
+                        PhantomSettingsBus.notifyChanged()
+                        showConsentDialog = false
+                        onShowMessage("已啟用主動情報中樞")
+                    }
+                ) { Text("了解並開啟") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showConsentDialog = false }) { Text("暫不開啟") }
+            }
+        )
+    }
+
+    if (showWatchTopicDialog) {
+        com.phantom.checker.ui.memory.WatchTopicManagerDialog(
+            onDismiss = { showWatchTopicDialog = false },
+            onShowMessage = onShowMessage
+        )
     }
 }
 

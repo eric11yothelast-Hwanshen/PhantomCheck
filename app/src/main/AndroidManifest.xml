@@ -239,6 +239,7 @@
 
         <receiver android:name=".service.ReminderReceiver" android:exported="false" />
         <receiver android:name=".service.ReplyProxyReceiver" android:exported="false" />
+        <receiver android:name=".service.WatchTopicMuteReceiver" android:exported="false" />
         <receiver android:name=".service.BriefingAlarmReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.TIME_SET" />

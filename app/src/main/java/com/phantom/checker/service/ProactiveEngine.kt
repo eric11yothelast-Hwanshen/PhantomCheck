@@ -291,15 +291,18 @@ object ProactiveEngine {
             }
         }
 
-        // 選配外部情報搜尋（BYOK，未設定或省 token 模式誠實跳過不報錯）
+        // #390 外部情報：優先共用主動情報中樞（planner＋query/12h快取）；未啟用時保留既有 BYOK 單發查詢 fallback
         var externalIntel: String? = null
-        if (!tokenSaver &&
-            PhantomPrefs.isProactiveTopicEnabled(appCtx, PhantomPrefs.PROACTIVE_TOPIC_EXTERNAL_SEARCH) &&
-            EncryptedByokStore.isExternalSearchConfigured(appCtx)
-        ) {
-            val queryTerms = (interestKeywords + listOfNotNull(regionKeyword.takeIf { it.isNotBlank() })).joinToString(" ")
-            if (queryTerms.isNotBlank()) {
-                externalIntel = AiClient.queryExternalSearchEndpoint(appCtx, "今日 $queryTerms 重要焦點")
+        if (!tokenSaver) {
+            if (PhantomPrefs.isProactiveIntelEnabled(appCtx)) {
+                externalIntel = DigestComposer.getBriefingIntelSummary(appCtx)
+            } else if (PhantomPrefs.isProactiveTopicEnabled(appCtx, PhantomPrefs.PROACTIVE_TOPIC_EXTERNAL_SEARCH) &&
+                EncryptedByokStore.isExternalSearchConfigured(appCtx)
+            ) {
+                val queryTerms = (interestKeywords + listOfNotNull(regionKeyword.takeIf { it.isNotBlank() })).joinToString(" ")
+                if (queryTerms.isNotBlank()) {
+                    externalIntel = AiClient.queryExternalSearchEndpoint(appCtx, "今日 $queryTerms 重要焦點")
+                }
             }
         }
 
@@ -397,6 +400,80 @@ object ProactiveEngine {
             previewOverride = body
         )
         msgId != null
+    }
+
+    /**
+     * #390 Phase C/E 主動情報摘要投遞：
+     * - 沿用 deliverProactiveMessage 全套紀律（專屬主動訊息聊天室、10 分鐘雜湊去重、每日上限、勿擾仍寫聊天不響通知）。
+     * - 通知直達 MainActivity（PendingIntent.getActivity 零 trampoline），附「不再關注」BroadcastReceiver 動作鍵。
+     */
+    suspend fun deliverProactiveIntelDigest(
+        ctx: Context,
+        title: String,
+        body: String,
+        topicIds: List<Long>,
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean = withContext(Dispatchers.IO) {
+        val appCtx = ctx.applicationContext
+        val msgId = deliverProactiveMessage(
+            ctx = appCtx,
+            title = title,
+            body = body,
+            notifId = NotifIds.PROACTIVE_INTEL,
+            sendNotif = false,
+            respectDailyCap = true,
+            nowMs = nowMs
+        ) ?: return@withContext false
+
+        if (!isInDndWindow(appCtx, nowMs) && areNotificationsEnabled(appCtx)) {
+            val nm = appCtx.getSystemService(NotificationManager::class.java)
+            if (nm != null) {
+                nm.createNotificationChannel(
+                    NotificationChannel(
+                        CHANNEL_ASSISTANT_BRIEFING,
+                        "AI 助手早晚簡報與主動提醒",
+                        NotificationManager.IMPORTANCE_DEFAULT
+                    )
+                )
+                val openIntent = Intent(appCtx, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    putExtra(DailySummaryPolicy.EXTRA_OPEN_TAB, BriefingScheduler.TAB_ASSISTANT)
+                    putExtra(BriefingScheduler.EXTRA_BRIEFING_MSG_ID, msgId)
+                }
+                val contentPi = PendingIntent.getActivity(
+                    appCtx,
+                    NotifIds.PROACTIVE_INTEL,
+                    openIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val muteIntent = Intent(appCtx, WatchTopicMuteReceiver::class.java).apply {
+                    action = WatchTopicMuteReceiver.ACTION_MUTE_WATCH_TOPICS
+                    putExtra(WatchTopicMuteReceiver.EXTRA_TOPIC_IDS, topicIds.toLongArray())
+                    putExtra(WatchTopicMuteReceiver.EXTRA_NOTIF_ID, NotifIds.PROACTIVE_INTEL)
+                }
+                val mutePi = PendingIntent.getBroadcast(
+                    appCtx,
+                    NotifIds.PROACTIVE_INTEL + 1000,
+                    muteIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val preview = body.replace("**", "").replace("\n", " ").take(110)
+                val notif = NotificationCompat.Builder(appCtx, CHANNEL_ASSISTANT_BRIEFING)
+                    .setSmallIcon(R.drawable.ic_stat_phantom)
+                    .setContentTitle(title)
+                    .setContentText(preview)
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(preview))
+                    .setAutoCancel(true)
+                    .setContentIntent(contentPi)
+                    .addAction(0, "不再關注", mutePi)
+                    .build()
+                try {
+                    nm.notify(NotifIds.PROACTIVE_INTEL, notif)
+                } catch (_: SecurityException) {
+                }
+            }
+        }
+        true
     }
 
     const val PROACTIVE_SESSION_TITLE = "AI 助手簡報與主動提醒"
