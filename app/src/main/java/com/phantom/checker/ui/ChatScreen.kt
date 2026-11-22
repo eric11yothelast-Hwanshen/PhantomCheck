@@ -914,12 +914,9 @@ fun ChatAssistantTab(
                     resolvedAdjustStates.isNotEmpty() ||
                     resolvedMsgActions.isNotEmpty() ||
                     resolvedTodoInsertions.isNotEmpty() ||
-                    parsed.memoryViewProposals.isNotEmpty() ||
-                    parsed.memoryAddProposals.isNotEmpty() ||
-                    parsed.memoryUpdateProposals.isNotEmpty() ||
-                    parsed.memoryDeleteProposals.isNotEmpty() ||
-                    parsed.calendarFreeQueryProposals.isNotEmpty() ||
-                    parsed.calendarAddProposals.isNotEmpty()
+                    parsed.openSettingProposals.isNotEmpty() ||
+                    parsed.crossAppActions.isNotEmpty() ||
+                    parsed.hasExtendedProposals()
 
                 val storedReply = parsed.cleanReply.ifBlank {
                     when {
@@ -1000,21 +997,7 @@ fun ChatAssistantTab(
                     showUsagePermissionGuideCard = true
                 }
 
-                val hasExtendedProposals = parsed.searchProposals.isNotEmpty() ||
-                    parsed.todoManageProposals.isNotEmpty() ||
-                    parsed.vipPinProposals.isNotEmpty() ||
-                    parsed.muteAppProposals.isNotEmpty() ||
-                    parsed.markReadProposals.isNotEmpty() ||
-                    parsed.exportProposals.isNotEmpty() ||
-                    parsed.whitelistDeleteProposals.isNotEmpty() ||
-                    parsed.memoryViewProposals.isNotEmpty() ||
-                    parsed.memoryAddProposals.isNotEmpty() ||
-                    parsed.memoryUpdateProposals.isNotEmpty() ||
-                    parsed.memoryDeleteProposals.isNotEmpty() ||
-                    parsed.calendarFreeQueryProposals.isNotEmpty() ||
-                    parsed.calendarAddProposals.isNotEmpty() ||
-                    parsed.usageQueryProposals.isNotEmpty() ||
-                    parsed.demotedQueryHints.isNotEmpty()
+                val hasExtendedProposals = parsed.hasExtendedProposals()
 
                 if (hasExtendedProposals) {
                     withContext(Dispatchers.IO) {

@@ -970,7 +970,40 @@ internal data class ParsedChatActions(
     val crossAppActions: List<com.phantom.checker.util.CrossAppActionProposal> = emptyList(),
     val demotedQueryHints: List<String> = emptyList(),
     val invalidActionErrors: List<String> = emptyList()
-)
+) {
+    /** #386 共用判斷：是否包含任何延伸動作提案（與 ChatScreen storedReply fallback 共用，防止再漂移） */
+    fun hasExtendedProposals(): Boolean =
+        searchProposals.isNotEmpty() ||
+            todoManageProposals.isNotEmpty() ||
+            vipPinProposals.isNotEmpty() ||
+            muteAppProposals.isNotEmpty() ||
+            markReadProposals.isNotEmpty() ||
+            exportProposals.isNotEmpty() ||
+            whitelistDeleteProposals.isNotEmpty() ||
+            memoryViewProposals.isNotEmpty() ||
+            memoryAddProposals.isNotEmpty() ||
+            memoryUpdateProposals.isNotEmpty() ||
+            memoryDeleteProposals.isNotEmpty() ||
+            calendarFreeQueryProposals.isNotEmpty() ||
+            calendarAddProposals.isNotEmpty() ||
+            usageQueryProposals.isNotEmpty() ||
+            demotedQueryHints.isNotEmpty()
+
+    /** #386 共用判斷：是否包含任何原始動作提案（核心＋延伸＋跨 App） */
+    fun hasAnyProposal(): Boolean =
+        hasExtendedProposals() ||
+            ruleProposals.isNotEmpty() ||
+            tagRuleProposals.isNotEmpty() ||
+            quickCommandProposals.isNotEmpty() ||
+            reminderProposals.isNotEmpty() ||
+            whitelistProposals.isNotEmpty() ||
+            toggleProposals.isNotEmpty() ||
+            candidatesProposals.isNotEmpty() ||
+            adjustProposals.isNotEmpty() ||
+            openSettingProposals.isNotEmpty() ||
+            messageActions.isNotEmpty() ||
+            crossAppActions.isNotEmpty()
+}
 
 private val CHAT_TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("MM/dd HH:mm", Locale.US)
 private val CHAT_DEVICE_NOW_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm (EEEE)", Locale.TAIWAN)
