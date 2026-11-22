@@ -165,6 +165,11 @@ object WatchTopicEngine {
         return result
     }
 
+    internal fun normalizeForSimilarity(raw: String): String =
+        raw.lowercase()
+            .replace(Regex("[\\s\\p{Punct}，。！？、；：「」『』（）【】《》]+"), "")
+            .trim()
+
     /** 執行單次每日萃取（回傳實際新增的候選筆數；失敗或跳過回傳 0） */
     suspend fun runDailyExtraction(
         ctx: Context,
@@ -197,13 +202,13 @@ object WatchTopicEngine {
 
         val dao = AppDatabaseHolder.db(appCtx).watchTopicDao()
         val existingNorm = dao.getAll()
-            .map { MemoryEngine.normalizeForSimilarity(it.label) }
+            .map { normalizeForSimilarity(it.label) }
             .toMutableSet()
 
         var inserted = 0
         val nowMs = System.currentTimeMillis()
         for (c in candidates) {
-            val norm = MemoryEngine.normalizeForSimilarity(c.label)
+            val norm = normalizeForSimilarity(c.label)
             if (norm.isBlank() || norm in existingNorm) continue
             existingNorm.add(norm)
             dao.insert(

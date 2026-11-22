@@ -114,19 +114,21 @@ object CloudExtensionsClient {
         }
     }
 
-    internal suspend fun pollGitHubRepos(ctx: Context) = withContext(Dispatchers.IO) {
+    internal suspend fun pollGitHubRepos(ctx: Context): Boolean = withContext(Dispatchers.IO) {
         val pat = EncryptedByokStore.getGitHubPat(ctx)
         val repos = EncryptedByokStore.getGitHubRepos(ctx)
             .split(',', '\n', ' ')
             .map { it.trim() }
             .filter { it.contains('/') }
             .take(5)
-        if (pat.isBlank() || repos.isEmpty()) return@withContext
+        if (pat.isBlank() || repos.isEmpty()) return@withContext true
 
         val alerts = mutableListOf<String>()
+        var anySuccess = false
         for (repo in repos) {
             // 1. 檢查最新 Actions runs 失敗
             fetchJson(pat, "https://api.github.com/repos/$repo/actions/runs?per_page=3")?.let { body ->
+                anySuccess = true
                 runCatching {
                     val runs = JsonParser.parseString(body).asJsonObject.getAsJsonArray("workflow_runs")
                     val failed = runs?.firstOrNull { el ->
@@ -145,6 +147,7 @@ object CloudExtensionsClient {
             }
             // 2. 檢查最新開啟的 PR
             fetchJson(pat, "https://api.github.com/repos/$repo/pulls?state=open&per_page=2")?.let { body ->
+                anySuccess = true
                 runCatching {
                     val prs = JsonParser.parseString(body).asJsonArray
                     if (prs.size() > 0) {
@@ -163,6 +166,7 @@ object CloudExtensionsClient {
         if (alerts.isNotEmpty()) {
             postCloudAlert(ctx, "GitHub 動態通知", alerts.joinToString("\n"))
         }
+        anySuccess
     }
 
     private fun fetchJson(pat: String, urlStr: String): String? {
@@ -186,7 +190,7 @@ object CloudExtensionsClient {
         }
     }
 
-    private fun postCloudAlert(ctx: Context, title: String, body: String) {
+    internal fun postCloudAlert(ctx: Context, title: String, body: String) {
         if (!ProactiveEngine.areNotificationsEnabled(ctx)) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(
@@ -220,15 +224,42 @@ class GitHubMonitorWorker(
     params: WorkerParameters
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
+        val prefs = applicationContext.getSharedPreferences("phantom_github_health", Context.MODE_PRIVATE)
         return try {
-            CloudExtensionsClient.pollGitHubRepos(applicationContext)
+            val ok = CloudExtensionsClient.pollGitHubRepos(applicationContext)
             PhantomPrefs.setLinkedAppLastSyncAt(applicationContext, "github", System.currentTimeMillis())
-            PhantomPrefs.setLinkedAppLastError(applicationContext, "github", "")
+            if (ok) {
+                prefs.edit().putInt("consecutive_failures", 0).apply()
+                PhantomPrefs.setLinkedAppLastError(applicationContext, "github", "")
+            } else {
+                val fails = prefs.getInt("consecutive_failures", 0) + 1
+                prefs.edit().putInt("consecutive_failures", fails).apply()
+                PhantomPrefs.setLinkedAppLastError(applicationContext, "github", "HTTP/網路輪詢失敗（連續 $fails 次）")
+                if (fails == 3) {
+                    android.util.Log.w("PhantomCloudExt", "GitHub monitor consecutive failures reached 3")
+                    CloudExtensionsClient.postCloudAlert(
+                        applicationContext,
+                        "GitHub 監控連線異常",
+                        "GitHub 監控已連續 3 次輪詢失敗，請至「連結應用程式中心」確認 PAT 權限或有效期限。"
+                    )
+                }
+            }
             Result.success()
         } catch (e: Exception) {
-            android.util.Log.w("PhantomCloudExt", "GitHub monitor worker failed: ${e.javaClass.simpleName}")
+            val fails = prefs.getInt("consecutive_failures", 0) + 1
+            prefs.edit().putInt("consecutive_failures", fails).apply()
+            if (fails <= 3) {
+                android.util.Log.w("PhantomCloudExt", "GitHub monitor worker failed (#$fails): ${e.javaClass.simpleName}")
+            }
             PhantomPrefs.setLinkedAppLastSyncAt(applicationContext, "github", System.currentTimeMillis())
             PhantomPrefs.setLinkedAppLastError(applicationContext, "github", e.javaClass.simpleName)
+            if (fails == 3) {
+                CloudExtensionsClient.postCloudAlert(
+                    applicationContext,
+                    "GitHub 監控連線異常",
+                    "GitHub 監控已連續 3 次發生錯誤（${e.javaClass.simpleName}），請至「連結應用程式中心」確認設定。"
+                )
+            }
             Result.success()
         }
     }

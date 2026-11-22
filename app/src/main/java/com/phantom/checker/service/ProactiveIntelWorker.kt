@@ -176,7 +176,7 @@ object DigestComposer {
                 continue
             }
 
-            val digestHash = sha256Hex(MemoryEngine.normalizeForSimilarity(rawText))
+            val digestHash = sha256Hex(WatchTopicEngine.normalizeForSimilarity(rawText))
             val isDuplicate = !forceManual && digestHash == topic.lastDigestHash
             if (isDuplicate) {
                 // 無新意：不推送，只更新 lastQueryAt

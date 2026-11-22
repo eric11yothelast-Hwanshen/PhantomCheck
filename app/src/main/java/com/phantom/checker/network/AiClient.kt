@@ -25,7 +25,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -2595,13 +2597,11 @@ object AiClient {
                 tools = listOf(mapOf("google_search" to emptyMap<String, Any>()))
             )
             val jsonBody = gson.toJson(reqObj)
-            val mediaType = okhttp3.MediaType.parse("application/json; charset=utf-8")
-                ?: okhttp3.MediaType.get("application/json; charset=utf-8")
             val httpReq = okhttp3.Request.Builder()
                 .url(fullUrl)
                 .header("Authorization", "Bearer ${profile.apiKey.trim()}")
                 .header("Content-Type", "application/json")
-                .post(okhttp3.RequestBody.create(mediaType, jsonBody))
+                .post(jsonBody.toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
             return@withContext try {
                 enforceRateLimit()

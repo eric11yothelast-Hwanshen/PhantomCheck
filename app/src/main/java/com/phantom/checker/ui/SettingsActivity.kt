@@ -4960,7 +4960,7 @@ private fun ProactiveIntelSettingsCard(
 
     CollapsibleSettingsCard(
         title = "主動情報中樞",
-        subtitle = if (enabled) "已開啟｜每 ${freqHours} 小時查證關注主題最新動態" else "預設關閉｜零 AI 呼叫、零外部查詢",
+        collapsedSummary = if (enabled) "已開啟｜每 ${freqHours} 小時查證關注主題最新動態" else "預設關閉｜零 AI 呼叫、零外部查詢",
         expanded = expanded,
         onToggle = onToggle,
         glassState = glassState,
@@ -5266,7 +5266,7 @@ private fun AboutSettingsCard(
                 }
             }
             val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-            ContextCompat.registerReceiver(ctx, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
+            ContextCompat.registerReceiver(ctx, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
             onDispose {
                 try {
                     ctx.unregisterReceiver(receiver)
