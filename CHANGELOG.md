@@ -2,6 +2,40 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [3.5.0] - 2026-11-22
+
+### 新增功能
+- **AI 日記／每日回顧（#378 / PR #383）**：
+  - 每日 00:30 本地 `DiaryWorker`（獨立 unique work＋`maybeCatchUp` 補跑 `retries≤3`＋`BootReceiver` 重排）以零 token 純 SQL 聚合昨日完成的待辦、重要記事、高風險攔截與行程時間軸寫入 `diary_days`；於「AI 夥伴」分頁頂部新增日記卡片，支援月份切換與每月總覽。
+  - AI 註記預設收合、僅讀取 `timelineJson`（絕不二次掃描原始通知）、展開才生成一次並快取至 `aiNote`，支援「不準」回饋降低同類權重；無 API key 時時間軸與月份總覽 100% 離線可用。
+- **長程目標追蹤（#379 / PR #383）**：
+  - 新增 `GoalEngine` 與 `GoalSection`：對話中採結構訊號前置＋置信度門檻（`<60` 完全靜默、`≥60` 必經可編輯確認卡，含「不感興趣」同訊息不再詢問與「判斷有誤」回饋），確認後自動拆解週期子待辦（標記 `[目標#id]`）並複用 `ReminderScheduler` 排程提醒；進度僅計算明確關聯之子待辦。
+  - 連續 3 個週期逾期未互動時自動降頻一級並於主動聊天室告知一次（絕不自動升頻）；夥伴分頁新增目標卡（進度條、連續天數、下一個里程碑日期、手動新增／暫停／刪除／調頻）並將目標完成納入夥伴親密度互動計數；無 API key 時手動建立與追蹤全流程 100% 可用。
+- **宣告式 Agentic 能力表與受阻自動改道（#380 / PR #383）**：
+  - 新增 `IntentCapabilityRegistry` 全枚舉有序路徑表（`REMINDER`：`REMINDER_EXACT_ALARM` → `REMINDER_SYSTEM_NOTIF` → `REMINDER_CALENDAR_ALLDAY`；`MEMO`：`MEMO_LOCAL_NOTE` → `MEMO_PROACTIVE_CHAT`；`CALENDAR_ADD`：`CALENDAR_DIRECT_WRITE` → `CALENDAR_ACTION_INSERT` → `CALENDAR_LOCAL_TODO`；`OPEN_APP`：`OPEN_APP_DIRECT` → `OPEN_APP_CHOOSER`），AI 僅選意圖、不自創路徑。
+  - 執行時若偵測權限或系統限制受阻（如 `canScheduleExactAlarms() == false`、無日曆寫入權限或未安裝目標 App），自動依序降級至下一條安全路徑並顯示一次性改道告知；全路徑受阻時回報白話原因並附直達 `PermissionHubActivity` 按鈕；確認卡新增「執行方式」說明，且維持 `CrossAppActionExecutor.execute()` 僅由確認卡 `onClick` 觸發之鐵律。
+- **Health Connect 生理數據整合（#381 / PR #383）**：
+  - 新增 `HealthConnectBridge` 整合 `androidx.health.connect:connect-client:1.1.0`（讀取 `SleepSessionRecord`、`StepsRecord`、`HeartRateRecord`），`getOrCreate` 嚴格捕捉 `IllegalStateException`/`Throwable` 供無 GMS／未安裝 ROM 誠實降級；`PermissionHubActivity` 新增授權狀態與引導卡。
+  - 晨間簡報（08:45 `BriefingScheduler`）於本機聚合前一晚睡眠、昨日步數與靜止心率，經固定查表式規則（如睡眠 `<6h` 且早間有行程、步數趨勢、心率突增）僅將命中的單句規則結論交由 AI 潤飾（原始數值絕不出本機，無命中則整段不顯示，同步失敗靜默跳過不影響簡報）；未授權時每週最多一次軟性邀請；`StatsTab` 新增 7 日睡眠／步數迷你條趨勢圖（無 API key 照常顯示）。
+- **聊天室訊息右下角時間戳（#376 / PR #383）**：使用者、AI、主動訊息與系統事件氣泡右下角統一顯示 `10sp` `HH:mm` 時間戳（讀取 `ChatMessageEntity.createdAt`，嚴格沿用既有 `CHAT_TIME_FORMATTER` `Locale.US`，`softWrap = false` 獨立底右列支援 `fontScale = 1.3` 與窄螢幕不裁切，可於設定開關）。
+- **本機日曆多檢視與帳號分組治理（#373 / PR #383）**：`CalendarBridge.listCalendars` 增讀 `VISIBLE` 與 `SYNC_EVENTS`；設定頁預設過濾顯示中日曆、依帳號分組並提供批次全選、「一鍵全選顯示中日曆」與可收合隱藏日曆；`NotesTab` 新增本機日曆「日／週／月」檢視切換與零勾選導引卡；`queryFreeSlotsSummary` 附註已勾選／未勾選日曆數量。
+- **主動訊息回饋與自訂設定擴充（#377 / PR #383）**：早晚簡報與主動提醒拆分獨立每日上限；每則主動訊息氣泡提供「👍 有幫助／👎 打擾」輕量回饋（累積打擾自動抑制同類）；將提前提醒分鐘數（15／30／60 分）、全天事件提醒時刻、主動監控間隔、去重冷卻時間、聊天時間戳開關與更新提醒延後（snooze）間隔全面接入 `SettingsCatalog`、設定頁 UI 與 `PhantomSettingsBus`。
+
+### 行為變更
+- **主動提醒改事件里程碑式去重（#372 / PR #383）**：`ProactiveEngine` 將狀態式觸發改為事件里程碑式去重（`type:id:dayKey:milestone` 與 `allDay:id:dayKey`，同一待辦或日曆事件於「24h 前 (`due24h`)／提前 N 分鐘 (`lead`)／逾期 (`overdue`)」各里程碑僅提醒一次，跨日自動清理過期 key），並將 `deliverProactiveAlert` 統一匯入 `deliverProactiveMessage` 去重閘門搭配 10 分鐘 content hash 雙重防護，根治 15 分鐘 Worker 因無關新訊息指紋變動而重複轟炸同一提醒的問題。
+- **防詐自動判定收斂與可疑關鍵詞收斂（#375 / PR #383）**：
+  - `DecisionEngine` 將原 `hasUrlOrCrypto` 拆分為弱訊號 `urlPresent` 與強訊號 `intelHit`／`cryptoAddressPresent`：規則 5 自動標記 `scam` 收斂為必須具備「情報命中 (`intelHit`)、加密貨幣地址 (`cryptoAddressPresent`) 或具體詐騙操作訊號 (`fraud_cue`)」等強訊號；僅含一般連結（`urlPresent`）或與 30 天發送者高信譽／熟人訊號衝突時，一律走規則 4／規則 6 降級為確認卡（`ConfirmCard`），絕不單獨自動判定為詐騙。
+  - 收斂 `IndicatorExtractor.hasSuspiciousFeature`（省 token 模式 AI 前置閘門）觸發詞，移除單獨出現的裸詞（`$`、`元`、`客服`、`投資`、`領取`、`扣款`、`中獎`），改要求複合詐騙操作訊號；AI 風險分析 prompt 增補良性通知負面範例與具體證據要求；誤判回饋同步寫回 30 天發送者信譽與 `EncryptedByokStore` 加密儲存之良性網域 LRU（上限 100 筆）。
+- **更新提醒移除每日 gate 改 snooze 狀態機（#374 / PR #383）**：`AppUpdateHelper` 與 `MainActivity` 移除舊版 `version|day` 每日僅提示一次的 gate，改為 `update_snooze_until_ms` 狀態機——只要開啟 App、網路可用、GitHub 有新版本且未處於 snooze 期間，必定顯示更新對話框與通知；僅點擊「稍後更新」才會設定 snooze，直接關閉或滑掉不設 snooze；單一進程檢查失敗最多自動重試一次（無網路時不消耗進程檢查旗標）。
+- **資料庫非破壞升級至 version 22（#378、#379 / PR #383）**：`AppDatabase` 由 v21 經單一非破壞性 `MIGRATION_21_22`（純 `CREATE TABLE IF NOT EXISTS` 與索引）升級至 v22，新增 `diary_days`、`goals` 與 `goal_progress` 三張資料表，既有資料 100% 保留。
+- **新增 Health Connect 穩定版依賴（#381 / PR #383）**：`app/build.gradle.kts` 新增 `androidx.health.connect:connect-client:1.1.0` 依賴，並於 `AndroidManifest.xml` 宣告健康資料讀取權限與權限說明 Activity intent-filter / activity-alias。
+
+### 變更與修正
+- **v3.4.x 全功能健檢與多廠牌相容修復（#382 / PR #383）**：
+  - 補齊 `AndroidManifest.xml` 中 Health Connect 於 Android 13（`androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE`）與 Android 14+（`android.intent.action.VIEW_PERMISSION_USAGE` + `HEALTH_PERMISSIONS` category 之 `activity-alias`）權限說明入口，解決實機點擊授權無反應問題。
+  - 修復 `BootReceiver` 於每次重開機或應用更新時對所有歷史逾期待辦無條件呼叫 `deliverTodoReminder` 造成重複通知轟炸的 bug，改為限制 24 小時逾期窗口內且加上每日里程碑去重 key（`boot_todo:<id>:<dayKey>`）。
+  - 完成跨頁狀態隔離（`ChatScreen` 確認卡綁定 `sessionId`）、四廠牌受限設定導引、深淺色／`fontScale = 1.3`／窄螢幕防裁切與安全常數清點審計。
+
 ## [3.4.0] - 2026-11-21
 
 ### 新增功能
