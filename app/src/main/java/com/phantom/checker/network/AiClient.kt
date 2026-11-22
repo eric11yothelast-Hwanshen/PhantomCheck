@@ -52,7 +52,8 @@ data class ChatRequest(
     @SerializedName("max_tokens") val maxTokens: Int = 200,
     val temperature: Double = 0.2,
     @SerializedName("response_format") val responseFormat: ResponseFormat? = null,
-    @SerializedName("prompt_cache_key") val promptCacheKey: String? = null
+    @SerializedName("prompt_cache_key") val promptCacheKey: String? = null,
+    val tools: List<Map<String, Any>>? = null
 )
 
 data class PromptTokensDetails(
@@ -2461,6 +2462,194 @@ object AiClient {
             PhantomPrefs.refundTodayProactiveAiUsage(context)
             null
         }
+    }
+
+    /** #389 主動情報與聊天聯網查詢結果（附來源 URL 清單） */
+    data class GroundedResult(
+        val text: String,
+        val sources: List<String>
+    )
+
+    private val GEMINI_MAJOR_VERSION_REGEX = Regex("gemini-(\\d+)", RegexOption.IGNORE_CASE)
+    private val URL_EXTRACT_REGEX = Regex("https?://[^\\s\\)\\]\\>\"'<]+", RegexOption.IGNORE_CASE)
+
+    /** 僅當 profile 指向 Gemini OpenAI 相容端點且模型為 Gemini 3+ 才啟用原生 google_search grounding */
+    fun isGeminiGroundingSupported(profile: AiProviderProfile?): Boolean {
+        if (profile == null) return false
+        if (!profile.baseUrl.contains("generativelanguage.googleapis.com", ignoreCase = true)) return false
+        val match = GEMINI_MAJOR_VERSION_REGEX.find(profile.model.trim()) ?: return false
+        val major = match.groupValues.getOrNull(1)?.toIntOrNull() ?: return false
+        return major >= 3
+    }
+
+    /**
+     * #389 多路徑解析 OpenAI 相容層 grounding 來源 URL：
+     * 1) choices[0].message.annotations[].url_citation.url / url
+     * 2) choices[0].message.extra_content.google.grounding_metadata.grounding_chunks[].web.uri
+     * 3) choices[0].grounding_metadata / groundingMetadata 或 root grounding_metadata / groundingMetadata
+     * 4) root citations[]（Perplexity / BYOK）
+     * 5) 回覆內文 URL fallback
+     */
+    internal fun extractGroundedSources(root: com.google.gson.JsonObject?, replyText: String): List<String> {
+        val urls = LinkedHashSet<String>()
+        fun addUrl(raw: String?) {
+            val cleaned = raw?.trim()?.trimEnd('.', ',', ';', ')', ']', '>', '」', '）', '。', '，') ?: return
+            if (cleaned.startsWith("http://", ignoreCase = true) || cleaned.startsWith("https://", ignoreCase = true)) {
+                if (urls.size < 8) urls.add(cleaned)
+            }
+        }
+        fun collectFromGroundingMetadata(gm: com.google.gson.JsonObject?) {
+            if (gm == null) return
+            val chunks = gm.getAsJsonArray("grounding_chunks") ?: gm.getAsJsonArray("groundingChunks")
+            chunks?.forEach { el ->
+                val obj = runCatching { el.asJsonObject }.getOrNull() ?: return@forEach
+                val web = runCatching { obj.getAsJsonObject("web") }.getOrNull()
+                addUrl(web?.get("uri")?.takeIf { !it.isJsonNull }?.asString)
+                addUrl(web?.get("url")?.takeIf { !it.isJsonNull }?.asString)
+            }
+        }
+        if (root != null) {
+            runCatching {
+                root.getAsJsonArray("citations")?.forEach { el ->
+                    if (el.isJsonPrimitive) addUrl(el.asString)
+                }
+            }
+            collectFromGroundingMetadata(runCatching { root.getAsJsonObject("grounding_metadata") }.getOrNull())
+            collectFromGroundingMetadata(runCatching { root.getAsJsonObject("groundingMetadata") }.getOrNull())
+
+            val firstChoice = runCatching { root.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject }.getOrNull()
+            if (firstChoice != null) {
+                collectFromGroundingMetadata(runCatching { firstChoice.getAsJsonObject("grounding_metadata") }.getOrNull())
+                collectFromGroundingMetadata(runCatching { firstChoice.getAsJsonObject("groundingMetadata") }.getOrNull())
+
+                val msg = runCatching { firstChoice.getAsJsonObject("message") }.getOrNull()
+                if (msg != null) {
+                    runCatching {
+                        msg.getAsJsonArray("annotations")?.forEach { el ->
+                            val ann = el.asJsonObject
+                            val uc = runCatching { ann.getAsJsonObject("url_citation") }.getOrNull()
+                            addUrl(uc?.get("url")?.takeIf { !it.isJsonNull }?.asString)
+                            addUrl(ann.get("url")?.takeIf { !it.isJsonNull }?.asString)
+                        }
+                    }
+                    val googleExtra = runCatching {
+                        msg.getAsJsonObject("extra_content")?.getAsJsonObject("google")
+                    }.getOrNull()
+                    collectFromGroundingMetadata(runCatching { googleExtra?.getAsJsonObject("grounding_metadata") }.getOrNull())
+                    collectFromGroundingMetadata(runCatching { googleExtra?.getAsJsonObject("groundingMetadata") }.getOrNull())
+                }
+            }
+        }
+        if (urls.isEmpty()) {
+            URL_EXTRACT_REGEX.findAll(replyText).forEach { m -> addUrl(m.value) }
+        }
+        return urls.toList()
+    }
+
+    /**
+     * #389 具來源聯網查詢（Gemini 3+ OpenAI 相容層 tools=[{"google_search":{}}]；非 Gemini 退化 BYOK 或誠實回報不支援）。
+     * - 省 token 模式一律跳過；429 靜默退避並退款；查無誠實回報，絕不以既有知識頂替。
+     */
+    suspend fun runGroundedQuery(
+        context: Context,
+        systemPrompt: String,
+        userQuery: String,
+        maxTokens: Int = 360,
+        purpose: AiPurpose = AiPurpose.PROACTIVE
+    ): Result<GroundedResult> = withContext(Dispatchers.IO) {
+        if (PhantomPrefs.isTokenSaverEnabled(context)) {
+            return@withContext Result.failure(IllegalStateException("省 token 模式已開啟，已停用聯網查詢。"))
+        }
+        val cleanQuery = sanitizeForPrompt(userQuery).trim()
+        if (cleanQuery.isBlank()) {
+            return@withContext Result.failure(IllegalArgumentException("查詢內容不可為空。"))
+        }
+
+        val profile = getProfileForPurpose(context, purpose)
+        if (isGeminiGroundingSupported(profile) && !profile!!.apiKey.isBlank()) {
+            val quotaOk = if (purpose == AiPurpose.PROACTIVE) {
+                PhantomPrefs.canUseProactiveAiTodayAndIncrement(context)
+            } else {
+                PhantomPrefs.canUseAiTodayAndIncrement(context)
+            }
+            if (!quotaOk) {
+                return@withContext Result.failure(IllegalStateException("今日 AI 查詢額度已達上限。"))
+            }
+            fun refund() {
+                if (purpose == AiPurpose.PROACTIVE) {
+                    PhantomPrefs.refundTodayProactiveAiUsage(context)
+                } else {
+                    PhantomPrefs.refundTodayAiUsage(context)
+                }
+            }
+
+            val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
+            val reqObj = ChatRequest(
+                model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
+                messages = listOf(
+                    ChatMessage("system", systemPrompt),
+                    ChatMessage("user", cleanQuery)
+                ),
+                maxTokens = maxTokens.coerceIn(120, 800),
+                temperature = 0.2,
+                tools = listOf(mapOf("google_search" to emptyMap<String, Any>()))
+            )
+            val jsonBody = gson.toJson(reqObj)
+            val mediaType = okhttp3.MediaType.parse("application/json; charset=utf-8")
+                ?: okhttp3.MediaType.get("application/json; charset=utf-8")
+            val httpReq = okhttp3.Request.Builder()
+                .url(fullUrl)
+                .header("Authorization", "Bearer ${profile.apiKey.trim()}")
+                .header("Content-Type", "application/json")
+                .post(okhttp3.RequestBody.create(mediaType, jsonBody))
+                .build()
+            return@withContext try {
+                enforceRateLimit()
+                chatOkHttpClient.newCall(httpReq).execute().use { resp ->
+                    val raw = resp.body?.string().orEmpty()
+                    if (resp.code == 429) {
+                        refund()
+                        return@withContext Result.failure(IllegalStateException("Gemini 聯網查詢頻率已達上限（429），已靜默退避。"))
+                    }
+                    if (!resp.isSuccessful) {
+                        refund()
+                        return@withContext Result.failure(IllegalStateException("聯網查詢失敗（HTTP ${resp.code}）。"))
+                    }
+                    val root = runCatching { JsonParser.parseString(raw).asJsonObject }.getOrNull()
+                    val msgContent = runCatching {
+                        root?.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject
+                            ?.getAsJsonObject("message")?.get("content")
+                    }.getOrNull()
+                    val replyText = extractReplyText(msgContent).trim()
+                    if (replyText.isBlank()) {
+                        refund()
+                        return@withContext Result.failure(IllegalStateException("查無可用最新資料。"))
+                    }
+                    val sources = extractGroundedSources(root, replyText)
+                    Result.success(GroundedResult(text = replyText, sources = sources))
+                }
+            } catch (e: CancellationException) {
+                refund()
+                throw e
+            } catch (e: Exception) {
+                refund()
+                Result.failure(IllegalStateException("聯網查詢連線失敗（${e.javaClass.simpleName}）。"))
+            }
+        }
+
+        // 非 Gemini 3+：退化既有 BYOK 外部搜尋端點（如 Perplexity sonar）；Mistral chat completions 無 websearch
+        if (com.phantom.checker.util.EncryptedByokStore.isExternalSearchConfigured(context)) {
+            val byokReply = queryExternalSearchEndpoint(context, cleanQuery)
+            if (!byokReply.isNullOrBlank()) {
+                val sources = extractGroundedSources(null, byokReply)
+                return@withContext Result.success(GroundedResult(text = byokReply, sources = sources))
+            }
+            return@withContext Result.failure(IllegalStateException("外部搜尋端點未回傳可用結果，請稍後再試。"))
+        }
+
+        Result.failure(
+            IllegalStateException("此供應商不支援聯網查詢（請使用 Gemini 3+ 預設檔，或於設定填寫 BYOK 外部搜尋端點）。")
+        )
     }
 
     /**

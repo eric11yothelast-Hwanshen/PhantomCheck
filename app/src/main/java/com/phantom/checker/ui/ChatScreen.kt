@@ -258,6 +258,11 @@ fun ChatAssistantTab(
     var suggestionChips by remember { mutableStateOf(listOf<String>()) }
     var profiles by remember { mutableStateOf(AiClient.getProfiles(appCtx)) }
     var activeProfile by remember { mutableStateOf(AiClient.getProfileForPurpose(appCtx, com.phantom.checker.util.AiPurpose.CHAT)) }
+    var webSearchEnabled by remember { mutableStateOf(false) }
+    val webSearchSupported = remember(activeProfile) {
+        AiClient.isGeminiGroundingSupported(activeProfile) ||
+            com.phantom.checker.util.EncryptedByokStore.isExternalSearchConfigured(appCtx)
+    }
     var hasApiKey by remember { mutableStateOf(activeProfile != null) }
     var showSuggestions by remember { mutableStateOf(PhantomPrefs.isChatSuggestionsEnabled(appCtx)) }
     var assistantName by remember { mutableStateOf(PhantomPrefs.getAssistantName(appCtx)) }
@@ -484,6 +489,48 @@ fun ChatAssistantTab(
                 com.phantom.checker.util.GoalEngine.detectGoalCandidate(appCtx, displayUserText)?.let { cand ->
                     pendingGoalCandidate = sessionId to cand
                 }
+            }
+
+            // #389 聊天頁「🔍 聯網」開關：走 runGroundedQuery（Gemini 3+ tools=[google_search] 或 BYOK），查無／失敗誠實回報
+            if (webSearchEnabled && attachedImage == null) {
+                val groundedPrompt =
+                    "你是 PhantomCheck 聯網查證助手，請一律使用繁體中文回答。" +
+                        "規則：1) 僅依據搜尋工具回傳的真實最新資料作答 2) 若搜尋無結果或查無相關資訊，直接回答「查無相關最新資料」，嚴禁以模型既有知識頂替或編造 3) 重要事實請保留來源連結。"
+                val groundedRes = AiClient.runGroundedQuery(
+                    context = appCtx,
+                    systemPrompt = groundedPrompt,
+                    userQuery = query,
+                    maxTokens = 480,
+                    purpose = com.phantom.checker.util.AiPurpose.CHAT
+                )
+                val finalContent = groundedRes.fold(
+                    onSuccess = { gr ->
+                        buildString {
+                            append("🔍 **聯網查證結果**\n\n")
+                            append(gr.text.trim())
+                            if (gr.sources.isNotEmpty()) {
+                                append("\n\n**參考來源**\n")
+                                gr.sources.forEach { url -> appendLine("- $url") }
+                            }
+                        }.trim()
+                    },
+                    onFailure = { err ->
+                        "🔍 聯網查詢未完成：${err.message ?: "請稍後再試"}（查無或失敗時絕不以模型既有知識頂替）。"
+                    }
+                )
+                withContext(Dispatchers.IO) {
+                    db.chatDao().insertMessage(
+                        ChatMessageEntity(
+                            sessionId = sessionId,
+                            role = ChatMessageEntity.ROLE_ASSISTANT,
+                            content = finalContent,
+                            createdAt = System.currentTimeMillis()
+                        )
+                    )
+                }
+                loadMessages(sessionId)
+                isSending = false
+                return@launch
             }
 
             val history = messages
@@ -5494,6 +5541,25 @@ fun ChatAssistantTab(
                     )
                 }
             }
+            FilterChip(
+                selected = webSearchEnabled && webSearchSupported,
+                onClick = {
+                    if (webSearchSupported) {
+                        webSearchEnabled = !webSearchEnabled
+                    } else {
+                        webSearchEnabled = false
+                        onShowMessage("目前供應商不支援聯網查詢（請使用 Gemini 3+ 預設檔，或於設定填寫 BYOK 外部搜尋端點）")
+                    }
+                },
+                label = {
+                    Text(
+                        text = if (webSearchEnabled && webSearchSupported) "🔍 聯網中" else "🔍 聯網",
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1
+                    )
+                },
+                modifier = Modifier.alpha(if (webSearchSupported) 1f else 0.5f)
+            )
             OutlinedTextField(
                 value = inputText,
                 onValueChange = { inputText = it },
