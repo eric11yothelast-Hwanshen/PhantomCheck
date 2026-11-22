@@ -29,7 +29,7 @@
   - `PartnerTab` 將助手頭像與名字區塊移至全頁最頂端第一項（AI 日記與長程目標後移），移除 `PhantomGlassCard` 外框改為全寬去卡片化橫幅（與液態玻璃開關解耦，頭像放大至 `76.dp`），右上角提供 `48.dp` 相機／移除按鈕。
   - `BackgroundImageHelper` 新增夥伴頂部橫幅專屬內部儲存槽位（`assistant_header.jpg`），沿用 bounds-first `inSampleSize` 降採樣與壓縮（防 50MP 大圖 OOM、免持久化外部 URI 權限），底部搭配漸層 scrim 自然銜接下方內容；同步於 `SettingsCatalog`（`assistant_header_background`）與設定頁「個人化」新增管理入口。
 - **助手與介面客製化擴充（#393 / PR #395）**：
-  - 盤點 `PhantomPrefs` 與 `SettingsCatalog` 後於設定頁「個人化」新增 5 項高價值自訂項目（預設值皆 100% 對齊 v3.5.0 既有行為，並提供一鍵恢復預設）：① AI 聊天室字體獨立縮放（`85%–130%`，預設 `100%`）、② 訊息中心字體獨立縮放（`85%–130%`，預設 `100%`）、③ 聊天氣泡圓角半徑（`8–28dp`，預設 `18dp`）、④ 聊天氣泡最大寬度比例（`65%–95%`，預設 `82%`）、⑤ 首頁我的最愛 App 橫列顯示上限（`全部／3／5／8／10`，預設 `全部`）。
+  - 盤點 `PhantomPrefs` 與 `SettingsCatalog` 後於設定頁「個人化」新增 5 項高價值自訂項目（預設值皆 100% 對齊 v3.5.0 既有行為，並提供一鍵恢復預設）：① AI 聊天室字體獨立縮放（`85%–130%`，預設 `100%`）、② 訊息中心字體獨立縮放（`85%–130%`，預設 `100%`）、③ 聊天氣泡圓角半徑（`8–24dp`，預設 `18dp`）、④ 聊天氣泡最大寬度比例（`70%–95%`，預設 `82%`）、⑤ 首頁我的最愛 App 橫列顯示上限（`全部（預設）／最多 4 個／最多 6 個／最多 8 個`）。
 
 ### 變更與修正
 - **修復聊天純動作回覆誤顯示「AI 未回傳可顯示的內容」（#386 / PR #395）**：
@@ -40,7 +40,7 @@
 - **全域健檢與 OEM 相容複驗（#394 / PR #395）**：
   - **更新下載 Receiver 安全旗標修正**：`SettingsActivity` 註冊 `DownloadManager.ACTION_DOWNLOAD_COMPLETE` 廣播接收器由 `RECEIVER_EXPORTED` 修正為 `ContextCompat.RECEIVER_NOT_EXPORTED`，防止外部應用偽造下載完成廣播。
   - **GitHub 監控連續失敗誠實通知**：`GitHubMonitorWorker` 新增連續失敗計數與降頻日誌，連續失敗達第 3 次時發出單次誠實提醒通知引導檢查網路或 PAT 權限，成功同步後自動歸零重置。
-  - **開機重排 Catch-up 補齊 24 小時地板**：`BootReceiver` 除待辦事項外，對 `scheduled` 訊息提醒（`MessageDao.scheduledReminders`）同步套用 24 小時 `catchUpFloorMs` 過濾，避免重開機時補發過久以前的歷史逾期訊息提醒；並完成 Room `1→23` 遷移鏈、`PendingIntent` `FLAG_IMMUTABLE`、`Dispatchers.IO` 與五大 OEM 廠牌背景限制相容複驗。
+  - **開機重排 Catch-up 補齊 24 小時地板**：`BootReceiver` 除待辦事項外，對 `scheduled` 訊息提醒（`messageDao().allScheduledReminders()`）同步套用 24 小時 `catchUpFloorMs` 過濾，避免重開機時補發過久以前的歷史逾期訊息提醒；並完成 Room `1→23` 遷移鏈、`PendingIntent` `FLAG_IMMUTABLE`、`Dispatchers.IO` 與五大 OEM 廠牌背景限制相容複驗。
 
 ## [3.5.0] - 2026-11-22
 
