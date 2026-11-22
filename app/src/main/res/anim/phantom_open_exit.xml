@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- #398 M11：被覆蓋的畫面——輕微左移＋變淡（不降到全透明，避免露出黑底） -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shareInterpolator="false">
+    <translate
+        android:duration="300"
+        android:fromXDelta="0"
+        android:toXDelta="-4%p"
+        android:interpolator="@android:interpolator/decelerate_cubic" />
+    <alpha
+        android:duration="300"
+        android:fromAlpha="1.0"
+        android:toAlpha="0.85"
+        android:interpolator="@android:interpolator/decelerate_quad" />
+</set>

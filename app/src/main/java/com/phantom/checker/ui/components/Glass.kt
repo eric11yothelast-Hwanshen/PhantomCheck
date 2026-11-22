@@ -3,7 +3,7 @@ package com.phantom.checker.ui.components
 import android.os.Build
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,9 +17,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.platform.LocalViewConfiguration
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
@@ -126,33 +131,62 @@ fun GlassCard(
 }
 
 /**
- * 按壓微縮放微互動：按壓時縮放至 0.96，放開以 spring 回彈；不消費點擊事件。
+ * 按壓微縮放微互動（#398 升級）：按壓時 spring 縮放至 [targetScale]，放開回彈；
+ * 傳入 [glowShape] 時於按壓中以 draw-phase 疊加主色邊光。
+ * 不消費點擊事件；手指移動超過 touch slop 或手勢被他人消費（捲動）時提前釋放，避免捲動中卡在縮小狀態。
+ * 動畫值僅在 graphicsLayer / drawWithContent lambda 讀取，不觸發重組。
  */
-fun Modifier.pressableScale(targetScale: Float = 0.96f): Modifier = composed {
-    var isPressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) targetScale else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
-        label = "pressableScale",
-    )
+fun Modifier.pressableScale(targetScale: Float = 0.96f, glowShape: Shape? = null): Modifier = composed {
+    val press = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val glowColor = MaterialTheme.colorScheme.primary
+    val slop = LocalViewConfiguration.current.touchSlop
     this
         .graphicsLayer {
-            scaleX = scale
-            scaleY = scale
+            val s = 1f - (1f - targetScale) * press.value
+            scaleX = s
+            scaleY = s
         }
+        .then(
+            if (glowShape != null) {
+                Modifier.drawWithContent {
+                    drawContent()
+                    val p = press.value.coerceIn(0f, 1f)
+                    if (p > 0f) {
+                        val outline = glowShape.createOutline(size, layoutDirection, this)
+                        drawOutline(outline, glowColor.copy(alpha = 0.07f * p))
+                        drawOutline(
+                            outline,
+                            glowColor.copy(alpha = 0.35f * p),
+                            style = Stroke(width = 1.5.dp.toPx()),
+                        )
+                    }
+                }
+            } else {
+                Modifier
+            },
+        )
         .pointerInput(Unit) {
             awaitEachGesture {
-                awaitFirstDown(requireUnconsumed = false)
-                isPressed = true
+                val down = awaitFirstDown(requireUnconsumed = false)
+                scope.launch {
+                    press.animateTo(1f, spring(dampingRatio = 0.6f, stiffness = 800f))
+                }
                 try {
-                    do {
+                    while (true) {
                         val event = awaitPointerEvent()
-                    } while (event.changes.any { it.pressed })
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                        if (change.isConsumed ||
+                            (change.position - down.position).getDistance() > slop
+                        ) {
+                            break
+                        }
+                    }
                 } finally {
-                    isPressed = false
+                    scope.launch {
+                        press.animateTo(0f, spring(dampingRatio = 0.55f, stiffness = 600f))
+                    }
                 }
             }
         }

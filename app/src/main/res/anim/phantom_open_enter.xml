@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- #398 M11：開啟新畫面——自右側 8% 輕滑入＋淡入（系統動畫縮放＝0 時自動省略） -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shareInterpolator="false">
+    <translate
+        android:duration="300"
+        android:fromXDelta="8%p"
+        android:toXDelta="0"
+        android:interpolator="@android:interpolator/decelerate_cubic" />
+    <alpha
+        android:duration="220"
+        android:fromAlpha="0.0"
+        android:toAlpha="1.0"
+        android:interpolator="@android:interpolator/decelerate_quad" />
+</set>

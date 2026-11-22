@@ -4,7 +4,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -12,7 +11,6 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,7 +20,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -35,10 +42,12 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 /**
- * 流體切換開關（FluidSwitch）：
- * - spring 物理動畫位移
- * - 按壓時 thumb 變形（squish 壓扁）
- * - 拖曳超過一半閾值才切換，放開回彈
+ * 流體切換開關（FluidSwitch，#398 Aurora 版）：
+ * - spring 物理位移（略帶回彈）；按壓時 thumb 變形（squish）
+ * - 軌道／thumb 顏色與位移共用同一個 progress，於 draw phase 插值：點擊、拖曳、回彈全程連續變色
+ * - 開啟時：軌道外暈＋thumb 內浮現勾勾（路徑隨 progress 描繪）
+ * - 拖曳超過一半閾值才切換，放開回彈（行為語意與舊版完全相同）
+ * - 所有動畫值在 drawBehind／graphicsLayer lambda 讀取，不觸發重組；動畫縮放＝0 時由 Compose 直接跳終值
  */
 @Composable
 fun FluidSwitch(
@@ -60,8 +69,8 @@ fun FluidSwitch(
     val thumbOffset: Dp by animateDpAsState(
         targetValue = if (checked) travel else 0.dp,
         animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow,
+            dampingRatio = 0.55f,
+            stiffness = 500f,
         ),
         label = "thumbOffset",
     )
@@ -92,19 +101,37 @@ fun FluidSwitch(
         if (finalChecked != checked) onCheckedChange(finalChecked)
     }
 
+    val colors = MaterialTheme.colorScheme
+    val trackOn = colors.primary
+    val trackOff = colors.surfaceVariant
+    val thumbOn = colors.onPrimary
+    val thumbOff = colors.outline
+    val stateAlpha = if (enabled) 1f else 0.4f
+
+    /** 統一進度（0..1）：draw phase 呼叫；拖曳中取手指進度，否則取 spring 位移進度（可能略超出 → 夾住） */
+    fun progressNow(): Float =
+        (if (dragging) dragProgress.value else thumbOffset / travel).coerceIn(0f, 1f)
+
     Box(
         modifier = modifier
             .size(trackWidth, trackHeight)
-            .background(
-                color = if (checked) {
-                    MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.4f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(
-                        alpha = if (enabled) 1f else 0.4f,
+            .drawBehind {
+                val p = progressNow()
+                drawRoundRect(
+                    color = lerp(trackOff, trackOn, p).let { it.copy(alpha = it.alpha * stateAlpha) },
+                    cornerRadius = CornerRadius(size.height / 2f),
+                )
+                if (p > 0.01f && enabled) {
+                    val grow = 2.dp.toPx()
+                    drawRoundRect(
+                        color = trackOn.copy(alpha = 0.22f * p),
+                        topLeft = Offset(-grow, -grow),
+                        size = Size(size.width + grow * 2f, size.height + grow * 2f),
+                        cornerRadius = CornerRadius(size.height / 2f + grow),
+                        style = Stroke(width = 2.dp.toPx()),
                     )
-                },
-                shape = CircleShape,
-            )
+                }
+            }
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -160,14 +187,37 @@ fun FluidSwitch(
                     scaleX = thumbWidth / thumbSize
                     scaleY = thumbHeight / thumbSize
                 }
-                .background(
-                    color = if (checked) {
-                        MaterialTheme.colorScheme.onPrimary
-                    } else {
-                        MaterialTheme.colorScheme.outline
-                    },
-                    shape = CircleShape,
-                ),
+                .drawBehind {
+                    val p = progressNow()
+                    val c = lerp(thumbOff, thumbOn, p)
+                    // thumb 柔影
+                    drawCircle(
+                        color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.16f * stateAlpha),
+                        radius = size.minDimension / 2f,
+                        center = Offset(size.width / 2f, size.height / 2f + 1.dp.toPx()),
+                    )
+                    drawCircle(color = c.copy(alpha = stateAlpha))
+                    // 勾勾：隨進度描繪（後半段才出現，避免過渡時雜亂）
+                    val check = ((p - 0.45f) / 0.55f).coerceIn(0f, 1f)
+                    if (check > 0f) {
+                        val w = size.width
+                        val h = size.height
+                        val path = Path().apply {
+                            moveTo(w * 0.29f, h * 0.52f)
+                            lineTo(w * 0.44f, h * 0.67f)
+                            lineTo(w * 0.72f, h * 0.36f)
+                        }
+                        drawPath(
+                            path = path,
+                            color = trackOn.copy(alpha = check * stateAlpha),
+                            style = Stroke(
+                                width = 2.2.dp.toPx(),
+                                cap = StrokeCap.Round,
+                                join = StrokeJoin.Round,
+                            ),
+                        )
+                    }
+                },
         )
     }
 }

@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.PhantomCheck" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.PhantomCheck" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- #398 M11：全域 Activity 轉場（設定子頁等）；系統視窗動畫縮放＝0 時自動省略 -->
+        <item name="android:windowAnimationStyle">@style/PhantomWindowAnimation</item>
+    </style>
+
+    <style name="PhantomWindowAnimation" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@anim/phantom_open_enter</item>
+        <item name="android:activityOpenExitAnimation">@anim/phantom_open_exit</item>
+        <item name="android:activityCloseEnterAnimation">@anim/phantom_close_enter</item>
+        <item name="android:activityCloseExitAnimation">@anim/phantom_close_exit</item>
+    </style>
 </resources>

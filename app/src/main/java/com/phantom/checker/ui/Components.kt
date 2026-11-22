@@ -140,6 +140,10 @@ import androidx.compose.ui.window.DialogWindowProvider
 import com.phantom.checker.ui.components.GlassCard
 import com.phantom.checker.ui.components.glassSource
 import com.phantom.checker.ui.components.glassSurface
+import com.phantom.checker.ui.components.phantomEnter
+import com.phantom.checker.ui.components.phantomPopIn
+import com.phantom.checker.ui.components.phantomPressable
+import com.phantom.checker.ui.components.phantomSheen
 import com.phantom.checker.ui.components.pressableScale
 import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
@@ -255,6 +259,7 @@ fun PhantomFloatingSurface(
         modifier = modifier
             .clip(shape)
             .background(bgColor, shape)
+            .phantomSheen(cornerRadius, isDark)
             .border(
                 width = 1.dp,
                 color = MaterialTheme.colorScheme.outlineVariant,
@@ -356,6 +361,7 @@ fun PhantomGlassCard(
                 .clip(shape)
                 .let { m -> if (overlayColor != null) m.background(overlayColor, shape) else m }
                 .let { m -> if (tintColor != null) m.background(tintColor, shape) else m }
+                .phantomSheen(cornerRadius, isDark)
                 .let { m -> if (overlapOpaqueBoost) m.border(width = 1.dp, color = outline, shape = shape) else m }
         ) {
             androidx.compose.runtime.CompositionLocalProvider(
@@ -381,6 +387,7 @@ fun PhantomGlassCard(
                 .clip(shape)
                 .background(solidBg, shape)
                 .let { m -> if (tintColor != null) m.background(tintColor, shape) else m }
+                .phantomSheen(cornerRadius, isDark)
                 .border(width = 1.dp, color = outline, shape = shape)
         ) {
             androidx.compose.runtime.CompositionLocalProvider(
@@ -613,6 +620,7 @@ fun PhantomDialog(
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             PhantomFloatingSurface(
                 modifier = modifier
+                    .phantomPopIn()
                     .widthIn(max = maxWidth)
                     .heightIn(max = maxHeight * maxContentHeightFraction),
                 cornerRadius = cornerRadius,
@@ -801,7 +809,9 @@ fun EmptyStateView(
                 imageVector = icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier
+                    .phantomPopIn(initialScale = 0.6f)
+                    .size(48.dp)
             )
             Spacer(Modifier.height(12.dp))
             Text(
@@ -1192,6 +1202,7 @@ fun MessageCard(
             Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.pressableScale(0.95f),
                 onClick = {
                     val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                     cm.setPrimaryClip(android.content.ClipData.newPlainText("otp_code", otpCode))
@@ -1221,6 +1232,7 @@ fun MessageCard(
                     outlineColor = MaterialTheme.colorScheme.error,
                     cornerRadius = 20.dp
                 )
+                .phantomSheen(20.dp, MaterialTheme.colorScheme.background.luminance() < 0.5f)
         ) {
             androidx.compose.runtime.CompositionLocalProvider(
                 androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onErrorContainer
@@ -1511,6 +1523,7 @@ fun PhantomSearchBarPill(
         ) {
             Row(
                 modifier = Modifier
+                    .pressableScale(0.96f, shape)
                     .height(36.dp)
                     .widthIn(min = 92.dp, max = 160.dp)
                     .phantomGlassSurface(
@@ -1518,6 +1531,7 @@ fun PhantomSearchBarPill(
                         fallbackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
                         cornerRadius = 18.dp
                     )
+                    .phantomSheen(18.dp, MaterialTheme.colorScheme.background.luminance() < 0.5f)
                     .clip(shape)
                     .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1650,8 +1664,16 @@ fun PhantomFullScreenSearchOverlay(
     }
     androidx.compose.animation.AnimatedVisibility(
         visible = visible,
-        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { -it / 8 },
-        exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { -it / 8 }
+        enter = androidx.compose.animation.fadeIn(
+            androidx.compose.animation.core.tween(220, easing = com.phantom.checker.ui.components.PhantomMotion.EmphasizedDecelerate)
+        ) + androidx.compose.animation.slideInVertically(
+            androidx.compose.animation.core.tween(240, easing = com.phantom.checker.ui.components.PhantomMotion.EmphasizedDecelerate)
+        ) { -it / 10 },
+        exit = androidx.compose.animation.fadeOut(
+            androidx.compose.animation.core.tween(150, easing = com.phantom.checker.ui.components.PhantomMotion.EmphasizedAccelerate)
+        ) + androidx.compose.animation.slideOutVertically(
+            androidx.compose.animation.core.tween(160, easing = com.phantom.checker.ui.components.PhantomMotion.EmphasizedAccelerate)
+        ) { -it / 10 }
     ) {
         val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
         LaunchedEffect(visible) {

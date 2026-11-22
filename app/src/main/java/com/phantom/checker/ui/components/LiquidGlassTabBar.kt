@@ -1,6 +1,10 @@
 package com.phantom.checker.ui.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -266,11 +270,21 @@ fun LiquidGlassTabBarItem(
     compact: Boolean = false,
     customIcon: (@Composable () -> Unit)? = null,
 ) {
-    val contentColor = if (selected) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
+    val contentColor by animateColorAsState(
+        targetValue = if (selected) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        animationSpec = tween(durationMillis = 180),
+        label = "tabContentColor",
+    )
+    // M8：選中時圖示輕彈放大（draw phase 讀取，不重組）
+    val iconScale by animateFloatAsState(
+        targetValue = if (selected) 1.12f else 1f,
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
+        label = "tabIconScale",
+    )
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         // S50：內容垂直置中（原本頂部對齊導致下方約 28dp 空、水滴置中後視覺空洞）
@@ -284,15 +298,23 @@ fun LiquidGlassTabBarItem(
                 onClick = onClick,
             ),
     ) {
-        if (customIcon != null) {
-            customIcon()
-        } else {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = contentColor,
-                modifier = if (compact) Modifier.size(20.dp) else Modifier.size(22.dp),
-            )
+        Box(
+            modifier = Modifier.graphicsLayer {
+                scaleX = iconScale
+                scaleY = iconScale
+            },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (customIcon != null) {
+                customIcon()
+            } else {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = contentColor,
+                    modifier = if (compact) Modifier.size(20.dp) else Modifier.size(22.dp),
+                )
+            }
         }
         Spacer(Modifier.height(if (compact) 1.dp else 2.dp))
         Text(
