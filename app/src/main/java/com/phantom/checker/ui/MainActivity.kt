@@ -856,10 +856,22 @@ private fun PhantomCheckApp(
             onDismissRequest = { pendingUpdateDialog = null },
             title = { Text("發現新版本") },
             text = {
-                Text(
-                    "已推出新版本 v${update.latestVersion}（發佈於 ${update.publishedDate}）\n\n" +
-                        "不想再收到更新提醒？可至 設定 → 關於 關閉自動檢查更新。"
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "已推出新版本 v${update.latestVersion}（發佈於 ${update.publishedDate}）",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    ReleaseNotesPreviewBox(
+                        title = "最新版本更新內容（v${update.latestVersion}／${update.publishedDate}）",
+                        releaseNotes = update.releaseNotes
+                    )
+                    Text(
+                        "不想再收到更新提醒？可至 設定 → 關於 關閉自動檢查更新。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             },
             confirmButton = {
                 Button(

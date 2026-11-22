@@ -30,12 +30,17 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 sealed interface UpdateCheckResult {
-    data class UpToDate(val currentVersion: String) : UpdateCheckResult
+    data class UpToDate(
+        val currentVersion: String,
+        val publishedDate: String = "",
+        val releaseNotes: String = ""
+    ) : UpdateCheckResult
     data class UpdateAvailable(
         val latestVersion: String,
         val publishedDate: String,
         val apkDownloadUrl: String?,
-        val htmlUrl: String
+        val htmlUrl: String,
+        val releaseNotes: String = ""
     ) : UpdateCheckResult
     data class Error(val message: String) : UpdateCheckResult
 }
@@ -96,9 +101,14 @@ object AppUpdateHelper {
                 val publishedRaw = json.optString("published_at", "").trim()
                 val publishedDate = if (publishedRaw.length >= 10) publishedRaw.take(10) else "未知日期"
                 val htmlUrl = json.optString("html_url", REPO_RELEASES_URL).ifBlank { REPO_RELEASES_URL }
+                val releaseNotes = json.optString("body", "").trim()
 
                 if (compareSemVer(cleanRemote, localVersion) <= 0) {
-                    return@withContext UpdateCheckResult.UpToDate(localVersion)
+                    return@withContext UpdateCheckResult.UpToDate(
+                        currentVersion = localVersion,
+                        publishedDate = publishedDate,
+                        releaseNotes = releaseNotes
+                    )
                 }
 
                 val assets = json.optJSONArray("assets")
@@ -121,7 +131,8 @@ object AppUpdateHelper {
                     latestVersion = cleanRemote,
                     publishedDate = publishedDate,
                     apkDownloadUrl = apkUrl,
-                    htmlUrl = htmlUrl
+                    htmlUrl = htmlUrl,
+                    releaseNotes = releaseNotes
                 )
             }
         } catch (_: SocketTimeoutException) {

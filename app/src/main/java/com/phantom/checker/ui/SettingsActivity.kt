@@ -4705,6 +4705,53 @@ private fun ShizukuAdvancedCard(
     }
 }
 
+/** #391 捲動式 Markdown 更新內容預覽區塊（關於卡與自動更新彈窗共用） */
+@Composable
+internal fun ReleaseNotesPreviewBox(
+    title: String,
+    releaseNotes: String,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 260.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(12.dp)
+            ) {
+                if (releaseNotes.isBlank()) {
+                    Text(
+                        text = "此版本無更新說明",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    PhantomMarkdownText(
+                        markdown = releaseNotes,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun AboutSettingsCard(
     expanded: Boolean,
@@ -4970,6 +5017,12 @@ private fun AboutSettingsCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )
+                Spacer(Modifier.height(6.dp))
+                val dateSuffix = res.publishedDate.takeIf { it.isNotBlank() }?.let { "／$it" }.orEmpty()
+                ReleaseNotesPreviewBox(
+                    title = "本版更新內容（v${res.currentVersion}$dateSuffix）",
+                    releaseNotes = res.releaseNotes
+                )
             }
             is UpdateCheckResult.UpdateAvailable -> {
                 Spacer(Modifier.height(6.dp))
@@ -4980,6 +5033,11 @@ private fun AboutSettingsCard(
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(Modifier.height(6.dp))
+                ReleaseNotesPreviewBox(
+                    title = "最新版本更新內容（v${res.latestVersion}／${res.publishedDate}）",
+                    releaseNotes = res.releaseNotes
+                )
+                Spacer(Modifier.height(8.dp))
                 if (res.apkDownloadUrl != null) {
                     val readyFile = downloadedApkFile
                     if (readyFile != null && readyFile.exists() && !isDownloading) {
