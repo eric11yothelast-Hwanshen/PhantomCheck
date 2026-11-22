@@ -207,6 +207,7 @@ internal fun MemoryTab(
     // 編輯 / 新增對話框狀態
     var showEditorDialog by remember { mutableStateOf(false) }
     var editingMemory by remember { mutableStateOf<MemoryEntity?>(null) }
+    var showWatchTopicDialog by remember { mutableStateOf(false) }
 
     // 單筆刪除確認
     var pendingDeleteMemory by remember { mutableStateOf<MemoryEntity?>(null) }
@@ -534,6 +535,11 @@ internal fun MemoryTab(
                         }
                     )
                 }
+                TextButton(
+                    onClick = { showWatchTopicDialog = true }
+                ) {
+                    Text("關注清單", style = MaterialTheme.typography.labelMedium)
+                }
                 IconButton(
                     onClick = {
                         editingMemory = null
@@ -550,6 +556,13 @@ internal fun MemoryTab(
                     Icon(Icons.Default.Settings, contentDescription = "記憶庫與 AI 助手設定")
                 }
             }
+        }
+
+        if (showWatchTopicDialog) {
+            WatchTopicManagerDialog(
+                onDismiss = { showWatchTopicDialog = false },
+                onShowMessage = onShowMessage
+            )
         }
 
         // 可收合搜尋框（點擊頂部搜尋鈕展開並自動聚焦；有字維持展開；清空失焦收合；返回鍵先清字再收合）

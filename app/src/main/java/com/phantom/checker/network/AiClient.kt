@@ -2421,6 +2421,49 @@ object AiClient {
     }
 
     /**
+     * #388 主動情報萃取與摘要（走 AiPurpose.PROACTIVE 獨立路由與獨立每日額度，失敗自動退款，不吃聊天／分析配額）。
+     * 離線、429、無金鑰或省 token 模式時靜默回傳 null。
+     */
+    suspend fun generateProactiveText(
+        context: Context,
+        systemPrompt: String,
+        userPrompt: String,
+        maxTokens: Int = 240
+    ): String? = withContext(Dispatchers.IO) {
+        if (PhantomPrefs.isTokenSaverEnabled(context)) return@withContext null
+        val profile = getProfileForPurpose(context, AiPurpose.PROACTIVE) ?: return@withContext null
+        val apiKey = profile.apiKey.trim()
+        if (apiKey.isEmpty()) return@withContext null
+        if (!PhantomPrefs.canUseProactiveAiTodayAndIncrement(context)) return@withContext null
+        val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
+        val auth = "Bearer $apiKey"
+        val body = ChatRequest(
+            model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
+            messages = listOf(
+                ChatMessage("system", systemPrompt),
+                ChatMessage("user", userPrompt)
+            ),
+            maxTokens = maxTokens.coerceIn(120, 600),
+            temperature = 0.25
+        )
+        try {
+            enforceRateLimit()
+            val res = getApi(profile.baseUrl).chat(url = fullUrl, auth = auth, body = body)
+            val reply = extractReplyText(res.choices.firstOrNull()?.message?.content).takeIf { it.isNotBlank() }
+            if (reply == null) {
+                PhantomPrefs.refundTodayProactiveAiUsage(context)
+            }
+            reply
+        } catch (e: CancellationException) {
+            PhantomPrefs.refundTodayProactiveAiUsage(context)
+            throw e
+        } catch (_: Exception) {
+            PhantomPrefs.refundTodayProactiveAiUsage(context)
+            null
+        }
+    }
+
+    /**
      * #337 選配外部情報搜尋（OpenAI 相容搜尋端點 BYOK，如 Perplexity sonar）：
      * - 金鑰與端點存於 EncryptedByokStore（EncryptedSharedPreferences），絕不進 repo/log。
      * - 未設定端點或省 token 模式開啟時誠實回傳 null，不報錯。

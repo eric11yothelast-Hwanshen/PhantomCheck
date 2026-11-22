@@ -65,7 +65,8 @@ enum class AiPurpose(val id: String, val label: String, val catalogId: String) {
     DEEP_ANALYSIS("ai_deep_analysis", "訊息深度分析", "ai_model_deep_analysis"),
     SETTINGS_SEARCH("ai_settings_search", "設定 AI 語意搜尋", "ai_model_settings_search"),
     AUTO_MEMO("ai_auto_memo", "自動備忘錄生成", "ai_model_auto_memo"),
-    BRIEFING("ai_briefing", "早晚簡報與畫像卡", "ai_model_briefing")
+    BRIEFING("ai_briefing", "早晚簡報與畫像卡", "ai_model_briefing"),
+    PROACTIVE("ai_proactive", "主動情報萃取與摘要", "ai_model_proactive")
 }
 
 enum class TabBarDisplayMode(val prefValue: String, val label: String) {
@@ -359,6 +360,84 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
                 p.edit().putInt(KEY_AI_USAGE_COUNT, currentCount - 1).apply()
             }
         }
+    }
+
+    /** #388 主動情報中樞（AiPurpose.PROACTIVE）獨立每日額度（預設 12 次/日，不吃聊天／分析配額） */
+    fun getProactiveAiDailyLimit(ctx: Context): Int =
+        prefs(ctx).getInt("ai_proactive_daily_limit", 12).coerceIn(1, 50)
+
+    @Synchronized
+    fun getProactiveAiTodayUsed(ctx: Context): Int {
+        val p = prefs(ctx)
+        return if (p.getString("ai_proactive_usage_date", "") == todayDateStr()) {
+            p.getInt("ai_proactive_usage_count", 0)
+        } else 0
+    }
+
+    @Synchronized
+    fun canUseProactiveAiTodayAndIncrement(ctx: Context): Boolean {
+        val limit = getProactiveAiDailyLimit(ctx)
+        val p = prefs(ctx)
+        val today = todayDateStr()
+        val storedDate = p.getString("ai_proactive_usage_date", "")
+        val currentCount = if (storedDate == today) p.getInt("ai_proactive_usage_count", 0) else 0
+        if (currentCount >= limit) return false
+        p.edit()
+            .putString("ai_proactive_usage_date", today)
+            .putInt("ai_proactive_usage_count", currentCount + 1)
+            .apply()
+        return true
+    }
+
+    @Synchronized
+    fun refundTodayProactiveAiUsage(ctx: Context) {
+        val p = prefs(ctx)
+        val today = todayDateStr()
+        if (p.getString("ai_proactive_usage_date", "") == today) {
+            val currentCount = p.getInt("ai_proactive_usage_count", 0)
+            if (currentCount > 0) {
+                p.edit().putInt("ai_proactive_usage_count", currentCount - 1).apply()
+            }
+        }
+    }
+
+    /** #388 / #390 主動情報總開關（預設 false；關閉時零 AI 呼叫、零外送、worker 不排程） */
+    fun isProactiveIntelEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("proactive_intel_enabled", false)
+
+    fun setProactiveIntelEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("proactive_intel_enabled", enabled).apply()
+    }
+
+    /** #388 / #390 每日自動萃取關注主題開關（預設 true，須總開關開啟才生效） */
+    fun isProactiveExtractEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("proactive_extract_enabled", true)
+
+    fun setProactiveExtractEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("proactive_extract_enabled", enabled).apply()
+    }
+
+    /** #390 主動情報查詢頻率（6 / 12 / 24 小時，預設 6 小時） */
+    fun getProactiveIntelFreqHours(ctx: Context): Int =
+        prefs(ctx).getInt("proactive_intel_freq_hours", 6).let { if (it in setOf(6, 12, 24)) it else 6 }
+
+    fun setProactiveIntelFreqHours(ctx: Context, hours: Int) {
+        val v = if (hours in setOf(6, 12, 24)) hours else 6
+        prefs(ctx).edit().putInt("proactive_intel_freq_hours", v).apply()
+    }
+
+    fun hasSeenProactiveIntelConsent(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("proactive_intel_consent_seen", false)
+
+    fun setSeenProactiveIntelConsent(ctx: Context, seen: Boolean) {
+        prefs(ctx).edit().putBoolean("proactive_intel_consent_seen", seen).apply()
+    }
+
+    fun getWatchTopicLastExtractDay(ctx: Context): String =
+        prefs(ctx).getString("watch_topic_last_extract_day", "").orEmpty()
+
+    fun setWatchTopicLastExtractDay(ctx: Context, dayKey: String) {
+        prefs(ctx).edit().putString("watch_topic_last_extract_day", dayKey).apply()
     }
 
     /** 每日 AI 摘要開關與排程時間（預設開、22:00） */

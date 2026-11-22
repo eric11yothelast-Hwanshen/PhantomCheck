@@ -148,6 +148,7 @@ object SettingsCatalog {
         SettingSearchItem("health_soft_invite_enabled", "hub", "Health Connect 軟性邀請", "未授權 Health Connect 時於晨間簡報每週最多一次顯示軟性連接邀請", listOf("穿戴", "手錶", "health", "軟邀請"), page = "PermissionHubActivity"),
         SettingSearchItem("decision_confirm_threshold", "hub", "雙門檻自動決策置信閾值", "調整 AI 自動判定高風險與降級確認卡的分數門檻（預設 60，範圍 40–85）", listOf("雙門檻", "決策", "閾值", "防詐門檻", "確認卡", "decision", "threshold"), page = "AssistantHubActivity"),
         SettingSearchItem("ai_model_briefing", "ai", "簡報與畫像卡模型", "為早晚簡報與「我對你的瞭解」畫像卡指定獨立 AI 模型", listOf("簡報模型", "畫像卡模型", "briefing", "模型"), page = "ApiKeySettingsActivity"),
+        SettingSearchItem("ai_model_proactive", "ai", "主動情報萃取與摘要模型", "為主動情報中樞（關注主題萃取與動態摘要）指定獨立 AI 模型與設定檔", listOf("主動情報", "情報模型", "proactive", "關注主題", "模型"), page = "ApiKeySettingsActivity"),
         SettingSearchItem("linked_apps_center", "hub", "連結應用程式中心", "集中檢視日曆、通訊錄、通知、鬧鐘、電池優化狀態與自填金鑰雲端擴充（GitHub／Discord）", listOf("連結應用", "github", "discord", "webhook", "鬧鐘", "gmail", "地圖", "跨app", "linked"), page = "LinkedAppsActivity"),
         SettingSearchItem("update_auto_check", "about", "自動檢查更新", "每次開啟 App 自動檢查更新；選擇「稍後更新」將於設定間隔後再次提醒。", listOf("檢查更新", "更新", "版本", "自動更新", "update")),
         SettingSearchItem("update_snooze_minutes", "about", "更新提醒延後間隔", "點擊「稍後更新」後暫停提醒的時間（30 分鐘／1 小時／4 小時，預設 1 小時）", listOf("稍後更新", "延後", "snooze", "更新間隔")),

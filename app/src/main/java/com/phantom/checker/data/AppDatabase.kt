@@ -1537,6 +1537,112 @@ interface GoalDao {
     suspend fun deleteProgressForGoal(goalId: Long)
 }
 
+/** #388 主動情報中樞 Phase A：使用者關注主題實體檔 */
+@Entity(
+    tableName = "watch_topics",
+    indices = [Index(value = ["status"])]
+)
+data class WatchTopicEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val topicType: String = TYPE_KEYWORD,
+    val label: String,
+    val queryHint: String,
+    val source: String = SOURCE_MANUAL,
+    val confidence: String = CONFIDENCE_MANUAL,
+    val status: String = STATUS_ACTIVE,
+    val lastQueryAt: Long = 0L,
+    val lastDigestHash: String? = null,
+    val rawDigest: String? = null,
+    val rawDigestAt: Long = 0L,
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    companion object {
+        const val TYPE_APP = "app"
+        const val TYPE_GAME = "game"
+        const val TYPE_WORK = "work"
+        const val TYPE_PERSON = "person"
+        const val TYPE_PROJECT = "project"
+        const val TYPE_REGION = "region"
+        const val TYPE_KEYWORD = "keyword"
+
+        val ALLOWED_TYPES = setOf(
+            TYPE_APP, TYPE_GAME, TYPE_WORK, TYPE_PERSON, TYPE_PROJECT, TYPE_REGION, TYPE_KEYWORD
+        )
+
+        const val SOURCE_MANUAL = "manual"
+        const val SOURCE_AI_EXTRACTED = "ai_extracted"
+
+        const val CONFIDENCE_MANUAL = "manual"
+        const val CONFIDENCE_CONFIRMED = "confirmed"
+        const val CONFIDENCE_LOW = "low"
+
+        const val STATUS_ACTIVE = "active"
+        const val STATUS_MUTED = "muted"
+        const val STATUS_ARCHIVED = "archived"
+
+        fun confidenceRank(confidence: String): Int = when (confidence) {
+            CONFIDENCE_MANUAL -> 3
+            CONFIDENCE_CONFIRMED -> 2
+            else -> 1
+        }
+
+        fun typeLabel(type: String): String = when (type) {
+            TYPE_APP -> "App"
+            TYPE_GAME -> "遊戲"
+            TYPE_WORK -> "工作"
+            TYPE_PERSON -> "人物"
+            TYPE_PROJECT -> "專案"
+            TYPE_REGION -> "地區"
+            else -> "關鍵字"
+        }
+    }
+}
+
+@Dao
+interface WatchTopicDao {
+    @Query("SELECT * FROM watch_topics ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<WatchTopicEntity>>
+
+    @Query("SELECT * FROM watch_topics ORDER BY createdAt DESC")
+    suspend fun getAll(): List<WatchTopicEntity>
+
+    @Query("SELECT * FROM watch_topics WHERE status = :status ORDER BY createdAt DESC")
+    suspend fun getByStatus(status: String): List<WatchTopicEntity>
+
+    @Query("SELECT * FROM watch_topics WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): WatchTopicEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(entity: WatchTopicEntity): Long
+
+    @Update
+    suspend fun update(entity: WatchTopicEntity)
+
+    @Query("UPDATE watch_topics SET status = :status WHERE id = :id")
+    suspend fun updateStatus(id: Long, status: String)
+
+    @Query("UPDATE watch_topics SET confidence = :confidence WHERE id = :id")
+    suspend fun updateConfidence(id: Long, confidence: String)
+
+    @Query("UPDATE watch_topics SET queryHint = :queryHint WHERE id = :id")
+    suspend fun updateQueryHint(id: Long, queryHint: String)
+
+    @Query("UPDATE watch_topics SET lastQueryAt = :lastQueryAt, lastDigestHash = :lastDigestHash, rawDigest = :rawDigest, rawDigestAt = :rawDigestAt WHERE id = :id")
+    suspend fun updateQueryResult(
+        id: Long,
+        lastQueryAt: Long,
+        lastDigestHash: String?,
+        rawDigest: String?,
+        rawDigestAt: Long
+    )
+
+    @Query("UPDATE watch_topics SET confidence = 'confirmed' WHERE source = 'ai_extracted' AND confidence = 'low' AND status = 'active'")
+    suspend fun acceptAllExtracted(): Int
+
+    @Query("DELETE FROM watch_topics WHERE id = :id")
+    suspend fun deleteById(id: Long)
+}
+
 @Database(
     entities = [
         MessageEntity::class,
@@ -1562,9 +1668,10 @@ interface GoalDao {
         TaskTemplateEntity::class,
         DiaryDayEntity::class,
         GoalEntity::class,
-        GoalProgressEntity::class
+        GoalProgressEntity::class,
+        WatchTopicEntity::class
     ],
-    version = 22,
+    version = 23,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1588,6 +1695,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun contactAliasDao(): ContactAliasDao
     abstract fun diaryDao(): DiaryDao
     abstract fun goalDao(): GoalDao
+    abstract fun watchTopicDao(): WatchTopicDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -2029,6 +2137,33 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "CREATE UNIQUE INDEX IF NOT EXISTS `index_goal_progress_goalId_todoId` ON `goal_progress` (`goalId`, `todoId`)"
+                )
+            }
+        }
+
+        /** #388 主動情報中樞 Phase A 非破壞性遷移 22→23：純 CREATE TABLE watch_topics＋status 索引 */
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `watch_topics` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `topicType` TEXT NOT NULL,
+                        `label` TEXT NOT NULL,
+                        `queryHint` TEXT NOT NULL,
+                        `source` TEXT NOT NULL,
+                        `confidence` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `lastQueryAt` INTEGER NOT NULL,
+                        `lastDigestHash` TEXT,
+                        `rawDigest` TEXT,
+                        `rawDigestAt` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_watch_topics_status` ON `watch_topics` (`status`)"
                 )
             }
         }
