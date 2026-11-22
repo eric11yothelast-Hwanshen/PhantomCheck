@@ -2,6 +2,46 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [3.6.0] - 2026-11-22
+
+- **Tag 對照**：[`v3.5.0...v3.6.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.5.0...v3.6.0)（`versionCode = 45`、`versionName = "3.6.0"`）
+- **發佈資產（雙 APK）**：
+  - `app-release.apk`：正式簽章＋R8 程式碼縮減與資源壓縮（`isMinifyEnabled = true`、`isShrinkResources = true`），供一般使用者安裝與原簽章覆蓋升級。
+  - `app-debug.apk`：除錯建置版本，供開發測試與排錯使用。
+
+### 新增功能
+- **主動情報中樞 Phase A：關注實體檔、每日 AI 萃取候選與獨立額度（#388 / PR #395）**：
+  - Room 資料庫由 v22 非破壞性升級至 v23（`MIGRATION_22_23` 純 `CREATE TABLE IF NOT EXISTS watch_topics` 與 `index_watch_topics_status`），新增 `WatchTopicEntity`（含 `category`、`title`、`queryHint`、`source`、`status`、`confidence`、`lastQueriedAt`、`lastDigestHash`、`hitCount` 等欄位）與 `WatchTopicDao`。
+  - 新增 `WatchTopicEngine` 與每日背景萃取 `WatchTopicExtractWorker`（`phantom_watch_topic_extract`、`ExistingPeriodicWorkPolicy.KEEP`、`NetworkType.CONNECTED`＋`requiresBatteryNotLow`）：以 SQL（`activeNormalMemoriesForPrompt`）與 Kotlin（`privacyTier != PRIVACY_SENSITIVE`）雙重硬性排除 `🔒 敏感` 記憶，全素材經 `AiClient.sanitizeForPrompt` 清洗後萃取至多 5 筆待確認候選（`source = "ai_extracted"`、`confidence = "low"`），**待使用者確認前絕不直接觸發外部查詢或推播**。
+  - 新增 `AiPurpose.PROACTIVE`（「主動情報與關注萃取」）獨立模型用途與每日額度上限（預設 12 次／日，失敗自動退還額度）；新增記憶分頁與設定頁共用的 `WatchTopicManagerDialog`（支援待確認候選一鍵全部接受、逐筆確認／編輯 `queryHint`／靜音／恢復／刪除及手動新增）。
+- **主動情報中樞 Phase B：Gemini Grounding 聯網查詢與聊天頁聯網開關（#389 / PR #395）**：
+  - `ChatRequest` 新增選配 `tools: List<Map<String, Any>>? = null`（Gson 預設忽略 `null`，既有非聯網請求逐位元組零影響），並新增 `AiClient.runGroundedQuery()`。
+  - 僅當目標 Profile 為 Gemini OpenAI 相容端點且模型為 **Gemini 3+** 時注入 `tools = [{"google_search": {}}]`，並多路徑防禦性解析來源網址（`annotations[].url_citation.url`、`extra_content.google.grounding_metadata.grounding_chunks[].web.uri`、`grounding_metadata`／`groundingMetadata`、`citations[]` 與內文 URL fallback）；遇 HTTP 429 自動退還額度並靜默退避。
+  - `ChatScreen` 輸入列上方新增「🔍 聯網」切換 chip：僅 Gemini 3+ 可啟用原生 Google Search Grounding（其他 provider 如 Mistral／Groq 若未設定 BYOK 外部搜尋端點則誠實灰顯並點擊說明原因）；查無結果或網路失敗時誠實回報，絕不以模型舊知識偽裝即時聯網結果。
+- **主動情報中樞 Phase C/D/E：週期查詢、去重整理、主動推送、設定疆界與隱私文件（#390 / PR #395）**：
+  - 新增 `WatchQueryPlanner`（純本機零 token 挑選到期主題：`region` 類 6 小時、其餘 24 小時，依 `high > medium > low` 排序每輪至多 3 筆，省 token 模式自動跳過）、`DigestComposer`（12 小時本地短快取、SHA-256 摘要雜湊去重無新意零推播、查無新訊嚴守「近期無新資訊」零幻覺鐵律並附來源連結）與 `ProactiveIntelWorker`（`phantom_proactive_intel`、`ExistingPeriodicWorkPolicy.UPDATE`、`CONNECTED`＋`requiresBatteryNotLow`、`BootReceiver` 開機重排），並與 `ProactiveEngine` 早晚簡報共用情報摘要、獨立勿擾、每日主動上限與 `NotifIds.PROACTIVE_INTEL = 1013` 推播閘門。
+  - 設定頁新增「主動情報中樞」設定卡（**總開關預設關閉**，首次開啟彈出完整隱私與額度說明對話框；支援每日自動萃取開關、6／12／24 小時查詢頻率、關注清單管理、「立即查詢」預覽及「Mistral 日常分析 ＋ Gemini 主動情報」分用途或 BYOK 雙軌引導），全數註冊進 `SettingsCatalog`；同步增修 `PRIVACY.md` 第 6 節載明開啟時**僅送出已確認之關注主題短字串（`title`／`queryHint`，≤80 字）**，絕不外送原始通知、記憶全文或敏感資料。
+  - 主動情報訊息寫入專屬主動訊息聊天室並由 `PhantomMarkdownText` 渲染可點擊來源連結、氣泡下方提供「💬 深入追問」按鈕一鍵切至對話並預填追問；系統通知附「不再關注」動作鈕（由 `WatchTopicMuteReceiver` `exported="false"`＋`FLAG_IMMUTABLE` 直接靜音該主題，零 trampoline）。
+- **關於與自動更新卡顯示最新版本更新內容（#391 / PR #395）**：
+  - `AppUpdateHelper` 之 `UpdateCheckResult.UpToDate` 與 `UpdateAvailable` 擴充攜帶 GitHub `releases/latest` 的 `releaseNotes`（`body`）與 `publishedDate`（每次即時抓取不快取）。
+  - 新增共用捲動式 `ReleaseNotesPreviewBox`（`PhantomMarkdownText` 渲染＋`heightIn(max = 260.dp)`＋`verticalScroll`，空內容誠實顯示「此版本無更新說明」），同步嵌入設定頁「關於」卡片與首頁自動更新提醒對話框。
+- **夥伴頁頭像名字置頂去卡片化與區域背景自訂（#392 / PR #395）**：
+  - `PartnerTab` 將助手頭像與名字區塊移至全頁最頂端第一項（AI 日記與長程目標後移），移除 `PhantomGlassCard` 外框改為全寬去卡片化橫幅（與液態玻璃開關解耦，頭像放大至 `76.dp`），右上角提供 `48.dp` 相機／移除按鈕。
+  - `BackgroundImageHelper` 新增夥伴頂部橫幅專屬內部儲存槽位（`assistant_header.jpg`），沿用 bounds-first `inSampleSize` 降採樣與壓縮（防 50MP 大圖 OOM、免持久化外部 URI 權限），底部搭配漸層 scrim 自然銜接下方內容；同步於 `SettingsCatalog`（`assistant_header_background`）與設定頁「個人化」新增管理入口。
+- **助手與介面客製化擴充（#393 / PR #395）**：
+  - 盤點 `PhantomPrefs` 與 `SettingsCatalog` 後於設定頁「個人化」新增 5 項高價值自訂項目（預設值皆 100% 對齊 v3.5.0 既有行為，並提供一鍵恢復預設）：① AI 聊天室字體獨立縮放（`85%–130%`，預設 `100%`）、② 訊息中心字體獨立縮放（`85%–130%`，預設 `100%`）、③ 聊天氣泡圓角半徑（`8–28dp`，預設 `18dp`）、④ 聊天氣泡最大寬度比例（`65%–95%`，預設 `82%`）、⑤ 首頁我的最愛 App 橫列顯示上限（`全部／3／5／8／10`，預設 `全部`）。
+
+### 變更與修正
+- **修復聊天純動作回覆誤顯示「AI 未回傳可顯示的內容」（#386 / PR #395）**：
+  - `ParsedChatActions` 抽出共用 `hasExtendedProposals()` 與 `hasAnyProposal()`，統一涵蓋 `search`、`todoManage`、`vipPin`、`muteApp`、`markRead`、`export`、`whitelistDelete`、`usageQuery`、`openSetting`、`crossApp` 與 `demotedQueryHints`；修正 AI 僅回傳 fenced JSON 動作區塊（如刪除待辦、查詢使用情況等）並成功執行時，前端因 `cleanReply` 為空而誤套用「（AI 未回傳可顯示的內容，請重試或切換模型）」錯誤字串的問題。
+- **日曆行程查詢根治幻覺：一律逐字引自本機日曆、查無誠實拒答（#387 / PR #395）**：
+  - `LocalDataConnector.isCalendarQuery()` 擴充課表與排程語意詞（課／堂／節／上完後／接下來／下一個／之後／待會／還有什麼／星期幾等）搭配問句標記雙條件觸發，並以 `DateTimeFormatter`＋`ZoneOffset.UTC` 精準處理全天事件邊界。
+  - 新增 `CalendarBridge.queryScheduleSummary()` 與 `calendar_query` 工具動作（純本機查詢 `CalendarContract.Instances` 逐字回傳真實起迄時間、標題與地點）；同時強化 `ChatScreenParts` 系統提示防幻覺鐵律與拒答正反例，具體行程一律逐字來自本機日曆查詢結果，未授權、未勾選日曆或該時段查無行程時誠實拒答並引導至權限／設定頁，嚴禁模型自行推算或編造課表。
+- **全域健檢與 OEM 相容複驗（#394 / PR #395）**：
+  - **更新下載 Receiver 安全旗標修正**：`SettingsActivity` 註冊 `DownloadManager.ACTION_DOWNLOAD_COMPLETE` 廣播接收器由 `RECEIVER_EXPORTED` 修正為 `ContextCompat.RECEIVER_NOT_EXPORTED`，防止外部應用偽造下載完成廣播。
+  - **GitHub 監控連續失敗誠實通知**：`GitHubMonitorWorker` 新增連續失敗計數與降頻日誌，連續失敗達第 3 次時發出單次誠實提醒通知引導檢查網路或 PAT 權限，成功同步後自動歸零重置。
+  - **開機重排 Catch-up 補齊 24 小時地板**：`BootReceiver` 除待辦事項外，對 `scheduled` 訊息提醒（`MessageDao.scheduledReminders`）同步套用 24 小時 `catchUpFloorMs` 過濾，避免重開機時補發過久以前的歷史逾期訊息提醒；並完成 Room `1→23` 遷移鏈、`PendingIntent` `FLAG_IMMUTABLE`、`Dispatchers.IO` 與五大 OEM 廠牌背景限制相容複驗。
+
 ## [3.5.0] - 2026-11-22
 
 ### 新增功能
