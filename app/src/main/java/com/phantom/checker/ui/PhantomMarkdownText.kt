@@ -137,21 +137,22 @@ fun PhantomMarkdownText(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(IntrinsicSize.Min)
-                            .clip(RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp))
+                            .clip(RoundedCornerShape(topEnd = 10.dp, bottomEnd = 10.dp))
                             .background(quoteBg)
                     ) {
                         Box(
                             modifier = Modifier
-                                .width(3.dp)
+                                .width(3.5.dp)
                                 .fillMaxHeight()
+                                .clip(RoundedCornerShape(2.dp))
                                 .background(quoteBarColor)
                         )
                         Text(
                             text = parseInlineMarkdown(block.text, inlineCodeBg, linkColor, openUrl),
-                            style = style.copy(color = color.copy(alpha = 0.88f)),
+                            style = style.copy(color = color.copy(alpha = 0.90f)),
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
                         )
                     }
                 }
@@ -183,9 +184,10 @@ fun PhantomMarkdownText(
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(12.dp))
                             .background(codeBg)
-                            .padding(8.dp)
+                            .border(1.dp, color.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+                            .padding(12.dp)
                     )
                 }
                 is MdBlock.Paragraph -> {
@@ -217,8 +219,8 @@ private fun MarkdownTableBlock(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 2.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
             .horizontalScroll(scrollState)
     ) {
         Column {
@@ -240,7 +242,13 @@ private fun MarkdownTableBlock(
             HorizontalDivider(color = borderColor)
             // 資料列
             table.rows.forEachIndexed { rowIdx, row ->
-                Row {
+                Row(
+                    modifier = if (rowIdx % 2 == 1) {
+                        Modifier.background(headerBg.copy(alpha = 0.35f))
+                    } else {
+                        Modifier
+                    }
+                ) {
                     table.headers.indices.forEach { colIdx ->
                         val cellText = row.getOrElse(colIdx) { "" }
                         val align = table.alignments.getOrElse(colIdx) { TableAlign.LEFT }

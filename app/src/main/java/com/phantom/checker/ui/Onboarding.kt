@@ -1,5 +1,6 @@
 package com.phantom.checker.ui
 
+import com.phantom.checker.ui.components.PhantomMotion
 import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
@@ -209,8 +210,8 @@ internal fun RestrictedSettingsTroubleshootSection(
         }
         AnimatedVisibility(
             visible = expanded,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically()
+            enter = PhantomMotion.ExpandEnter,
+            exit = PhantomMotion.ExpandExit
         ) {
             Column(
                 modifier = Modifier
@@ -401,24 +402,30 @@ fun OnboardingOverlay(
     val holeCornerPx = if (step == OnboardingStep.SEARCH_PILL) pillCornerPx else cornerPx
     val hasHole = rawHoleRect != null
     val placeCardAtTop = hasHole && overlayHeightPx > 0f && rawHoleRect!!.center.y > overlayHeightPx * 0.52f
+    val holeSpring = remember {
+        androidx.compose.animation.core.spring<Float>(
+            dampingRatio = 0.85f,
+            stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+        )
+    }
     val animLeft by animateFloatAsState(
         targetValue = rawHoleRect?.left ?: 0f,
-        animationSpec = tween(durationMillis = 200),
+        animationSpec = holeSpring,
         label = "holeLeft"
     )
     val animTop by animateFloatAsState(
         targetValue = rawHoleRect?.top ?: 0f,
-        animationSpec = tween(durationMillis = 200),
+        animationSpec = holeSpring,
         label = "holeTop"
     )
     val animRight by animateFloatAsState(
         targetValue = rawHoleRect?.right ?: 0f,
-        animationSpec = tween(durationMillis = 200),
+        animationSpec = holeSpring,
         label = "holeRight"
     )
     val animBottom by animateFloatAsState(
         targetValue = rawHoleRect?.bottom ?: 0f,
-        animationSpec = tween(durationMillis = 200),
+        animationSpec = holeSpring,
         label = "holeBottom"
     )
 
@@ -468,9 +475,12 @@ fun OnboardingOverlay(
 
         AnimatedVisibility(
             visible = cardVisible,
-            enter = fadeIn(tween(200)) + slideInVertically(
-                animationSpec = tween(200),
-                initialOffsetY = { if (placeCardAtTop) -it / 2 else it / 2 }
+            enter = fadeIn(tween(240, easing = PhantomMotion.EmphasizedDecelerate)) + slideInVertically(
+                animationSpec = androidx.compose.animation.core.spring(
+                    dampingRatio = 0.82f,
+                    stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
+                ),
+                initialOffsetY = { if (placeCardAtTop) -it / 3 else it / 3 }
             ),
             modifier = Modifier
                 .align(if (placeCardAtTop) Alignment.TopCenter else Alignment.BottomCenter)
