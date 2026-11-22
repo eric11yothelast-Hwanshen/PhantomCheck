@@ -1857,6 +1857,130 @@ fun FilterSettingsScreen(
                             valueRange = 0f..100f
                         )
 
+                        // #393 頁面細節自訂（字體獨立縮放、聊天氣泡圓角／寬度、最愛 App 橫列顯示上限）
+                        HorizontalDivider(Modifier.padding(vertical = 10.dp))
+                        var chatFontScale by remember { mutableStateOf(PhantomPrefs.getChatFontScale(appCtx)) }
+                        var msgFontScale by remember { mutableStateOf(PhantomPrefs.getMessagesFontScale(appCtx)) }
+                        var bubbleCornerDp by remember { mutableIntStateOf(PhantomPrefs.getChatBubbleCornerDp(appCtx)) }
+                        var bubbleWidthPct by remember { mutableIntStateOf(PhantomPrefs.getChatBubbleWidthPercent(appCtx)) }
+                        var favMaxVisible by remember { mutableIntStateOf(PhantomPrefs.getFavoriteAppsMaxVisible(appCtx)) }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "頁面細節自訂",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            TextButton(
+                                onClick = {
+                                    chatFontScale = 1.0f
+                                    msgFontScale = 1.0f
+                                    bubbleCornerDp = 18
+                                    bubbleWidthPct = 82
+                                    favMaxVisible = 0
+                                    PhantomPrefs.setChatFontScale(appCtx, 1.0f)
+                                    PhantomPrefs.setMessagesFontScale(appCtx, 1.0f)
+                                    PhantomPrefs.setChatBubbleCornerDp(appCtx, 18)
+                                    PhantomPrefs.setChatBubbleWidthPercent(appCtx, 82)
+                                    PhantomPrefs.setFavoriteAppsMaxVisible(appCtx, 0)
+                                    PhantomSettingsBus.notifyChanged()
+                                }
+                            ) {
+                                Text("恢復預設")
+                            }
+                        }
+                        Text(
+                            text = "AI 聊天室字體獨立縮放（${String.format(Locale.US, "%.2fx", chatFontScale)}）",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Slider(
+                            value = chatFontScale,
+                            onValueChange = { v ->
+                                val stepped = ((v * 20f).roundToInt() / 20f).coerceIn(0.85f, 1.30f)
+                                chatFontScale = stepped
+                                PhantomPrefs.setChatFontScale(appCtx, stepped)
+                                PhantomSettingsBus.notifyChanged()
+                            },
+                            valueRange = 0.85f..1.30f,
+                            steps = 8
+                        )
+                        Text(
+                            text = "訊息中心字體獨立縮放（${String.format(Locale.US, "%.2fx", msgFontScale)}）",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Slider(
+                            value = msgFontScale,
+                            onValueChange = { v ->
+                                val stepped = ((v * 20f).roundToInt() / 20f).coerceIn(0.85f, 1.30f)
+                                msgFontScale = stepped
+                                PhantomPrefs.setMessagesFontScale(appCtx, stepped)
+                                PhantomSettingsBus.notifyChanged()
+                            },
+                            valueRange = 0.85f..1.30f,
+                            steps = 8
+                        )
+                        Text(
+                            text = "聊天氣泡圓角半徑（${bubbleCornerDp} dp）",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Slider(
+                            value = bubbleCornerDp.toFloat(),
+                            onValueChange = { v ->
+                                val dpVal = v.roundToInt().coerceIn(8, 24)
+                                bubbleCornerDp = dpVal
+                                PhantomPrefs.setChatBubbleCornerDp(appCtx, dpVal)
+                                PhantomSettingsBus.notifyChanged()
+                            },
+                            valueRange = 8f..24f,
+                            steps = 15
+                        )
+                        Text(
+                            text = "聊天氣泡寬度比例（${bubbleWidthPct}%）",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Slider(
+                            value = bubbleWidthPct.toFloat(),
+                            onValueChange = { v ->
+                                val pctVal = v.roundToInt().coerceIn(70, 95)
+                                bubbleWidthPct = pctVal
+                                PhantomPrefs.setChatBubbleWidthPercent(appCtx, pctVal)
+                                PhantomSettingsBus.notifyChanged()
+                            },
+                            valueRange = 70f..95f
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "首頁我的最愛 App 橫列顯示上限",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            listOf(0 to "全部（預設）", 4 to "最多 4 個", 6 to "最多 6 個", 8 to "最多 8 個").forEach { (limit, label) ->
+                                FilterChip(
+                                    selected = favMaxVisible == limit,
+                                    onClick = {
+                                        favMaxVisible = limit
+                                        PhantomPrefs.setFavoriteAppsMaxVisible(appCtx, limit)
+                                        PhantomSettingsBus.notifyChanged()
+                                    },
+                                    label = { Text(label) }
+                                )
+                            }
+                        }
+
                         Spacer(Modifier.height(12.dp))
                         var cardBgMode by remember { mutableStateOf(ThemePreferences.getCardBgMode(appCtx)) }
                         var cardBgAlpha by remember { mutableIntStateOf(ThemePreferences.getCardBgAlphaPercent(appCtx)) }

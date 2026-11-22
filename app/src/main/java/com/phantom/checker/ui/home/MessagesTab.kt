@@ -414,9 +414,18 @@ internal fun MessagesHomeTab(
 
     val homeSettingsVersion by PhantomSettingsBus.version.collectAsState()
     val layoutMode = remember(homeSettingsVersion) { PhantomPrefs.getHomeCardLayoutMode(ctx) }
+    val messagesFontScale = remember(homeSettingsVersion) { PhantomPrefs.getMessagesFontScale(ctx) }
+    val baseDensity = LocalDensity.current
+    val messagesDensity = remember(baseDensity, messagesFontScale) {
+        androidx.compose.ui.unit.Density(
+            density = baseDensity.density,
+            fontScale = baseDensity.fontScale * messagesFontScale
+        )
+    }
     val isOverlapMode = activeFilter == MessageFilter.All &&
         layoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER
 
+    androidx.compose.runtime.CompositionLocalProvider(LocalDensity provides messagesDensity) {
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(if (isOverlapMode) 8.dp else 12.dp)
@@ -729,8 +738,12 @@ internal fun MessagesHomeTab(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
+                    val favMax = remember(homeSettingsVersion) { PhantomPrefs.getFavoriteAppsMaxVisible(ctx) }
+                    val visibleFavorites = remember(favoritePackages, favMax) {
+                        if (favMax > 0) favoritePackages.take(favMax) else favoritePackages
+                    }
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        items(favoritePackages, key = { it }) { pkg ->
+                        items(visibleFavorites, key = { it }) { pkg ->
                             val group = groupMap[pkg]
                             val label = group?.appLabel ?: try {
                                 ctx.packageManager.getApplicationLabel(
@@ -1277,6 +1290,7 @@ internal fun MessagesHomeTab(
             }
         }
         }
+    }
     }
 }
 

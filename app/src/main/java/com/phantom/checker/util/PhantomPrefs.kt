@@ -1097,6 +1097,47 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putBoolean("assistant_header_background", enabled).apply()
     }
 
+    /** #393 AI 聊天室字體獨立縮放（0.85f..1.30f，預設 1.0f＝v3.5.0 現行） */
+    fun getChatFontScale(ctx: Context): Float =
+        prefs(ctx).getFloat("chat_font_scale", 1.0f).coerceIn(0.85f, 1.30f)
+
+    fun setChatFontScale(ctx: Context, scale: Float) {
+        prefs(ctx).edit().putFloat("chat_font_scale", scale.coerceIn(0.85f, 1.30f)).apply()
+    }
+
+    /** #393 訊息中心字體獨立縮放（0.85f..1.30f，預設 1.0f＝v3.5.0 現行） */
+    fun getMessagesFontScale(ctx: Context): Float =
+        prefs(ctx).getFloat("messages_font_scale", 1.0f).coerceIn(0.85f, 1.30f)
+
+    fun setMessagesFontScale(ctx: Context, scale: Float) {
+        prefs(ctx).edit().putFloat("messages_font_scale", scale.coerceIn(0.85f, 1.30f)).apply()
+    }
+
+    /** #393 聊天氣泡圓角半徑（8..24 dp，預設 18 dp＝v3.5.0 現行） */
+    fun getChatBubbleCornerDp(ctx: Context): Int =
+        prefs(ctx).getInt("chat_bubble_corner_dp", 18).coerceIn(8, 24)
+
+    fun setChatBubbleCornerDp(ctx: Context, dp: Int) {
+        prefs(ctx).edit().putInt("chat_bubble_corner_dp", dp.coerceIn(8, 24)).apply()
+    }
+
+    /** #393 聊天氣泡寬度比例（70..95%，預設 82%＝v3.5.0 現行；助手氣泡自動＋6% 上限 96%） */
+    fun getChatBubbleWidthPercent(ctx: Context): Int =
+        prefs(ctx).getInt("chat_bubble_width_ratio", 82).coerceIn(70, 95)
+
+    fun setChatBubbleWidthPercent(ctx: Context, percent: Int) {
+        prefs(ctx).edit().putInt("chat_bubble_width_ratio", percent.coerceIn(70, 95)).apply()
+    }
+
+    /** #393 首頁我的最愛 App 橫列顯示數上限（0＝全部顯示＝v3.5.0 預設；否則 4/6/8） */
+    fun getFavoriteAppsMaxVisible(ctx: Context): Int =
+        prefs(ctx).getInt("favorite_apps_max_visible", 0).let { if (it <= 0) 0 else it.coerceIn(2, 12) }
+
+    fun setFavoriteAppsMaxVisible(ctx: Context, maxCount: Int) {
+        val v = if (maxCount <= 0) 0 else maxCount.coerceIn(2, 12)
+        prefs(ctx).edit().putInt("favorite_apps_max_visible", v).apply()
+    }
+
     /** 背景暗色遮罩強度（-1 = 預設：日間 35%、夜間 60%；0..100 = 自訂百分比） */
     fun getBackgroundScrimPercent(ctx: Context): Int =
         prefs(ctx).getInt("bg_scrim_percent", -1).let { if (it < 0) -1 else it.coerceIn(0, 100) }

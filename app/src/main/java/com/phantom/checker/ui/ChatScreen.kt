@@ -2829,9 +2829,20 @@ fun ChatAssistantTab(
         }
 
         // 對話內容區
+        val chatLayoutVer by PhantomSettingsBus.version.collectAsState()
+        val chatFontScale = remember(chatLayoutVer) { PhantomPrefs.getChatFontScale(appCtx) }
+        val bubbleCornerDp = remember(chatLayoutVer) { PhantomPrefs.getChatBubbleCornerDp(appCtx) }
+        val bubbleWidthPct = remember(chatLayoutVer) { PhantomPrefs.getChatBubbleWidthPercent(appCtx) }
+        val baseDensity = LocalDensity.current
+        val chatDensity = remember(baseDensity, chatFontScale) {
+            androidx.compose.ui.unit.Density(
+                density = baseDensity.density,
+                fontScale = baseDensity.fontScale * chatFontScale
+            )
+        }
         BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            val userBubbleMaxWidth = maxWidth * 0.82f
-            val assistantBubbleMaxWidth = maxWidth * 0.88f
+            val userBubbleMaxWidth = maxWidth * (bubbleWidthPct / 100f)
+            val assistantBubbleMaxWidth = maxWidth * ((bubbleWidthPct + 6).coerceAtMost(96) / 100f)
             if (messages.isEmpty() && !isSending) {
                 EmptyStateView(
                     icon = AutoAwesomeIcon,
@@ -2839,8 +2850,7 @@ fun ChatAssistantTab(
                     description = "你可以問「今天 LINE 的訊息」、「昨日簡報」或「最近有可疑詐騙嗎」，${assistantName}會根據你的本地備份唯讀查詢並引用來源。"
                 )
             } else {
-                val chatSettingsVer by PhantomSettingsBus.version.collectAsState()
-                val showBubbleTimestamp = remember(chatSettingsVer) {
+                val showBubbleTimestamp = remember(chatLayoutVer) {
                     PhantomPrefs.isChatTimestampEnabled(appCtx)
                 }
                 LazyColumn(
@@ -2850,6 +2860,7 @@ fun ChatAssistantTab(
                 ) {
                     items(messages, key = { it.id }, contentType = { it.role }) { msg ->
                         val isUser = msg.role == ChatMessageEntity.ROLE_USER
+                        androidx.compose.runtime.CompositionLocalProvider(LocalDensity provides chatDensity) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
@@ -2859,11 +2870,11 @@ fun ChatAssistantTab(
                             }
                             if (isUser) {
                                 Surface(
-                                    shape = RoundedCornerShape(18.dp),
+                                    shape = RoundedCornerShape(bubbleCornerDp.dp),
                                     color = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier
                                         .widthIn(max = userBubbleMaxWidth)
-                                        .clip(RoundedCornerShape(18.dp))
+                                        .clip(RoundedCornerShape(bubbleCornerDp.dp))
                                         .combinedClickable(
                                             onClick = {},
                                             onLongClick = {
@@ -2937,7 +2948,7 @@ fun ChatAssistantTab(
                                     PhantomGlassCard(
                                         glassState = glassState,
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(18.dp))
+                                            .clip(RoundedCornerShape(bubbleCornerDp.dp))
                                             .combinedClickable(
                                                 onClick = {},
                                                 onLongClick = {
@@ -2948,7 +2959,7 @@ fun ChatAssistantTab(
                                                     onShowMessage("已複製助手回覆")
                                                 }
                                             ),
-                                        cornerRadius = 18.dp,
+                                        cornerRadius = bubbleCornerDp.dp,
                                         contentPadding = 12.dp
                                     ) {
                                         val thinking = msg.thinkingContent?.takeIf { it.isNotBlank() }
@@ -3111,6 +3122,7 @@ fun ChatAssistantTab(
                                     }
                                 }
                             }
+                        }
                         }
                     }
 
