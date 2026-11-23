@@ -191,6 +191,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.roundToInt
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 private data class InstalledAppInfo(
     val packageName: String,
@@ -212,8 +214,8 @@ private fun buildOemGuide(ctx: Context): OemGuideInfo {
     return when {
         manufacturer.contains("xiaomi") || manufacturer.contains("redmi") || manufacturer.contains("poco") ->
             OemGuideInfo(
-                brandTitle = "小米 / Redmi / POCO（HyperOS / MIUI）保活指引",
-                steps = "1. 開啟「自啟動」權限\n2. 省電策略改為「無限制」\n3. 最近任務下拉鎖定幻訊卡片",
+                brandTitle = com.phantom.checker.PhantomApplication.str(R.string.settings_oem_xiaomi_title),
+                steps = com.phantom.checker.PhantomApplication.str(R.string.settings_oem_xiaomi_body),
                 intents = listOf(
                     Intent().setComponent(
                         ComponentName(
@@ -226,8 +228,8 @@ private fun buildOemGuide(ctx: Context): OemGuideInfo {
             )
         manufacturer.contains("samsung") ->
             OemGuideInfo(
-                brandTitle = "Samsung（One UI）保活指引",
-                steps = "前往「設定 → 電池 → 背景使用限制 → 永不休眠的應用程式」，將幻訊加入名單。",
+                brandTitle = com.phantom.checker.PhantomApplication.str(R.string.settings_oem_samsung_title),
+                steps = com.phantom.checker.PhantomApplication.str(R.string.settings_oem_samsung_body),
                 intents = listOf(
                     Intent("com.samsung.android.sm.ACTION_OPEN_APP_BATTERY_USAGE"),
                     appDetailsIntent
@@ -235,8 +237,8 @@ private fun buildOemGuide(ctx: Context): OemGuideInfo {
             )
         manufacturer.contains("huawei") || manufacturer.contains("honor") ->
             OemGuideInfo(
-                brandTitle = "華為 / 榮耀（EMUI / MagicOS）保活指引",
-                steps = "前往「手機管家 → 應用程式啟動管理」，關閉幻訊自動管理並開啟「允許自啟動／關聯啟動／背景活動」三開關。",
+                brandTitle = com.phantom.checker.PhantomApplication.str(R.string.settings_oem_huawei_title),
+                steps = com.phantom.checker.PhantomApplication.str(R.string.settings_oem_huawei_body),
                 intents = listOf(
                     Intent().setComponent(
                         ComponentName(
@@ -249,8 +251,8 @@ private fun buildOemGuide(ctx: Context): OemGuideInfo {
             )
         manufacturer.contains("oppo") || manufacturer.contains("realme") || manufacturer.contains("oneplus") ->
             OemGuideInfo(
-                brandTitle = "OPPO / realme / OnePlus（ColorOS）保活指引",
-                steps = "開啟「自啟動」並於電池設定中允許「完全背景行為」。",
+                brandTitle = com.phantom.checker.PhantomApplication.str(R.string.settings_oem_oppo_title),
+                steps = com.phantom.checker.PhantomApplication.str(R.string.settings_oem_oppo_body),
                 intents = listOf(
                     Intent().setComponent(
                         ComponentName(
@@ -263,8 +265,8 @@ private fun buildOemGuide(ctx: Context): OemGuideInfo {
             )
         manufacturer.contains("vivo") || manufacturer.contains("iqoo") ->
             OemGuideInfo(
-                brandTitle = "vivo / iQOO（OriginOS / FuntouchOS）保活指引",
-                steps = "前往「i 管家 → 應用程式管理 → 權限管理 → 自啟動」，開啟幻訊自啟動與高耗電背景執行。",
+                brandTitle = com.phantom.checker.PhantomApplication.str(R.string.settings_oem_vivo_title),
+                steps = com.phantom.checker.PhantomApplication.str(R.string.settings_oem_vivo_body),
                 intents = listOf(
                     Intent().setComponent(
                         ComponentName(
@@ -277,8 +279,8 @@ private fun buildOemGuide(ctx: Context): OemGuideInfo {
             )
         else ->
             OemGuideInfo(
-                brandTitle = "系統背景保活建議",
-                steps = "請在「應用程式資訊 → 電池」中將幻訊設為「無限制」或「不受電池最佳化限制」，避免系統凍結統計服務。",
+                brandTitle = com.phantom.checker.PhantomApplication.str(R.string.settings_oem_default_title),
+                steps = com.phantom.checker.PhantomApplication.str(R.string.settings_oem_default_body),
                 intents = listOf(appDetailsIntent)
             )
     }
@@ -335,6 +337,7 @@ fun FilterSettingsScreen(
     initialHighlightCardKey: String? = null,
     initialHighlightSettingId: String? = null
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -400,7 +403,7 @@ fun FilterSettingsScreen(
         com.phantom.checker.util.ContactContext.invalidateCache()
         Toast.makeText(
             ctx,
-            if (granted) "已授予通訊錄讀取權限（僅於本機離線比對熟人冒充，絕不外送）" else "未授予通訊錄權限，將自動降級為純記憶庫比對",
+            if (granted) stringResource(R.string.settings_s_9e473c) else stringResource(R.string.settings_s_1b5759),
             Toast.LENGTH_SHORT
         ).show()
     }
@@ -420,7 +423,7 @@ fun FilterSettingsScreen(
             com.phantom.checker.util.CalendarBridge.hasWritePermission(appCtx)
         Toast.makeText(
             ctx,
-            if (calendarReadGranted) "已授予日曆權限，請勾選欲開放給助手的本機日曆" else "未授予日曆權限，日曆查詢功能維持停用",
+            if (calendarReadGranted) stringResource(R.string.settings_s_469985) else stringResource(R.string.settings_s_20e13e),
             Toast.LENGTH_SHORT
         ).show()
     }
@@ -698,7 +701,7 @@ fun FilterSettingsScreen(
                 mutedApps = PhantomPrefs.getMutedApps(appCtx).sorted()
                 muteModes = PhantomPrefs.getAppMuteModeMap(appCtx)
                 showAppPickerDialog = false
-                scope.launch { snackbarHostState.showSnackbar("已將 $pkg 設為靜音（${mode.label}）") }
+                scope.launch { snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_e88b08, pkg, mode.label)) }
             }
         )
     }
@@ -711,7 +714,7 @@ fun FilterSettingsScreen(
                 PhantomPrefs.setAppSameKeyThrottle(appCtx, pkg, seconds)
                 appThrottleMap = PhantomPrefs.getAppSameKeyThrottleMap(appCtx)
                 showAppThrottlePicker = false
-                val msg = if (seconds == 0) "已設定 $pkg 永不節流（0 秒）" else "已設定 $pkg 同 key 節流 $seconds 秒"
+                val msg = if (seconds == 0) stringResource(R.string.settings_s_5d94cf, pkg) else stringResource(R.string.settings_s_62eb29, pkg, seconds)
                 scope.launch { snackbarHostState.showSnackbar(msg) }
             }
         )
@@ -729,10 +732,10 @@ fun FilterSettingsScreen(
                     val result = MessageExporter.exportToDownloads(appCtx, pkg, daysBack)
                     isExporting = false
                     result.onSuccess { fileName ->
-                        snackbarHostState.showSnackbar("匯出成功：$fileName")
+                        snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_11c369, fileName))
                     }.onFailure { err ->
                         val reason = err.localizedMessage?.takeIf { it.isNotBlank() } ?: err.javaClass.simpleName
-                        snackbarHostState.showSnackbar("匯出失敗：$reason")
+                        snackbarHostState.showSnackbar(resCtx.getString(R.string.chat_s_55fba2, reason))
                     }
                 }
             }
@@ -742,8 +745,8 @@ fun FilterSettingsScreen(
     if (showClearReadConfirm) {
         AlertDialog(
             onDismissRequest = { showClearReadConfirm = false },
-            title = { Text("清除已讀訊息") },
-            text = { Text("確定要永久刪除所有已讀訊息嗎？未讀訊息將保留。") },
+            title = { Text(stringResource(R.string.catalog_notif_clear_read_title)) },
+            text = { Text(stringResource(R.string.settings_s_f50993)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -758,17 +761,17 @@ fun FilterSettingsScreen(
                                 StatsForegroundService.startOrRefresh(appCtx)
                             }
                             showClearReadConfirm = false
-                            snackbarHostState.showSnackbar("已清除所有已讀訊息")
+                            snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_4fd207))
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認清除")
+                    Text(stringResource(R.string.common_confirm_clear))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearReadConfirm = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -777,8 +780,8 @@ fun FilterSettingsScreen(
     if (showDeleteAllConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteAllConfirm = false },
-            title = { Text("刪除全部訊息", color = MaterialTheme.colorScheme.error) },
-            text = { Text("確定要永久刪除所有攔截到的訊息與標籤關聯嗎？此操作無法復原。") },
+            title = { Text(stringResource(R.string.settings_s_20a08d), color = MaterialTheme.colorScheme.error) },
+            text = { Text(stringResource(R.string.settings_s_1cbd17)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -793,17 +796,17 @@ fun FilterSettingsScreen(
                                 StatsForegroundService.startOrRefresh(appCtx)
                             }
                             showDeleteAllConfirm = false
-                            snackbarHostState.showSnackbar("已刪除全部訊息")
+                            snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_5fa0a6))
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認全部刪除")
+                    Text(stringResource(R.string.settings_s_010656))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteAllConfirm = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -819,7 +822,7 @@ fun FilterSettingsScreen(
 
         AlertDialog(
             onDismissRequest = { if (!isImportingPresets) showPresetDialog = false },
-            title = { Text("匯入預設詐騙關鍵字") },
+            title = { Text(stringResource(R.string.settings_s_607ffc)) },
             text = {
                 Column(
                     modifier = Modifier
@@ -828,7 +831,7 @@ fun FilterSettingsScreen(
                         .verticalScroll(rememberScrollState())
                 ) {
                     Text(
-                        text = "共 ${PresetKeywords.keywords.size} 個常見詐騙關鍵字（將新增 $newCount 個，略過 $skipCount 個已存在項目）：",
+                        text = stringResource(R.string.settings_s_503ca6, PresetKeywords.keywords.size, newCount, skipCount),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -875,16 +878,16 @@ fun FilterSettingsScreen(
                             isImportingPresets = false
                             showPresetDialog = false
                             val msg = if (added > 0) {
-                                "已匯入 $added 個預設關鍵字（略過 $skipped 個重複）"
+                                resCtx.getString(R.string.settings_s_ce0699, added, skipped)
                             } else {
-                                "所有預設關鍵字皆已存在，未新增項目"
+                                resCtx.getString(R.string.settings_s_61b771)
                             }
                             snackbarHostState.showSnackbar(msg)
                         }
                     },
                     enabled = !isImportingPresets
                 ) {
-                    Text(if (isImportingPresets) "匯入中…" else "確認匯入")
+                    Text(if (isImportingPresets) stringResource(R.string.settings_s_5bf153) else stringResource(R.string.settings_s_7ddb23))
                 }
             },
             dismissButton = {
@@ -892,7 +895,7 @@ fun FilterSettingsScreen(
                     onClick = { showPresetDialog = false },
                     enabled = !isImportingPresets
                 ) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -903,7 +906,7 @@ fun FilterSettingsScreen(
             uri = cropUri,
             onDismiss = { pendingAvatarCropUri = null },
             onLoadError = { errMsg ->
-                scope.launch { snackbarHostState.showSnackbar("頭像圖片載入失敗：$errMsg") }
+                scope.launch { snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_3da8fe, errMsg)) }
             },
             onConfirmCrop = { zoomScale, offsetXNorm, offsetYNorm ->
                 pendingAvatarCropUri = null
@@ -921,9 +924,9 @@ fun FilterSettingsScreen(
                     res.onSuccess {
                         assistantHasAvatar = true
                         assistantAvatarBitmap = AssistantAvatarHelper.loadAvatarBitmap(appCtx)
-                        snackbarHostState.showSnackbar("已更新 AI 助手圓形頭像")
+                        snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_14270b))
                     }.onFailure { err ->
-                        snackbarHostState.showSnackbar("頭像儲存失敗：${err.message ?: "未知錯誤"}")
+                        snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_31b8e6, err.message ?: resCtx.getString(R.string.common_unknown_error)))
                     }
                 }
             }
@@ -1053,14 +1056,14 @@ fun FilterSettingsScreen(
                 val matchedItems = ids.mapNotNull { id -> SettingsCatalog.findById(id) }
                 if (matchedItems.isEmpty()) {
                     aiMatchedIds = emptyList()
-                    aiSearchNote = "查無相符的設定項目"
-                    snackbarHostState.showSnackbar("查無相符的設定項目")
+                    aiSearchNote = resCtx.getString(R.string.search_s_4de5af)
+                    snackbarHostState.showSnackbar(resCtx.getString(R.string.search_s_4de5af))
                     return@onSuccess
                 }
                 aiMatchedIds = matchedItems.map { it.id }
-                aiSearchNote = "✨ AI 語意命中 ${matchedItems.size} 項設定（點選直達）"
+                aiSearchNote = resCtx.getString(R.string.settings_s_91d2e5, matchedItems.size)
             }.onFailure { err ->
-                snackbarHostState.showSnackbar(err.message ?: "AI 搜尋失敗")
+                snackbarHostState.showSnackbar(err.message ?: resCtx.getString(R.string.settings_s_896497))
             }
         }
     }
@@ -1084,18 +1087,18 @@ fun FilterSettingsScreen(
         shizukuReady
     ) {
         val profileCount = AiClient.getProfiles(appCtx).size
-        val activeModel = AiClient.getActiveProfile(appCtx)?.model?.takeIf { it.isNotBlank() } ?: "未設定"
+        val activeModel = AiClient.getActiveProfile(appCtx)?.model?.takeIf { it.isNotBlank() } ?: stringResource(R.string.settings_s_79aacc)
         val quietSummary = if (quietHoursEnabled) {
-            "勿擾 %02d:%02d–%02d:%02d".format(
+            stringResource(R.string.settings_s_461b79).format(
                 quietStartMinute / 60, quietStartMinute % 60,
                 quietEndMinute / 60, quietEndMinute % 60
             )
         } else {
-            "勿擾關閉 · 常駐通知${if (persistentStats) "開" else "關"}"
+            stringResource(R.string.settings_s_528d2f, if (persistentStats) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81))
         }
-        val displayAssistantName = assistantName.ifBlank { "幻訊" }
+        val displayAssistantName = assistantName.ifBlank { resCtx.getString(R.string.chat_s_8dd976) }
         val themeLabel = ThemePreferences.getThemeMode(appCtx).label
-        val layoutLabel = if (homeCardLayoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER) "中央堆疊" else "分組清單"
+        val layoutLabel = if (homeCardLayoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER) stringResource(R.string.catalog_layout_stack) else stringResource(R.string.settings_s_0c69cd)
         val notifAccessGranted = androidx.core.app.NotificationManagerCompat
             .getEnabledListenerPackages(appCtx).contains(appCtx.packageName)
         val pendingPermCount = listOf(
@@ -1103,22 +1106,22 @@ fun FilterSettingsScreen(
             batteryWhitelisted
         ).count { !it }
         val permSummary = buildString {
-            append(if (pendingPermCount > 0) "$pendingPermCount 項待授權" else "核心權限已就緒")
-            if (shizukuReady) append(" · Shizuku 已連線")
+            append(if (pendingPermCount > 0) resCtx.getString(R.string.settings_s_02d540, pendingPermCount) else resCtx.getString(R.string.settings_s_ace3a4))
+            if (shizukuReady) append(resCtx.getString(R.string.settings_s_f4d8a0))
         }
         val versionName = runCatching {
             ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: ""
         }.getOrDefault("")
         SettingsHomeSummaries(
-            quickSummary = "省 token ${if (tokenSaverEnabled) "開" else "關"} · AI 風險分析${if (aiRiskEnabled) "開" else "關"}",
-            aiSummary = "$profileCount 組 Profile · 對話：$activeModel · 今日 $todayAiUsage/$dailyAiLimit",
+            quickSummary = stringResource(R.string.settings_s_d185c0, if (tokenSaverEnabled) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81), if (aiRiskEnabled) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81)),
+            aiSummary = stringResource(R.string.settings_s_360eec, profileCount, activeModel, todayAiUsage, dailyAiLimit),
             notifSummary = quietSummary,
-            assistantSummary = "助手：$displayAssistantName · 記憶擷取${if (memoryChatCaptureEnabled) "開" else "關"}",
+            assistantSummary = stringResource(R.string.settings_s_79736a, displayAssistantName, if (memoryChatCaptureEnabled) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81)),
             permissionsSummary = permSummary,
-            permissionsBadge = if (pendingPermCount > 0) "$pendingPermCount 待處理" else null,
-            appearanceSummary = "$themeLabel · 排列：$layoutLabel",
-            dataSummary = "保留 $retentionDays 天 · 靜音 ${mutedApps.size} 個 App",
-            aboutSummary = "v$versionName · 自動檢查更新${if (PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)) "開" else "關"}",
+            permissionsBadge = if (pendingPermCount > 0) stringResource(R.string.settings_s_b6b5df, pendingPermCount) else null,
+            appearanceSummary = stringResource(R.string.settings_s_8ee5e7, themeLabel, layoutLabel),
+            dataSummary = stringResource(R.string.settings_s_97d64e, retentionDays, mutedApps.size),
+            aboutSummary = stringResource(R.string.settings_s_96f247, versionName, if (PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81)),
             versionDisplay = "v$versionName"
         )
     }
@@ -1240,7 +1243,7 @@ fun FilterSettingsScreen(
                             ) {
                                 Icon(
                                     imageVector = if (inCategorySearchOpen) Icons.Default.Clear else Icons.Default.Search,
-                                    contentDescription = if (inCategorySearchOpen) "關閉頁內搜尋" else "搜尋本分類設定"
+                                    contentDescription = if (inCategorySearchOpen) stringResource(R.string.settings_s_44b160) else stringResource(R.string.settings_s_6cdd18)
                                 )
                             }
                         },
@@ -1270,12 +1273,12 @@ fun FilterSettingsScreen(
                                             modifier = Modifier.fillMaxWidth(),
                                             singleLine = true,
                                             shape = RoundedCornerShape(24.dp),
-                                            placeholder = { Text("在「${currentCategory.title}」內搜尋…") },
+                                            placeholder = { Text(stringResource(R.string.settings_s_31d41b, currentCategory.title)) },
                                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                                             trailingIcon = {
                                                 if (inCategorySearchQuery.isNotEmpty()) {
                                                     IconButton(onClick = { inCategorySearchQuery = "" }) {
-                                                        Icon(Icons.Default.Clear, contentDescription = "清除")
+                                                        Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.common_clear))
                                                     }
                                                 }
                                             }
@@ -1283,7 +1286,7 @@ fun FilterSettingsScreen(
                                         if (inCategorySearchQuery.isNotBlank()) {
                                             if (inCatMatches.isEmpty()) {
                                                 Text(
-                                                    text = "本分類中查無符合「${inCategorySearchQuery.trim()}」的設定",
+                                                    text = stringResource(R.string.settings_s_730d7e, inCategorySearchQuery.trim()),
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                     modifier = Modifier.padding(horizontal = 4.dp)
@@ -1316,7 +1319,7 @@ fun FilterSettingsScreen(
                                                             )
                                                             if (SettingsCategoryRegistry.isFoldedByDefault(matched.id)) {
                                                                 Text(
-                                                                    text = "進階",
+                                                                    text = resCtx.getString(R.string.settings_s_ed9b32),
                                                                     style = MaterialTheme.typography.labelSmall,
                                                                     color = MaterialTheme.colorScheme.primary
                                                                 )
@@ -1338,7 +1341,7 @@ fun FilterSettingsScreen(
                                     if ("quick" in visibleCardKeys) {
                         item(key = "card_quick") {
                             CollapsibleSettingsCard(
-                                title = "快速設定",
+                                title = stringResource(R.string.settings_s_e024ca),
                                 expanded = expandQuick || ("quick" in highlightedCardKeys),
                                 highlighted = "quick" in highlightedCardKeys,
                                 onToggle = {
@@ -1351,8 +1354,8 @@ fun FilterSettingsScreen(
                                 }
                             ) {
                     SettingSwitchRow(
-                        title = "省 token 模式",
-                        subtitle = "暫停每則 AI 掃描並降載對話注入，僅命中可疑特徵才分析；關閉即恢復原設定",
+                        title = stringResource(R.string.catalog_quick_token_saver_title),
+                        subtitle = stringResource(R.string.settings_s_7d1a1f),
                         checked = tokenSaverEnabled,
                         onCheckedChange = { checked ->
                             tokenSaverEnabled = checked
@@ -1362,8 +1365,8 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(
-                        title = "常駐統計通知",
-                        subtitle = "以獨立前景服務維持通知欄即時統計與 App 圖示列",
+                        title = stringResource(R.string.catalog_quick_persistent_notif_title),
+                        subtitle = stringResource(R.string.settings_s_d2d0b4),
                         checked = persistentStats,
                         onCheckedChange = { checked ->
                             persistentStats = checked
@@ -1380,11 +1383,11 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(
-                        title = "AI 風險分析",
+                        title = stringResource(R.string.catalog_quick_ai_risk_title),
                         subtitle = if (tokenSaverEnabled) {
-                            "內文達 $aiMinTriggerLength 字元且未命中過濾規則時自動評估風險（可於 AI 與分析調整）；省 token 模式生效中：僅命中可疑特徵才分析"
+                            stringResource(R.string.settings_s_b0be28, aiMinTriggerLength)
                         } else {
-                            "內文達 $aiMinTriggerLength 字元且未命中過濾規則時自動評估風險（觸發字數門檻可於 AI 與分析調整）"
+                            stringResource(R.string.settings_s_75d4dd, aiMinTriggerLength)
                         },
                         checked = aiRiskEnabled,
                         onCheckedChange = { checked ->
@@ -1395,11 +1398,11 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(
-                        title = "每則訊息 AI 智慧掃描",
+                        title = stringResource(R.string.catalog_ai_auto_tag_title),
                         subtitle = if (tokenSaverEnabled) {
-                            "AI 分析時自動指派「必看／行銷／垃圾通知」等標籤；省 token 模式生效中：已暫停"
+                            stringResource(R.string.settings_s_7ed809)
                         } else {
-                            "AI 分析時自動指派「必看／行銷／垃圾通知」等標籤"
+                            stringResource(R.string.catalog_ai_auto_tag_desc)
                         },
                         checked = aiAutoTagEnabled,
                         onCheckedChange = { checked ->
@@ -1410,8 +1413,8 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(
-                        title = "詐騙警示彈出通知",
-                        subtitle = "偵測到 scam 高風險訊息時立即推送通知",
+                        title = stringResource(R.string.catalog_quick_scam_popup_title),
+                        subtitle = stringResource(R.string.settings_s_0e2fde),
                         checked = scamAlertNotif,
                         onCheckedChange = { checked ->
                             scamAlertNotif = checked
@@ -1444,14 +1447,14 @@ fun FilterSettingsScreen(
                     val morningOn = PhantomPrefs.isMorningBriefingEnabled(appCtx)
                     val eveningOn = PhantomPrefs.isEveningBriefingEnabled(appCtx)
                     val briefingStatus = when {
-                        morningOn && eveningOn -> "早 ${PhantomPrefs.getMorningBriefingTime(appCtx)}／晚 ${PhantomPrefs.getEveningBriefingTime(appCtx)}"
-                        morningOn -> "早間 ${PhantomPrefs.getMorningBriefingTime(appCtx)}"
-                        eveningOn -> "晚間 ${PhantomPrefs.getEveningBriefingTime(appCtx)}"
-                        else -> "已關閉"
+                        morningOn && eveningOn -> stringResource(R.string.settings_s_f6aec5, PhantomPrefs.getMorningBriefingTime(appCtx), PhantomPrefs.getEveningBriefingTime(appCtx))
+                        morningOn -> stringResource(R.string.settings_s_b16699, PhantomPrefs.getMorningBriefingTime(appCtx))
+                        eveningOn -> stringResource(R.string.settings_s_c7348a, PhantomPrefs.getEveningBriefingTime(appCtx))
+                        else -> stringResource(R.string.chat_s_e8a92f)
                     }
                     CollapsibleSettingsCard(
-                        title = "權限與 AI 夥伴",
-                        collapsedSummary = "權限已授予 $grantedCount/7 項 · 早晚簡報：$briefingStatus",
+                        title = stringResource(R.string.settings_s_c8c8ec),
+                        collapsedSummary = stringResource(R.string.settings_s_490c77, grantedCount, briefingStatus),
                         expanded = expandHub || ("hub" in highlightedCardKeys),
                         highlighted = "hub" in highlightedCardKeys,
                         onToggle = {
@@ -1465,13 +1468,13 @@ fun FilterSettingsScreen(
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(
-                                text = "集中管理系統權限（通知存取、簡訊、通訊錄、日曆、精確鬧鐘、電池優化、使用情況）、早晚簡報、主動推播、畫像卡與外部連結應用。",
+                                text = stringResource(R.string.settings_s_1d238b),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             if (!notifPostOk) {
                                 Text(
-                                    text = "⚠️ 主動通知未開啟，簡報將不會出現在系統通知欄。",
+                                    text = stringResource(R.string.settings_s_74f4a2),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error
                                 )
@@ -1479,14 +1482,14 @@ fun FilterSettingsScreen(
                                     onClick = { com.phantom.checker.service.ProactiveEngine.openAppNotificationSettings(ctx) },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("前往系統通知設定")
+                                    Text(stringResource(R.string.settings_s_e9a953))
                                 }
                             }
                             Button(
                                 onClick = { ctx.startActivity(Intent(ctx, PermissionHubActivity::class.java)) },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("🔐 權限授予中心（已授予 $grantedCount/7 項）")
+                                Text(stringResource(R.string.settings_s_01c27b, grantedCount))
                             }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1496,13 +1499,13 @@ fun FilterSettingsScreen(
                                     onClick = { ctx.startActivity(Intent(ctx, AssistantHubActivity::class.java)) },
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("AI 夥伴與簡報", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(stringResource(R.string.settings_s_a1eeb3), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                                 OutlinedButton(
                                     onClick = { ctx.startActivity(Intent(ctx, LinkedAppsActivity::class.java)) },
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("連結應用中心", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(stringResource(R.string.settings_s_5a83e6), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
                             }
                         }
@@ -1514,7 +1517,7 @@ fun FilterSettingsScreen(
             if ("personalization" in visibleCardKeys) {
                 item(key = "card_personalization") {
                     CollapsibleSettingsCard(
-                        title = "個人化",
+                        title = stringResource(R.string.settings_s_3cdf28),
                         expanded = expandPersonalization || ("personalization" in highlightedCardKeys),
                         highlighted = "personalization" in highlightedCardKeys,
                         onToggle = {
@@ -1526,7 +1529,7 @@ fun FilterSettingsScreen(
                             cardBounds["personalization"] = coords.boundsInRoot()
                         }
                     ) {
-                        Text("卡片密度", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.settings_s_e49b0f), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         Spacer(Modifier.height(6.dp))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             com.phantom.checker.util.CardDensity.entries.forEach { density ->
@@ -1543,7 +1546,7 @@ fun FilterSettingsScreen(
 
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-                        Text("首頁 App 排序", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.catalog_personal_sort_title), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         Spacer(Modifier.height(6.dp))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             com.phantom.checker.util.HomeSortOrder.entries.forEach { order ->
@@ -1560,20 +1563,20 @@ fun FilterSettingsScreen(
 
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-                        Text("首頁篩選欄顯示項目", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.catalog_personal_filters_title), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         Text(
-                            text = "「全部」與「未讀」固定顯示，可自訂其餘按鈕",
+                            text = stringResource(R.string.settings_s_611c54),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(6.dp))
                         val filterOptions = listOf(
-                            "starred" to "星標",
-                            "scams" to "詐騙",
-                            "filtered" to "已過濾",
-                            "noted" to "已記事",
-                            "todoed" to "已待辦",
-                            "tag" to "標籤"
+                            "starred" to stringResource(R.string.common_star),
+                            "scams" to stringResource(R.string.common_scam),
+                            "filtered" to stringResource(R.string.common_filtered),
+                            "noted" to stringResource(R.string.common_noted),
+                            "todoed" to stringResource(R.string.common_todoed),
+                            "tag" to stringResource(R.string.common_tags)
                         )
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             filterOptions.forEach { (key, label) ->
@@ -1593,8 +1596,8 @@ fun FilterSettingsScreen(
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                         SettingSwitchRow(
-                            title = "摘要卡預設收合",
-                            subtitle = "統計頁「每日／本週 AI 摘要」預設收合為單行預覽",
+                            title = stringResource(R.string.catalog_personal_summary_collapse_title),
+                            subtitle = stringResource(R.string.settings_s_9ca41d),
                             checked = summaryDefaultCollapsed,
                             onCheckedChange = { checked ->
                                 summaryDefaultCollapsed = checked
@@ -1604,9 +1607,9 @@ fun FilterSettingsScreen(
 
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-                        Text("首頁卡片排列模式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.catalog_personal_home_card_layout_title), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         Text(
-                            text = "一般條列：垂直獨立卡片列表；中央堆疊：焦點卡片在畫面正中央、上下對稱縮小堆疊的垂直滾輪",
+                            text = stringResource(R.string.settings_s_622451),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1627,9 +1630,9 @@ fun FilterSettingsScreen(
 
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-                        Text("記事卡片排列模式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.catalog_personal_notes_card_layout_title), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         Text(
-                            text = "獨立設定記事分頁的卡片排列（不影響首頁）：一般條列或中央堆疊滾輪",
+                            text = stringResource(R.string.settings_s_f9d284),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1650,7 +1653,7 @@ fun FilterSettingsScreen(
 
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-                        Text("時間顯示格式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.settings_s_3854c1), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         Spacer(Modifier.height(6.dp))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             FilterChip(
@@ -1659,7 +1662,7 @@ fun FilterSettingsScreen(
                                     use24HourFormat = true
                                     PhantomPrefs.set24HourFormat(appCtx, true)
                                 },
-                                label = { Text("24 小時制（14:30）") }
+                                label = { Text(stringResource(R.string.settings_s_35f989)) }
                             )
                             FilterChip(
                                 selected = !use24HourFormat,
@@ -1667,15 +1670,15 @@ fun FilterSettingsScreen(
                                     use24HourFormat = false
                                     PhantomPrefs.set24HourFormat(appCtx, false)
                                 },
-                                label = { Text("12 小時制（下午 02:30）") }
+                                label = { Text(stringResource(R.string.settings_s_d24adf)) }
                             )
                         }
 
                         HorizontalDivider(Modifier.padding(vertical = 12.dp))
-                        Text("背景圖片", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.settings_s_faa4c5), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "未設定專屬背景時會自動沿用全域背景，選圖後將降採樣並儲存至本機私有空間。",
+                            stringResource(R.string.settings_s_1baffa),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1694,7 +1697,7 @@ fun FilterSettingsScreen(
                             pickingLayerName = null
                             if (uri == null) return
                             if (targetLayer == null) {
-                                bgStatusMsg = "選擇圖片時圖層狀態已重置，請再點擊一次欲設定的背景圖層"
+                                bgStatusMsg = stringResource(R.string.settings_s_189dca)
                                 bgPickerFailed = false
                                 return
                             }
@@ -1703,11 +1706,11 @@ fun FilterSettingsScreen(
                                 res.onSuccess {
                                     ThemePreferences.bumpBackgroundVersion()
                                     bgUiVersion = ThemePreferences.getBackgroundVersion()
-                                    bgStatusMsg = "已設定「${targetLayer.label}」"
+                                    bgStatusMsg = resCtx.getString(R.string.settings_s_9c7167, targetLayer.label)
                                     bgPickerFailed = false
                                     failedLayerName = null
                                 }.onFailure { err ->
-                                    bgStatusMsg = err.message ?: "圖片處理失敗"
+                                    bgStatusMsg = err.message ?: resCtx.getString(R.string.settings_s_60e020)
                                     if (!fromFallback) {
                                         bgPickerFailed = true
                                         failedLayerName = targetLayer.name
@@ -1767,7 +1770,7 @@ fun FilterSettingsScreen(
                                             fontWeight = FontWeight.Medium
                                         )
                                         Text(
-                                            text = if (hasBg) "已自訂" else if (layer == BackgroundLayer.GLOBAL) "預設純色" else "沿用全域背景",
+                                            text = if (hasBg) resCtx.getString(R.string.settings_s_355d4f) else if (layer == BackgroundLayer.GLOBAL) resCtx.getString(R.string.settings_s_6525ea) else resCtx.getString(R.string.settings_s_195b76),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -1782,13 +1785,13 @@ fun FilterSettingsScreen(
                                                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                                 )
                                             } catch (e: Exception) {
-                                                bgStatusMsg = "無法開啟系統相簿選擇器（${e.localizedMessage ?: "不支援"}），請改用檔案選擇器"
+                                                bgStatusMsg = resCtx.getString(R.string.settings_s_74e0bc, e.localizedMessage ?: resCtx.getString(R.string.settings_s_fe6b26))
                                                 bgPickerFailed = true
                                                 failedLayerName = layer.name
                                             }
                                         }
                                     ) {
-                                        Text("選擇圖片")
+                                        Text(resCtx.getString(R.string.settings_s_a4f0c2))
                                     }
                                     if (hasBg) {
                                         TextButton(
@@ -1796,11 +1799,11 @@ fun FilterSettingsScreen(
                                                 BackgroundImageHelper.removeBackground(appCtx, layer)
                                                 ThemePreferences.bumpBackgroundVersion()
                                                 bgUiVersion = ThemePreferences.getBackgroundVersion()
-                                                bgStatusMsg = "已移除「${layer.label}」"
+                                                bgStatusMsg = resCtx.getString(R.string.settings_s_244bee, layer.label)
                                                 bgPickerFailed = false
                                             }
                                         ) {
-                                            Text("移除")
+                                            Text(resCtx.getString(R.string.chat_s_2f752c))
                                         }
                                     }
                                 }
@@ -1833,11 +1836,11 @@ fun FilterSettingsScreen(
                                             ThemePreferences.bumpBackgroundVersion()
                                             PhantomSettingsBus.notifyChanged()
                                             bgUiVersion = ThemePreferences.getBackgroundVersion()
-                                            bgStatusMsg = "已更新「夥伴頁頭部背景」"
+                                            bgStatusMsg = resCtx.getString(R.string.settings_s_2d1e64)
                                             bgPickerFailed = false
                                         },
                                         onFailure = { err ->
-                                            bgStatusMsg = "設定夥伴頁頭部背景失敗：${err.localizedMessage ?: "未知錯誤"}"
+                                            bgStatusMsg = resCtx.getString(R.string.settings_s_8c9d83, err.localizedMessage ?: resCtx.getString(R.string.common_unknown_error))
                                             bgPickerFailed = true
                                         }
                                     )
@@ -1851,7 +1854,7 @@ fun FilterSettingsScreen(
                                 if (partnerHeaderThumb != null) {
                                     Image(
                                         bitmap = partnerHeaderThumb!!,
-                                        contentDescription = "夥伴頁頭部背景",
+                                        contentDescription = stringResource(R.string.catalog_assistant_header_background_title),
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier
                                             .size(44.dp)
@@ -1860,12 +1863,12 @@ fun FilterSettingsScreen(
                                 }
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "夥伴頁頭部背景",
+                                        text = stringResource(R.string.catalog_assistant_header_background_title),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Medium
                                     )
                                     Text(
-                                        text = if (hasPartnerHeaderBg) "已自訂" else "預設主題底色",
+                                        text = if (hasPartnerHeaderBg) stringResource(R.string.settings_s_355d4f) else stringResource(R.string.settings_s_2a62bc),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1877,12 +1880,12 @@ fun FilterSettingsScreen(
                                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                             )
                                         } catch (e: Exception) {
-                                            bgStatusMsg = "無法開啟系統相簿選擇器（${e.localizedMessage ?: "不支援"}）"
+                                            bgStatusMsg = resCtx.getString(R.string.settings_s_1c36f5, e.localizedMessage ?: resCtx.getString(R.string.settings_s_fe6b26))
                                             bgPickerFailed = true
                                         }
                                     }
                                 ) {
-                                    Text("選擇圖片")
+                                    Text(stringResource(R.string.settings_s_a4f0c2))
                                 }
                                 if (hasPartnerHeaderBg) {
                                     TextButton(
@@ -1891,11 +1894,11 @@ fun FilterSettingsScreen(
                                             ThemePreferences.bumpBackgroundVersion()
                                             PhantomSettingsBus.notifyChanged()
                                             bgUiVersion = ThemePreferences.getBackgroundVersion()
-                                            bgStatusMsg = "已移除「夥伴頁頭部背景」"
+                                            bgStatusMsg = resCtx.getString(R.string.settings_s_c0b2b4)
                                             bgPickerFailed = false
                                         }
                                     ) {
-                                        Text("移除")
+                                        Text(stringResource(R.string.chat_s_2f752c))
                                     }
                                 }
                             }
@@ -1919,11 +1922,11 @@ fun FilterSettingsScreen(
                                     try {
                                         bgDocPickerLauncher.launch(arrayOf("image/*"))
                                     } catch (e: Exception) {
-                                        bgStatusMsg = "無法開啟檔案選擇器：${e.localizedMessage ?: "未知錯誤"}"
+                                        bgStatusMsg = resCtx.getString(R.string.settings_s_625a6a, e.localizedMessage ?: resCtx.getString(R.string.common_unknown_error))
                                     }
                                 }
                             ) {
-                                Text("改用檔案選擇器（${fallbackLayer.label}）")
+                                Text(stringResource(R.string.settings_s_2bef07, fallbackLayer.label))
                             }
                         }
 
@@ -1941,7 +1944,7 @@ fun FilterSettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = if (scrimPref < 0) "背景暗色遮罩強度（預設 $effectiveScrim%）" else "背景暗色遮罩強度（$effectiveScrim%）",
+                                    text = if (scrimPref < 0) stringResource(R.string.settings_s_de91cf, effectiveScrim) else stringResource(R.string.settings_s_578c46, effectiveScrim),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Medium
                                 )
@@ -1952,7 +1955,7 @@ fun FilterSettingsScreen(
                                             ThemePreferences.setBackgroundScrimPercent(appCtx, -1)
                                         }
                                     ) {
-                                        Text("重設預設")
+                                        Text(stringResource(R.string.settings_home_s_3cbc2a))
                                     }
                                 }
                             }
@@ -1970,7 +1973,7 @@ fun FilterSettingsScreen(
                         Spacer(Modifier.height(12.dp))
                         var glassStrength by remember { mutableIntStateOf(ThemePreferences.getGlassStrengthPercent(appCtx)) }
                         Text(
-                            text = if (glassStrength == 0) "玻璃卡片強度（預設）" else "玻璃卡片強度（+$glassStrength%）",
+                            text = if (glassStrength == 0) stringResource(R.string.settings_s_53f8ee) else stringResource(R.string.settings_s_897fae, glassStrength),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
@@ -1998,7 +2001,7 @@ fun FilterSettingsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "頁面細節自訂",
+                                text = stringResource(R.string.settings_s_603242),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -2018,11 +2021,11 @@ fun FilterSettingsScreen(
                                     PhantomSettingsBus.notifyChanged()
                                 }
                             ) {
-                                Text("恢復預設")
+                                Text(stringResource(R.string.settings_s_9dbafd))
                             }
                         }
                         Text(
-                            text = "AI 聊天室字體獨立縮放（${String.format(Locale.US, "%.2fx", chatFontScale)}）",
+                            text = stringResource(R.string.settings_s_5cb26a, String.format(Locale.US, "%.2fx", chatFontScale)),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
@@ -2038,7 +2041,7 @@ fun FilterSettingsScreen(
                             steps = 8
                         )
                         Text(
-                            text = "訊息中心字體獨立縮放（${String.format(Locale.US, "%.2fx", msgFontScale)}）",
+                            text = stringResource(R.string.settings_s_1d5819, String.format(Locale.US, "%.2fx", msgFontScale)),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
@@ -2054,7 +2057,7 @@ fun FilterSettingsScreen(
                             steps = 8
                         )
                         Text(
-                            text = "聊天氣泡圓角半徑（${bubbleCornerDp} dp）",
+                            text = stringResource(R.string.settings_s_96c840, bubbleCornerDp),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
@@ -2070,7 +2073,7 @@ fun FilterSettingsScreen(
                             steps = 15
                         )
                         Text(
-                            text = "聊天氣泡寬度比例（${bubbleWidthPct}%）",
+                            text = stringResource(R.string.settings_s_017b20, bubbleWidthPct),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
@@ -2086,7 +2089,7 @@ fun FilterSettingsScreen(
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "首頁我的最愛 App 橫列顯示上限",
+                            text = stringResource(R.string.settings_s_4aec2a),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
@@ -2095,7 +2098,7 @@ fun FilterSettingsScreen(
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.padding(top = 4.dp)
                         ) {
-                            listOf(0 to "全部（預設）", 4 to "最多 4 個", 6 to "最多 6 個", 8 to "最多 8 個").forEach { (limit, label) ->
+                            listOf(0 to stringResource(R.string.settings_s_e31dcd), 4 to stringResource(R.string.settings_s_d3f063), 6 to stringResource(R.string.settings_s_d67660), 8 to stringResource(R.string.settings_s_7e4112)).forEach { (limit, label) ->
                                 FilterChip(
                                     selected = favMaxVisible == limit,
                                     onClick = {
@@ -2112,12 +2115,12 @@ fun FilterSettingsScreen(
                         var cardBgMode by remember { mutableStateOf(ThemePreferences.getCardBgMode(appCtx)) }
                         var cardBgAlpha by remember { mutableIntStateOf(ThemePreferences.getCardBgAlphaPercent(appCtx)) }
                         Text(
-                            text = "卡片底色模式",
+                            text = stringResource(R.string.catalog_appearance_card_bg_title),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = "自訂訊息卡、對話氣泡與待辦卡的底色不透明度",
+                            text = stringResource(R.string.settings_s_c4228c),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -2140,7 +2143,7 @@ fun FilterSettingsScreen(
                         if (cardBgMode == PhantomPrefs.CardBgMode.TRANSPARENT) {
                             Spacer(Modifier.height(6.dp))
                             Text(
-                                text = "卡片底色透明度（不透明度 $cardBgAlpha%）",
+                                text = stringResource(R.string.settings_s_2d1b21, cardBgAlpha),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -2162,7 +2165,7 @@ fun FilterSettingsScreen(
             if ("stats" in visibleCardKeys) {
                 item(key = "card_stats") {
                     CollapsibleSettingsCard(
-                        title = "統計",
+                        title = stringResource(R.string.common_stats),
                         expanded = expandStats || ("stats" in highlightedCardKeys),
                         highlighted = "stats" in highlightedCardKeys,
                         onToggle = {
@@ -2175,12 +2178,12 @@ fun FilterSettingsScreen(
                         }
                     ) {
                         Text(
-                            text = "統計頁卡片顯示自訂",
+                            text = stringResource(R.string.catalog_stats_card_visibility_title),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = "勾選要在統計分頁顯示的圖表與統計卡片（分享圖卡、省 token 提示與每週摘要維持常駐）",
+                            text = stringResource(R.string.settings_s_c59c19),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -2207,7 +2210,7 @@ fun FilterSettingsScreen(
             if ("ai" in visibleCardKeys) {
             item(key = "card_ai") {
                 CollapsibleSettingsCard(
-                    title = "AI 與分析",
+                    title = stringResource(R.string.settings_s_e0b81f),
                     expanded = expandAi || ("ai" in highlightedCardKeys),
                     highlighted = "ai" in highlightedCardKeys,
                     onToggle = {
@@ -2223,16 +2226,16 @@ fun FilterSettingsScreen(
                         onClick = { ctx.startActivity(Intent(ctx, ApiKeySettingsActivity::class.java)) },
                         modifier = Modifier.fillMaxWidth().pressableScale()
                     ) {
-                        Text("多 Provider AI 與 API Key 設定")
+                        Text(stringResource(R.string.settings_s_7263f2))
                     }
                     Spacer(Modifier.height(8.dp))
 
                     var tagDispatchTesting by remember { mutableStateOf(false) }
                     var tagDispatchResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
                     val remainingQuotaText = if (dailyAiLimit <= 0) {
-                        "不限"
+                        stringResource(R.string.common_unlimited)
                     } else {
-                        "${(dailyAiLimit - todayAiUsage).coerceAtLeast(0)} / $dailyAiLimit 則"
+                        stringResource(R.string.settings_s_d82c05, (dailyAiLimit - todayAiUsage).coerceAtLeast(0), dailyAiLimit)
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -2243,7 +2246,7 @@ fun FilterSettingsScreen(
                             enabled = !tagDispatchTesting,
                             onClick = {
                                 if (!PhantomPrefs.canUseAiTodayAndIncrement(appCtx)) {
-                                    tagDispatchResult = false to "今日 AI 額度已達上限（$dailyAiLimit 則），無法執行測試。"
+                                    tagDispatchResult = false to resCtx.getString(R.string.settings_s_1dbec3, dailyAiLimit)
                                     return@OutlinedButton
                                 }
                                 todayAiUsage = PhantomPrefs.getTodayAiUsage(appCtx)
@@ -2258,21 +2261,21 @@ fun FilterSettingsScreen(
                                     res.onSuccess { analysis ->
                                         val tagMap = allTags.associateBy { it.id }
                                         val tagNames = analysis.tagIds.mapNotNull { tagMap[it]?.name }
-                                        val tagStr = if (tagNames.isEmpty()) "（未指派標籤）" else tagNames.joinToString("、")
-                                        tagDispatchResult = true to "測試成功：風險=${analysis.riskLabel} (${analysis.riskScore})｜標籤=$tagStr\n理由：${analysis.riskReason}"
+                                        val tagStr = if (tagNames.isEmpty()) resCtx.getString(R.string.settings_s_9751b8) else tagNames.joinToString("、")
+                                        tagDispatchResult = true to resCtx.getString(R.string.settings_s_56bcf6, analysis.riskLabel, analysis.riskScore, tagStr, analysis.riskReason)
                                     }.onFailure { err ->
                                         PhantomPrefs.refundTodayAiUsage(appCtx)
                                         todayAiUsage = PhantomPrefs.getTodayAiUsage(appCtx)
-                                        tagDispatchResult = false to (err.message ?: "測試失敗，請檢查網路或 API Key 設定。")
+                                        tagDispatchResult = false to (err.message ?: resCtx.getString(R.string.settings_s_6d8218))
                                     }
                                 }
                             },
                             modifier = Modifier.pressableScale()
                         ) {
-                            Text(if (tagDispatchTesting) "測試中..." else "AI 標籤分發測試")
+                            Text(if (tagDispatchTesting) stringResource(R.string.settings_s_ba08af) else stringResource(R.string.catalog_ai_tag_dispatch_test_title))
                         }
                         Text(
-                            text = "計入每日額度（剩餘：$remainingQuotaText）",
+                            text = stringResource(R.string.settings_s_07426c, remainingQuotaText),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f)
@@ -2300,8 +2303,8 @@ fun FilterSettingsScreen(
                     Spacer(Modifier.height(10.dp))
 
                     SettingSwitchRow(
-                        title = "AI 標籤分發失敗通知",
-                        subtitle = "24 小時內累積失敗 5 次時發送低干擾提醒（6 小時冷卻）",
+                        title = stringResource(R.string.catalog_ai_tag_failure_notif_enabled_title),
+                        subtitle = stringResource(R.string.settings_s_2d40bd),
                         checked = aiTagFailureNotifEnabled,
                         onCheckedChange = { checked ->
                             aiTagFailureNotifEnabled = checked
@@ -2311,8 +2314,8 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(
-                        title = "雙模型信心路由（省 token）",
-                        subtitle = "訊息分析先打輕量模型，僅 30~70 分模糊帶升級主模型重判（不重複扣額度）",
+                        title = stringResource(R.string.settings_s_e81d45),
+                        subtitle = stringResource(R.string.settings_s_b44c61),
                         checked = dualModelRoutingEnabled,
                         onCheckedChange = { checked ->
                             dualModelRoutingEnabled = checked
@@ -2327,7 +2330,7 @@ fun FilterSettingsScreen(
                                 dualModelRoutingModel = next
                                 PhantomPrefs.setDualModelRoutingModel(appCtx, next)
                             },
-                            label = { Text("第一關輕量路由模型") },
+                            label = { Text(stringResource(R.string.settings_s_0dae5f)) },
                             placeholder = { Text(PhantomPrefs.DEFAULT_DUAL_MODEL_ROUTING_MODEL) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
@@ -2336,8 +2339,8 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(
-                        title = "AI 助手常用指令選單",
-                        subtitle = "在 AI 助手輸入列 + 選單顯示常用指令（關閉後僅保留圖片上傳）",
+                        title = stringResource(R.string.catalog_ai_chat_suggestions_title),
+                        subtitle = stringResource(R.string.catalog_ai_chat_suggestions_desc),
                         checked = chatSuggestionsEnabled,
                         onCheckedChange = { checked ->
                             chatSuggestionsEnabled = checked
@@ -2347,8 +2350,8 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(
-                        title = "切到 AI 助手時接續上次對話",
-                        subtitle = "預設為開啟新對話",
+                        title = stringResource(R.string.catalog_ai_chat_tab_behavior_title),
+                        subtitle = stringResource(R.string.settings_s_6f03f2),
                         checked = aiChatTabContinue,
                         onCheckedChange = { checked ->
                             aiChatTabContinue = checked
@@ -2362,12 +2365,12 @@ fun FilterSettingsScreen(
 
                     var showAddQuickCommandDialog by remember { mutableStateOf(false) }
                     Text(
-                        text = "AI 助手常用指令預設模式",
+                        text = stringResource(R.string.settings_s_41d9b9),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "設定點擊常用指令時的預設行為（每則指令亦可個別調整）",
+                        text = stringResource(R.string.settings_s_c452a8),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2380,7 +2383,7 @@ fun FilterSettingsScreen(
                                 PhantomPrefs.setQuickCommandDefaultMode(appCtx, PhantomPrefs.QuickChatCommand.MODE_DIRECT)
                                 quickChatCommands = PhantomPrefs.getQuickChatCommands(appCtx)
                             },
-                            label = { Text("直接執行") }
+                            label = { Text(stringResource(R.string.chat_s_aa0b15)) }
                         )
                         FilterChip(
                             selected = quickCommandDefaultMode == PhantomPrefs.QuickChatCommand.MODE_PREFILL,
@@ -2389,7 +2392,7 @@ fun FilterSettingsScreen(
                                 PhantomPrefs.setQuickCommandDefaultMode(appCtx, PhantomPrefs.QuickChatCommand.MODE_PREFILL)
                                 quickChatCommands = PhantomPrefs.getQuickChatCommands(appCtx)
                             },
-                            label = { Text("預輸入") }
+                            label = { Text(stringResource(R.string.chat_s_5af577)) }
                         )
                     }
                     Spacer(Modifier.height(8.dp))
@@ -2407,14 +2410,14 @@ fun FilterSettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "自訂常用指令（${quickChatCommands.size} 則）",
+                            text = stringResource(R.string.settings_s_bf22cf, quickChatCommands.size),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium,
                             modifier = Modifier.weight(1f)
                         )
                         PhantomChevron(
  expanded = quickCommandsExpanded.value,
-                            contentDescription = if (quickCommandsExpanded.value) "收起自訂常用指令" else "展開自訂常用指令",
+                            contentDescription = if (quickCommandsExpanded.value) stringResource(R.string.settings_s_0001fa) else stringResource(R.string.settings_s_e846db),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -2433,18 +2436,18 @@ fun FilterSettingsScreen(
                                     TextButton(onClick = {
                                         quickChatCommands = PhantomPrefs.resetBuiltInQuickCommandsToFollow(appCtx)
                                     }) {
-                                        Text("內建重設為跟隨預設")
+                                        Text(stringResource(R.string.settings_s_14c7d8))
                                     }
                                 }
                                 TextButton(onClick = { showAddQuickCommandDialog = true }) {
                                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("新增指令")
+                                    Text(stringResource(R.string.settings_s_8ad53f))
                                 }
                             }
                     if (quickChatCommands.isEmpty()) {
                         Text(
-                            text = "尚未自訂指令，可在這裡新增或在 AI 助手輸入「加入常用指令：…」",
+                            text = stringResource(R.string.settings_s_31e1b0),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -2453,8 +2456,8 @@ fun FilterSettingsScreen(
                             quickChatCommands.forEach { cmd ->
                                 val resolvedMode = PhantomPrefs.resolveQuickCommandMode(cmd.mode, quickCommandDefaultMode)
                                 val isFollow = cmd.mode == PhantomPrefs.QuickChatCommand.MODE_FOLLOW
-                                val resolvedText = if (resolvedMode == PhantomPrefs.QuickChatCommand.MODE_DIRECT) "直接執行" else "預輸入"
-                                val chipLabel = if (isFollow) "跟隨預設($resolvedText)" else resolvedText
+                                val resolvedText = if (resolvedMode == PhantomPrefs.QuickChatCommand.MODE_DIRECT) resCtx.getString(R.string.chat_s_aa0b15) else resCtx.getString(R.string.chat_s_5af577)
+                                val chipLabel = if (isFollow) resCtx.getString(R.string.settings_s_a4ede0, resolvedText) else resolvedText
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
                                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -2505,7 +2508,7 @@ fun FilterSettingsScreen(
                                         ) {
                                             Icon(
                                                 Icons.Default.Delete,
-                                                contentDescription = "刪除指令",
+                                                contentDescription = resCtx.getString(R.string.settings_s_b9ec94),
                                                 tint = MaterialTheme.colorScheme.error
                                             )
                                         }
@@ -2522,22 +2525,22 @@ fun FilterSettingsScreen(
                         var draftMode by remember { mutableStateOf(PhantomPrefs.QuickChatCommand.MODE_FOLLOW) }
                         AlertDialog(
                             onDismissRequest = { showAddQuickCommandDialog = false },
-                            title = { Text("新增常用指令") },
+                            title = { Text(stringResource(R.string.chat_s_1408b1)) },
                             text = {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     OutlinedTextField(
                                         value = draftLabel,
                                         onValueChange = { draftLabel = it },
-                                        label = { Text("指令名稱") },
-                                        placeholder = { Text("例如：開啟昨日簡報") },
+                                        label = { Text(stringResource(R.string.settings_s_7613fb)) },
+                                        placeholder = { Text(stringResource(R.string.settings_s_bcac9f)) },
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                     OutlinedTextField(
                                         value = draftPrompt,
                                         onValueChange = { draftPrompt = it },
-                                        label = { Text("指令內容") },
-                                        placeholder = { Text("例如：請幫我整理昨日簡報") },
+                                        label = { Text(stringResource(R.string.settings_s_f163bc)) },
+                                        placeholder = { Text(stringResource(R.string.settings_s_248fbf)) },
                                         maxLines = 3,
                                         modifier = Modifier.fillMaxWidth()
                                     )
@@ -2545,17 +2548,17 @@ fun FilterSettingsScreen(
                                         FilterChip(
                                             selected = draftMode == PhantomPrefs.QuickChatCommand.MODE_FOLLOW,
                                             onClick = { draftMode = PhantomPrefs.QuickChatCommand.MODE_FOLLOW },
-                                            label = { Text("跟隨預設") }
+                                            label = { Text(stringResource(R.string.settings_s_4f2580)) }
                                         )
                                         FilterChip(
                                             selected = draftMode == PhantomPrefs.QuickChatCommand.MODE_DIRECT,
                                             onClick = { draftMode = PhantomPrefs.QuickChatCommand.MODE_DIRECT },
-                                            label = { Text("直接執行") }
+                                            label = { Text(stringResource(R.string.chat_s_aa0b15)) }
                                         )
                                         FilterChip(
                                             selected = draftMode == PhantomPrefs.QuickChatCommand.MODE_PREFILL,
                                             onClick = { draftMode = PhantomPrefs.QuickChatCommand.MODE_PREFILL },
-                                            label = { Text("預輸入") }
+                                            label = { Text(stringResource(R.string.chat_s_5af577)) }
                                         )
                                     }
                                 }
@@ -2571,12 +2574,12 @@ fun FilterSettingsScreen(
                                         showAddQuickCommandDialog = false
                                     }
                                 ) {
-                                    Text("新增")
+                                    Text(stringResource(R.string.common_add))
                                 }
                             },
                             dismissButton = {
                                 TextButton(onClick = { showAddQuickCommandDialog = false }) {
-                                    Text("取消")
+                                    Text(stringResource(R.string.common_cancel))
                                 }
                             }
                         )
@@ -2584,7 +2587,7 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     Text(
-                        text = "每日 AI 額度上限（今日已用 $todayAiUsage 次）",
+                        text = stringResource(R.string.settings_s_32984e, todayAiUsage),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
@@ -2603,12 +2606,12 @@ fun FilterSettingsScreen(
                                     dailyAiLimit = limit
                                     PhantomPrefs.setDailyAiLimit(appCtx, limit)
                                 },
-                                label = { Text(if (limit == 0) "不限" else "$limit 次") }
+                                label = { Text(if (limit == 0) stringResource(R.string.common_unlimited) else stringResource(R.string.settings_s_12783d, limit)) }
                             )
                         }
                     }
                     Text(
-                        text = "限制每日 AI 分析呼叫次數，0 為不限；亦可用 AI 助手以 10 次為步進調整（0–100 次）。",
+                        text = stringResource(R.string.settings_s_fa2717),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2616,15 +2619,15 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     Text(
                         text = if (tokenSaverEnabled) {
-                            "AI 助手單次閱讀訊息數：$chatRagLimit 則（省 token 模式生效中：實際 100 則）"
+                            stringResource(R.string.settings_s_0444c3, chatRagLimit)
                         } else {
-                            "AI 助手單次閱讀訊息數：$chatRagLimit 則"
+                            stringResource(R.string.settings_s_4ea4df, chatRagLimit)
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "範圍 50–800 則（預設 400 則，全量讀取將消耗較多 token，請留意額度）；省 token 模式開啟時自動降為 100 則。",
+                        text = stringResource(R.string.settings_s_b4c2cc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2644,12 +2647,12 @@ fun FilterSettingsScreen(
 
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     Text(
-                        text = "AI 分析觸發字數門檻：$aiMinTriggerLength 字",
+                        text = stringResource(R.string.settings_s_3ca69a, aiMinTriggerLength),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "新訊息內容至少達此字數才觸發 AI 分析（1–30 字，預設 10 字）。",
+                        text = stringResource(R.string.settings_s_bd7106),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2668,8 +2671,8 @@ fun FilterSettingsScreen(
 
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     SettingSwitchRow(
-                        title = "離線 AI 分析自動補佇列",
-                        subtitle = "斷網或暫時性錯誤失敗時自動排入佇列，恢復網路後補齊分析（關閉將清空佇列）",
+                        title = stringResource(R.string.catalog_ai_offline_retry_enabled_title),
+                        subtitle = stringResource(R.string.settings_s_0fcae3),
                         checked = aiOfflineRetryEnabled,
                         onCheckedChange = { checked ->
                             aiOfflineRetryEnabled = checked
@@ -2684,8 +2687,8 @@ fun FilterSettingsScreen(
 
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     SettingSwitchRow(
-                        title = "自動備忘錄",
-                        subtitle = "AI 分析新訊息時自動擷取約定時間、繳費期限、取貨編號等備忘寫入「記事」分頁",
+                        title = stringResource(R.string.catalog_ai_auto_memo_enabled_title),
+                        subtitle = stringResource(R.string.settings_s_4bfeaa),
                         checked = aiAutoMemoEnabled,
                         onCheckedChange = { checked ->
                             aiAutoMemoEnabled = checked
@@ -2696,12 +2699,12 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     Text(
-                        text = "即時提醒關鍵字（${alertKeywords.size}/${PhantomPrefs.MAX_ALERT_KEYWORDS}）",
+                        text = stringResource(R.string.settings_s_8138bb, alertKeywords.size, PhantomPrefs.MAX_ALERT_KEYWORDS),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "獨立於過濾規則，命中即發送高優先「🔔 重要訊息」通知",
+                        text = stringResource(R.string.settings_s_7a8d71),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2715,7 +2718,7 @@ fun FilterSettingsScreen(
                             onValueChange = { newAlertKeyword = it },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
-                            placeholder = { Text("輸入重要提醒關鍵字…") }
+                            placeholder = { Text(stringResource(R.string.settings_s_754ad7)) }
                         )
                         Spacer(Modifier.width(8.dp))
                         Button(
@@ -2725,14 +2728,14 @@ fun FilterSettingsScreen(
                                     newAlertKeyword = ""
                                 } else {
                                     scope.launch {
-                                        snackbarHostState.showSnackbar("關鍵字重複或已達 20 組上限")
+                                        snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_22ec67))
                                     }
                                 }
                             },
                             enabled = newAlertKeyword.isNotBlank() &&
                                 alertKeywords.size < PhantomPrefs.MAX_ALERT_KEYWORDS
                         ) {
-                            Text("新增")
+                            Text(stringResource(R.string.common_add))
                         }
                     }
                     if (alertKeywords.isNotEmpty()) {
@@ -2756,14 +2759,14 @@ fun FilterSettingsScreen(
                         onClick = { ctx.startActivity(Intent(ctx, AutoReplySettingsActivity::class.java)) },
                         modifier = Modifier.fillMaxWidth().pressableScale()
                     ) {
-                        Text("SMS 自動回覆設定")
+                        Text(stringResource(R.string.catalog_ai_auto_reply_title))
                     }
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = { ctx.startActivity(Intent(ctx, ScamCenterActivity::class.java)) },
                         modifier = Modifier.fillMaxWidth().pressableScale()
                     ) {
-                        Text("詐騙警示中心")
+                        Text(stringResource(R.string.catalog_ai_scam_center_title))
                     }
                 }
             }
@@ -2773,7 +2776,7 @@ fun FilterSettingsScreen(
             if ("memory_assistant" in visibleCardKeys) {
             item(key = "card_memory_assistant") {
                 CollapsibleSettingsCard(
-                    title = "記憶庫與 AI 助手",
+                    title = stringResource(R.string.settings_s_79f0ee),
                     expanded = expandMemoryAssistant || ("memory_assistant" in highlightedCardKeys),
                     highlighted = "memory_assistant" in highlightedCardKeys,
                     onToggle = {
@@ -2787,15 +2790,15 @@ fun FilterSettingsScreen(
                 ) {
                     // (1) 記憶擷取與確認卡說明
                     Text(
-                        text = "一、記憶擷取與確認機制",
+                        text = stringResource(R.string.settings_s_8fbd91),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(Modifier.height(4.dp))
                     SettingSwitchRow(
-                        title = "聊天記憶擷取",
-                        subtitle = "允許 AI 在對話中提議記住人物、地點、行程、偏好與關係",
+                        title = stringResource(R.string.catalog_memory_chat_capture_title),
+                        subtitle = stringResource(R.string.settings_s_0c815b),
                         checked = memoryChatCaptureEnabled,
                         onCheckedChange = { checked ->
                             memoryChatCaptureEnabled = checked
@@ -2805,8 +2808,8 @@ fun FilterSettingsScreen(
                     )
                     Spacer(Modifier.height(6.dp))
                     SettingSwitchRow(
-                        title = "記憶寫入前先顯示確認卡",
-                        subtitle = "開啟時，AI 產生的新記憶會先在 AI 助手對話中顯示確認卡，由您選擇寫入／保留；關閉時直接寫入（🔒 敏感記憶與衝突仍必經確認）。您隨時可在記憶頁手動新增、編輯或刪除記憶。",
+                        title = stringResource(R.string.catalog_memory_write_confirm_title),
+                        subtitle = stringResource(R.string.settings_s_62c1db),
                         checked = memoryWriteConfirmEnabled,
                         onCheckedChange = { checked ->
                             memoryWriteConfirmEnabled = checked
@@ -2815,8 +2818,8 @@ fun FilterSettingsScreen(
                     )
                     Spacer(Modifier.height(6.dp))
                     SettingSwitchRow(
-                        title = "記憶 × 防詐交叉檢查",
-                        subtitle = "離線比對本機通訊錄與一般記憶（熟人冒充、情境矛盾、防詐免疫），絕不外送原始通訊錄或敏感記憶；關閉時行為與 v3.0.0 完全一致",
+                        title = stringResource(R.string.catalog_ai_anti_fraud_cross_check_title),
+                        subtitle = stringResource(R.string.settings_s_e1151a),
                         checked = antiFraudCrossCheckEnabled,
                         onCheckedChange = { checked ->
                             antiFraudCrossCheckEnabled = checked
@@ -2833,9 +2836,9 @@ fun FilterSettingsScreen(
                         ) {
                             Text(
                                 text = if (contactsPermissionGranted) {
-                                    "通訊錄權限：已授權（僅本機離線比對，不外送）"
+                                    stringResource(R.string.settings_s_5c263e)
                                 } else {
-                                    "通訊錄權限：未授權（目前降級為純記憶庫比對）"
+                                    stringResource(R.string.settings_s_55fc12)
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2847,14 +2850,14 @@ fun FilterSettingsScreen(
                                         contactsPermLauncher.launch(android.Manifest.permission.READ_CONTACTS)
                                     }
                                 ) {
-                                    Text("授予權限")
+                                    Text(stringResource(R.string.settings_s_45df2d))
                                 }
                             }
                         }
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "• 確認保護：開啟「記憶寫入前先顯示確認卡」時，AI 產生的新記憶會先在 AI 助手對話中由您確認；即使關閉，標為「🔒 敏感」的記憶、與既有記憶衝突的項目，以及任何刪除動作，仍一律彈出確認卡保護。",
+                        text = stringResource(R.string.settings_s_ce2e80),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2863,21 +2866,21 @@ fun FilterSettingsScreen(
 
                     // #329 / #348 本機日曆整合（多日曆勾選，預設全不勾，日曆資料絕不外送 API）
                     Text(
-                        text = "本機日曆整合（僅本機存取，絕不外送 API）",
+                        text = stringResource(R.string.settings_s_0cc878),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "僅會查詢與寫入您明確勾選的本機日曆（預設全不勾）；AI 助手空檔查詢由本機直接計算，寫入前自動檢查撞期。",
+                        text = stringResource(R.string.settings_s_8eb62d),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(Modifier.height(6.dp))
                     SettingSwitchRow(
-                        title = "日曆寫入前先顯示確認卡",
-                        subtitle = "開啟時，寫入行程前會在 AI 助手對話中顯示行程確認卡；關閉時仍會檢查撞期，無撞期且已授權寫入權限則直接寫入已勾選日曆。",
+                        title = stringResource(R.string.catalog_calendar_write_confirm_title),
+                        subtitle = stringResource(R.string.settings_s_8ff871),
                         checked = calendarWriteConfirmEnabled,
                         onCheckedChange = { checked ->
                             calendarWriteConfirmEnabled = checked
@@ -2892,7 +2895,7 @@ fun FilterSettingsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "日曆權限：未授權（查詢與自動行程建議目前停用）",
+                                text = stringResource(R.string.settings_s_773d30),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f)
@@ -2907,7 +2910,7 @@ fun FilterSettingsScreen(
                                     )
                                 }
                             ) {
-                                Text("授予日曆權限")
+                                Text(stringResource(R.string.settings_s_a478d0))
                             }
                         }
                     } else {
@@ -2918,7 +2921,7 @@ fun FilterSettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "已授權讀取；未授予寫入權限時將以日曆 App 預填方式新增行程",
+                                    text = stringResource(R.string.settings_s_952369),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.weight(1f)
@@ -2933,13 +2936,13 @@ fun FilterSettingsScreen(
                                         )
                                     }
                                 ) {
-                                    Text("補授寫入")
+                                    Text(stringResource(R.string.settings_s_b20fcd))
                                 }
                             }
                         }
                         if (deviceCalendars.isEmpty()) {
                             Text(
-                                text = "裝置目前沒有可讀取的本機日曆帳號。",
+                                text = stringResource(R.string.settings_s_ba000a),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -2969,14 +2972,14 @@ fun FilterSettingsScreen(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "已勾選 $selectedTotalCount 個（顯示中日曆 $selectedVisibleCount / ${visibleCals.size}）",
+                                        text = stringResource(R.string.settings_s_91e9d8, selectedTotalCount, selectedVisibleCount, visibleCals.size),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Medium,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     if (hiddenCals.isNotEmpty()) {
                                         Text(
-                                            text = "已自動隱藏 ${hiddenCals.size} 個未顯示／訂閱日曆",
+                                            text = stringResource(R.string.settings_s_807999, hiddenCals.size),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -2984,7 +2987,7 @@ fun FilterSettingsScreen(
                                 }
                                 PhantomChevron(
  expanded = calendarListExpanded,
-                                    contentDescription = if (calendarListExpanded) "收合日曆清單" else "展開日曆清單",
+                                    contentDescription = if (calendarListExpanded) stringResource(R.string.settings_s_4d50a8) else stringResource(R.string.settings_s_0a7a54),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
@@ -3012,7 +3015,7 @@ fun FilterSettingsScreen(
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                     ) {
                                         Text(
-                                            text = if (allVisibleSelected) "取消所有顯示中日曆" else "一鍵勾選所有顯示中日曆（${visibleCals.size}）",
+                                            text = if (allVisibleSelected) stringResource(R.string.settings_s_4e1a95) else stringResource(R.string.settings_s_860e84, visibleCals.size),
                                             style = MaterialTheme.typography.labelMedium
                                         )
                                     }
@@ -3027,7 +3030,7 @@ fun FilterSettingsScreen(
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     val renderCalendarGroups: @Composable (List<com.phantom.checker.util.CalendarBridge.CalendarAccountInfo>, Boolean) -> Unit =
                                         { cals, isHiddenSection ->
-                                            val grouped = cals.groupBy { it.accountName.ifBlank { "本機／未分類帳號" } }
+                                            val grouped = cals.groupBy { it.accountName.ifBlank { resCtx.getString(R.string.settings_s_5c61b5) } }
                                             grouped.forEach { (accountLabel, groupCals) ->
                                                 val groupIds = groupCals.map { it.id }.toSet()
                                                 val groupAllChecked = groupIds.all { it in selectedCalendarIds }
@@ -3062,7 +3065,7 @@ fun FilterSettingsScreen(
                                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                                         ) {
                                                             Text(
-                                                                text = if (groupAllChecked) "全取消" else "全選",
+                                                                text = if (groupAllChecked) resCtx.getString(R.string.settings_s_0aa556) else resCtx.getString(R.string.common_select_all),
                                                                 style = MaterialTheme.typography.labelSmall
                                                             )
                                                         }
@@ -3098,9 +3101,9 @@ fun FilterSettingsScreen(
                                                             Spacer(Modifier.width(8.dp))
                                                             Column(modifier = Modifier.weight(1f)) {
                                                                 val badges = buildString {
-                                                                    append(if (cal.isWritable) "（可讀寫）" else "（唯讀）")
-                                                                    if (isHiddenSection) append("・已隱藏")
-                                                                    if (!cal.synced) append("・未同步")
+                                                                    append(if (cal.isWritable) resCtx.getString(R.string.settings_s_6ec0ba) else resCtx.getString(R.string.settings_s_2d19d5))
+                                                                    if (isHiddenSection) append(resCtx.getString(R.string.settings_s_87c091))
+                                                                    if (!cal.synced) append(resCtx.getString(R.string.settings_s_f75137))
                                                                 }
                                                                 Text(
                                                                     text = cal.displayName + badges,
@@ -3117,7 +3120,7 @@ fun FilterSettingsScreen(
 
                                     if (visibleCals.isEmpty()) {
                                         Text(
-                                            text = "目前無顯示中的本機日曆，可展開下方隱藏日曆檢視。",
+                                            text = stringResource(R.string.settings_s_8d1eec),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -3136,14 +3139,14 @@ fun FilterSettingsScreen(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
-                                                text = "顯示隱藏／未同步日曆（${hiddenCals.size}）",
+                                                text = stringResource(R.string.settings_s_c343d1, hiddenCals.size),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 fontWeight = FontWeight.Medium,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                             PhantomChevron(
  expanded = showHiddenCalendars,
-                                                contentDescription = if (showHiddenCalendars) "收合隱藏日曆" else "展開隱藏日曆",
+                                                contentDescription = if (showHiddenCalendars) stringResource(R.string.settings_s_d3260f) else stringResource(R.string.settings_s_0ede1d),
                                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
@@ -3164,12 +3167,12 @@ fun FilterSettingsScreen(
 
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "行程類通知分流",
+                        text = stringResource(R.string.catalog_schedule_memo_route_title),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "行程類通知優先提示加入日曆，不再自動建立待辦/記事（明確設定的備忘規則仍優先）",
+                        text = stringResource(R.string.settings_s_c4c55d),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -3185,7 +3188,7 @@ fun FilterSettingsScreen(
                                 PhantomPrefs.setScheduleMemoRoute(appCtx, scheduleMemoRoute)
                                 PhantomSettingsBus.notifyChanged()
                             },
-                            label = { Text("優先日曆建議（預設）", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            label = { Text(stringResource(R.string.settings_s_80ec5b), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             modifier = Modifier.weight(1f)
                         )
                         FilterChip(
@@ -3195,7 +3198,7 @@ fun FilterSettingsScreen(
                                 PhantomPrefs.setScheduleMemoRoute(appCtx, scheduleMemoRoute)
                                 PhantomSettingsBus.notifyChanged()
                             },
-                            label = { Text("沿用舊版（待辦/記事）", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            label = { Text(stringResource(R.string.settings_s_e13901), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -3207,14 +3210,14 @@ fun FilterSettingsScreen(
                         onClick = { ctx.startActivity(Intent(ctx, AssistantHubActivity::class.java)) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("管理通訊錄整合（暱稱綁定／關係匯入／VIP 信任圈）")
+                        Text(stringResource(R.string.settings_s_b63b6e))
                     }
 
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
 
                     // (2) 注入預算（正常模式 vs 省 token 模式分開設定、互不覆寫）
                     Text(
-                        text = "二、對話記憶注入預算（雙模式獨立保存）",
+                        text = stringResource(R.string.settings_s_c194ea),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -3224,9 +3227,9 @@ fun FilterSettingsScreen(
                     val effectiveBudget = PhantomPrefs.getEffectiveMemoryTotalTokenBudget(appCtx)
                     Text(
                         text = if (tokenSaverEnabled) {
-                            "目前生效模式：省 token 模式（上限 $effectiveTopK 筆／總預算 ≤$effectiveBudget tokens；正常模式設定值已安全保留不覆寫）"
+                            stringResource(R.string.settings_s_389112, effectiveTopK, effectiveBudget)
                         } else {
-                            "目前生效模式：正常模式（上限 $effectiveTopK 筆／總預算 ≤$effectiveBudget tokens）"
+                            stringResource(R.string.settings_s_2b0d05, effectiveTopK, effectiveBudget)
                         },
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
@@ -3235,7 +3238,7 @@ fun FilterSettingsScreen(
                     Spacer(Modifier.height(8.dp))
 
                     Text(
-                        text = "正常模式注入筆數（Top-K）：$memoryNormalTopK 筆（範圍 1–8，預設 8，總預算 ≤250 tokens）",
+                        text = stringResource(R.string.settings_s_2b5dc2, memoryNormalTopK),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
@@ -3258,7 +3261,7 @@ fun FilterSettingsScreen(
 
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "正常模式單筆預覽截斷字數：$memoryNormalPerItemChars 字（範圍 30–120 字，預設 70 字 ≈ 50 tokens）",
+                        text = stringResource(R.string.settings_s_09968d, memoryNormalPerItemChars),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
@@ -3281,7 +3284,7 @@ fun FilterSettingsScreen(
 
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "省 token 模式注入筆數（Top-K）：$memorySaverTopK 筆（範圍 1–4，預設 4，單筆約 25 tokens，總預算 ≤120 tokens）",
+                        text = stringResource(R.string.settings_s_87d932, memorySaverTopK),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
@@ -3306,7 +3309,7 @@ fun FilterSettingsScreen(
 
                     // (3) 自訂 AI 助手（名字、個性 preset + 自訂、詳細度、頭像）
                     Text(
-                        text = "三、自訂 AI 助手（名字／個性／詳細度／頭像）",
+                        text = stringResource(R.string.settings_s_981f24),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -3329,7 +3332,7 @@ fun FilterSettingsScreen(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = "AI 助手頭像（聊天頂部與回覆氣泡即時顯示）",
+                                text = stringResource(R.string.settings_s_7678e2),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium
                             )
@@ -3346,13 +3349,13 @@ fun FilterSettingsScreen(
                                                 avatarDocumentPicker.launch(arrayOf("image/*"))
                                             } catch (_: Exception) {
                                                 scope.launch {
-                                                    snackbarHostState.showSnackbar("無法啟動系統圖片選擇器")
+                                                    snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_c57697))
                                                 }
                                             }
                                         }
                                     }
                                 ) {
-                                    Text(if (assistantHasAvatar) "更換頭像" else "上傳頭像")
+                                    Text(if (assistantHasAvatar) stringResource(R.string.settings_s_d98c67) else stringResource(R.string.settings_s_91c4c0))
                                 }
                                 if (assistantHasAvatar) {
                                     OutlinedButton(
@@ -3362,11 +3365,11 @@ fun FilterSettingsScreen(
                                             assistantHasAvatar = false
                                             assistantAvatarBitmap = null
                                             scope.launch {
-                                                snackbarHostState.showSnackbar("已重設為預設頭像")
+                                                snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_9baf41))
                                             }
                                         }
                                     ) {
-                                        Text("重設")
+                                        Text(stringResource(R.string.common_reset))
                                     }
                                 }
                             }
@@ -3387,7 +3390,7 @@ fun FilterSettingsScreen(
                                 PhantomPrefs.setAssistantName(appCtx, clamped)
                                 PhantomSettingsBus.notifyChanged()
                             },
-                            label = { Text("AI 助手名字（預設「幻訊」）") },
+                            label = { Text(stringResource(R.string.settings_s_c1d4a5)) },
                             placeholder = { Text(PhantomPrefs.DEFAULT_ASSISTANT_NAME) },
                             singleLine = true,
                             modifier = Modifier.weight(1f)
@@ -3400,14 +3403,14 @@ fun FilterSettingsScreen(
                                     PhantomSettingsBus.notifyChanged()
                                 }
                             ) {
-                                Text("重設")
+                                Text(stringResource(R.string.common_reset))
                             }
                         }
                     }
 
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "個性與說話風格（Preset ＋ 自訂描述，注入預算 ≤120 tokens）",
+                        text = stringResource(R.string.settings_s_bcb30b),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
@@ -3432,7 +3435,7 @@ fun FilterSettingsScreen(
                         assistantPersonalityPreset.promptInstruction.isNotBlank()
                     ) {
                         Text(
-                            text = "Preset 風格：${assistantPersonalityPreset.promptInstruction}",
+                            text = stringResource(R.string.settings_s_043dab, assistantPersonalityPreset.promptInstruction),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -3449,20 +3452,20 @@ fun FilterSettingsScreen(
                         label = {
                             Text(
                                 if (assistantPersonalityPreset == PhantomPrefs.AssistantPersonalityPreset.CUSTOM) {
-                                    "自訂個性描述（${assistantCustomPersonality.length}/${PhantomPrefs.MAX_ASSISTANT_CUSTOM_PERSONALITY_CHARS} 字）"
+                                    stringResource(R.string.settings_s_c287a9, assistantCustomPersonality.length, PhantomPrefs.MAX_ASSISTANT_CUSTOM_PERSONALITY_CHARS)
                                 } else {
-                                    "補充自訂個性指令（選填，${assistantCustomPersonality.length}/${PhantomPrefs.MAX_ASSISTANT_CUSTOM_PERSONALITY_CHARS} 字）"
+                                    stringResource(R.string.settings_s_68765d, assistantCustomPersonality.length, PhantomPrefs.MAX_ASSISTANT_CUSTOM_PERSONALITY_CHARS)
                                 }
                             )
                         },
-                        placeholder = { Text("例如：稱呼我為店長，回答金融訊息時特別標註金額與期限") },
+                        placeholder = { Text(stringResource(R.string.settings_s_e1b2a2)) },
                         maxLines = 3,
                         modifier = Modifier.fillMaxWidth()
                     )
 
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "回答詳細度",
+                        text = stringResource(R.string.settings_s_c3194a),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
@@ -3490,7 +3493,7 @@ fun FilterSettingsScreen(
 
                     // (4) 隱私分級說明
                     Text(
-                        text = "四、記憶庫隱私分級說明",
+                        text = stringResource(R.string.settings_s_6355d0),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -3506,11 +3509,11 @@ fun FilterSettingsScreen(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = "• 一般（normal）：僅在本地關鍵字、分類或時間匹配時，依上方 Top-K 預算並經 sanitizeForPrompt 防注入處理後才注入 AI 助手對話。",
+                                text = stringResource(R.string.settings_s_08ce4e),
                                 style = MaterialTheme.typography.bodySmall
                             )
                             Text(
-                                text = "• 🔒 敏感（sensitive）：由 SQL 與檢索閘門雙重硬性排除，在任何對外 AI 請求（AI 助手對話、訊息深度分析、每日／每週摘要、設定語意搜尋）中 100% 絕不外送，僅供您於本機「記憶」分頁檢視與管理。",
+                                text = stringResource(R.string.settings_s_0b2dda),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.primary
@@ -3525,7 +3528,7 @@ fun FilterSettingsScreen(
             if ("notif" in visibleCardKeys) {
             item(key = "card_notif") {
                 CollapsibleSettingsCard(
-                    title = "訊息與通知",
+                    title = stringResource(R.string.settings_s_053081),
                     expanded = expandNotif || ("notif" in highlightedCardKeys),
                     highlighted = "notif" in highlightedCardKeys,
                     onToggle = {
@@ -3543,9 +3546,9 @@ fun FilterSettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("過濾關鍵字規則", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                        Text(stringResource(R.string.settings_s_58a1df), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                         TextButton(onClick = { showPresetDialog = true }) {
-                            Text("匯入預設關鍵字")
+                            Text(stringResource(R.string.settings_s_a2ede6))
                         }
                     }
                     Row(
@@ -3557,7 +3560,7 @@ fun FilterSettingsScreen(
                             onValueChange = { newKeyword = it },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
-                            placeholder = { Text("輸入過濾關鍵字…") }
+                            placeholder = { Text(stringResource(R.string.settings_s_799a6b)) }
                         )
                         Spacer(Modifier.width(8.dp))
                         val trimmedKeyword = newKeyword.trim()
@@ -3592,16 +3595,16 @@ fun FilterSettingsScreen(
                             },
                             enabled = canAdd
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = "新增")
+                            Icon(Icons.Default.Add, contentDescription = stringResource(R.string.common_add))
                         }
                     }
                     Spacer(Modifier.height(6.dp))
-                    Text("命中動作：", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.settings_s_0ad3a4), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(
-                            FilterRule.ACTION_FILTER to "標記已過濾",
-                            FilterRule.ACTION_DROP to "不記錄",
-                            FilterRule.ACTION_SCAM to "標記詐騙警示"
+                            FilterRule.ACTION_FILTER to stringResource(R.string.settings_s_d4ac33),
+                            FilterRule.ACTION_DROP to stringResource(R.string.settings_s_72fbe9),
+                            FilterRule.ACTION_SCAM to stringResource(R.string.settings_s_3dc2a7)
                         ).forEach { (act, label) ->
                             FilterChip(
                                 selected = newRuleAction == act,
@@ -3614,12 +3617,12 @@ fun FilterSettingsScreen(
                         FilterChip(
                             selected = isAllApps,
                             onClick = { isAllApps = true },
-                            label = { Text("全部 App") }
+                            label = { Text(stringResource(R.string.common_all_apps)) }
                         )
                         FilterChip(
                             selected = !isAllApps,
                             onClick = { isAllApps = false },
-                            label = { Text("指定 App") }
+                            label = { Text(stringResource(R.string.settings_s_cff87d)) }
                         )
                     }
                     if (!isAllApps) {
@@ -3628,15 +3631,15 @@ fun FilterSettingsScreen(
                             onValueChange = { targetPackageName = it },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            label = { Text("來源 App Package 名稱") },
-                            placeholder = { Text("例如：com.android.mms") }
+                            label = { Text(stringResource(R.string.settings_s_180245)) },
+                            placeholder = { Text(stringResource(R.string.settings_s_a2075f)) }
                         )
                     }
                     Spacer(Modifier.height(8.dp))
                     if (isLoadingRules) {
                         CircularProgressIndicator()
                     } else if (rules.isEmpty()) {
-                        Text("目前尚無過濾關鍵字", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.settings_s_f80118), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
                         rules.forEach { rule ->
                             FilterRuleRow(
@@ -3667,8 +3670,8 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(
-                        title = "記錄持續性通知",
-                        subtitle = "關閉時略過系統／前景服務等持續刷新的通知",
+                        title = stringResource(R.string.catalog_notif_ongoing_title),
+                        subtitle = stringResource(R.string.settings_s_709191),
                         checked = recordOngoing,
                         onCheckedChange = { checked ->
                             recordOngoing = checked
@@ -3679,12 +3682,12 @@ fun FilterSettingsScreen(
 
                     val secInt = throttleSec.roundToInt()
                     Text(
-                        text = if (secInt == 0) "同 key 重複節流：已關閉" else "同 key 重複節流：$secInt 秒",
+                        text = if (secInt == 0) stringResource(R.string.settings_s_25ffab) else stringResource(R.string.settings_s_24faf8, secInt),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "僅作用於內容相同的重複更新（實質新訊息一律收錄，不漏訊）",
+                        text = stringResource(R.string.settings_s_d2c2bf),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -3699,8 +3702,8 @@ fun FilterSettingsScreen(
                     )
                     Spacer(Modifier.height(6.dp))
                     SettingSwitchRow(
-                        title = "數字微變視為同一則更新",
-                        subtitle = "抑制監控類通知（如流量／電量統計）僅數字跳動時的洗版",
+                        title = stringResource(R.string.catalog_notif_digit_variance_title),
+                        subtitle = stringResource(R.string.settings_s_75a650),
                         checked = digitVarianceThrottle,
                         onCheckedChange = { enabled ->
                             digitVarianceThrottle = enabled
@@ -3722,18 +3725,18 @@ fun FilterSettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "個別 App 節流覆寫（${appThrottleMap.size} 個）",
+                            text = stringResource(R.string.settings_s_1ec470, appThrottleMap.size),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
                         PhantomChevron(
  expanded = appThrottleExpanded.value,
-                            contentDescription = if (appThrottleExpanded.value) "收起個別 App 節流覆寫" else "展開個別 App 節流覆寫",
+                            contentDescription = if (appThrottleExpanded.value) stringResource(R.string.settings_s_f574a7) else stringResource(R.string.settings_s_67f5ca),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Text(
-                        text = "0 秒 = 永不節流，且通訊類若 postTime 更新則收錄同內容訊息",
+                        text = stringResource(R.string.settings_s_4d1a36),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -3745,14 +3748,14 @@ fun FilterSettingsScreen(
                         Column {
                     if (appThrottleMap.isEmpty()) {
                         Text(
-                            text = "尚未設定個別 App 覆寫，全部套用上方全域秒數",
+                            text = stringResource(R.string.settings_s_8bafeb),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
                         Spacer(Modifier.height(4.dp))
                         appThrottleMap.entries.sortedBy { it.key }.forEach { (pkg, sec) ->
-                            val label = if (sec == 0) "0 秒（永不節流）" else "$sec 秒"
+                            val label = if (sec == 0) resCtx.getString(R.string.settings_s_0a50ae) else resCtx.getString(R.string.settings_s_10d1e2, sec)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -3771,7 +3774,7 @@ fun FilterSettingsScreen(
                                     PhantomPrefs.setAppSameKeyThrottle(appCtx, pkg, null)
                                     appThrottleMap = PhantomPrefs.getAppSameKeyThrottleMap(appCtx)
                                 }) {
-                                    Text("移除", color = MaterialTheme.colorScheme.error)
+                                    Text(resCtx.getString(R.string.chat_s_2f752c), color = MaterialTheme.colorScheme.error)
                                 }
                             }
                         }
@@ -3780,13 +3783,13 @@ fun FilterSettingsScreen(
                         onClick = { showAppThrottlePicker = true },
                         modifier = Modifier.padding(top = 4.dp)
                     ) {
-                        Text("新增 App 節流覆寫")
+                        Text(stringResource(R.string.settings_s_b3286b))
                     }
                         }
                     }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-                    Text("通知點擊行為", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.catalog_notif_interaction_title), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         NotifClickBehavior.entries.forEach { behavior ->
@@ -3804,8 +3807,8 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(
-                        title = "常駐通知顯示 App 圖示條",
-                        subtitle = "在通知欄常駐通知下方顯示近期通知 App 圖示",
+                        title = stringResource(R.string.catalog_notif_persistent_icons_title),
+                        subtitle = stringResource(R.string.settings_s_f6d6b0),
                         checked = persistentShowIcons,
                         onCheckedChange = { checked ->
                             persistentShowIcons = checked
@@ -3817,7 +3820,7 @@ fun FilterSettingsScreen(
                     )
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-                    Text("常駐通知樣式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.catalog_notif_style_title), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PersistentNotifStyle.entries.forEach { style ->
@@ -3837,8 +3840,8 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(
-                        title = "對話頁滑動刪除",
-                        subtitle = "向左滑動訊息氣泡快速刪除（關閉時仍可長按刪除）",
+                        title = stringResource(R.string.catalog_notif_swipe_delete_title),
+                        subtitle = stringResource(R.string.settings_s_47fff5),
                         checked = swipeToDeleteEnabled,
                         onCheckedChange = { checked ->
                             swipeToDeleteEnabled = checked
@@ -3848,8 +3851,8 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(
-                        title = "勿擾時段",
-                        subtitle = "時段內暫停推送詐騙警示與重要提醒通知（照常記錄）",
+                        title = stringResource(R.string.catalog_notif_quiet_hours_title),
+                        subtitle = stringResource(R.string.settings_s_9fd480),
                         checked = quietHoursEnabled,
                         onCheckedChange = { checked ->
                             quietHoursEnabled = checked
@@ -3880,7 +3883,7 @@ fun FilterSettingsScreen(
                                 Text(
                                     String.format(
                                         Locale.getDefault(),
-                                        "開始 %02d:%02d",
+                                        stringResource(R.string.settings_s_0160f4),
                                         quietStartMinute / 60,
                                         quietStartMinute % 60
                                     )
@@ -3904,7 +3907,7 @@ fun FilterSettingsScreen(
                                 Text(
                                     String.format(
                                         Locale.getDefault(),
-                                        "結束 %02d:%02d",
+                                        stringResource(R.string.settings_s_da88ea),
                                         quietEndMinute / 60,
                                         quietEndMinute % 60
                                     )
@@ -3923,8 +3926,8 @@ fun FilterSettingsScreen(
                         }
                     }
                     SettingSwitchRow(
-                        title = "通知欄連續快速回覆",
-                        subtitle = "透過 AI 助手回覆後於通知欄保留對話輸入框，可連續回覆多則",
+                        title = stringResource(R.string.catalog_notif_reply_proxy_title),
+                        subtitle = stringResource(R.string.catalog_notif_reply_proxy_desc),
                         checked = replyProxyEnabled,
                         onCheckedChange = {
                             replyProxyEnabled = it
@@ -3934,17 +3937,17 @@ fun FilterSettingsScreen(
                     if (replyProxyEnabled) {
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "回覆通知閒置自動收起",
+                            text = stringResource(R.string.catalog_notif_reply_proxy_timeout_title),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(Modifier.height(4.dp))
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(
-                                15 to "15 分鐘",
-                                30 to "30 分鐘",
-                                60 to "60 分鐘",
-                                0 to "不自動收起"
+                                15 to stringResource(R.string.settings_s_fc4d47),
+                                30 to stringResource(R.string.settings_s_e3dc27),
+                                60 to stringResource(R.string.settings_s_81bff1),
+                                0 to stringResource(R.string.settings_s_77bb14)
                             ).forEach { (mins, label) ->
                                 FilterChip(
                                     selected = replyProxyTimeout == mins,
@@ -3961,12 +3964,12 @@ fun FilterSettingsScreen(
                     var myDisplayNames by remember { mutableStateOf(PhantomPrefs.getMyDisplayNames(appCtx).sorted()) }
                     var newDisplayNameInput by remember { mutableStateOf("") }
                     Text(
-                        text = "我的名稱（自我身分偵測）",
+                        text = stringResource(R.string.catalog_notif_my_display_names_title),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "群組通知寄件者命中任一名稱（不分大小寫）時標記為自己傳送，不重複警示也不計入統計",
+                        text = stringResource(R.string.settings_s_911977),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -3988,7 +3991,7 @@ fun FilterSettingsScreen(
                                     trailingIcon = {
                                         Icon(
                                             imageVector = Icons.Default.Clear,
-                                            contentDescription = "移除 $displayName",
+                                            contentDescription = stringResource(R.string.settings_s_58c704, displayName),
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
@@ -4006,7 +4009,7 @@ fun FilterSettingsScreen(
                             onValueChange = { newDisplayNameInput = it },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
-                            placeholder = { Text("新增我的顯示名稱（如自己在群組中的名稱或暱稱）") }
+                            placeholder = { Text(stringResource(R.string.settings_s_d77ac6)) }
                         )
                         Spacer(Modifier.width(8.dp))
                         val trimmedName = newDisplayNameInput.trim()
@@ -4021,7 +4024,7 @@ fun FilterSettingsScreen(
                             },
                             enabled = canAddName
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = "新增名稱")
+                            Icon(Icons.Default.Add, contentDescription = stringResource(R.string.settings_s_3780b5))
                         }
                     }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -4030,7 +4033,7 @@ fun FilterSettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                     ) {
-                        Text("清除已讀訊息")
+                        Text(stringResource(R.string.catalog_notif_clear_read_title))
                     }
                 }
             }
@@ -4040,7 +4043,7 @@ fun FilterSettingsScreen(
             if ("data" in visibleCardKeys) {
             item(key = "card_data") {
                 CollapsibleSettingsCard(
-                    title = "資料管理",
+                    title = stringResource(R.string.settings_s_ed7498),
                     expanded = expandData || ("data" in highlightedCardKeys),
                     highlighted = "data" in highlightedCardKeys,
                     onToggle = {
@@ -4059,16 +4062,16 @@ fun FilterSettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("App 靜音清單", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                            Text(stringResource(R.string.catalog_data_muted_apps_title), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                             Text(
-                                "已靜音 App 可選擇完全不記錄或僅靜默記錄（不影響既有歷史訊息）",
+                                stringResource(R.string.settings_s_ad4f43),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Spacer(Modifier.width(8.dp))
                         Button(onClick = { showAppPickerDialog = true }) {
-                            Text("選擇 App")
+                            Text(stringResource(R.string.settings_s_6c291d))
                         }
                     }
                     if (mutedApps.isNotEmpty()) {
@@ -4120,10 +4123,10 @@ fun FilterSettingsScreen(
                                     mutedApps = PhantomPrefs.getMutedApps(appCtx).sorted()
                                     muteModes = PhantomPrefs.getAppMuteModeMap(appCtx)
                                     scope.launch {
-                                        snackbarHostState.showSnackbar("已解除靜音：$appLabel")
+                                        snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_216aba, appLabel))
                                     }
                                 }) {
-                                    Text("解除靜音")
+                                    Text(resCtx.getString(R.string.main_s_fd9e9a))
                                 }
                             }
                         }
@@ -4134,7 +4137,7 @@ fun FilterSettingsScreen(
                         onClick = { ctx.startActivity(Intent(ctx, TagManagementActivity::class.java)) },
                         modifier = Modifier.fillMaxWidth().pressableScale()
                     ) {
-                        Text("自訂標籤管理")
+                        Text(stringResource(R.string.settings_s_885cfb))
                     }
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
 
@@ -4148,12 +4151,12 @@ fun FilterSettingsScreen(
                                 cardBounds["whitelist"] = coords.boundsInRoot()
                             }
                     ) {
-                        Text("白名單管理（$whitelistCount 筆）")
+                        Text(stringResource(R.string.settings_s_c51dc4, whitelistCount))
                     }
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
 
                     // 保留天數與則數上限
-                    Text("訊息保留天數（詐騙記錄永久保留）", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.settings_s_6b381c), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         RetentionConfig.OPTIONS.forEach { days ->
@@ -4169,7 +4172,7 @@ fun FilterSettingsScreen(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    Text("訊息保留則數上限", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.settings_s_51b373), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         RetentionConfig.MAX_COUNT_OPTIONS.forEach { cnt ->
@@ -4196,33 +4199,33 @@ fun FilterSettingsScreen(
                             }
                         }
                     }
-                    Text("儲存空間明細", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.settings_s_7d464e), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(4.dp))
                     val statsSnapshot = storageStats
                     if (statsSnapshot == null) {
                         Text(
-                            text = "計算中…",
+                            text = stringResource(R.string.settings_s_b2e223),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
                         Text(
-                            text = "資料庫（含 WAL/SHM）：${Formatter.formatShortFileSize(appCtx, statsSnapshot.dbBytes)}",
+                            text = stringResource(R.string.settings_s_011b70, Formatter.formatShortFileSize(appCtx, statsSnapshot.dbBytes)),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "背景圖片目錄：${Formatter.formatShortFileSize(appCtx, statsSnapshot.backgroundsBytes)}",
+                            text = stringResource(R.string.settings_s_fc5d65, Formatter.formatShortFileSize(appCtx, statsSnapshot.backgroundsBytes)),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "快取目錄：${Formatter.formatShortFileSize(appCtx, statsSnapshot.cacheBytes)}",
+                            text = stringResource(R.string.settings_s_0832a8, Formatter.formatShortFileSize(appCtx, statsSnapshot.cacheBytes)),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "合計：${Formatter.formatShortFileSize(appCtx, statsSnapshot.totalBytes)}",
+                            text = stringResource(R.string.settings_s_9a230c, Formatter.formatShortFileSize(appCtx, statsSnapshot.totalBytes)),
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface
@@ -4246,14 +4249,14 @@ fun FilterSettingsScreen(
                                 storageStats = updatedStats
                                 isVacuuming = false
                                 snackbarHostState.showSnackbar(
-                                    "資料庫壓縮完成：${Formatter.formatShortFileSize(appCtx, beforeBytes)} → ${Formatter.formatShortFileSize(appCtx, afterBytes)}"
+                                    resCtx.getString(R.string.settings_s_7767a6, Formatter.formatShortFileSize(appCtx, beforeBytes), Formatter.formatShortFileSize(appCtx, afterBytes))
                                 )
                             }
                         },
                         enabled = !isVacuuming,
                         modifier = Modifier.fillMaxWidth().pressableScale()
                     ) {
-                        Text(if (isVacuuming) "壓縮中…" else "立即壓縮資料庫")
+                        Text(if (isVacuuming) stringResource(R.string.settings_s_e594e4) else stringResource(R.string.settings_s_bf7818))
                     }
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
 
@@ -4262,7 +4265,7 @@ fun FilterSettingsScreen(
                         enabled = !isExporting,
                         modifier = Modifier.fillMaxWidth().pressableScale()
                     ) {
-                        Text(if (isExporting) "匯出中…" else "匯出訊息 CSV（可選範圍）")
+                        Text(if (isExporting) stringResource(R.string.settings_s_0fa176) else stringResource(R.string.settings_s_50de8e))
                     }
                     Spacer(Modifier.height(8.dp))
 
@@ -4271,7 +4274,7 @@ fun FilterSettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                     ) {
-                        Text("刪除全部訊息")
+                        Text(stringResource(R.string.settings_s_20a08d))
                     }
                     Spacer(Modifier.height(8.dp))
 
@@ -4283,7 +4286,7 @@ fun FilterSettingsScreen(
                         },
                         modifier = Modifier.fillMaxWidth().pressableScale()
                     ) {
-                        Text("重新播放新手教學")
+                        Text(stringResource(R.string.settings_s_ffe0d8))
                     }
                     Spacer(Modifier.height(8.dp))
 
@@ -4294,11 +4297,11 @@ fun FilterSettingsScreen(
                         },
                         modifier = Modifier.fillMaxWidth().pressableScale()
                     ) {
-                        Text("重新播放設定教學")
+                        Text(stringResource(R.string.settings_s_7d2e2f))
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "桌面小工具：桌面長按 → 小工具 → 幻訊統計",
+                        text = stringResource(R.string.settings_s_f1336b),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -4310,7 +4313,7 @@ fun FilterSettingsScreen(
             if ("appearance" in visibleCardKeys) {
             item(key = "card_appearance") {
                 CollapsibleSettingsCard(
-                    title = "外觀與保活",
+                    title = stringResource(R.string.settings_s_754ec0),
                     expanded = expandAppearance || ("appearance" in highlightedCardKeys),
                     highlighted = "appearance" in highlightedCardKeys,
                     onToggle = {
@@ -4322,7 +4325,7 @@ fun FilterSettingsScreen(
                         cardBounds["appearance"] = coords.boundsInRoot()
                     }
                 ) {
-                    Text("主題模式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.settings_s_5285ae), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         ThemeMode.entries.forEach { mode ->
@@ -4337,8 +4340,8 @@ fun FilterSettingsScreen(
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                         HorizontalDivider(Modifier.padding(vertical = 8.dp))
                         SettingSwitchRow(
-                            title = "Material You 動態色",
-                            subtitle = "依系統桌布配色（保留 Phantom 紫為主色調）",
+                            title = stringResource(R.string.settings_s_bd12a6),
+                            subtitle = stringResource(R.string.settings_s_17bb7c),
                             checked = dynamicColorEnabled,
                             onCheckedChange = { checked ->
                                 ThemePreferences.setDynamicColor(appCtx, checked)
@@ -4347,7 +4350,7 @@ fun FilterSettingsScreen(
                     }
 
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                    Text("字體大小", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.settings_s_431cae), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FontScaleMode.entries.forEach { mode ->
@@ -4360,8 +4363,8 @@ fun FilterSettingsScreen(
                     }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     SettingSwitchRow(
-                        title = "觸覺回饋",
-                        subtitle = "切換分頁與長按操作時提供震動回饋；若無震動請檢查系統設定（HyperOS/MIUI：設定→音效與震動→觸感回饋；Samsung：設定→聲音與震動→觸覺回饋）",
+                        title = stringResource(R.string.catalog_appearance_haptic_title),
+                        subtitle = stringResource(R.string.settings_s_6aee22),
                         checked = hapticEnabled,
                         onCheckedChange = { checked ->
                             hapticEnabled = checked
@@ -4370,17 +4373,17 @@ fun FilterSettingsScreen(
                     )
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     SettingSwitchRow(
-                        title = "液態玻璃模糊效果",
-                        subtitle = "Android 12+ 模糊；更低版本或省電模式自動停用並改為半透明壓色",
+                        title = stringResource(R.string.catalog_appearance_glass_effect_title),
+                        subtitle = stringResource(R.string.settings_s_7cc88f),
                         checked = glassEffectEnabled,
                         onCheckedChange = { checked ->
                             ThemePreferences.setGlassEffectEnabled(appCtx, checked)
                         }
                     )
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                    Text("底部分頁欄顯示模式", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.catalog_appearance_tab_bar_mode_title), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Text(
-                        text = "標準（預設）／縮小（80% 高度與圖示）／自動隱藏（向下捲動隱藏、向上捲動或點底部浮現）",
+                        text = stringResource(R.string.settings_s_02be9a),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -4400,7 +4403,7 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
 
                     Text(
-                        text = if (listenerEnabled) "1. 通知存取權限：已開啟 ✓" else "1. 通知存取權限：尚未開啟 ✗",
+                        text = if (listenerEnabled) stringResource(R.string.settings_s_637aa5) else stringResource(R.string.settings_s_adc1ad),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         color = if (listenerEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
@@ -4413,13 +4416,13 @@ fun FilterSettingsScreen(
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("前往開啟通知存取權限")
+                            Text(stringResource(R.string.common_s_dc348a))
                         }
                     }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     Text(
-                        text = if (batteryWhitelisted) "2. 電池優化白名單：已豁免 ✓" else "2. 電池優化白名單：尚未豁免 ✗（建議開啟）",
+                        text = if (batteryWhitelisted) stringResource(R.string.settings_s_1a44b0) else stringResource(R.string.settings_s_2268ff),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         color = if (batteryWhitelisted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
@@ -4439,13 +4442,13 @@ fun FilterSettingsScreen(
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("申請忽略電池最佳化")
+                            Text(stringResource(R.string.settings_s_b29e94))
                         }
                     }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     Text(
-                        text = "3. OEM 自啟動權限：請手動確認（系統無法自動偵測）",
+                        text = stringResource(R.string.settings_s_a126ca),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -4467,7 +4470,7 @@ fun FilterSettingsScreen(
                             }
                         )
                         Text(
-                            text = "我已確認完成裝置自啟動設定",
+                            text = stringResource(R.string.settings_s_e008e2),
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -4475,12 +4478,12 @@ fun FilterSettingsScreen(
                         onClick = { tryLaunchIntents(ctx, oemGuide.intents) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("開啟系統設定 / 應用程式詳情")
+                        Text(stringResource(R.string.settings_s_173e7b))
                     }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     Text(
-                        text = if (fgServiceRunning) "4. 前景保活服務：運行中 ✓" else "4. 前景保活服務：未偵測到常駐通知 ✗",
+                        text = if (fgServiceRunning) stringResource(R.string.settings_s_26059e) else stringResource(R.string.settings_s_eb75a2),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                         color = if (fgServiceRunning) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
@@ -4494,7 +4497,7 @@ fun FilterSettingsScreen(
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("重新啟動前景保活服務")
+                            Text(stringResource(R.string.settings_s_755ae3))
                         }
                     }
                 }
@@ -4506,8 +4509,8 @@ fun FilterSettingsScreen(
                 item(key = "card_permissions_links") {
                     com.phantom.checker.ui.components.SettingsSegmentedGroup {
                         com.phantom.checker.ui.components.SettingsNavigationRow(
-                            title = "權限授予中心",
-                            subtitle = "集中檢視通知、簡訊、通訊錄、日曆、鬧鐘、電池與 Health Connect 權限",
+                            title = stringResource(R.string.search_s_1579f9),
+                            subtitle = stringResource(R.string.settings_s_5e72dc),
                             shape = AuroraTokens.segmentedItemShape(0, 2),
                             highlighted = activeHighlightSettingId == "permission_hub",
                             onClick = {
@@ -4516,8 +4519,8 @@ fun FilterSettingsScreen(
                             }
                         )
                         com.phantom.checker.ui.components.SettingsNavigationRow(
-                            title = "連結應用程式中心",
-                            subtitle = "日曆、通訊錄、通知、鬧鐘狀態與自填金鑰雲端擴充（GitHub／Discord）",
+                            title = stringResource(R.string.catalog_linked_apps_center_title),
+                            subtitle = stringResource(R.string.settings_s_8943b2),
                             shape = AuroraTokens.segmentedItemShape(1, 2),
                             highlighted = activeHighlightSettingId == "linked_apps_center",
                             onClick = {
@@ -4534,8 +4537,8 @@ fun FilterSettingsScreen(
                 item(key = "card_data_shortcuts") {
                     com.phantom.checker.ui.components.SettingsSegmentedGroup {
                         com.phantom.checker.ui.components.SettingsNavigationRow(
-                            title = "白名單管理",
-                            subtitle = "依 App 分組管理信任寄件者與訊息白名單",
+                            title = stringResource(R.string.catalog_whitelist_management_title),
+                            subtitle = stringResource(R.string.settings_s_18a130),
                             shape = AuroraTokens.segmentedItemShape(0, 3),
                             highlighted = activeHighlightSettingId == "whitelist_management",
                             onClick = {
@@ -4544,8 +4547,8 @@ fun FilterSettingsScreen(
                             }
                         )
                         com.phantom.checker.ui.components.SettingsNavigationRow(
-                            title = "自訂標籤規則管理",
-                            subtitle = "管理自訂標籤、App 分類與條件規則",
+                            title = stringResource(R.string.catalog_ai_rules_title),
+                            subtitle = stringResource(R.string.settings_s_300b47),
                             shape = AuroraTokens.segmentedItemShape(1, 3),
                             highlighted = activeHighlightSettingId == "ai_rules",
                             onClick = {
@@ -4554,8 +4557,8 @@ fun FilterSettingsScreen(
                             }
                         )
                         com.phantom.checker.ui.components.SettingsNavigationRow(
-                            title = "詐騙警示中心",
-                            subtitle = "檢視高風險詐騙紀錄、趨勢與處置動作",
+                            title = stringResource(R.string.catalog_ai_scam_center_title),
+                            subtitle = stringResource(R.string.settings_s_214be4),
                             shape = AuroraTokens.segmentedItemShape(2, 3),
                             highlighted = activeHighlightSettingId == "ai_scam_center",
                             onClick = {
@@ -4644,13 +4647,13 @@ fun FilterSettingsScreen(
                                     val onLongPin: () -> Unit = {
                                         if (UiLayoutPrefs.isPinned(appCtx, advItem.id)) {
                                             UiLayoutPrefs.removePinned(appCtx, advItem.id)
-                                            scope.launch { snackbarHostState.showSnackbar("已取消釘選「${advItem.title}」") }
+                                            scope.launch { snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_12ce1c, advItem.title)) }
                                         } else {
                                             val added = UiLayoutPrefs.addPinned(appCtx, advItem.id)
                                             scope.launch {
                                                 snackbarHostState.showSnackbar(
-                                                    if (added) "已釘選「${advItem.title}」到設定首頁"
-                                                    else "釘選已達上限（${UiLayoutPrefs.MAX_PINNED} 項），請先取消一項"
+                                                    if (added) resCtx.getString(R.string.settings_s_15b5b5, advItem.title)
+                                                    else resCtx.getString(R.string.settings_home_s_73c93d, UiLayoutPrefs.MAX_PINNED)
                                                 )
                                             }
                                         }
@@ -4743,6 +4746,7 @@ private fun FraudIntelCard(
     highlighted: Boolean = false,
     onShowMessage: (String) -> Unit
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -4770,15 +4774,15 @@ private fun FraudIntelCard(
     var testingProvider by remember { mutableStateOf<IntelClient.IntelProvider?>(null) }
 
     CollapsibleSettingsCard(
-        title = "防詐情報",
+        title = stringResource(R.string.settings_s_3ced8e),
         expanded = expanded,
         onToggle = onToggle,
         glassState = glassState,
         highlighted = highlighted
     ) {
         SettingSwitchRow(
-            title = "啟用公開防詐情報預查",
-            subtitle = "AI 分析前先以 URL / 加密貨幣地址比對公開情報（不傳送訊息全文）；命中直接警示且不消耗每日 AI 額度",
+            title = stringResource(R.string.catalog_intel_enabled_title),
+            subtitle = stringResource(R.string.settings_s_9ac465),
             checked = intelEnabled,
             onCheckedChange = { checked ->
                 intelEnabled = checked
@@ -4790,8 +4794,8 @@ private fun FraudIntelCard(
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
             SettingSwitchRow(
-                title = "165 通報（fraud.tw）",
-                subtitle = "查詢台灣 165 涉詐網域通報資料庫（免金鑰，失敗時自動靜默降級）",
+                title = stringResource(R.string.settings_s_8bfc95),
+                subtitle = stringResource(R.string.settings_s_94cb6a),
                 checked = fraudTwEnabled,
                 onCheckedChange = { checked ->
                     fraudTwEnabled = checked
@@ -4804,8 +4808,8 @@ private fun FraudIntelCard(
             SettingSwitchRow(
                 title = "Google Safe Browsing v4",
                 subtitle = when (sbKeySource) {
-                    ApiKeySource.ENCRYPTED_PREFS -> "Key 狀態：已於 App 加密儲存"
-                    else -> "Key 狀態：未設定（需 API key 方可使用）"
+                    ApiKeySource.ENCRYPTED_PREFS -> stringResource(R.string.settings_s_0f529c)
+                    else -> stringResource(R.string.settings_s_8c933e)
                 },
                 checked = safeBrowsingEnabled,
                 onCheckedChange = { checked ->
@@ -4815,8 +4819,8 @@ private fun FraudIntelCard(
             )
             IntelApiKeyEditor(
                 label = "Safe Browsing API Key",
-                placeholder = if (sbKeySource == ApiKeySource.ENCRYPTED_PREFS) "已加密儲存（輸入新 key 可覆蓋）" else "貼上 Google Cloud Safe Browsing Key",
-                helperText = "至 Google Cloud 啟用 Safe Browsing API 後建立 API key（加密儲存於本機）。",
+                placeholder = if (sbKeySource == ApiKeySource.ENCRYPTED_PREFS) stringResource(R.string.settings_s_e0c612) else stringResource(R.string.settings_s_c2f617),
+                helperText = stringResource(R.string.settings_s_69035b),
                 value = sbKeyInput,
                 onValueChange = { sbKeyInput = it },
                 hasSavedKey = sbKeySource == ApiKeySource.ENCRYPTED_PREFS,
@@ -4824,24 +4828,24 @@ private fun FraudIntelCard(
                     IntelClient.setSafeBrowsingApiKey(appCtx, sbKeyInput)
                     sbKeyInput = ""
                     sbKeySource = IntelClient.getSafeBrowsingKeySource(appCtx)
-                    onShowMessage("已加密儲存 Safe Browsing API Key")
+                    onShowMessage(resCtx.getString(R.string.settings_s_f478e4))
                 },
                 onClear = {
                     IntelClient.setSafeBrowsingApiKey(appCtx, "")
                     sbKeyInput = ""
                     sbKeySource = IntelClient.getSafeBrowsingKeySource(appCtx)
-                    onShowMessage("已清除 App 內儲存的 Safe Browsing Key")
+                    onShowMessage(resCtx.getString(R.string.settings_s_14faa5))
                 }
             )
 
             Spacer(Modifier.height(8.dp))
 
             SettingSwitchRow(
-                title = "PhishTank（可選）",
+                title = stringResource(R.string.settings_s_3bd63d),
                 subtitle = if (ptKeyConfigured) {
-                    "Key 狀態：已設定 app_key（加密儲存）"
+                    stringResource(R.string.settings_s_b2fbef)
                 } else {
-                    "未填 app_key，可能受較嚴格限流（預設關閉）"
+                    stringResource(R.string.settings_s_f6c991)
                 },
                 checked = phishTankEnabled,
                 onCheckedChange = { checked ->
@@ -4850,9 +4854,9 @@ private fun FraudIntelCard(
                 }
             )
             IntelApiKeyEditor(
-                label = "PhishTank app_key（選填）",
-                placeholder = if (ptKeyConfigured) "已加密儲存（輸入新 key 可覆蓋）" else "選填：至 phishtank.net 註冊應用取得",
-                helperText = "未填亦可查詢，但限流較嚴格；填入後加密儲存。",
+                label = stringResource(R.string.settings_s_cbc93b),
+                placeholder = if (ptKeyConfigured) stringResource(R.string.settings_s_e0c612) else stringResource(R.string.settings_s_399e39),
+                helperText = stringResource(R.string.settings_s_c8cf4f),
                 value = ptKeyInput,
                 onValueChange = { ptKeyInput = it },
                 hasSavedKey = ptKeyConfigured,
@@ -4860,24 +4864,24 @@ private fun FraudIntelCard(
                     IntelClient.setPhishTankAppKey(appCtx, ptKeyInput)
                     ptKeyInput = ""
                     ptKeyConfigured = IntelClient.getPhishTankAppKey(appCtx) != null
-                    onShowMessage("已加密儲存 PhishTank app_key")
+                    onShowMessage(resCtx.getString(R.string.settings_s_a9d4a5))
                 },
                 onClear = {
                     IntelClient.setPhishTankAppKey(appCtx, "")
                     ptKeyInput = ""
                     ptKeyConfigured = false
-                    onShowMessage("已清除 PhishTank app_key")
+                    onShowMessage(resCtx.getString(R.string.settings_s_0cf0bb))
                 }
             )
 
             Spacer(Modifier.height(8.dp))
 
             SettingSwitchRow(
-                title = "Chainabuse 鏈上地址（可選）",
+                title = stringResource(R.string.settings_s_21d940),
                 subtitle = if (caKeyConfigured) {
-                    "Key 狀態：已設定 API key（加密儲存）｜標準 key 每月限 10 次呼叫（72h 快取緩解）"
+                    stringResource(R.string.settings_s_53cc89)
                 } else {
-                    "Key 狀態：未設定（需至 chainabuse.com Profile → Settings 產生 API key；標準 key 每月僅 10 次呼叫）"
+                    stringResource(R.string.settings_s_f0c755)
                 },
                 checked = chainabuseEnabled,
                 onCheckedChange = { checked ->
@@ -4887,8 +4891,8 @@ private fun FraudIntelCard(
             )
             IntelApiKeyEditor(
                 label = "Chainabuse API Key",
-                placeholder = if (caKeyConfigured) "已加密儲存（輸入新 key 可覆蓋）" else "貼上 Chainabuse API Key",
-                helperText = "官方限制：標準 key 每月僅 10 次呼叫（每次最多 50 筆報告），已搭配 72h 快取緩解。",
+                placeholder = if (caKeyConfigured) stringResource(R.string.settings_s_e0c612) else stringResource(R.string.settings_s_1a99d5),
+                helperText = stringResource(R.string.settings_s_e65b6e),
                 value = caKeyInput,
                 onValueChange = { caKeyInput = it },
                 hasSavedKey = caKeyConfigured,
@@ -4896,20 +4900,20 @@ private fun FraudIntelCard(
                     IntelClient.setChainabuseApiKey(appCtx, caKeyInput)
                     caKeyInput = ""
                     caKeyConfigured = IntelClient.isChainabuseKeyConfigured(appCtx)
-                    onShowMessage("已加密儲存 Chainabuse API Key")
+                    onShowMessage(resCtx.getString(R.string.settings_s_25c0f3))
                 },
                 onClear = {
                     IntelClient.setChainabuseApiKey(appCtx, "")
                     caKeyInput = ""
                     caKeyConfigured = false
-                    onShowMessage("已清除 Chainabuse API Key")
+                    onShowMessage(resCtx.getString(R.string.settings_s_fadb22))
                 }
             )
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
             Text(
-                text = "逐源連線測試",
+                text = stringResource(R.string.settings_s_afbe5f),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )
@@ -4947,7 +4951,7 @@ private fun FraudIntelCard(
                             }
                         }
                     ) {
-                        Text(if (isTesting) "測試中…" else "測試連線")
+                        Text(if (isTesting) resCtx.getString(R.string.settings_s_58b883) else resCtx.getString(R.string.settings_s_48b807))
                     }
                 }
             }
@@ -4958,12 +4962,12 @@ private fun FraudIntelCard(
                 onClick = {
                     scope.launch {
                         IntelClient.clearCache(appCtx)
-                        onShowMessage("已清除 72 小時情報快取")
+                        onShowMessage(resCtx.getString(R.string.settings_s_760d76))
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("清除情報快取（72h）")
+                Text(stringResource(R.string.settings_s_846354))
             }
         }
     }
@@ -5003,12 +5007,12 @@ private fun IntelApiKeyEditor(
                 enabled = value.isNotBlank(),
                 onClick = onSave
             ) {
-                Text("儲存")
+                Text(stringResource(R.string.common_save))
             }
             if (hasSavedKey) {
                 Spacer(Modifier.width(4.dp))
                 TextButton(onClick = onClear) {
-                    Text("清除")
+                    Text(stringResource(R.string.common_clear))
                 }
             }
         }
@@ -5030,6 +5034,7 @@ private fun ShizukuAdvancedCard(
     highlighted: Boolean = false,
     onShowMessage: (String) -> Unit
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -5044,14 +5049,14 @@ private fun ShizukuAdvancedCard(
     }
 
     val statusText = when {
-        !shizukuState.isInstalled -> "未安裝 Shizuku（目前停用，不影響一般保活）"
-        !shizukuState.isBinderAlive -> "Shizuku 服務未啟動（重開機或斷線後需重新啟動 Shizuku）"
-        !shizukuState.isPermissionGranted -> "Shizuku 已運行，尚未授權幻訊"
-        else -> "已連線授權（UID=${shizukuState.uid}）"
+        !shizukuState.isInstalled -> stringResource(R.string.settings_s_dc0d42)
+        !shizukuState.isBinderAlive -> stringResource(R.string.settings_s_7cdc0c)
+        !shizukuState.isPermissionGranted -> stringResource(R.string.settings_s_d7dfa8)
+        else -> stringResource(R.string.settings_s_9e1c90, shizukuState.uid)
     }
 
     CollapsibleSettingsCard(
-        title = "Shizuku 進階",
+        title = stringResource(R.string.settings_s_9244b5),
         expanded = expanded,
         onToggle = onToggle,
         glassState = glassState,
@@ -5066,7 +5071,7 @@ private fun ShizukuAdvancedCard(
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "Shizuku 為選用進階能力；即使未啟動或重開機斷線，一般保活機制仍正常運作。若被系統「強行停止 (force-stop)」，屬 OS 硬邊界，任何 App 皆無法自行復活。",
+            text = stringResource(R.string.settings_s_a8d2ef),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -5081,7 +5086,7 @@ private fun ShizukuAdvancedCard(
                     onClick = { ShizukuManager.requestPermission(appCtx) },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("請求 Shizuku 授權")
+                    Text(stringResource(R.string.settings_s_dcc8f7))
                 }
             }
             OutlinedButton(
@@ -5091,7 +5096,7 @@ private fun ShizukuAdvancedCard(
                 },
                 modifier = Modifier.weight(1f)
             ) {
-                Text("重新檢查連線")
+                Text(stringResource(R.string.settings_s_00c95b))
             }
         }
 
@@ -5106,12 +5111,12 @@ private fun ShizukuAdvancedCard(
                         diagItems = res
                         isBusy = false
                         val okCount = res.count { it.ok }
-                        onShowMessage("Shizuku 保活強化完成：$okCount/${res.size} 項成功")
+                        onShowMessage(resCtx.getString(R.string.settings_s_042209, okCount, res.size))
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (isBusy) "套用中…" else "一鍵套用保活強化（Doze / AppOps / 權限自癒）")
+                Text(if (isBusy) stringResource(R.string.settings_s_797374) else stringResource(R.string.settings_s_7a3463))
             }
 
             Spacer(Modifier.height(6.dp))
@@ -5126,7 +5131,7 @@ private fun ShizukuAdvancedCard(
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("執行保活診斷總覽")
+                Text(stringResource(R.string.settings_s_19b8df))
             }
 
             Spacer(Modifier.height(8.dp))
@@ -5136,9 +5141,9 @@ private fun ShizukuAdvancedCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Shizuku 跨行程看門狗", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.settings_s_bde005), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        text = if (shizukuState.isWatchdogActive) "運作中（每 60 秒檢查前景服務）" else "未啟動",
+                        text = if (shizukuState.isWatchdogActive) stringResource(R.string.settings_s_239685) else stringResource(R.string.settings_s_a38205),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -5163,7 +5168,7 @@ private fun ShizukuAdvancedCard(
         if (diagItems.isNotEmpty()) {
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             Text(
-                text = "診斷結果",
+                text = stringResource(R.string.settings_s_05f82f),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -5180,7 +5185,7 @@ private fun ShizukuAdvancedCard(
         if (suspendedApps.isNotEmpty()) {
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             Text(
-                text = "已凍結（pm suspend）App 清單",
+                text = stringResource(R.string.settings_s_75a98c),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -5204,11 +5209,11 @@ private fun ShizukuAdvancedCard(
                                 val res = ShizukuKeepAlive.unsuspendTargetApp(appCtx, pkg)
                                 suspendedApps = PhantomPrefs.getShizukuSuspendedApps(appCtx)
                                 isBusy = false
-                                onShowMessage(if (res.isSuccess) "已解除凍結 $pkg" else "解除失敗：${res.output}")
+                                onShowMessage(if (res.isSuccess) resCtx.getString(R.string.settings_s_a8a192, pkg) else resCtx.getString(R.string.settings_s_159c42, res.output))
                             }
                         }
                     ) {
-                        Text("解除凍結")
+                        Text(resCtx.getString(R.string.settings_s_14e05f))
                     }
                 }
             }
@@ -5226,6 +5231,7 @@ private fun ProactiveIntelSettingsCard(
     glassState: HazeState,
     onShowMessage: (String) -> Unit
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -5240,16 +5246,16 @@ private fun ProactiveIntelSettingsCard(
     var previewDigest by remember { mutableStateOf<String?>(null) }
 
     CollapsibleSettingsCard(
-        title = "主動情報中樞",
-        collapsedSummary = if (enabled) "已開啟｜每 ${freqHours} 小時查證關注主題最新動態" else "預設關閉｜零 AI 呼叫、零外部查詢",
+        title = stringResource(R.string.settings_s_c77782),
+        collapsedSummary = if (enabled) stringResource(R.string.settings_s_7ef24d, freqHours) else stringResource(R.string.settings_s_3cbf66),
         expanded = expanded,
         onToggle = onToggle,
         glassState = glassState,
         highlighted = highlighted
     ) {
         SettingSwitchRow(
-            title = "啟用主動情報查詢",
-            subtitle = "僅外送關注清單中的查詢詞（queryHint），絕不送原始訊息、聯絡人或敏感記憶。",
+            title = stringResource(R.string.settings_s_30d213),
+            subtitle = stringResource(R.string.settings_s_76d807),
             checked = enabled,
             onCheckedChange = { wantEnable ->
                 if (wantEnable && !PhantomPrefs.hasSeenProactiveIntelConsent(appCtx)) {
@@ -5264,14 +5270,14 @@ private fun ProactiveIntelSettingsCard(
             }
         )
         Text(
-            text = "路由建議（二選一）：主力使用 Mistral 時，可於「API 金鑰設定」將「主動情報萃取與摘要」用途單獨綁定一個 Gemini 3+ 設定檔（原生 Google Search grounding），或填寫 BYOK 外部搜尋端點。",
+            text = stringResource(R.string.settings_s_02bba4),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp, bottom = 6.dp)
         )
         SettingSwitchRow(
-            title = "每日自動萃取關注主題",
-            subtitle = "每日至多一次從近期非敏感素材萃取最多 5 個待確認候選（絕不直接推播；敏感記憶硬排除）。",
+            title = stringResource(R.string.catalog_proactive_extract_enabled_title),
+            subtitle = stringResource(R.string.settings_s_9495a3),
             checked = extractEnabled,
             onCheckedChange = { v ->
                 extractEnabled = v
@@ -5282,7 +5288,7 @@ private fun ProactiveIntelSettingsCard(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "背景查詢頻率（僅連網且電量充足時執行）",
+            text = stringResource(R.string.settings_s_3a10f2),
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Medium
         )
@@ -5291,7 +5297,7 @@ private fun ProactiveIntelSettingsCard(
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.padding(top = 4.dp)
         ) {
-            listOf(6 to "每 6 小時", 12 to "每 12 小時", 24 to "每 24 小時").forEach { (h, label) ->
+            listOf(6 to stringResource(R.string.settings_s_5aba96), 12 to stringResource(R.string.settings_s_80bb29), 24 to stringResource(R.string.settings_s_67cb4b)).forEach { (h, label) ->
                 FilterChip(
                     selected = freqHours == h,
                     onClick = {
@@ -5313,13 +5319,13 @@ private fun ProactiveIntelSettingsCard(
                 onClick = { showWatchTopicDialog = true },
                 modifier = Modifier.weight(1f)
             ) {
-                Text("管理關注清單")
+                Text(stringResource(R.string.settings_s_28535d))
             }
             Button(
                 onClick = {
                     if (!isQueryingNow) {
                         isQueryingNow = true
-                        previewStatus = "查詢中…"
+                        previewStatus = resCtx.getString(R.string.settings_s_115411)
                         previewDigest = null
                         scope.launch {
                             val res = com.phantom.checker.service.DigestComposer.runIntelCycle(appCtx, forceManual = true)
@@ -5335,9 +5341,9 @@ private fun ProactiveIntelSettingsCard(
                 if (isQueryingNow) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                     Spacer(Modifier.width(6.dp))
-                    Text("查詢中…")
+                    Text(stringResource(R.string.settings_s_115411))
                 } else {
-                    Text("立即查詢")
+                    Text(stringResource(R.string.settings_s_b6a76b))
                 }
             }
         }
@@ -5352,7 +5358,7 @@ private fun ProactiveIntelSettingsCard(
         previewDigest?.let { md ->
             Spacer(Modifier.height(6.dp))
             ReleaseNotesPreviewBox(
-                title = "主動情報預覽 Digest",
+                title = resCtx.getString(R.string.settings_s_01ce6b),
                 releaseNotes = md
             )
         }
@@ -5361,13 +5367,13 @@ private fun ProactiveIntelSettingsCard(
     if (showConsentDialog) {
         AlertDialog(
             onDismissRequest = { showConsentDialog = false },
-            title = { Text("開啟主動情報中樞前說明") },
+            title = { Text(stringResource(R.string.settings_s_89a3fc)) },
             text = {
                 Text(
-                    "開啟後，本 App 會將您「關注主題清單」中的查詢關鍵字字串（queryHint）送往您自行設定的 AI provider 查詢最新動態。\n\n" +
-                        "• 外送最小化：僅送出主題查詢字串，絕不傳送原始通知全文、聯絡人或敏感記憶。\n" +
-                        "• 省 Token 模式開啟時將自動暫停所有萃取與查詢。\n" +
-                        "• 每日自動萃取的候選僅留存本機待確認，不會直接推播。"
+                    stringResource(R.string.settings_s_3f78ab) +
+                        stringResource(R.string.settings_s_f2800c) +
+                        stringResource(R.string.settings_s_fe901d) +
+                        stringResource(R.string.settings_s_689e68)
                 )
             },
             confirmButton = {
@@ -5380,12 +5386,12 @@ private fun ProactiveIntelSettingsCard(
                         com.phantom.checker.service.ProactiveIntelScheduler.syncSchedule(appCtx)
                         PhantomSettingsBus.notifyChanged()
                         showConsentDialog = false
-                        onShowMessage("已啟用主動情報中樞")
+                        onShowMessage(resCtx.getString(R.string.settings_s_ebdae5))
                     }
-                ) { Text("了解並開啟") }
+                ) { Text(stringResource(R.string.settings_s_5a597a)) }
             },
             dismissButton = {
-                TextButton(onClick = { showConsentDialog = false }) { Text("暫不開啟") }
+                TextButton(onClick = { showConsentDialog = false }) { Text(stringResource(R.string.settings_s_c16eb1)) }
             }
         )
     }
@@ -5429,7 +5435,7 @@ internal fun ReleaseNotesPreviewBox(
             ) {
                 if (releaseNotes.isBlank()) {
                     Text(
-                        text = "此版本無更新說明",
+                        text = stringResource(R.string.settings_s_48f575),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -5453,6 +5459,7 @@ private fun AboutSettingsCard(
     modifier: Modifier = Modifier,
     highlighted: Boolean = false
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val repoUrl = "https://github.com/eric11yothelast-Hwanshen/PhantomCheck"
@@ -5499,14 +5506,14 @@ private fun AboutSettingsCard(
             isDownloading = false
             isDownloadError = true
             PhantomPrefs.clearActiveApkDownload(appCtx)
-            downloadStatusText = "更新檔不存在或已被移除，請點擊重新下載。"
+            downloadStatusText = stringResource(R.string.settings_s_039d16)
             return
         }
         if (!AppUpdateHelper.canRequestPackageInstallsCompat(ctx)) {
             pendingInstallAfterUnknownSourceGrant = true
             showUnknownSourceDialog = true
             isDownloadError = false
-            downloadStatusText = "下載完成：請先允許「安裝未知應用程式」，返回後將自動開啟安裝頁，或點擊「安裝更新」。"
+            downloadStatusText = stringResource(R.string.settings_s_5feb09)
             return
         }
         pendingInstallAfterUnknownSourceGrant = false
@@ -5515,10 +5522,10 @@ private fun AboutSettingsCard(
         }
         AppUpdateHelper.launchApkInstaller(ctx, file).onSuccess {
             isDownloadError = false
-            downloadStatusText = "下載完成，已啟動系統安裝器（若未完成安裝，可隨時點擊上方按鈕安裝）。"
+            downloadStatusText = resCtx.getString(R.string.settings_s_26343c)
         }.onFailure { err ->
             isDownloadError = true
-            downloadStatusText = err.message ?: "無法開啟系統安裝器，請點擊重試或前往檔案管理員手動安裝。"
+            downloadStatusText = err.message ?: resCtx.getString(R.string.settings_s_2fda8a)
         }
     }
 
@@ -5540,7 +5547,7 @@ private fun AboutSettingsCard(
                 downloadedApkFile = state.file
                 downloadProgressPct = state.progressPercent
                 val pctSuffix = state.progressPercent?.let { "（$it%）" }.orEmpty()
-                downloadStatusText = "正在下載 ${state.file.name}$pctSuffix…"
+                downloadStatusText = stringResource(R.string.settings_s_503bd5, state.file.name, pctSuffix)
             }
             is AppUpdateHelper.ApkDownloadState.ReadyToInstall -> {
                 val wasDownloading = isDownloading
@@ -5551,10 +5558,10 @@ private fun AboutSettingsCard(
                 downloadProgressPct = 100
                 val alreadyAutoLaunched = PhantomPrefs.isActiveApkAutoInstallLaunched(appCtx)
                 if (allowAutoInstall && (wasDownloading || !alreadyAutoLaunched) && state.downloadId > 0L && !alreadyAutoLaunched) {
-                    downloadStatusText = "下載完成：${state.file.name}，正在啟動安裝頁面…"
+                    downloadStatusText = stringResource(R.string.settings_s_610a25, state.file.name)
                     attemptInstall(state.file, isAutoTrigger = true)
                 } else {
-                    downloadStatusText = "下載完成，點擊「安裝更新（v${state.version}）」即可安裝。"
+                    downloadStatusText = stringResource(R.string.settings_s_cc1889, state.version)
                 }
             }
             is AppUpdateHelper.ApkDownloadState.Failed -> {
@@ -5673,9 +5680,9 @@ private fun AboutSettingsCard(
     if (showUnknownSourceDialog) {
         AlertDialog(
             onDismissRequest = { showUnknownSourceDialog = false },
-            title = { Text("需要授權「安裝未知應用程式」") },
+            title = { Text(stringResource(R.string.settings_s_cc961c)) },
             text = {
-                Text("Android 8+ 需要您允許「幻訊」安裝未知來源應用程式，才能啟動系統 APK 安裝器。\n\n點擊「前往授權」開啟開關後，返回此頁即可自動或點擊啟動安裝（小米 HyperOS／Samsung One UI／OPPO ColorOS 皆適用）。")
+                Text(stringResource(R.string.settings_s_c67663))
             },
             confirmButton = {
                 Button(
@@ -5684,19 +5691,19 @@ private fun AboutSettingsCard(
                         AppUpdateHelper.openUnknownAppSourcesSettings(ctx)
                     }
                 ) {
-                    Text("前往授權")
+                    Text(stringResource(R.string.settings_s_5df1b3))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showUnknownSourceDialog = false }) {
-                    Text("稍後")
+                    Text(stringResource(R.string.settings_s_12826a))
                 }
             }
         )
     }
 
     CollapsibleSettingsCard(
-        title = "關於與更新",
+        title = stringResource(R.string.settings_cat_about_title),
         expanded = expanded,
         onToggle = onToggle,
         glassState = glassState,
@@ -5705,13 +5712,13 @@ private fun AboutSettingsCard(
     ) {
         // §4.9 版本狀態卡（保留 AppUpdateHelper / ReleaseNotesPreviewBox / 未知來源 / snooze 狀態機 0 diff）
         val statusPillText = when {
-            isDownloading -> "下載中"
-            isDownloadError -> "下載失敗可重試"
+            isDownloading -> stringResource(R.string.settings_s_128dd0)
+            isDownloadError -> stringResource(R.string.settings_s_747158)
             updateResult is UpdateCheckResult.UpdateAvailable ->
-                "可更新 v${(updateResult as UpdateCheckResult.UpdateAvailable).latestVersion}"
-            updateResult is UpdateCheckResult.UpToDate -> "已是最新"
-            isCheckingUpdate -> "檢查中…"
-            else -> "本機保護"
+                stringResource(R.string.settings_s_61d2c6, (updateResult as UpdateCheckResult.UpdateAvailable).latestVersion)
+            updateResult is UpdateCheckResult.UpToDate -> stringResource(R.string.settings_s_5985ee)
+            isCheckingUpdate -> stringResource(R.string.settings_s_d61e98)
+            else -> stringResource(R.string.settings_s_d82d0d)
         }
         val statusPillColor = when {
             isDownloadError -> MaterialTheme.colorScheme.errorContainer
@@ -5733,7 +5740,7 @@ private fun AboutSettingsCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "幻訊 PhantomCheck",
+                        text = stringResource(R.string.settings_s_e38167),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -5750,12 +5757,12 @@ private fun AboutSettingsCard(
                     }
                 }
                 Text(
-                    text = "版本：$versionDisplay · 作者：幻神（Hwanshen）",
+                    text = stringResource(R.string.settings_s_125779, versionDisplay),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "本 App 只在本機被動讀取通知備份，不上傳訊息內容。",
+                    text = stringResource(R.string.settings_s_86483f),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -5770,8 +5777,8 @@ private fun AboutSettingsCard(
             }
         }
         SettingSwitchRow(
-            title = "自動檢查更新",
-            subtitle = "每次開啟 App 自動檢查更新；選擇「稍後更新」將於設定間隔後再次提醒。",
+            title = stringResource(R.string.catalog_update_auto_check_title),
+            subtitle = stringResource(R.string.catalog_update_auto_check_desc),
             checked = updateAutoCheck,
             onCheckedChange = {
                 updateAutoCheck = it
@@ -5789,7 +5796,7 @@ private fun AboutSettingsCard(
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "「稍後更新」延後提醒間隔",
+            text = stringResource(R.string.settings_s_6f24ce),
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Medium
         )
@@ -5797,7 +5804,7 @@ private fun AboutSettingsCard(
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf(30 to "30 分鐘", 60 to "1 小時", 240 to "4 小時").forEach { (mins, label) ->
+            listOf(30 to stringResource(R.string.settings_s_e3dc27), 60 to stringResource(R.string.settings_s_599488), 240 to stringResource(R.string.settings_s_b1b72c)).forEach { (mins, label) ->
                 FilterChip(
                     selected = updateSnoozeMin == mins,
                     onClick = {
@@ -5811,8 +5818,8 @@ private fun AboutSettingsCard(
         }
         Spacer(Modifier.height(6.dp))
         SettingSwitchRow(
-            title = "聊天室訊息右下角顯示時間戳",
-            subtitle = "在 AI 對話與主動訊息氣泡右下角顯示 HH:mm 發送時間（預設開啟）",
+            title = stringResource(R.string.settings_s_6c69bc),
+            subtitle = stringResource(R.string.settings_s_2a74bc),
             checked = chatTimestampOn,
             onCheckedChange = {
                 chatTimestampOn = it
@@ -5844,37 +5851,37 @@ private fun AboutSettingsCard(
                     strokeWidth = 2.dp
                 )
                 Spacer(Modifier.width(8.dp))
-                Text("檢查更新中…")
+                Text(stringResource(R.string.settings_s_b5231f))
             } else {
-                Text("檢查更新")
+                Text(stringResource(R.string.settings_s_57d698))
             }
         }
         when (val res = updateResult) {
             is UpdateCheckResult.UpToDate -> {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "已是最新版本（${res.currentVersion}）",
+                    text = stringResource(R.string.settings_s_960aec, res.currentVersion),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(Modifier.height(6.dp))
                 val dateSuffix = res.publishedDate.takeIf { it.isNotBlank() }?.let { "／$it" }.orEmpty()
                 ReleaseNotesPreviewBox(
-                    title = "本版更新內容（v${res.currentVersion}$dateSuffix）",
+                    title = stringResource(R.string.settings_s_58c50e, res.currentVersion, dateSuffix),
                     releaseNotes = res.releaseNotes
                 )
             }
             is UpdateCheckResult.UpdateAvailable -> {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "最新版本 ${res.latestVersion}（${res.publishedDate}）",
+                    text = stringResource(R.string.settings_s_f59e55, res.latestVersion, res.publishedDate),
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(Modifier.height(6.dp))
                 ReleaseNotesPreviewBox(
-                    title = "最新版本更新內容（v${res.latestVersion}／${res.publishedDate}）",
+                    title = stringResource(R.string.main_s_0d3826, res.latestVersion, res.publishedDate),
                     releaseNotes = res.releaseNotes
                 )
                 Spacer(Modifier.height(8.dp))
@@ -5885,7 +5892,7 @@ private fun AboutSettingsCard(
                             onClick = { attemptInstall(readyFile, isAutoTrigger = false) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("下載完成，點擊安裝（v${res.latestVersion}）")
+                            Text(stringResource(R.string.settings_s_ce9649, res.latestVersion))
                         }
                     } else {
                         Button(
@@ -5905,10 +5912,10 @@ private fun AboutSettingsCard(
                                             downloadedApkFile = enqueued.second
                                             isDownloading = true
                                             downloadProgressPct = null
-                                            downloadStatusText = "正在下載 app-release-${res.latestVersion}.apk…"
+                                            downloadStatusText = resCtx.getString(R.string.settings_s_584371, res.latestVersion)
                                         } else {
                                             isDownloadError = true
-                                            downloadStatusText = "無法啟動系統下載管理員，請重試或前往 GitHub 下載。"
+                                            downloadStatusText = resCtx.getString(R.string.settings_s_bbeee2)
                                         }
                                     }
                                 }
@@ -5924,17 +5931,17 @@ private fun AboutSettingsCard(
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 val pctLabel = downloadProgressPct?.let { "（$it%）" }.orEmpty()
-                                Text("下載中$pctLabel…")
+                                Text(stringResource(R.string.settings_s_80fa27, pctLabel))
                             } else if (isDownloadError) {
-                                Text("重新下載（v${res.latestVersion}）")
+                                Text(stringResource(R.string.settings_s_a23598, res.latestVersion))
                             } else {
-                                Text("下載更新")
+                                Text(stringResource(R.string.settings_s_cc54e3))
                             }
                         }
                     }
                 } else {
                     Text(
-                        text = "此發佈版本未附帶 APK 資產，請前往 GitHub 下載。",
+                        text = stringResource(R.string.settings_s_1b4cdf),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
@@ -5948,7 +5955,7 @@ private fun AboutSettingsCard(
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("前往 GitHub")
+                        Text(stringResource(R.string.settings_s_ceecc9))
                     }
                 }
             }
@@ -5969,7 +5976,7 @@ private fun AboutSettingsCard(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("前往 GitHub")
+                    Text(stringResource(R.string.settings_s_ceecc9))
                 }
             }
             null -> Unit
@@ -5992,11 +5999,11 @@ private fun AboutSettingsCard(
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("GitHub 倉庫：eric11yothelast-Hwanshen/PhantomCheck")
+            Text(stringResource(R.string.settings_s_490ace))
         }
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         Text(
-            text = "第三方元件",
+            text = stringResource(R.string.settings_s_bdf986),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold
         )
@@ -6063,7 +6070,7 @@ private fun CollapsibleSettingsCard(
                             color = MaterialTheme.colorScheme.primaryContainer
                         ) {
                             Text(
-                                text = "符合",
+                                text = stringResource(R.string.settings_s_7f8eeb),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -6083,7 +6090,7 @@ private fun CollapsibleSettingsCard(
             }
             PhantomChevron(
  expanded = expanded,
-                contentDescription = if (expanded) "收合" else "展開",
+                contentDescription = if (expanded) stringResource(R.string.settings_s_52c158) else stringResource(R.string.settings_s_6ce777),
                 modifier = Modifier.size(24.dp)
             )
         }
@@ -6129,10 +6136,11 @@ private fun FilterRuleRow(
     onToggleActive: (Boolean) -> Unit,
     onDelete: () -> Unit
 ) {
+    val resCtx = LocalContext.current
     val actionLabel = when (rule.action) {
-        FilterRule.ACTION_DROP -> "不記錄"
-        FilterRule.ACTION_SCAM -> "標記詐騙警示"
-        else -> "標記已過濾"
+        FilterRule.ACTION_DROP -> stringResource(R.string.settings_s_72fbe9)
+        FilterRule.ACTION_SCAM -> stringResource(R.string.settings_s_3dc2a7)
+        else -> stringResource(R.string.settings_s_d4ac33)
     }
     Row(
         modifier = Modifier
@@ -6149,7 +6157,7 @@ private fun FilterRuleRow(
                 color = if (rule.isActive) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "${if (rule.packageName.isNullOrBlank()) "全部 App" else rule.packageName}・$actionLabel",
+                text = stringResource(R.string.settings_s_773aaa, if (rule.packageName.isNullOrBlank()) resCtx.getString(R.string.common_all_apps) else rule.packageName, actionLabel),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -6158,7 +6166,7 @@ private fun FilterRuleRow(
         IconButton(onClick = onDelete) {
             Icon(
                 imageVector = Icons.Default.Delete,
-                contentDescription = "刪除關鍵字",
+                contentDescription = stringResource(R.string.settings_s_7a5ff6),
                 tint = MaterialTheme.colorScheme.error
             )
         }
@@ -6206,7 +6214,7 @@ private fun AppMutePickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("選擇要靜音的 App") },
+        title = { Text(stringResource(R.string.settings_s_c3e7db)) },
         text = {
             Column(
                 modifier = Modifier
@@ -6214,7 +6222,7 @@ private fun AppMutePickerDialog(
                     .heightIn(max = 420.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("靜音模式：", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.settings_s_782eec), style = MaterialTheme.typography.labelMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MuteMode.entries.forEach { mode ->
                         FilterChip(
@@ -6229,7 +6237,7 @@ private fun AppMutePickerDialog(
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    placeholder = { Text("搜尋 App 名稱或套件…") }
+                    placeholder = { Text(stringResource(R.string.settings_s_5bbd9b)) }
                 )
                 LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
                     items(filtered, key = { it.packageName }) { app ->
@@ -6252,7 +6260,7 @@ private fun AppMutePickerDialog(
                                 Text(app.packageName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                             }
                             if (alreadyMuted) {
-                                Text("已靜音", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                Text(stringResource(R.string.settings_s_fd8f57), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                             }
                         }
                     }
@@ -6262,7 +6270,7 @@ private fun AppMutePickerDialog(
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("關閉")
+                Text(stringResource(R.string.common_close))
             }
         }
     )
@@ -6279,7 +6287,7 @@ private fun AppThrottlePickerDialog(
     var query by remember { mutableStateOf("") }
     var selectedSeconds by remember { mutableIntStateOf(0) }
     var apps by remember { mutableStateOf(listOf<InstalledAppInfo>()) }
-    val presetOptions = listOf(0 to "0 秒 (永不節流)", 30 to "30 秒", 60 to "60 秒", 120 to "120 秒", 300 to "300 秒")
+    val presetOptions = listOf(0 to stringResource(R.string.settings_s_3e6acf), 30 to stringResource(R.string.settings_s_262ed7), 60 to stringResource(R.string.settings_s_005d45), 120 to stringResource(R.string.settings_s_184007), 300 to stringResource(R.string.settings_s_1464e0))
 
     LaunchedEffect(Unit) {
         apps = withContext(Dispatchers.IO) {
@@ -6310,7 +6318,7 @@ private fun AppThrottlePickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("設定個別 App 同 key 節流") },
+        title = { Text(stringResource(R.string.settings_s_fb8fce)) },
         text = {
             Column(
                 modifier = Modifier
@@ -6318,7 +6326,7 @@ private fun AppThrottlePickerDialog(
                     .heightIn(max = 420.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("選擇節流秒數（0 = 永不節流）：", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.settings_s_47e13d), style = MaterialTheme.typography.labelMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     presetOptions.forEach { (sec, label) ->
                         FilterChip(
@@ -6333,7 +6341,7 @@ private fun AppThrottlePickerDialog(
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    placeholder = { Text("搜尋 App 名稱或套件…") }
+                    placeholder = { Text(stringResource(R.string.settings_s_5bbd9b)) }
                 )
                 LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
                     items(filtered, key = { it.packageName }) { app ->
@@ -6370,7 +6378,7 @@ private fun AppThrottlePickerDialog(
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("關閉")
+                Text(stringResource(R.string.common_close))
             }
         }
     )
@@ -6388,36 +6396,36 @@ private enum class SettingsTourStep(
         index = 1,
         cardKey = "search",
         scrollCardKey = "search",
-        title = "搜尋優先，直達 136 項設定",
-        description = "在頂部搜尋列輸入關鍵字即可即時離線查找任意設定；右側 ✨ 支援 AI 語意搜尋，點選結果直接定位並展開目標項目。"
+        title = com.phantom.checker.PhantomApplication.str(R.string.settings_tour_1_title),
+        description = com.phantom.checker.PhantomApplication.str(R.string.settings_tour_1_body)
     ),
     PINNED(
         index = 2,
         cardKey = "pinned",
         scrollCardKey = "pinned",
-        title = "釘選常用開關（≤6 項）",
-        description = "預設釘選省 token、常駐通知、AI 風險分析等 6 項常用設定，開關可直接切換；點擊「編輯」或長按進階項即可自訂釘選。"
+        title = com.phantom.checker.PhantomApplication.str(R.string.settings_tour_2_title),
+        description = com.phantom.checker.PhantomApplication.str(R.string.settings_tour_2_body)
     ),
     CATEGORIES(
         index = 3,
         cardKey = "categories",
         scrollCardKey = "categories",
-        title = "8 大分類與一行狀態摘要",
-        description = "外觀與個人化已合併為 8 大清晰分類，每列即時顯示目前模型、勿擾時段或待授權數，點擊進入專屬分類子頁。"
+        title = com.phantom.checker.PhantomApplication.str(R.string.settings_tour_3_title),
+        description = com.phantom.checker.PhantomApplication.str(R.string.settings_tour_3_body)
     ),
     ADVANCED(
         index = 4,
         cardKey = "advanced",
         scrollCardKey = "advanced",
-        title = "進階設定預設折疊",
-        description = "低頻微調參數（24 項）與 Shizuku 預設收納於各分類頁尾「進階設定」折疊區，保持畫面清爽；透過搜尋點入會自動展開。"
+        title = com.phantom.checker.PhantomApplication.str(R.string.settings_tour_4_title),
+        description = com.phantom.checker.PhantomApplication.str(R.string.settings_tour_4_body)
     ),
     REPLAY(
         index = 5,
         cardKey = "replay",
         scrollCardKey = "replay",
-        title = "隨時重播導覽與檢查更新",
-        description = "頁尾「重播導覽」與「關於與更新」可隨時重看教學、檢視版本狀態卡與更新說明。"
+        title = com.phantom.checker.PhantomApplication.str(R.string.settings_tour_5_title),
+        description = com.phantom.checker.PhantomApplication.str(R.string.settings_tour_5_body)
     );
 
     companion object {
@@ -6653,7 +6661,7 @@ private fun SettingsTourOverlay(
                     Column(modifier = Modifier.padding(14.dp)) {
                         val totalSteps = SettingsTourStep.entries.size
                         Text(
-                            text = "步驟 ${step.index} / $totalSteps・${step.title}",
+                            text = stringResource(R.string.settings_s_0ce969, step.index, totalSteps, step.title),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -6671,10 +6679,10 @@ private fun SettingsTourOverlay(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             TextButton(onClick = onSkip) {
-                                Text("跳過")
+                                Text(stringResource(R.string.settings_s_3002a7))
                             }
                             Button(onClick = throttledNext) {
-                                Text(if (step.index == totalSteps) "完成" else "下一步")
+                                Text(if (step.index == totalSteps) stringResource(R.string.common_done) else stringResource(R.string.settings_s_ea0ef2))
                             }
                         }
                     }

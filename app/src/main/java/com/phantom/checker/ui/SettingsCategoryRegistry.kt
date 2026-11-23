@@ -1,21 +1,27 @@
 package com.phantom.checker.ui
+import androidx.annotation.StringRes
+import com.phantom.checker.R
 
 /**
  * v4.0.0 設定中心 8 大分類定義（§5.2 ＋ 使用者裁定：個人化與外觀合併）。
  */
 enum class SettingsCategory(
     val id: String,
-    val title: String,
-    val subtitleHint: String,
+    @StringRes val titleRes: Int,
+    @StringRes val subtitleHintRes: Int,
 ) {
-    QUICK("quick", "快速與省 Token", "常用開關、省 token 模式與防詐掃描"),
-    AI("ai", "AI 與模型", "多 Provider 金鑰、分用途模型與分析規則"),
-    NOTIF("notif", "通知與勿擾", "常駐通知、勿擾時段、過濾與快速回覆"),
-    ASSISTANT("assistant", "助手與主動", "記憶庫、助手人設、主動情報與早晚簡報"),
-    PERMISSIONS("permissions", "權限與連結", "權限中心、Health Connect、連結應用與 Shizuku"),
-    APPEARANCE("appearance", "外觀與個人化", "主題、玻璃、背景圖、卡片排列與統計顯示"),
-    DATA("data", "資料與隱私", "保留清理、靜音清單、白名單、標籤與詐騙中心"),
-    ABOUT("about", "關於與更新", "版本狀態、自動更新與教學重播"),
+    QUICK("quick", R.string.settings_cat_quick_title, R.string.settings_cat_quick_subtitle),
+    AI("ai", R.string.settings_cat_ai_title, R.string.settings_cat_ai_subtitle),
+    NOTIF("notif", R.string.settings_cat_notif_title, R.string.settings_cat_notif_subtitle),
+    ASSISTANT("assistant", R.string.settings_cat_assistant_title, R.string.settings_cat_assistant_subtitle),
+    PERMISSIONS("permissions", R.string.settings_cat_permissions_title, R.string.settings_cat_permissions_subtitle),
+    APPEARANCE("appearance", R.string.settings_cat_appearance_title, R.string.settings_cat_appearance_subtitle),
+    DATA("data", R.string.settings_cat_data_title, R.string.settings_cat_data_subtitle),
+    ABOUT("about", R.string.settings_cat_about_title, R.string.settings_cat_about_subtitle),
+    ;
+
+    val title: String get() = com.phantom.checker.PhantomApplication.str(titleRes)
+    val subtitleHint: String get() = com.phantom.checker.PhantomApplication.str(subtitleHintRes)
 }
 
 /**

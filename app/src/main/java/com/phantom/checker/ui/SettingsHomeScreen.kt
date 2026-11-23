@@ -76,6 +76,8 @@ import com.phantom.checker.ui.components.SettingsSegmentedGroup
 import com.phantom.checker.ui.components.auroraHorizontalPadding
 import com.phantom.checker.ui.components.phantomPopIn
 import com.phantom.checker.util.PhantomSettingsBus
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 data class SettingsHomeSummaries(
     val quickSummary: String,
@@ -118,6 +120,7 @@ internal fun SettingsHomeScreen(
     onReportTourBounds: (String, Rect) -> Unit = { _, _ -> },
     onShowMessage: (String) -> Unit,
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val horizPad = auroraHorizontalPadding()
@@ -147,7 +150,7 @@ internal fun SettingsHomeScreen(
     val isAiConfigured = remember(settingsBusVer) { AiClient.getActiveProfile(appCtx) != null }
 
     PhantomPageScaffold(
-        title = "設定",
+        title = stringResource(R.string.common_settings),
         onBack = onBack,
         topBarStyle = PhantomTopBarStyle.Large,
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
@@ -180,13 +183,13 @@ internal fun SettingsHomeScreen(
                             shape = RoundedCornerShape(28.dp),
                             placeholder = {
                                 Text(
-                                    text = "搜尋設定、開關或自然語言提問…",
+                                    text = stringResource(R.string.settings_home_s_5d457a),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
                             },
                             leadingIcon = {
-                                Icon(Icons.Default.Search, contentDescription = "搜尋設定")
+                                Icon(Icons.Default.Search, contentDescription = stringResource(R.string.settings_home_s_677b49))
                             },
                             trailingIcon = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -195,7 +198,7 @@ internal fun SettingsHomeScreen(
                                             onSearchQueryChange("")
                                             onClearAiSearch()
                                         }) {
-                                            Icon(Icons.Default.Clear, contentDescription = "清除搜尋")
+                                            Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.common_s_59b34b))
                                         }
                                     }
                                     IconButton(
@@ -211,9 +214,9 @@ internal fun SettingsHomeScreen(
                                             Icon(
                                                 imageVector = AutoAwesomeIcon,
                                                 contentDescription = if (isAiConfigured) {
-                                                    "AI 語意搜尋設定"
+                                                    stringResource(R.string.settings_home_s_86436a)
                                                 } else {
-                                                    "AI 語意搜尋（未設定 API Key，本地搜尋仍可用）"
+                                                    stringResource(R.string.settings_home_s_a97d90)
                                                 },
                                                 tint = if (trimmedQuery.isNotEmpty() && isAiConfigured) {
                                                     MaterialTheme.colorScheme.primary
@@ -228,7 +231,7 @@ internal fun SettingsHomeScreen(
                         )
                         if (!isAiConfigured && trimmedQuery.isNotEmpty()) {
                             Text(
-                                text = "未設定 API Key，AI 語意搜尋已停用；本地關鍵字搜尋完全可用。",
+                                text = stringResource(R.string.settings_home_s_9f991e),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 8.dp),
@@ -247,7 +250,7 @@ internal fun SettingsHomeScreen(
                                     modifier = Modifier.weight(1f),
                                 )
                                 TextButton(onClick = onClearAiSearch) {
-                                    Text("清除")
+                                    Text(stringResource(R.string.common_clear))
                                 }
                             }
                         }
@@ -260,20 +263,20 @@ internal fun SettingsHomeScreen(
                         item(key = "settings_search_empty") {
                             EmptyStateView(
                                 icon = Icons.Default.Search,
-                                title = "查無相符的設定項目",
+                                title = stringResource(R.string.search_s_4de5af),
                                 description = if (isAiConfigured) {
-                                    "找不到符合「$trimmedQuery」的設定，可試試點擊右側 ✨ 使用 AI 語意搜尋。"
+                                    stringResource(R.string.settings_home_s_284fe0, trimmedQuery)
                                 } else {
-                                    "找不到符合「$trimmedQuery」的設定，請嘗試其他關鍵字。"
+                                    stringResource(R.string.settings_home_s_a005c6, trimmedQuery)
                                 },
-                                actionLabel = if (isAiConfigured) "✨ 用 AI 語意搜尋" else null,
+                                actionLabel = if (isAiConfigured) stringResource(R.string.settings_home_s_5db5f0) else null,
                                 onAction = if (isAiConfigured) onRunAiSearch else null,
                             )
                         }
                     } else {
                         item(key = "settings_search_count") {
                             Text(
-                                text = "找到 ${combinedMatches.size} 項設定（點選直達）",
+                                text = stringResource(R.string.settings_home_s_de4d96, combinedMatches.size),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(horizontal = 4.dp),
@@ -304,9 +307,9 @@ internal fun SettingsHomeScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                SettingsSectionHeader(title = "釘選設定")
+                                SettingsSectionHeader(title = stringResource(R.string.search_s_71bbd8))
                                 TextButton(onClick = { showPinEditorSheet = true }) {
-                                    Text("編輯")
+                                    Text(stringResource(R.string.common_edit))
                                 }
                             }
                             if (pinnedItems.isEmpty()) {
@@ -317,7 +320,7 @@ internal fun SettingsHomeScreen(
                                     modifier = Modifier.fillMaxWidth(),
                                 ) {
                                     Text(
-                                        text = "尚未釘選任何設定，點擊新增常用開關或捷徑（上限 6 項）。",
+                                        text = stringResource(R.string.settings_home_s_16fe9f),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.padding(16.dp),
@@ -362,9 +365,9 @@ internal fun SettingsHomeScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    SettingsSectionHeader(title = "最近使用")
+                                    SettingsSectionHeader(title = stringResource(R.string.settings_home_s_71265f))
                                     TextButton(onClick = { UiLayoutPrefs.clearRecentSettings(appCtx) }) {
-                                        Text("清除")
+                                        Text(stringResource(R.string.common_clear))
                                     }
                                 }
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -395,7 +398,7 @@ internal fun SettingsHomeScreen(
                                 .fillMaxWidth()
                                 .onGloballyPositioned { onReportTourBounds("categories", it.boundsInRoot()) },
                         ) {
-                            SettingsSectionHeader(title = "所有分類")
+                            SettingsSectionHeader(title = stringResource(R.string.settings_home_s_d72af3))
                             val categories = SettingsCategory.entries
                             SettingsSegmentedGroup {
                                 categories.forEachIndexed { idx, category ->
@@ -433,12 +436,12 @@ internal fun SettingsHomeScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = "幻訊 PhantomCheck · ${summaries.versionDisplay}",
+                                text = stringResource(R.string.settings_home_s_8527b3, summaries.versionDisplay),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             TextButton(onClick = onReplayTour) {
-                                Text("重播導覽")
+                                Text(stringResource(R.string.settings_home_s_f7754d))
                             }
                         }
                     }
@@ -457,13 +460,13 @@ internal fun SettingsHomeScreen(
                 } else {
                     val ok = UiLayoutPrefs.addPinned(appCtx, id)
                     if (!ok) {
-                        onShowMessage("釘選已達上限（${UiLayoutPrefs.MAX_PINNED} 項），請先取消一項")
+                        onShowMessage(resCtx.getString(R.string.settings_home_s_73c93d, UiLayoutPrefs.MAX_PINNED))
                     }
                 }
             },
             onResetDefaults = {
                 UiLayoutPrefs.resetPinnedToDefaults(appCtx)
-                onShowMessage("已還原為預設 6 項釘選")
+                onShowMessage(resCtx.getString(R.string.settings_home_s_69894d))
             },
         )
     }
@@ -487,6 +490,7 @@ private fun PinnedSettingTile(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val isToggle = remember(item.id) { SettingsCatalog.isToggleable(item.id) }
@@ -510,9 +514,9 @@ private fun PinnedSettingTile(
             .heightIn(min = 84.dp)
             .semantics {
                 contentDescription = if (isToggle) {
-                    "${item.title}，${if (checked) "已開啟" else "已關閉"}"
+                    resCtx.getString(R.string.settings_home_s_170746, item.title, if (checked) resCtx.getString(R.string.settings_home_s_a36463) else resCtx.getString(R.string.chat_s_e8a92f))
                 } else {
-                    "前往 ${item.title}"
+                    resCtx.getString(R.string.settings_home_s_66babc, item.title)
                 }
             },
     ) {
@@ -538,9 +542,9 @@ private fun PinnedSettingTile(
             ) {
                 Text(
                     text = if (isToggle) {
-                        if (checked) "已開啟" else "已關閉"
+                        if (checked) stringResource(R.string.settings_home_s_a36463) else stringResource(R.string.chat_s_e8a92f)
                     } else {
-                        "點擊設定"
+                        stringResource(R.string.settings_home_s_d3995e)
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = if (isToggle && checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -573,6 +577,7 @@ private fun SettingsSearchResultRow(
     settingsBusVer: Long,
     onClick: () -> Unit,
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val category = remember(item.id) { SettingsCategoryRegistry.categoryFor(item.id) }
@@ -589,7 +594,7 @@ private fun SettingsSearchResultRow(
         modifier = Modifier
             .fillMaxWidth()
             .semantics {
-                contentDescription = "${item.title}，分類：${category?.title ?: "設定"}"
+                contentDescription = resCtx.getString(R.string.search_s_e60c1c, item.title, category?.title ?: resCtx.getString(R.string.common_settings))
             },
     ) {
         Row(
@@ -608,8 +613,8 @@ private fun SettingsSearchResultRow(
                 )
                 Text(
                     text = buildString {
-                        append(category?.title ?: "設定")
-                        if (isFolded) append(" · 進階（點入自動展開）")
+                        append(category?.title ?: resCtx.getString(R.string.common_settings))
+                        if (isFolded) append(resCtx.getString(R.string.settings_home_s_0bafaf))
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
@@ -672,12 +677,12 @@ private fun PinEditorBottomSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "編輯釘選（${pinnedIds.size}/${UiLayoutPrefs.MAX_PINNED}）",
+                    text = stringResource(R.string.settings_home_s_bc9899, pinnedIds.size, UiLayoutPrefs.MAX_PINNED),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
                 TextButton(onClick = onResetDefaults) {
-                    Text("重設預設")
+                    Text(stringResource(R.string.settings_home_s_3cbc2a))
                 }
             }
             OutlinedTextField(
@@ -686,7 +691,7 @@ private fun PinEditorBottomSheet(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = RoundedCornerShape(16.dp),
-                placeholder = { Text("篩選要釘選的設定…") },
+                placeholder = { Text(stringResource(R.string.settings_home_s_428fe3)) },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             )
             LazyColumn(

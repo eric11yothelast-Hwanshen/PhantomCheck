@@ -16,11 +16,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import com.phantom.checker.util.FontScaleMode
 import com.phantom.checker.util.PhantomPrefs
+import androidx.annotation.StringRes
+import com.phantom.checker.R
 
-enum class ThemeMode(val prefValue: String, val label: String) {
-    SYSTEM("system", "跟隨系統"),
-    DARK("dark", "強制深色"),
-    LIGHT("light", "強制淺色");
+enum class ThemeMode(val prefValue: String, @StringRes val labelRes: Int) {
+    SYSTEM("system", R.string.theme_mode_system),
+    DARK("dark", R.string.theme_mode_dark),
+    LIGHT("light", R.string.theme_mode_light);
+
+    val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 
     companion object {
         fun fromPref(value: String?): ThemeMode =
