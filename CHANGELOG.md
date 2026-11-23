@@ -19,6 +19,21 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 ### 新增、變更與修正
 - **#439 小工具優化與新增四個桌面小工具（PR #442）**：既有 7 工具（`StatsWidgetProvider`、`StatsMiniWidgetProvider`、`StatsDetailWidgetProvider`、`AiSummaryWidgetProvider`、`NotesWidgetProvider`、`ReminderWidgetProvider`、`RiskActionWidgetProvider`）補齊 `targetCellWidth/Height`、`previewLayout`、專屬向量預覽圖（`widget_preview_*.xml`）、`goAsync` 8.5s timeout 與 `onDisabled` 清理；新增今天待辦（`TodoTodayWidgetProvider`）／目標進度（`GoalProgressWidgetProvider`）／快捷記事（`QuickNoteWidgetProvider`）／健康快照（`HealthSnapWidgetProvider`）四個小工具（零新權限、零新網路、`exported=false`、`FLAG_IMMUTABLE`、健康快取 30 分鐘、未授權顯示教學態）。
 
+### English
+- **Tag Compare**: [`v4.2.0...v4.3.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.2.0...v4.3.0) (`versionCode = 51`, `versionName = "4.3.0"`)
+- **Release Assets (Dual APKs)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`), for general users and in-place signature upgrades.
+  - `app-debug.apk`: Debug build for development testing and troubleshooting.
+
+**Breaking / Behavior Changes**
+- **#437 AI Transport Layer Hardening (PR #442, Behavior Change)**: GitHub Models was fully retired on 2026-07-30; `AiClient` now blocks retired hosts (`models.github.ai`, `models.inference.ai.azure.com`) before sending invalid requests and throws an exception with the retirement notice URL and migration guidance; unifies `Accept: application/json`; non-JSON responses (checked via `Content-Type` or leading body character) throw explicit exceptions preserving HTTP status code, `Content-Type`, and the first 300 characters of the body; `testConnection` payload shape (`Hi` / `max_tokens=5`) is unchanged.
+- **#440 Insights Tab Long-Term Goal Tracking (PR #442, Behavior Change)**: Completion is unified through `ReminderScheduler.completeTodoWithRecurrence` as the single trigger for `GoalEngine.onTodoCompleted` (with `(goalId,todoId)` dedup guard before write), removing direct `NotesTab` calls and the old goal-progress Toast (`notes_s_dd002c`); overdue downgrade periods persist in dedicated `phantom_goal_engine` `SharedPreferences` (unaffected by daily cleanup, preventing 15-minute `WorkManager` re-entry); next-period generation anchors on `max(today, previous dueAt + cadenceDays)` without drift; milestones consume `milestoneJson` (`[3,7,14,30]` from `startDate`) as the source of truth.
+- **#441 Intimacy Stage 5 (PR #442, Behavior Change)**: Thresholds updated from `30/100/250` to `50/160/420/900`, adding Lv5 "Kindred (知己)"; existing users' effective level may adjust downward as expected; the `2/1/1` weight formula is unchanged.
+- **#438 In-App 3-State Language Switch (PR #442, Behavior Change)**: Added 3-state "Language" setting (Follow System / 繁體中文 / English; API 33+ syncs via `LocaleManager` per-app settings, API 26–32 smoothly recreates via `attachBaseContext`); notifications, widgets, Settings catalog, and AI outputs all follow the app language; `zh-TW` system + Follow System behaves identically to v4.2.0.
+
+**Added, Changed & Fixed**
+- **#439 Widget Optimization & 4 New Home-Screen Widgets (PR #442)**: Upgraded all 7 existing widgets (`StatsWidgetProvider`, `StatsMiniWidgetProvider`, `StatsDetailWidgetProvider`, `AiSummaryWidgetProvider`, `NotesWidgetProvider`, `ReminderWidgetProvider`, `RiskActionWidgetProvider`) with `targetCellWidth/Height`, `previewLayout`, dedicated vector previews (`widget_preview_*.xml`), `goAsync` 8.5s timeout, and `onDisabled` cleanup; added 4 new widgets: Today's To-Dos (`TodoTodayWidgetProvider`), Goal Progress (`GoalProgressWidgetProvider`), Quick Note (`QuickNoteWidgetProvider`), and Health Snapshot (`HealthSnapWidgetProvider`) (zero new permissions, zero new network calls, `exported=false`, `FLAG_IMMUTABLE`, 30-minute health cache, onboarding state when unauthorized).
+
 ## [4.2.0] - 2026-11-23
 
 - **Tag 對照**：[`v4.1.0...v4.2.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.1.0...v4.2.0)（`versionCode = 50`、`versionName = "4.2.0"`）
@@ -43,6 +58,29 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - **AI Prompt 輸出語言自動跟隨系統語系**：`AiClient`（訊息風險分析、自動備忘錄 `memo`、每週摘要 `summarizeWeekly`、深度分析 `deepAnalyzeMessage`、簡報潤飾 `generateBriefingText`、RAG 情境摘要 `summarizeRagContext`）、`DiaryPolicy`（回顧註記）、`ProactiveEngine`、`ProactiveIntelWorker`、`CalendarInsightWorker`、`TaskTemplateEngine`、`MemoryEngine` 與 `ChatScreenParts` 全面依系統 Locale 自動切換繁中／英文輸出指令；JSON 結構鍵與枚舉值（`risk_label`、`memo_type` 等）維持不變，英文備忘錄採等量密度上限（60 words／360 chars）並支援英文句尾標點續寫判定。
   - **詐騙規則層新增英文話術偵測**：`IndicatorExtractor`、`MemoryEngine` 與 `ContactContext` 依據 2025–2026 FTC、FBI IC3、FCC、UK Report Fraud、APWG 與 FinCEN 公開通報意譯擴充英文詐騙特徵詞庫（涵蓋 unpaid toll 未繳過路費、package redelivery 假包裹補費、bank ATO／fraud department／safe account 假銀行警示、Hi Mum 換號急用冒充、crypto platform／guaranteed return／seed phrase 殺豬盤與驗證碼索取），無 AI 或省 token 模式下規則層同樣具備中英文雙語攔截能力。
 
+### English
+- **Tag Compare**: [`v4.1.0...v4.2.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.1.0...v4.2.0) (`versionCode = 50`, `versionName = "4.2.0"`)
+- **Release Assets (Dual APKs)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`), for general users and in-place signature upgrades.
+  - `app-debug.apk`: Debug build for development testing and troubleshooting.
+
+**Breaking / Behavior Changes**
+- **Default UI & AI Output Language Changed to English (Non-`zh-TW` Devices)**:
+  - Provides dual resource buckets only: default `res/values/strings.xml` (English, fallback = `en`) and Traditional Chinese `res/values-zh-rTW/strings.xml`.
+  - **When the device system language is not Traditional Chinese (`zh-TW`), both App UI and AI natural-language outputs (risk analysis, auto-memo, weekly summary, deep analysis, morning/evening briefings, diary annotations, proactive intel, etc.) switch to English**; other unbucketed languages also fall back to English.
+  - **Traditional Chinese (`zh-TW`) devices remain byte-for-byte unchanged in UI display**, and AI outputs retain Traditional Chinese and the existing 40-character memo density.
+
+**Added, Changed & Fixed**
+- **#429 i18n Round 1: Full-Repo UI Chinese String Extraction & XML `@string` Externalization (PR #432)**:
+  - Extracted all user-visible UI strings across the repository (Compose UI, Activities/Dialogs/Toasts/Snackbars, Onboarding, home-screen widgets, Shizuku status, Service notification channels and push copy, `SettingsCatalog` titles/descriptions/aliases, `PhantomPrefs` display enums) into `res/values/strings.xml` (2,898 resource keys).
+  - `AndroidManifest.xml` (9 `android:label` entries) and `res/layout/*.xml` (persistent stats notification and 7 widget layouts) converted to `@string/*` references; `AGENTS.md` added Rule 6 "UI String Extraction Discipline" (pure engineering refactor, zero behavior change).
+- **#430 i18n Round 2: Default English UI (`values/` English, `values-zh-rTW/` Traditional Chinese) (PR #433, Behavior Change)**:
+  - Moved the original Traditional Chinese `strings.xml` (2,898 entries) verbatim into `app/src/main/res/values-zh-rTW/strings.xml` (byte-for-byte identical to pre-migration, zero UI change for `zh-TW` users).
+  - Translated the default `app/src/main/res/values/strings.xml` bucket into concise Android UI English (fallback = `en`), unifying core terminology (`PhantomCheck`, `AI Assistant`, `Memo`, `To-do`, `Whitelist`, `Scam Protection`, `Memory Bank`) and ensuring 100% alignment of format placeholders (`%1$s`, `%2$d`, etc.) and `formatted="false"` attributes.
+- **#431 i18n Round 3: Locale-Aware AI Output & Multilingual Scam Lexicon (PR #434, Behavior Change)**:
+  - **AI Prompt Output Language Automatically Follows System Locale**: `AiClient` (message risk analysis, auto-memo `memo`, weekly summary `summarizeWeekly`, deep analysis `deepAnalyzeMessage`, briefing polish `generateBriefingText`, RAG context summary `summarizeRagContext`), `DiaryPolicy` (diary annotations), `ProactiveEngine`, `ProactiveIntelWorker`, `CalendarInsightWorker`, `TaskTemplateEngine`, `MemoryEngine`, and `ChatScreenParts` all switch Traditional Chinese / English output instructions based on system Locale; JSON schema keys and enum values (`risk_label`, `memo_type`, etc.) remain unchanged, with English memos using an equivalent density cap (60 words / 360 chars) and English sentence-ending punctuation continuation detection.
+  - **Rule-Based Scam Layer Adds English Scam-Script Detection**: `IndicatorExtractor`, `MemoryEngine`, and `ContactContext` expand English scam feature lexicons paraphrased from 2025–2026 public advisories by FTC, FBI IC3, FCC, UK Report Fraud, APWG, and FinCEN (covering unpaid toll, package redelivery, bank ATO / fraud department / safe account, Hi Mum number-change impersonation, crypto platform / guaranteed return / seed phrase pig-butchering, and OTP harvesting), enabling bilingual Chinese/English interception even without AI or in Token Saver mode.
+
 ## [4.1.0] - 2026-11-23
 
 - **Tag 對照**：[`v4.0.0...v4.1.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.0.0...v4.1.0)（`versionCode = 49`、`versionName = "4.1.0"`）
@@ -61,6 +99,24 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **#423 設定健檢與搜尋擴展（PR #426）**：catalogue 新增 diary_annotation_in_saver、ai_model_diary_annotation、proactive_intel_enabled、proactive_extract_enabled 條目（皆有對稱讀寫實作）；同義詞組新增「深色／主題」組、健康組擴充距離／熱量；全域設定搜尋改用 SETTINGS_SEARCH 用途 profile。
 - **#424 AI 更智能與主動（PR #426）**：早晚簡報逐段誠實降級（缺資料明確標「無資料」）；回饋驅動節流（近 7 日同主題 👎≥2 等待窗 ×1.5，👍≥2 且無 👎 ×0.75，無回饋不變）；15 分鐘內有對話不投遞主動訊息（標記 dirty 併入下一輪）；聊天室動態建議 chips（狀態驅動、純本機、零 token、最多 4 顆）。
 - **#425 全天行程誤判撞期修復（PR #426）**：全天（ALL_DAY）事件不計入定時行程衝突判定；偵測到全天事件時顯示全天事件資訊卡（新增日曆事件與通知轉日程皆適用）。
+
+### English
+- **Tag Compare**: [`v4.0.0...v4.1.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.0.0...v4.1.0) (`versionCode = 49`, `versionName = "4.1.0"`)
+- **Release Assets (Dual APKs)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`), for general users and in-place signature upgrades.
+  - `app-debug.apk`: Debug build for development testing and troubleshooting.
+
+**Added, Changed & Fixed**
+- **#416 Messages Tab Stats Card Redesign (PR #426)**: Single-row 3-segment layout (Today / Unread / Scam) + 1dp vertical dividers; "Mark All Read" moved to the end of the same row with zero height jump from 99→0 unread.
+- **#417 Force-Dark Fix (PR #426)**: Window-level theme switched to `android:Theme.Material` with dark `android:windowBackground` / `android:colorBackground` (`phantom_window_bg #FF0E0A18`), eliminating white flashes during Activity transitions while keeping high contrast in Compose.
+- **#418 Memory Tab Stats Card & Sub-Tab Separation (PR #426)**: Reduced visual weight of "Long-Term / Short-Term / Conflicts / Immunity" stats card (`alpha 0.35`) and clearly separated it from the "Memory | Rules | Scam Immunity" sub-tabs with `10dp` spacing.
+- **#419 Zero-Hallucination AI Health Queries (PR #426)**: Extended Health Connect to read distance (`DistanceRecord`) and calories burned (`TotalCaloriesBurnedRecord`) with per-type permission queries; unauthorized types show "Unauthorized", empty data shows "No records / No data", and AI hallucination-refusal examples + `health_query` action landed.
+- **#420 Stats Tab Health Detail Card (PR #426)**: Day / Week / Month switcher (today's health snapshot, 7-day summary + scrollable daily breakdown table, 30-day summary and trend), pure local aggregation with zero tokens.
+- **#421 AI Diary Annotation Fix (PR #426)**: Added AI purpose `DIARY_ANNOTATION` (`ai_model_diary_annotation` bindable to an independent model, falling back to default profile); 3-state diagnostics when unavailable (Token Saver mode / no provider configured / annotation type disabled) each with shortcut buttons; added "Generate diary annotations even in Token Saver mode" toggle (`diary_annotation_in_saver`, default off).
+- **#422 Proactive vs. Regular Chatroom Switch Overlap Fix (PR #426)**: Clears messages before switching, rebuilds message list with `key(currentSessionId)`, and double-checks inside coroutine to prevent rapid-switch race conditions.
+- **#423 Settings Health Check & Search Expansion (PR #426)**: Added `diary_annotation_in_saver`, `ai_model_diary_annotation`, `proactive_intel_enabled`, and `proactive_extract_enabled` to `SettingsCatalog` (all with symmetric read/write); added "Dark / Theme" synonym group and expanded health synonyms with distance/calories; global Settings search now uses the `SETTINGS_SEARCH` purpose profile.
+- **#424 Smarter & More Proactive AI (PR #426)**: Morning/evening briefings degrade honestly per section (missing data explicitly marked "No data"); feedback-driven throttling (same topic in 7 days with `👎>=2` scales wait window ×1.5, `👍>=2` with no `👎` scales ×0.75, no feedback unchanged); suppresses proactive delivery if a conversation occurred within 15 minutes (marks dirty for next round); dynamic chatroom suggestion chips (state-driven, pure local, zero tokens, max 4).
+- **#425 All-Day Event False Conflict Fix (PR #426)**: `ALL_DAY` events are excluded from timed schedule conflict checks; displays an all-day event info card when detected (applies to both new calendar events and notification-to-schedule).
 
 ## [4.0.0] - 2026-11-23
 
@@ -93,6 +149,28 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
     - `PhantomMotion.kt` 僅追加 N1–N7 常數（`N1_SHARED_AXIS_ENTER_MS = 260`／`EXIT_MS = 180`、`N2_SHARED_AXIS_SLIDE_DP = 24`、`N3_SEARCH_SCRIM_ENTER_MS = 220`／`EXIT_MS = 160`、`N4_PREDICTIVE_BACK_MIN_SCALE = 0.92f`、`N5_TAB_INDICATOR_SPRING`、`N6_SECONDARY_TAB_SPRING`、`N7_HIGHLIGHT_PULSE_MS = 900`），v3.7.0 既有動效常數零修改；所有動畫均於 `graphicsLayer` draw-phase 執行，系統動畫縮放＝0（`rememberMotionEnabled() == false`）時自動退場為瞬時切換。
     - 採用 `activity-compose:1.13.0` 原生 `PredictiveBackHandler` 實作設定分類子頁與全域搜尋覆蓋層之預測式返回手勢縮放預覽（`1f → 0.92f`）。
   - **純 UI 層改版與零回歸聲明**：本版本 `service/`、`data/`、`network/`、`util/` 四大目錄 **0 diff**，Room 資料庫 schema、背景服務、AI 請求與防詐決策邏輯零修改，純屬 UI 層資訊架構與互動升級，無任何資料或背景行為變更，並 100% 保留 `#402–#408` 修復行為與無障礙 `contentDescription`。
+
+### English
+- **Tag Compare**: [`v3.8.0...v4.0.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.8.0...v4.0.0) (`versionCode = 48`, `versionName = "4.0.0"`)
+- **Release Assets (Dual APKs)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`), for general users and in-place signature upgrades.
+  - `app-debug.apk`: Debug build for development testing and troubleshooting.
+
+**Added & Information Architecture Refactor**
+- **v4.0.0 Global Information Architecture (IA) Overhaul & Search-First Settings Hub (#409 / PR #413)**:
+  - **D1 Navigation 6 Tabs → 5 Tabs ("Insights" merges "Companion | Stats")**: Bottom `LiquidGlassTabBar` consolidated to 5 main tabs: Messages, AI Assistant, Notes, Memory, Insights (`64.dp` height, `N5_TAB_INDICATOR_SPRING` width/offset spring, icon + `labelSmall` + full `contentDescription`); "Stats" merged into "Companion" and renamed "Insights (`MainTab.INSIGHT`)" with a top `PhantomSecondaryTabRow` ("Companion | Stats"); `MainActivity.mapLegacyTabExtra()` seamlessly maps legacy notification, widget, shortcut, and onboarding deep links (`"stats"` / `"STATS"` / `"partner"` / `"PARTNER"` / legacy index `5`).
+  - **D2 Search-First Settings Hub (Search + Pinned + Recent + 8 Categories)**: Added `SettingsHomeScreen` and `SettingsCategoryRegistry`, replacing the 13-card single-page scroll with a 2-tier same-Activity architecture (`SettingsCategoryId?` state with N1/N2 shared X-axis transitions, preserving `highlight_card_key` deep links):
+    - **Top Dual-Mode Search Bar**: `56.dp` height, `28.dp` pill search bar combining local keyword/synonym search and "✨ AI Semantic Search" across all 136 `SettingsCatalog` items (including collapsed advanced settings).
+    - **Pinned Quick Settings (6 default, editable) & Recent Adjustments**: 2-column pinned tiles (up to 6 customizable items; boolean toggles support inline `FluidSwitch`) + "Recently Adjusted" horizontal pill row (up to 5 items).
+    - **8 Categories (merging "Personalization" & "Appearance")**: AI & Models, Anti-Scam & Security, Notifications & Interception, AI Companion & Proactive, Permissions & Background, Appearance & Personalization, Data & Backup, About & Updates, each with a 1-line live summary and in-page filter bar.
+  - **D3 Messages Home Simplification, Segmented Grouped List & Center Stack Preserved (`MessagesTab`)**: `CenterFocusCardStack` retained with **0 diff** in geometry and scroll physics; top stats bar redesigned as a `surfaceContainer` 3-column card (Today / Unread / High Risk); filter bar simplified to 3 smart pills ("All | Unread | High Risk" with badges) + "Filter ▾" sheet; standard list upgraded to Segmented Grouped List.
+  - **D4 Advanced Settings Collapsed by Default & Auto-Expanded on Search (`SettingsAdvancedSection`)**: 24 low-frequency/expert settings and Shizuku watchdog placed in a collapsed "Advanced Settings (N)" section at the bottom of each category, auto-expanding and pulsing (`N7_HIGHLIGHT_PULSE_MS`) on search hits.
+  - **D5 Removed Persistent 22dp Pull Handle Visual, Kept Pull-Down Search Gesture**: Removed the persistent `22dp` `PhantomPullSearchHandle` bar; retained list-top `NestedScrollConnection` overscroll gesture (`>56.dp` with `HapticFeedbackType.LongPress`) on Messages, Notes, and Memory tabs plus a persistent "🔍 Search" pill in the `56.dp` top bar.
+  - **D6 Visual Onboarding Streamlined (Home 20→8 steps, Settings 9→5 steps)**: `Onboarding.kt` streamlined without resetting existing `onboarding_done` / `settings_tour_done` flags; upgrading users see a one-time `PhantomInlineBanner` in Settings.
+  - **D7 Large-Screen (`>= 600.dp`) `NavigationRail`**: Automatically switches to left `NavigationRail` + centered `840.dp` main container on tablets, unfolded foldables, and wide landscape screens.
+  - **New Shared Components & 5-Tab / 11-Subpage Alignment**: Added `PhantomPageScaffold.kt`, `GlobalSearchOverlay.kt`, `SettingsRow.kt`, and `UiLayoutPrefs.kt` (`phantom_ui_v400`, storing only catalog IDs, recent search strings, and v4 tour flag); aligned `ChatScreen`, `NotesTab`, `MemoryTab`, `StatsTab` (local zero-LLM "Weekly Highlights" bar), `SettingsActivity`, and 11 sub-activities.
+  - **Motion Extensions (`PhantomMotion` N1–N7 & `PredictiveBackHandler`)**: Appended N1–N7 draw-phase constants (`graphicsLayer`) with instant fallback when system animation scale = 0, plus `activity-compose:1.13.0` `PredictiveBackHandler` (`1f → 0.92f`).
+  - **Pure UI Overhaul & Zero-Regression Statement**: **0 diff** across `service/`, `data/`, `network/`, and `util/`; Room schema, background services, AI requests, and anti-scam decision logic are untouched.
 
 ## [3.8.0] - 2026-11-23
 
