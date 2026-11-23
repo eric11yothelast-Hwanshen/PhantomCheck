@@ -1006,19 +1006,11 @@ fun FilterSettingsScreen(
                     listState.animateScrollToItem(idx)
                 }
             }
-            val queryTokens = remember(searchQuery) {
-                searchQuery.trim().lowercase(Locale.getDefault())
-                    .split(Regex("\\s+"))
-                    .filter { it.isNotEmpty() }
+            val hasActiveQuery = remember(searchQuery) { searchQuery.isNotBlank() }
+            val localMatchedItems = remember(searchQuery) {
+                SettingsCatalog.searchByKeywords(searchQuery)
             }
-            val localMatchedItems = remember(queryTokens) {
-                if (queryTokens.isEmpty()) emptyList()
-                else SettingsCatalog.ITEMS.filter { item ->
-                    val haystack = "${item.title} ${item.description} ${item.aliases.joinToString(" ")}".lowercase(Locale.getDefault())
-                    queryTokens.all { tok -> haystack.contains(tok) }
-                }
-            }
-            val isLocalFiltering = queryTokens.isNotEmpty() && aiMatchedIds.isEmpty()
+            val isLocalFiltering = hasActiveQuery && aiMatchedIds.isEmpty()
             val aiMatchedCardKeys = remember(aiMatchedIds) {
                 aiMatchedIds.mapNotNull { id ->
                     SettingsCatalog.findById(id)?.cardKey
@@ -1253,6 +1245,68 @@ fun FilterSettingsScreen(
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                 maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            text = if (item.page != null) "開啟頁面 →" else "跳轉卡片 ↓",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (isLocalFiltering && localMatchedItems.isNotEmpty()) {
+                    val topLocalMatches = remember(localMatchedItems) { localMatchedItems.take(5) }
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "🔍 找到 ${localMatchedItems.size} 項相關設定（點選直達）：",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            topLocalMatches.forEach { item ->
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable { expandAndScrollToSettingItem(item) }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = item.title,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = item.description,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                         }
