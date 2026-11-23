@@ -549,6 +549,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - 篩選膠囊列 `FlowRow` 與 `8.dp` `Spacer` 固定於外層 `Column` 頂部，不隨清單捲動；清單段改為 `Column(Modifier.weight(1f, fill = false).verticalScroll(todoListScrollState))` 支援卡內上下捲動，並以 `key(todoFilter) { rememberScrollState() }` 於切換篩選條件時重置捲動位置至頂部。
   - 短清單或空清單維持依內容 wrap-content 高度呈現，不強制填滿 2/3；收合精簡顯示（`todoSectionCollapsed = true`）與收合狀態持久化維持不變。
 
+### English
+- **Tag Compare**: [`v2.19.0...v2.20.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.19.0...v2.20.0) (`versionCode = 38`, `versionName = "2.20.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Fixed**
+- **Scrollable & Height-Capped To-Do Expanded Area in Notes Tab (#310 / PR #311)**: Capped `NotesTab` expanded to-do area to 2/3 of `BoxWithConstraints` available height (short lists still wrap-content); pinned filter pills at top, enabled inner vertical scrolling, and reset scroll position on filter switch.
+
 ## [2.19.0] - 2026-11-20
 
 ### 新增
@@ -575,6 +581,15 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **立即壓縮資料庫等待邏輯修正（#306 / PR #307）**：
   - 修正 `DbMaintenance` 於背景 `VACUUM` 任務已排隊時點擊「立即壓縮資料庫」的等待判斷，避免長時間等待或卡住。
 
+### English
+- **Tag Compare**: [`v2.18.0...v2.19.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.18.0...v2.19.0) (`versionCode = 37`, `versionName = "2.19.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added, Changed & Fixed**
+- **Center Stack v6 Edge-Fill & Short-List Mode (#298 / PR #302)**: Added symmetric `pAbove`/`pBelow` edge-fill compensation and top-pinned short-list layout in `CenterFocusCardStack`, with `edgeGap = 6dp`.
+- **Storage Optimization & Database Maintenance (#299 / PR #303, #306 / PR #307)**: Enabled R8 code/resource shrinking in `release` builds; Room v17 (`MIGRATION_16_17`) indexes; periodic `VACUUM`, 300-entry avatar cache cap, and `intel_cache` cleanup; added storage breakdown and "Compact Database Now" in Settings.
+- **Battery & Stability Optimization (#300 / PR #304)**: Relaxed KeepAlive (15→45 min) and Shizuku (300→600 s) polling, `KEEP` Heartbeat debouncing, `StatsForegroundService` rescue backoff, and screen-off early exit.
+- **UI Component Splitting (#301 / PR #305)**: Split `MainActivity` and `ChatScreen` into `MessagesTab.kt`, `NotesTab.kt`, `StatsTab.kt`, `TodoSection.kt`, and `ChatScreenParts.kt` (zero behavior change).
+
 ## [2.18.0] - 2026-11-19
 
 ### 修正
@@ -584,6 +599,13 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - 快速設定「AI 風險分析」副標改為動態引用 `aiMinTriggerLength` 字數門檻，不再寫死 10 字元。
   - 「每日 AI 額度上限」標題與 `SettingsCatalog.NUMERIC_SPECS` 單位統一為「次」，chip 支援顯示並選中非預設值（0–100 次、步進 10 次）。
   - 省 token 模式生效時，「每則訊息 AI 智慧掃描」與「每日 AI 摘要」副標顯示「已暫停」，「AI 風險分析」副標提示「僅命中可疑特徵才分析」。
+
+### English
+- **Tag Compare**: [`v2.17.0...v2.18.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.17.0...v2.18.0) (`versionCode = 36`, `versionName = "2.18.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Changed & Fixed**
+- **Removed Built-in Personalization Defaults for Full Generalization (#292 / PR #293)**: Removed default "My Name" pre-fill and automatic personal AI rules (one-time cleanup of legacy auto-written telecom whitelist & shopping tag rules on upgrade; user rules preserved).
+- **Fixed Conflicting Settings Copy (#292 / PR #293)**: Dynamic trigger character threshold (1–30 chars) in AI Risk Analysis subtitle; aligned daily AI quota (0–100, step 10); marked paused toggles when Token Saver is active.
 
 ## [2.17.0] - 2026-11-19
 
@@ -602,6 +624,14 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - 「前往開啟通知存取權限」升級為直達本 App 專屬通知存取詳情頁（Android 11 以上支援；不支援的系統自動改開總清單頁）。
   - Shizuku 已連線時，可點擊「Shizuku 一鍵授權」直接授予通知存取權限並即時刷新狀態。
 
+### English
+- **Tag Compare**: [`v2.16.0...v2.17.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.16.0...v2.17.0) (`versionCode = 35`, `versionName = "2.17.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Home/Settings Onboarding Fixes, OEM Restricted-Settings Guides & One-Tap Shizuku Auth (#288 / PR #289)**: Waits for Android 13+ permission dialogs before showing onboarding; merges 4 empty-DB message steps; adds 4-brand restricted-settings troubleshooting (Xiaomi/Samsung/OPPO/vivo), direct Notification Access detail links, and one-tap Shizuku authorization; fixed 8-step Settings tour.
+- **Privacy Policy & Disclaimer (#284 / PR #286)**: Added `PRIVACY.md` and `DISCLAIMER.md`.
+- **GPL-3.0 Open-Source License (#285 / PR #287)**: Added `LICENSE` (GNU GPL v3.0) and README License section.
+
 ## [2.16.0] - 2026-11-19
 
 ### 變更與修正
@@ -609,6 +639,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - 訊息／記事堆疊上下留白緊湊化：`CenterFocusCardStack` 新增 `edgeGap = 4.dp`（取代原 `8.dp`）延伸上下可視範圍；`MessagesHomeTab` 於 `CENTER` 模式外層區塊間距由 `12.dp` 緊湊為 `8.dp`（非 `CENTER` 模式維持 `12.dp`）；記事頁堆疊容器上方 `Spacer` 於 `CENTER` 模式由 `8.dp` 縮為 `4.dp`（`LIST` 模式維持 `8.dp`），Scaffold 共用外層內距、我的最愛列與底部導覽列不變。
   - 阻尼彈簧吸附：改採官方 `snapFlingBehavior`（`SnapLayoutInfoProvider(listState, SnapPosition.Start)` ＋ `rememberSplineBasedDecay` ＋ `spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow)`），維持 `s_i = i * exposure` 吸附幾何與互補式 `contentPadding`。
   - 近焦縮放緩衝與焦點陰影漸變：於同一 `graphicsLayer` draw phase 內加入 `FastOutSlowInEasing` 近焦縮放緩衝（`absU <= 1f` 由 `0.94f` 平滑過渡至 `1.0f`，`absU > 1f` 沿 `0.04f` 遞減至下限 `0.82f`，於 `absU = 1` 連續銜接，pivot 維持頂緣 `TransformOrigin(0.5f, 0f)`），並新增 `cardShape = RoundedCornerShape(20.dp)` 與 `focusShadowBoost = 6.dp` 隨 `eased` 漸變陰影；`translationY` 線性鎖定、`alpha` 邊緣淡出與 `zIndex` 連續公式皆維持不變。
+
+### English
+- **Tag Compare**: [`v2.15.0...v2.16.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.15.0...v2.16.0) (`versionCode = 34`, `versionName = "2.16.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Changed & Fixed**
+- **Center Stack v5 Polish (#280 / PR #281)**: `edgeGap = 4dp`, official `snapFlingBehavior` with `spring(0.85f, StiffnessMediumLow)`, `FastOutSlowInEasing` near-focus scale (`0.94f → 1.0f` then `0.04f` step-down to `0.82f`), and `6dp` focus shadow gradient.
 
 ## [2.15.0] - 2026-11-19
 
@@ -619,6 +655,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - 記事短清單幾何修正：過渡區寬度改為動態 `zone = min(1.5f, (n - 1) / 2f)`，根治 `n <= 4` 時頭尾過渡區重疊造成第 2 則記事沉底；記事頁續用共用堆疊元件、容器高度由 `BoxWithConstraints` 動態計算。
   - 待辦事項到期副標單行：`NotesTodoRow` 到期資訊 `Text` 新增 `maxLines = 1`、`softWrap = false` 與 `TextOverflow.Ellipsis`，不再被右側按鈕擠成兩行（展開／收合兩狀態同時生效）。
 
+### English
+- **Tag Compare**: [`v2.14.0...v2.15.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.14.0...v2.15.0) (`versionCode = 33`, `versionName = "2.15.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Changed & Fixed**
+- **Center Stack v4 Continuous Inertial Scroll (#276 / PR #277)**: Replaced step-by-step `Pager` with `LazyColumn` + `rememberSnapFlingBehavior` (`viewportCenterOffset`), keeping `92dp` compact cards, `40dp` peek band, and `0.82f` scale floor.
+
 ## [2.14.0] - 2026-11-19
 
 ### 變更與修正
@@ -628,6 +670,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **自動檢查更新改為每次開啟 App 一次（#271 / PR #273）**：
   - 移除每日檢查 gate 與彈窗去重，開啟開關且網路可用時每次開啟 App 檢查 GitHub 最新版本並提示；通知欄通知維持每日每版本最多一則。
   - 以 process 級 `AtomicBoolean` 旗標防重入，同一行程螢幕旋轉與返回頁面不重複請求 API；無網路、403/429、逾時靜默處理。
+
+### English
+- **Tag Compare**: [`v2.13.0...v2.14.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.13.0...v2.14.0) (`versionCode = 32`, `versionName = "2.14.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Changed & Fixed**
+- **Center Stack v3 Compact Card Geometry (#272 / PR #273)**: Tuned card height to `92dp` (`104dp` max for large font), `40dp` peek band (`pageSpacing = -52dp`), `0.82f` scale floor, and dynamic `zone` to prevent short-list overlap.
 
 ## [2.13.0] - 2026-11-19
 
@@ -641,6 +689,13 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **SMS 雙路徑重複記錄修正（PR #268）**：
   - `SmsAutoReplyReceiver` 專職自動回覆並移除 `db.messageDao().insert` 寫入，簡訊記錄統一由通知攔截路徑（`NotificationCollectorService`）單一記錄與 SHA-256 `dedupKey` 去重；時段判斷、敏感關鍵字、`TW_MOBILE_REGEX`、4 小時冷卻與每日 3 封上限等自動回覆行為維持不變（`shouldSkipReply` 提前 return 省去多餘協程排程）。
   - 附註：issue #106 待實機驗證後關閉。
+
+### English
+- **Tag Compare**: [`v2.12.0...v2.13.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.12.0...v2.13.0) (`versionCode = 31`, `versionName = "2.13.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added, Changed & Fixed**
+- **Center Stack v2 Visual Polish & Adaptive Height (#268 / PR #269)**: Added symmetric `contentPadding`, `20dp` top/bottom peek, `92dp`–`120dp` adaptive card height, and `0.86f` scale floor.
+- **Persistent Notification Left-Icon + Right-Recent Layout (#267 / PR #270)**: Fixed PhantomCheck icon on the left, recent notified apps ("newest on left") on the right, and latest-message badge.
 
 ## [2.12.0] - 2026-11-19
 
@@ -668,6 +723,14 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - `DailySummaryPolicy` 與 `WeeklySummaryPolicy` 新增 `maybeCatchUp(ctx)`，於 `MainActivity.onCreate`、`BootReceiver` 與 `SettingsActivity` 儲存設定後檢查並立即補跑錯過之當日／當週摘要。
   - `DailySummaryWorker` 失敗時改回傳 `Result.retry()`（`BackoffPolicy.EXPONENTIAL, 10min`，最多 3 次）不覆寫重試排程，成功或達上限後再重排明日。
   - `WeeklySummaryPolicy.generateWeeklySummary` 新增 `anchorMs` 參數，以排程錨定週（`between(start, start + 7d)`）計算區間與 `weekKeyFor(anchorMs)`，避免 Doze 延遲至週一時誤抓新週；constraints 移除 `RequiresBatteryNotLow`、改為 `NetworkType.CONNECTED`。
+
+### English
+- **Tag Compare**: [`v2.11.0...v2.12.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.11.0...v2.12.0) (`versionCode = 30`, `versionName = "2.12.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added, Changed & Fixed**
+- **5-in-1 Token Saver, Prompt Cache & Dual-Model Routing (#261 / PR #262)**: Added Prompt Cache Key + static prefix, dual-model confidence routing, incremental context summary, dynamic image-size estimation, and Token Saver mode.
+- **Center-Focus Card Stack & Shared Layout Modes (#263 / PR #264)**: Added `CenterFocusCardStack` (`VerticalPager`) shared across Home and Notes tabs with Standard List / Center Stack toggle.
+- **Card Surface Modes & Transparency Slider (#265 / PR #266)**: Added 3 card surface modes (Follow Glass / Transparency Slider `>= 15%` / Dark Surface).
 
 ## [2.11.0] - 2026-11-18
 
@@ -699,6 +762,14 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **發佈準備（#247）**：
   - 版號更新：`versionCode` 29、`versionName` "2.11.0"；同步 `CHANGELOG.md` 與 `README.md` 功能總覽。
 
+### English
+- **Tag Compare**: [`v2.10.0...v2.11.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.10.0...v2.11.0) (`versionCode = 29`, `versionName = "2.11.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **3-Layer Custom Backgrounds & Readability Scrim (#255 / PR #256)**: Independent Global / AI Chat / Conversation backgrounds with downsampled storage and dark readability scrim.
+- **Sender Avatars, 3-Tier Fallback & Self-Reply Bubbles (#257 / PR #258)**: Extracted sender avatars (notification avatar → app icon → initial colored avatar), persisted right-aligned self-reply bubbles, and added 3-min echo suppression.
+- **Auto-Memo / To-Do Rule Engine & Floating Overlay (#259 / PR #260)**: Added `never > todo > note` 3-scope rules with natural-language AI parsing and source-message jump.
+
 ## [2.10.0] - 2026-11-18
 
 ### 新增
@@ -727,6 +798,13 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **發佈準備（#238）**：
   - 版號更新：`versionCode` 28、`versionName` `"2.10.0"`；復核全依賴為最新穩定版並同步 `CHANGELOG.md` 與 `README.md`。
 
+### English
+- **Tag Compare**: [`v2.9.0...v2.10.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.9.0...v2.10.0) (`versionCode = 28`, `versionName = "2.10.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Multi-Select Batch Management, Swipe-Left Delete & Fixed Header (#250 / PR #251)**: Batch select up to 100 items (scam-protected excluded), swipe-left bubble delete, and fixed header with independently scrolling message list.
+- **Continuous Quick Reply from Notification Shade (#252 / PR #253)**: Keeps `MessagingStyle` proxy notification for continuous multi-reply input after AI Assistant reply.
+
 ## [2.9.0] - 2026-11-18
 
 ### 新增
@@ -747,6 +825,13 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - `AiClient.buildSystemPrompt` 記事規則段強化為結構化條列（`id`／`App`／`寄件者`／`關鍵字`／`動作`）、明確語意命中定義與反例（如 Gogolook 驗證碼規則不誤殺銀行 OTP），快取 key 升至 `memoV4`，並更新記事規則面板說明文案。
 - **發佈準備（#227）**：
   - 版號更新：`versionCode` 27、`versionName` `"2.9.0"`；復核全依賴為最新穩定版並同步 `CHANGELOG.md` 與 `README.md`。
+
+### English
+- **Tag Compare**: [`v2.8.0...v2.9.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.8.0...v2.9.0) (`versionCode = 27`, `versionName = "2.9.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Auto & Manual Update Checker + `FileProvider` APK Install (#245 / PR #246)**: Checks GitHub Releases on launch, downloads via `DownloadManager`, and installs via `FileProvider`.
+- **Global & AI Semantic Search Overlay (#247 / PR #248)**: Pull-down gesture and top search pill opening full-screen Global / AI Semantic Search.
 
 ## [2.8.0] - 2026-11-18
 
@@ -773,6 +858,13 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - 於 `MainTab.ASSISTANT` 內容層單一位置補上 `consumeWindowInsets(padding).imePadding()`（避免 double lift），並於鍵盤彈出且清單貼底時平滑捲動至最新訊息。
 - **發佈準備與依賴版本稽核（#220）**：
   - 版號更新：`versionCode` 26、`versionName` `"2.8.0"`；完成全依賴穩定版稽核並同步 `CHANGELOG.md` 與 `README.md`。
+
+### English
+- **Tag Compare**: [`v2.7.0...v2.8.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.7.0...v2.8.0) (`versionCode = 26`, `versionName = "2.8.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Custom Stats Dashboard & Daily App Leaderboard (#240 / PR #241)**: Added Today's Top 5 App Leaderboard, 7-day risk trend, unread/read donut, per-app share bars, and to-do completion ring.
+- **Persistent Notification Rebuild & Shizuku Cross-Process Watchdog (#242 / PR #243)**: Swipe-dismiss rebuilds in place + 15-min heartbeat + Shizuku watchdog.
 
 ## [2.7.0] - 2026-11-18
 
@@ -804,6 +896,13 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - 補齊全專案有文字輸入之 Activity（`SettingsActivity`、`AutoReplySettingsActivity`、`ApiKeySettingsActivity`、`AppThreadsActivity`、`MessageDetailActivity`、`TagManagementActivity`、`WhitelistManagementActivity`）`windowSoftInputMode="adjustResize"`；完成無障礙 insets、cutout、Room 完整性與 `NotifIds` 互斥稽核。
   - 版號更新：`versionCode` 25、`versionName` `"2.7.0"`。
 
+### English
+- **Tag Compare**: [`v2.6.0...v2.7.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.6.0...v2.7.0) (`versionCode = 25`, `versionName = "2.7.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **AI Assistant Image Vision & `PhantomMarkdownText` (#235 / PR #236)**: Added image attachment vision viewing and rich Markdown rendering in chat.
+- **Offline Retry Queue (`WorkManager`) & Per-Purpose Model Routing (#237 / PR #238)**: Transient AI failures enter WorkManager retry queue; independent model assignment per purpose.
+
 ## [2.6.0] - 2026-11-18
 
 ### 新增
@@ -833,6 +932,13 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - `TodoDao` 新增 `observeAll(): Flow<List<TodoEntity>>`，`MainActivity` 記事分頁與 `ChatScreen` 待辦選單改採 `collectAsState`＋智慧排序即時觀測，桌面小工具刪除／完成／新增後 App 內立即同步；`MessageDetailActivity` 補齊 `ON_RESUME` 刷新 `remindAt` 顯示。
 - **版號更新**：`versionCode` 24、`versionName` `"2.6.0"`。
 
+### English
+- **Tag Compare**: [`v2.5.0...v2.6.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.5.0...v2.6.0) (`versionCode = 24`, `versionName = "2.6.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Public Anti-Scam Threat-Intel Pre-Check (Zero-Token) (#230 / PR #231)**: Extracts URLs/short links/crypto addresses and queries 72h local cache, `fraud.tw`, Google Safe Browsing v4, and optional PhishTank / Chainabuse before AI.
+- **Scam Alert Center & Trend Comparison (#232 / PR #233)**: Centralized high-risk scam messages, intel sources, and trend comparisons.
+
 ## [2.5.0] - 2026-11-18
 
 ### 新增
@@ -860,6 +966,13 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - `ReminderScheduler.cancel`／`cancelTodo` 同步呼叫 `NotificationManager.cancel` 清除已發出之 `NotifIds.reminder`／`NotifIds.todoReminder`，並於 `ReminderWidgetProvider` 刪除 `TYPE_MSG` 提醒時補齊呼叫 `ReminderScheduler.cancel`；取消勾選（`done = false`）行為維持不變。
   - `widget_reminder.xml` 動作按鈕放大至 `16sp` bold＋`paddingHorizontal="8dp"`＋`paddingVertical="6dp"`＋`minWidth="28dp"`／`minHeight="32dp"` 與 `?android:attr/selectableItemBackground` 點擊回饋，`reminder_widget_info.xml`（含 `xml-v31`）`minHeight` 調整為 `72dp`。
 - **版號更新**：`versionCode` 23、`versionName` `"2.5.0"`。
+
+### English
+- **Tag Compare**: [`v2.4.0...v2.5.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.4.0...v2.5.0) (`versionCode = 23`, `versionName = "2.5.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Liquid Glass UI & Dynamic Color Theme (#225 / PR #226)**: Added Android 12+ real-time blur (`RenderEffect`) with translucent fallback on lower versions / Battery Saver.
+- **5 Home-Screen Widgets (#227 / PR #228)**: Added Stats, Stats Mini, Stats Detail, AI Summary, and Notes/Reminder widgets.
 
 ## [2.4.0] - 2026-11-17
 
@@ -892,6 +1005,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - 移除 `Onboarding.kt` 非必要步驟之連鎖自動跳步（僅權限步驟單次自動跳過，缺目標改提示並手動下一步），新增依洞區中心動態上下避讓之字卡定位；主頁教學擴充至 15 步（納入 `SEARCH_PILL`），設定頁導覽由 6 步擴充至 8 步（納入白名單管理、卡片底色、分用途模型與省 token 設定）。
 - **版號更新**：`versionCode` 22、`versionName` `"2.4.0"`。
 
+### English
+- **Tag Compare**: [`v2.3.1...v2.4.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.3.1...v2.4.0) (`versionCode = 22`, `versionName = "2.4.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Multi-Provider AI Profiles (Mistral / OpenAI / Groq / OpenRouter / Gemini / DeepSeek) (#220 / PR #221)**: Support for multiple encrypted AI profiles and instant switching.
+
 ## [2.3.1] - 2026-11-17
 
 ### 變更與修正
@@ -907,6 +1026,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - 主頁新手教學 `OnboardingStep` 由 10 步擴充為 14 步（新增「記事與自動備忘錄」、「統計、摘要與離線佇列」、「待辦提醒與批次管理」、「背景圖片、外觀與分用途模型」），同步更新 `PhantomPrefs.KEY_ONBOARDING_STEP_V2` 上限（`1..14`）、`OnboardingTargets`（納入 `NOTES_TAB`、`STATS_TAB`）與目標缺失自動跳過防護（含防重入與版面穩定延遲）；修正設定頁「重新播放新手教學」同步重置步驟索引為 1；已完成教學的舊用戶不被重新打擾。
   - 全面校對 4 Tab（「訊息 / AI 助手 / 記事 / 統計」）教學文案，並更新設定頁 6 步導覽（`AI`、`NOTIF`、`APPEARANCE`）納入 v2.3 新功能。
 - **版號更新**：`versionCode` 21、`versionName` `"2.3.1"`。
+
+### English
+- **Tag Compare**: [`v2.3.0...v2.3.1`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.3.0...v2.3.1) (`versionCode = 21`, `versionName = "2.3.1"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Fixed**
+- **Hotfix for Notification Listener Rebind & Keyset Pagination (#218 / PR #219)**: Improved `NotificationListenerService` stability and `LIMIT 200` keyset pagination.
 
 ## [2.3.0] - 2026-11-17
 
@@ -931,6 +1056,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - 移除 `MainActivity` 訊息頁右上角「清除已讀」按鈕與確認對話框，移至設定頁「訊息與通知」卡片，並於 `SettingsCatalog` 新增 `notif_clear_read` 與同步 `data_export_clear` 描述。
 - **版號更新**：`versionCode` 20、`versionName` `"2.3.0"`。
 
+### English
+- **Tag Compare**: [`v2.2.0...v2.3.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.2.0...v2.3.0) (`versionCode = 20`, `versionName = "2.3.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **AI Assistant RAG Chat & Direct In-Conversation Reply (#215 / PR #216)**: Built-in read-only RAG assistant and direct notification reply from conversation screen.
+
 ## [2.2.0] - 2026-11-17
 
 ### 新增
@@ -951,6 +1082,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - `TagRuleEngine` 與 `NotificationCollectorService` 熱路徑 `Regex` 預先編譯為常數；並完成 `ReminderWidgetProvider` 純待辦點擊 fallback、`HeartbeatPolicy` `UPDATE` 策略、`PhantomPrefs` 節流快取、7 日 SQL 聚合、`AppIconHelper` 共用快取與 `BootReceiver` 同 ID 覆蓋驗證。
 - **版號更新**：`versionCode` 19、`versionName` `"2.2.0"`。
 
+### English
+- **Tag Compare**: [`v2.1.0...v2.2.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.1.0...v2.2.0) (`versionCode = 19`, `versionName = "2.2.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Notes & To-Do Reminders with Alarm Scheduling (#210 / PR #211)**: Natural-language and manual to-do reminders with priority, recurrence, and alarm scheduling.
+
 ## [2.1.0] - 2026-11-17
 
 ### 新增
@@ -965,6 +1102,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **AI 助手分頁獨立 SnackbarHost（#142）**：`MainActivity` 為 AI 助手分頁配置分頁專屬、內嵌於版面的 `SnackbarHost`（顯示於分頁頂部、脫離 Scaffold 底部 overlay），徹底避免刪除會話等提示遮擋底部輸入框。
 - **Release Notes 自動抽取 CHANGELOG 段落（#112）**：`.github/workflows/release.yml` 於發佈步驟前自動抽取對應版本之 `CHANGELOG.md` 段落並與 GitHub 自動 PR 清單共存（本版 tag 首次生效）。
 - **版號更新**：`versionCode` 18、`versionName` `"2.1.0"`。
+
+### English
+- **Tag Compare**: [`v2.0.0...v2.1.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.0.0...v2.1.0) (`versionCode = 18`, `versionName = "2.1.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **AI Smart Tagging & Whitelist Rule Management (#205 / PR #206)**: Single AI analysis with 0–3 tags, app category rules, and whitelist management.
 
 ## [2.0.0] - 2026-11-17
 
@@ -991,6 +1134,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **System Prompt 節流與對話歷史壓縮（#130）**：設定清單僅於設定相關查詢條件載入；RAG 依同寄件者相似前綴去重 `(×N)` 與動態字數上限；超過 10 輪歷史壓縮為 `[較早對話摘要]` + 最近 8 則。
 - **效能與 M3 版面一致化（#137, #138）**：`NotificationCollectorService` `aiRuleDao().active()` 導入 30 秒 TTL 快取、`PhantomPrefs` 同 key 節流／靜音模式查表導入 30 秒執行緒安全 TTL 快取、`AppIconHelper` 統一為 4 MB 位元組上限 `LruCache`、`StatsForegroundService` 停用時釋放靜態圖示條參照並補齊 Compose `LazyColumn` `contentType`／預計算日期分隔；全專案對齊 M3 12dp 卡片間距與 48dp 最小觸控目標。
 - **版號更新**：`versionCode` 17、`versionName` `"2.0.0"`。
+
+### English
+- **Tag Compare**: [`v1.12.0...v2.0.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.12.0...v2.0.0) (`versionCode = 17`, `versionName = "2.0.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Changed**
+- **v2.0.0 Architecture Upgrade**: Major UI/UX and database overhaul introducing Jetpack Compose Material 3 tabs, Favorites/VIP pinning, and enhanced notification grouping.
 
 ## [1.13.1] - 2026-11-17
 
