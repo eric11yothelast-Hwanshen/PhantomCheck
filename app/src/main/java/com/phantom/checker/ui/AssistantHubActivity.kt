@@ -86,6 +86,9 @@ import androidx.compose.ui.res.stringResource
  * 集中收納早晚簡報排程、主動推播主題與節流勿擾、畫像卡、外部搜尋端點 BYOK、通訊錄整合、連結應用入口與 Persona 快捷。
  */
 class AssistantHubActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.phantom.checker.util.AppLocaleHelper.wrapContext(newBase))
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)

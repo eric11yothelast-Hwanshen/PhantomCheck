@@ -74,6 +74,7 @@ object SettingsCatalog {
         SettingSearchItem("data_export_clear", "data", R.string.catalog_data_export_clear_title, R.string.catalog_data_export_clear_desc, R.string.catalog_data_export_clear_aliases),
         SettingSearchItem("appearance_widget_tour", "data", R.string.catalog_appearance_widget_tour_title, R.string.catalog_appearance_widget_tour_desc, R.string.catalog_appearance_widget_tour_aliases),
         SettingSearchItem("appearance_theme", "appearance", R.string.catalog_appearance_theme_title, R.string.catalog_appearance_theme_desc, R.string.catalog_appearance_theme_aliases),
+        SettingSearchItem("appearance_language", "appearance", R.string.catalog_appearance_language_title, R.string.catalog_appearance_language_desc, R.string.catalog_appearance_language_aliases),
         SettingSearchItem("appearance_glass_effect", "appearance", R.string.catalog_appearance_glass_effect_title, R.string.catalog_appearance_glass_effect_desc, R.string.catalog_appearance_glass_effect_aliases),
         SettingSearchItem("appearance_tab_bar_mode", "appearance", R.string.catalog_appearance_tab_bar_mode_title, R.string.catalog_appearance_tab_bar_mode_desc, R.string.catalog_appearance_tab_bar_mode_aliases),
         SettingSearchItem("appearance_haptic", "appearance", R.string.catalog_appearance_haptic_title, R.string.catalog_appearance_haptic_desc, R.string.catalog_appearance_haptic_aliases),

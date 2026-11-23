@@ -308,6 +308,9 @@ private fun isStatsForegroundServiceRunning(ctx: Context): Boolean {
 }
 
 class SettingsActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.phantom.checker.util.AppLocaleHelper.wrapContext(newBase))
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val initialCardKey = intent?.getStringExtra("highlight_card_key")?.let { raw ->
@@ -4333,6 +4336,42 @@ fun FilterSettingsScreen(
                                 selected = currentThemeMode == mode,
                                 onClick = { ThemePreferences.setThemeMode(appCtx, mode) },
                                 label = { Text(mode.label) }
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    var currentLangMode by remember { mutableStateOf(com.phantom.checker.util.AppLocaleHelper.getEffectiveMode(appCtx)) }
+                    Text(
+                        text = stringResource(R.string.catalog_appearance_language_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_language_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val langOptions = listOf(
+                            PhantomPrefs.APP_LOCALE_SYSTEM to stringResource(R.string.settings_language_follow_system),
+                            PhantomPrefs.APP_LOCALE_ZH_TW to stringResource(R.string.settings_language_zh_tw),
+                            PhantomPrefs.APP_LOCALE_EN to stringResource(R.string.settings_language_en)
+                        )
+                        langOptions.forEach { (mode, label) ->
+                            FilterChip(
+                                selected = currentLangMode == mode,
+                                onClick = {
+                                    currentLangMode = mode
+                                    val hostActivity = ctx as? android.app.Activity
+                                    if (hostActivity != null) {
+                                        com.phantom.checker.util.AppLocaleHelper.applyLanguageMode(hostActivity, mode)
+                                    } else {
+                                        PhantomPrefs.setAppLanguageMode(appCtx, mode)
+                                    }
+                                },
+                                label = { Text(label) }
                             )
                         }
                     }

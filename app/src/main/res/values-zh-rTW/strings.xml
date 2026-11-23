@@ -2906,4 +2906,11 @@
     <string name="goal_progress_summary_periods_no_due">進度 %1$d/%2$d · 連續 %3$d 期 · 里程碑 %4$s</string>
     <string name="goal_manage_summary_periods">已完成 %1$d/%2$d 期（連續 %3$d 期）。手動調整頻率（系統只會自動降頻，不會自動升頻）：</string>
     <string name="goal_milestone_reached">已達標</string>
+    <string name="catalog_appearance_language_title">語言</string>
+    <string name="catalog_appearance_language_desc">切換介面與 AI 回覆語言（跟隨系統／繁體中文／English）</string>
+    <string name="catalog_appearance_language_aliases">中文|英文|語言|language|切換|locale|english|繁體中文</string>
+    <string name="settings_language_subtitle">同步套用至介面、通知、小工具與 AI 回覆語系</string>
+    <string name="settings_language_follow_system">跟隨系統</string>
+    <string name="settings_language_zh_tw">繁體中文</string>
+    <string name="settings_language_en">English</string>
 </resources>

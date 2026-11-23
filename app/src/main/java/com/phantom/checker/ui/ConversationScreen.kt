@@ -115,6 +115,9 @@ private const val MAX_BATCH_SELECT = 100
 private val TW_PHONE_REGEX = Regex("^09\\d{8}$")
 
 class ConversationActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.phantom.checker.util.AppLocaleHelper.wrapContext(newBase))
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AiClient.init(applicationContext)

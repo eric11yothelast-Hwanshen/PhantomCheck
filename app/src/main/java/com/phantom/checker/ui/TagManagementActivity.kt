@@ -98,6 +98,9 @@ private data class InstalledAppChoice(
 )
 
 class TagManagementActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.phantom.checker.util.AppLocaleHelper.wrapContext(newBase))
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {

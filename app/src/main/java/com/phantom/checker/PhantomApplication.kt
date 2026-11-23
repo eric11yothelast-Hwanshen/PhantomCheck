@@ -9,13 +9,20 @@ class PhantomApplication : Application() {
         lateinit var appContext: android.content.Context
             private set
 
-        fun str(@androidx.annotation.StringRes resId: Int, vararg args: Any): String =
-            if (args.isEmpty()) appContext.getString(resId) else appContext.getString(resId, *args)
+        fun str(@androidx.annotation.StringRes resId: Int, vararg args: Any): String {
+            val localized = com.phantom.checker.util.AppLocaleHelper.localizedContext(appContext)
+            return if (args.isEmpty()) localized.getString(resId) else localized.getString(resId, *args)
+        }
+    }
+
+    override fun attachBaseContext(base: android.content.Context) {
+        super.attachBaseContext(com.phantom.checker.util.AppLocaleHelper.wrapContext(base))
     }
 
     override fun onCreate() {
         super.onCreate()
         appContext = applicationContext
+        com.phantom.checker.util.AppLocaleHelper.getEffectiveMode(this)
         ShizukuManager.init(this)
         com.phantom.checker.service.BriefingScheduler.rescheduleAll(this)
         com.phantom.checker.service.CalendarInsightScheduler.scheduleOrUpdate(this)

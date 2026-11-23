@@ -75,6 +75,9 @@ import androidx.compose.ui.res.stringResource
  * - Android 13+ 側載「受限制的設定」沿用 #288 restrictedSettingsOemNote() 廠牌引導文案。
  */
 class PermissionHubActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.phantom.checker.util.AppLocaleHelper.wrapContext(newBase))
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)

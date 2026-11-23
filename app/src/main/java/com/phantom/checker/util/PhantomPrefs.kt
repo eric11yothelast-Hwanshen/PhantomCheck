@@ -2857,6 +2857,30 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
             .remove("update_apk_auto_install_launched")
             .apply()
     }
+
+    // ---- #438 App 內語言切換（跟隨系統／繁體中文／English） ----
+
+    const val APP_LOCALE_SYSTEM = "system"
+    const val APP_LOCALE_ZH_TW = "zh-TW"
+    const val APP_LOCALE_EN = "en"
+    private const val KEY_APP_LANGUAGE_MODE = "app_language_mode"
+
+    fun normalizeAppLanguageMode(raw: String?): String = when (raw?.trim()) {
+        APP_LOCALE_ZH_TW -> APP_LOCALE_ZH_TW
+        APP_LOCALE_EN -> APP_LOCALE_EN
+        else -> APP_LOCALE_SYSTEM
+    }
+
+    fun getAppLanguageMode(ctx: Context): String =
+        normalizeAppLanguageMode(prefs(ctx).getString(KEY_APP_LANGUAGE_MODE, APP_LOCALE_SYSTEM))
+
+    fun setAppLanguageMode(ctx: Context, mode: String, notify: Boolean = true) {
+        val normalized = normalizeAppLanguageMode(mode)
+        prefs(ctx).edit().putString(KEY_APP_LANGUAGE_MODE, normalized).apply()
+        if (notify) {
+            PhantomSettingsBus.notifyChanged()
+        }
+    }
 }
 
 

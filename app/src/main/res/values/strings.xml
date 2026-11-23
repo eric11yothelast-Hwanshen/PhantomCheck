@@ -2906,4 +2906,11 @@
     <string name="goal_progress_summary_periods_no_due">Progress %1$d/%2$d · %3$d-period streak · Milestone %4$s</string>
     <string name="goal_manage_summary_periods">Completed %1$d/%2$d periods (%3$d-period streak). Adjust frequency manually (system only auto-decreases, never auto-increases):</string>
     <string name="goal_milestone_reached">Reached</string>
+    <string name="catalog_appearance_language_title">Language</string>
+    <string name="catalog_appearance_language_desc">Switch app UI and AI output language (Follow system / Traditional Chinese / English)</string>
+    <string name="catalog_appearance_language_aliases">language|locale|english|chinese|中文|英文|語言|切換|繁體中文</string>
+    <string name="settings_language_subtitle">Applies to UI, notifications, widgets, and AI responses</string>
+    <string name="settings_language_follow_system">Follow system</string>
+    <string name="settings_language_zh_tw">繁體中文</string>
+    <string name="settings_language_en">English</string>
 </resources>

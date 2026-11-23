@@ -753,19 +753,23 @@ object AiClient {
         val timestampMs: Long = System.currentTimeMillis()
     )
 
-    /** 取得目前系統語系 BCP-47 標籤（例如 zh-TW、en-US），供 AI prompt 語言指令使用。 */
-    fun resolveLocaleTag(locale: Locale = Locale.getDefault()): String =
+    /** 取得目前 App 生效語系（#438 App 內設定優先於系統語系；跟隨系統時與 v4.2.0 一致）。 */
+    internal fun resolveEffectiveAppLocale(): Locale =
+        com.phantom.checker.util.AppLocaleHelper.resolveEffectiveLocale(resolveContext(null))
+
+    /** 取得目前生效語系 BCP-47 標籤（例如 zh-TW、en-US），供 AI prompt 語言指令使用。 */
+    fun resolveLocaleTag(locale: Locale = resolveEffectiveAppLocale()): String =
         locale.toLanguageTag().takeIf { it.isNotBlank() && it != "und" } ?: "en-US"
 
     /** 判斷是否為繁體中文語系（zh-TW / zh-HK / zh-MO / zh-Hant）；繁體中文維持既有 prompt 原文與 40 字 memo 密度。 */
-    fun isZhTwLocale(locale: Locale = Locale.getDefault()): Boolean {
+    fun isZhTwLocale(locale: Locale = resolveEffectiveAppLocale()): Boolean {
         val tag = resolveLocaleTag(locale).lowercase(Locale.ROOT)
         if (!tag.startsWith("zh")) return false
         return tag.contains("hant") || tag.contains("-tw") || tag.contains("-hk") || tag.contains("-mo") || tag == "zh"
     }
 
     /** 單行輸出語言指令：zh-TW 維持極簡單行（零 token 回歸），非 zh-TW 明確指示以對應語系輸出自然語言欄位。 */
-    internal fun buildLanguageDirective(locale: Locale = Locale.getDefault()): String {
+    internal fun buildLanguageDirective(locale: Locale = resolveEffectiveAppLocale()): String {
         val tag = resolveLocaleTag(locale)
         return if (isZhTwLocale(locale)) {
             "輸出語言：自然語言說明一律使用繁體中文（$tag）。"
@@ -782,7 +786,7 @@ object AiClient {
         includeAutoMemo: Boolean = false,
         memoRules: List<MemoRuleEntity> = emptyList(),
         antiFraudContextBlock: String = "",
-        locale: Locale = Locale.getDefault()
+        locale: Locale = resolveEffectiveAppLocale()
     ): String {
         val isZhTw = isZhTwLocale(locale)
         val base = StringBuilder()
@@ -1947,7 +1951,7 @@ object AiClient {
         }
     }
 
-    internal fun buildRagSummaryPrompt(locale: Locale = Locale.getDefault()): String {
+    internal fun buildRagSummaryPrompt(locale: Locale = resolveEffectiveAppLocale()): String {
         return if (isZhTwLocale(locale)) {
             """
                 請將以下手機通知訊息紀錄濃縮為 300~500 字的情境摘要（繁體中文），保留：
@@ -2226,7 +2230,7 @@ object AiClient {
     }
 
 
-    internal fun buildWeeklySystemPrompt(locale: Locale = Locale.getDefault()): String {
+    internal fun buildWeeklySystemPrompt(locale: Locale = resolveEffectiveAppLocale()): String {
         return if (isZhTwLocale(locale)) {
             "你是個人通訊防詐助理，請用繁體中文整理本週訊息統計、風險分布趨勢、最活躍 App 與高風險訊息重點及詐騙提醒。請使用 Markdown 格式（如 ## 標題、**重點粗體**、- 清單）條列呈現，五個段落皆須完整收尾，最後務必以完整句號（。）結束，不得在半句或括號未閉合處中斷。"
         } else {
@@ -2375,7 +2379,7 @@ object AiClient {
         return sb.toString()
     }
 
-    internal fun buildDeepAnalysisSystemPrompt(locale: Locale = Locale.getDefault()): String {
+    internal fun buildDeepAnalysisSystemPrompt(locale: Locale = resolveEffectiveAppLocale()): String {
         return if (isZhTwLocale(locale)) {
             buildString {
                 appendLine("你是專業的台灣繁體中文防詐顧問。請針對使用者收到的單則訊息進行結構化段落式深度風險解說。")

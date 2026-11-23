@@ -99,6 +99,9 @@ data class SenderThreadUi(
 )
 
 class AppThreadsActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.phantom.checker.util.AppLocaleHelper.wrapContext(newBase))
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME).orEmpty()

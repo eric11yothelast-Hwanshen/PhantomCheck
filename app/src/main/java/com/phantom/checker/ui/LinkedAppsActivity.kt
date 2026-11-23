@@ -85,6 +85,9 @@ import androidx.compose.ui.res.stringResource
  * - 雲端擴充 BYOK（EncryptedSharedPreferences 遮罩儲存）：GitHub PAT 輪詢與 Discord Webhook。
  */
 class LinkedAppsActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.phantom.checker.util.AppLocaleHelper.wrapContext(newBase))
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)

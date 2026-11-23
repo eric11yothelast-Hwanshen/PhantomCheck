@@ -304,6 +304,9 @@ internal val MemoryIcon: ImageVector by lazy {
 }
 
 class MainActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.phantom.checker.util.AppLocaleHelper.wrapContext(newBase))
+    }
     companion object {
         internal val hasAutoCheckedUpdateThisProcess = java.util.concurrent.atomic.AtomicBoolean(false)
         internal val autoUpdateCheckFailuresThisProcess = java.util.concurrent.atomic.AtomicInteger(0)
