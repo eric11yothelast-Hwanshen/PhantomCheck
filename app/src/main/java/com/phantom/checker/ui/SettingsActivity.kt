@@ -5345,28 +5345,133 @@ private fun AboutSettingsCard(
     val scope = rememberCoroutineScope()
     var isCheckingUpdate by remember { mutableStateOf(false) }
     var updateResult by remember { mutableStateOf<UpdateCheckResult?>(null) }
-    var activeDownloadId by remember { mutableStateOf<Long?>(null) }
+    var activeDownloadId by remember { mutableStateOf(PhantomPrefs.getActiveApkDownloadId(appCtx).takeIf { it > 0L }) }
     var downloadedApkFile by remember { mutableStateOf<File?>(null) }
     var isDownloading by remember { mutableStateOf(false) }
+    var downloadProgressPct by remember { mutableStateOf<Int?>(null) }
     var downloadStatusText by remember { mutableStateOf<String?>(null) }
+    var isDownloadError by remember { mutableStateOf(false) }
     var showUnknownSourceDialog by remember { mutableStateOf(false) }
+    var pendingInstallAfterUnknownSourceGrant by remember { mutableStateOf(false) }
 
-    fun attemptInstall(file: File) {
+    fun attemptInstall(file: File, isAutoTrigger: Boolean = false) {
         if (!file.exists() || file.length() <= 0L) {
             downloadedApkFile = null
-            downloadStatusText = "更新檔已被移除，請重新下載。"
+            isDownloading = false
+            isDownloadError = true
+            PhantomPrefs.clearActiveApkDownload(appCtx)
+            downloadStatusText = "更新檔不存在或已被移除，請點擊重新下載。"
             return
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !ctx.packageManager.canRequestPackageInstalls()) {
+        if (!AppUpdateHelper.canRequestPackageInstallsCompat(ctx)) {
+            pendingInstallAfterUnknownSourceGrant = true
             showUnknownSourceDialog = true
-            downloadStatusText = "已下載完成，授權「安裝未知應用程式」後即可安裝。"
+            isDownloadError = false
+            downloadStatusText = "下載完成：請先允許「安裝未知應用程式」，返回後將自動開啟安裝頁，或點擊「安裝更新」。"
             return
         }
-        AppUpdateHelper.launchApkInstaller(ctx, file).onFailure { err ->
-            downloadStatusText = err.message ?: "無法開啟系統安裝器，請前往檔案管理員手動安裝。"
+        pendingInstallAfterUnknownSourceGrant = false
+        if (isAutoTrigger) {
+            PhantomPrefs.setActiveApkAutoInstallLaunched(appCtx, true)
+        }
+        AppUpdateHelper.launchApkInstaller(ctx, file).onSuccess {
+            isDownloadError = false
+            downloadStatusText = "下載完成，已啟動系統安裝器（若未完成安裝，可隨時點擊上方按鈕安裝）。"
+        }.onFailure { err ->
+            isDownloadError = true
+            downloadStatusText = err.message ?: "無法開啟系統安裝器，請點擊重試或前往檔案管理員手動安裝。"
         }
     }
 
+    suspend fun syncDownloadState(targetVersion: String, allowAutoInstall: Boolean) {
+        val state = withContext(Dispatchers.IO) {
+            AppUpdateHelper.inspectApkDownloadState(appCtx, targetVersion)
+        }
+        when (state) {
+            is AppUpdateHelper.ApkDownloadState.Idle -> {
+                isDownloading = false
+                activeDownloadId = null
+                downloadedApkFile = null
+                downloadProgressPct = null
+            }
+            is AppUpdateHelper.ApkDownloadState.Downloading -> {
+                isDownloading = true
+                isDownloadError = false
+                activeDownloadId = state.downloadId
+                downloadedApkFile = state.file
+                downloadProgressPct = state.progressPercent
+                val pctSuffix = state.progressPercent?.let { "（$it%）" }.orEmpty()
+                downloadStatusText = "正在下載 ${state.file.name}$pctSuffix…"
+            }
+            is AppUpdateHelper.ApkDownloadState.ReadyToInstall -> {
+                val wasDownloading = isDownloading
+                isDownloading = false
+                isDownloadError = false
+                activeDownloadId = null
+                downloadedApkFile = state.file
+                downloadProgressPct = 100
+                val alreadyAutoLaunched = PhantomPrefs.isActiveApkAutoInstallLaunched(appCtx)
+                if (allowAutoInstall && (wasDownloading || !alreadyAutoLaunched) && state.downloadId > 0L && !alreadyAutoLaunched) {
+                    downloadStatusText = "下載完成：${state.file.name}，正在啟動安裝頁面…"
+                    attemptInstall(state.file, isAutoTrigger = true)
+                } else {
+                    downloadStatusText = "下載完成，點擊「安裝更新（v${state.version}）」即可安裝。"
+                }
+            }
+            is AppUpdateHelper.ApkDownloadState.Failed -> {
+                isDownloading = false
+                isDownloadError = true
+                activeDownloadId = null
+                downloadedApkFile = null
+                downloadProgressPct = null
+                downloadStatusText = state.reasonText
+            }
+        }
+    }
+
+    // 初始化：若有進行中或已完成的持久化下載，或展開「關於」卡時，自動對齊最新發佈與本地下載狀態
+    LaunchedEffect(Unit) {
+        val persistedVer = PhantomPrefs.getActiveApkDownloadVersion(appCtx)
+        if (persistedVer.isNotBlank()) {
+            syncDownloadState(persistedVer, allowAutoInstall = false)
+            if (updateResult == null && !isCheckingUpdate) {
+                isCheckingUpdate = true
+                updateResult = AppUpdateHelper.checkLatestRelease(appCtx)
+                isCheckingUpdate = false
+            }
+        }
+    }
+
+    LaunchedEffect(updateResult) {
+        when (val res = updateResult) {
+            is UpdateCheckResult.UpdateAvailable -> {
+                syncDownloadState(res.latestVersion, allowAutoInstall = false)
+            }
+            is UpdateCheckResult.UpToDate -> {
+                withContext(Dispatchers.IO) {
+                    AppUpdateHelper.cleanupStaleApkDownloads(appCtx, keepVersion = null)
+                }
+                isDownloading = false
+                activeDownloadId = null
+                downloadedApkFile = null
+            }
+            else -> Unit
+        }
+    }
+
+    // 下載中：IO 輪詢 DownloadManager.query（~1s 間隔，UI 可見時），確保不漏接廣播且即時彈出安裝頁
+    LaunchedEffect(isDownloading, activeDownloadId, updateResult) {
+        val targetVer = (updateResult as? UpdateCheckResult.UpdateAvailable)?.latestVersion
+            ?: PhantomPrefs.getActiveApkDownloadVersion(appCtx)
+        if (!isDownloading || targetVer.isBlank()) return@LaunchedEffect
+        while (isDownloading) {
+            syncDownloadState(targetVer, allowAutoInstall = true)
+            if (!isDownloading) break
+            kotlinx.coroutines.delay(1000L)
+        }
+    }
+
+    // 保留 ACTION_DOWNLOAD_COMPLETE 作為即時觸發輔助，統一交由 syncDownloadState 查驗
     DisposableEffect(activeDownloadId) {
         val dlId = activeDownloadId
         if (dlId == null) {
@@ -5377,32 +5482,11 @@ private fun AboutSettingsCard(
                     if (intent?.action != DownloadManager.ACTION_DOWNLOAD_COMPLETE) return
                     val completedId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1L)
                     if (completedId != dlId) return
-                    val dm = ctx.getSystemService(DownloadManager::class.java) ?: return
-                    val query = DownloadManager.Query().setFilterById(dlId)
-                    dm.query(query)?.use { cursor ->
-                        if (cursor.moveToFirst()) {
-                            val statusIdx = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                            val reasonIdx = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
-                            val status = if (statusIdx >= 0) cursor.getInt(statusIdx) else -1
-                            val reason = if (reasonIdx >= 0) cursor.getInt(reasonIdx) else -1
-                            isDownloading = false
-                            activeDownloadId = null
-                            when (status) {
-                                DownloadManager.STATUS_SUCCESSFUL -> {
-                                    val file = downloadedApkFile
-                                    if (file != null && file.exists()) {
-                                        downloadStatusText = "下載完成：${file.name}"
-                                        attemptInstall(file)
-                                    } else {
-                                        downloadedApkFile = null
-                                        downloadStatusText = "下載完成但找不到更新檔，請重新下載。"
-                                    }
-                                }
-                                DownloadManager.STATUS_FAILED -> {
-                                    downloadedApkFile = null
-                                    downloadStatusText = "下載失敗（錯誤碼 $reason），請重試或前往 GitHub 下載。"
-                                }
-                            }
+                    val targetVer = (updateResult as? UpdateCheckResult.UpdateAvailable)?.latestVersion
+                        ?: PhantomPrefs.getActiveApkDownloadVersion(appCtx)
+                    if (targetVer.isNotBlank()) {
+                        scope.launch {
+                            syncDownloadState(targetVer, allowAutoInstall = true)
                         }
                     }
                 }
@@ -5418,32 +5502,55 @@ private fun AboutSettingsCard(
         }
     }
 
+    // ON_RESUME 重查：使用者切走再回來、下載於背景完成、或剛從「安裝未知應用程式」設定頁授權返回
+    val lifecycleOwner = ctx as? LifecycleOwner
+    DisposableEffect(lifecycleOwner, updateResult) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val targetVer = (updateResult as? UpdateCheckResult.UpdateAvailable)?.latestVersion
+                    ?: PhantomPrefs.getActiveApkDownloadVersion(appCtx)
+                if (targetVer.isNotBlank()) {
+                    scope.launch {
+                        syncDownloadState(targetVer, allowAutoInstall = false)
+                        val ready = downloadedApkFile
+                        if (pendingInstallAfterUnknownSourceGrant &&
+                            ready != null &&
+                            ready.exists() &&
+                            ready.length() > 0L &&
+                            AppUpdateHelper.canRequestPackageInstallsCompat(ctx)
+                        ) {
+                            attemptInstall(ready, isAutoTrigger = true)
+                        }
+                    }
+                }
+            }
+        }
+        lifecycleOwner?.lifecycle?.addObserver(observer)
+        onDispose {
+            lifecycleOwner?.lifecycle?.removeObserver(observer)
+        }
+    }
+
     if (showUnknownSourceDialog) {
         AlertDialog(
             onDismissRequest = { showUnknownSourceDialog = false },
-            title = { Text("需要授權安裝權限") },
-            text = { Text("Android 需要您允許「幻訊」安裝未知來源應用程式，才能啟動系統 APK 安裝器。前往設定授權後，返回此頁面點擊「安裝更新」即可繼續。") },
+            title = { Text("需要授權「安裝未知應用程式」") },
+            text = {
+                Text("Android 8+ 需要您允許「幻訊」安裝未知來源應用程式，才能啟動系統 APK 安裝器。\n\n點擊「前往授權」開啟開關後，返回此頁即可自動或點擊啟動安裝（小米 HyperOS／Samsung One UI／OPPO ColorOS 皆適用）。")
+            },
             confirmButton = {
                 Button(
                     onClick = {
                         showUnknownSourceDialog = false
-                        try {
-                            ctx.startActivity(
-                                Intent(
-                                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                    Uri.parse("package:${ctx.packageName}")
-                                )
-                            )
-                        } catch (_: Exception) {
-                        }
+                        AppUpdateHelper.openUnknownAppSourcesSettings(ctx)
                     }
                 ) {
-                    Text("前往設定")
+                    Text("前往授權")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showUnknownSourceDialog = false }) {
-                    Text("取消")
+                    Text("稍後")
                 }
             }
         )
@@ -5542,7 +5649,10 @@ private fun AboutSettingsCard(
             onClick = {
                 if (!isCheckingUpdate) {
                     isCheckingUpdate = true
-                    downloadStatusText = null
+                    if (!isDownloading) {
+                        downloadStatusText = null
+                        isDownloadError = false
+                    }
                     scope.launch {
                         updateResult = AppUpdateHelper.checkLatestRelease(ctx)
                         isCheckingUpdate = false
@@ -5594,29 +5704,36 @@ private fun AboutSettingsCard(
                 Spacer(Modifier.height(8.dp))
                 if (res.apkDownloadUrl != null) {
                     val readyFile = downloadedApkFile
-                    if (readyFile != null && readyFile.exists() && !isDownloading) {
+                    if (readyFile != null && readyFile.exists() && readyFile.length() > 0L && !isDownloading) {
                         Button(
-                            onClick = { attemptInstall(readyFile) },
+                            onClick = { attemptInstall(readyFile, isAutoTrigger = false) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("安裝更新（v${res.latestVersion}）")
+                            Text("下載完成，點擊安裝（v${res.latestVersion}）")
                         }
                     } else {
                         Button(
                             onClick = {
                                 if (!isDownloading) {
-                                    val enqueued = AppUpdateHelper.enqueueApkDownload(
-                                        ctx = ctx,
-                                        version = res.latestVersion,
-                                        downloadUrl = res.apkDownloadUrl
-                                    )
-                                    if (enqueued != null) {
-                                        activeDownloadId = enqueued.first
-                                        downloadedApkFile = enqueued.second
-                                        isDownloading = true
-                                        downloadStatusText = "正在下載 app-release-${res.latestVersion}.apk…"
-                                    } else {
-                                        downloadStatusText = "無法啟動系統下載管理員，請前往 GitHub 下載。"
+                                    scope.launch {
+                                        isDownloadError = false
+                                        val enqueued = withContext(Dispatchers.IO) {
+                                            AppUpdateHelper.enqueueApkDownload(
+                                                ctx = appCtx,
+                                                version = res.latestVersion,
+                                                downloadUrl = res.apkDownloadUrl
+                                            )
+                                        }
+                                        if (enqueued != null) {
+                                            activeDownloadId = enqueued.first
+                                            downloadedApkFile = enqueued.second
+                                            isDownloading = true
+                                            downloadProgressPct = null
+                                            downloadStatusText = "正在下載 app-release-${res.latestVersion}.apk…"
+                                        } else {
+                                            isDownloadError = true
+                                            downloadStatusText = "無法啟動系統下載管理員，請重試或前往 GitHub 下載。"
+                                        }
                                     }
                                 }
                             },
@@ -5630,7 +5747,10 @@ private fun AboutSettingsCard(
                                     color = MaterialTheme.colorScheme.onPrimary
                                 )
                                 Spacer(Modifier.width(8.dp))
-                                Text("下載中…")
+                                val pctLabel = downloadProgressPct?.let { "（$it%）" }.orEmpty()
+                                Text("下載中$pctLabel…")
+                            } else if (isDownloadError) {
+                                Text("重新下載（v${res.latestVersion}）")
                             } else {
                                 Text("下載更新")
                             }
@@ -5683,7 +5803,7 @@ private fun AboutSettingsCard(
             Text(
                 text = msg,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (isDownloadError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         Spacer(Modifier.height(8.dp))

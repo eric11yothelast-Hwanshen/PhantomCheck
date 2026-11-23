@@ -2775,6 +2775,42 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     fun setBriefingChannelGuideDismissed(ctx: Context, dismissed: Boolean) {
         prefs(ctx).edit().putBoolean("briefing_channel_guide_dismissed", dismissed).apply()
     }
+
+    // ---- #408 APK 更新下載狀態持久化（downloadId + version + fileName + 防重自動安裝 flag） ----
+
+    fun saveActiveApkDownload(ctx: Context, downloadId: Long, version: String, fileName: String) {
+        prefs(ctx).edit()
+            .putLong("update_apk_download_id", downloadId)
+            .putString("update_apk_download_version", version.trim())
+            .putString("update_apk_download_file_name", fileName.trim())
+            .putBoolean("update_apk_auto_install_launched", false)
+            .apply()
+    }
+
+    fun getActiveApkDownloadId(ctx: Context): Long =
+        prefs(ctx).getLong("update_apk_download_id", -1L)
+
+    fun getActiveApkDownloadVersion(ctx: Context): String =
+        prefs(ctx).getString("update_apk_download_version", "").orEmpty().trim()
+
+    fun getActiveApkDownloadFileName(ctx: Context): String =
+        prefs(ctx).getString("update_apk_download_file_name", "").orEmpty().trim()
+
+    fun isActiveApkAutoInstallLaunched(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("update_apk_auto_install_launched", false)
+
+    fun setActiveApkAutoInstallLaunched(ctx: Context, launched: Boolean) {
+        prefs(ctx).edit().putBoolean("update_apk_auto_install_launched", launched).apply()
+    }
+
+    fun clearActiveApkDownload(ctx: Context) {
+        prefs(ctx).edit()
+            .remove("update_apk_download_id")
+            .remove("update_apk_download_version")
+            .remove("update_apk_download_file_name")
+            .remove("update_apk_auto_install_launched")
+            .apply()
+    }
 }
 
 
