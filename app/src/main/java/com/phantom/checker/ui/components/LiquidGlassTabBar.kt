@@ -118,7 +118,7 @@ fun LiquidGlassTabBar(
             }
         }
         val animatedIndex = remember { Animatable(selectedTabIndex.toFloat()) }
-        val dropletSpring = remember { spring<Float>(dampingRatio = 0.8f, stiffness = 600f) }
+        val dropletSpring = remember { PhantomMotion.NavIndicatorSpring }
         LaunchedEffect(selectedTabIndex) {
             if (animatedIndex.targetValue != selectedTabIndex.toFloat()) {
                 animatedIndex.animateTo(
@@ -131,16 +131,17 @@ fun LiquidGlassTabBar(
             modifier = Modifier
                 .matchParentSize()
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(top = if (compact) 4.dp else 8.dp, bottom = if (compact) 4.dp else 8.dp)
+                .padding(top = if (compact) 4.dp else 6.dp, bottom = if (compact) 4.dp else 6.dp)
         ) {
             if (tabCount <= 0) return@Canvas
             val tabWidthPx = barWidth.toPx() / tabCount
             val index = if (isDragging) dragIndex else animatedIndex.value
             val velocity = if (isDragging) dragVelocityIndex else animatedIndex.velocity
             val centerX = tabWidthPx * (index + 0.5f)
-            // S50：水滴貼合內容——標準高 56dp、縮小模式 44dp
-            val baseWidth = tabWidthPx * 0.72f
-            val baseHeight = (if (compact) 44.dp else 56.dp).toPx()
+            // N5：5 項指示器寬度＝itemWidth − 16dp、高 32dp（保留水滴液態變形）
+            val insetPx = PhantomMotion.NavIndicatorHorizontalInsetDp.toPx()
+            val baseWidth = (tabWidthPx - insetPx).coerceAtLeast(36.dp.toPx())
+            val baseHeight = (if (compact) 36.dp else 44.dp).toPx()
             // 液態變形：移動速度越快，水滴沿移動方向拉得越長、高度越扁（Bézier 控制點隨之變形）
             val stretch = min(0.38f, abs(velocity) / 6f)
             val halfWidth = baseWidth * (1f + stretch) / 2f
@@ -252,7 +253,7 @@ fun LiquidGlassTabBar(
                     )
                 }
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .height(if (compact) 60.dp else 80.dp),
+                .height(if (compact) 56.dp else AuroraTokens.NavBarHeight),
         ) {
             tabs()
         }
@@ -282,7 +283,7 @@ fun LiquidGlassTabBarItem(
     // M8：選中時圖示輕彈放大（draw phase 讀取，不重組）
     val iconScale by animateFloatAsState(
         targetValue = if (selected) 1.12f else 1f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 400f),
+        animationSpec = PhantomMotion.NavIndicatorSpring,
         label = "tabIconScale",
     )
     Column(
@@ -295,6 +296,7 @@ fun LiquidGlassTabBarItem(
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
+                onClickLabel = label,
                 onClick = onClick,
             ),
     ) {
@@ -319,7 +321,7 @@ fun LiquidGlassTabBarItem(
         Spacer(Modifier.height(if (compact) 1.dp else 2.dp))
         Text(
             text = label,
-            style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             color = contentColor,
             maxLines = 1,
             softWrap = false,

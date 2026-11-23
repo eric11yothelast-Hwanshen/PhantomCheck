@@ -185,8 +185,17 @@ import com.phantom.checker.service.ReminderScheduler
 import com.phantom.checker.service.RetentionPolicy
 import com.phantom.checker.service.StatsForegroundService
 import com.phantom.checker.shizuku.ShizukuManager
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.ui.platform.LocalConfiguration
+import com.phantom.checker.ui.components.AuroraCenteredContent
+import com.phantom.checker.ui.components.AuroraTokens
 import com.phantom.checker.ui.components.LiquidGlassTabBar
 import com.phantom.checker.ui.components.LiquidGlassTabBarItem
+import com.phantom.checker.ui.components.PhantomSecondaryTabRow
+import com.phantom.checker.ui.components.auroraHorizontalPadding
 import com.phantom.checker.ui.components.pressableScale
 import com.phantom.checker.util.AppUpdateHelper
 import com.phantom.checker.util.MessageExporter
@@ -298,6 +307,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private val requestedTabState = mutableStateOf<MainTab?>(null)
+    private val requestedInsightSubTabState = mutableStateOf<InsightSubTab?>(null)
     private val requestedEditTodoIdState = mutableStateOf<Long?>(null)
     private val requestedBriefingMsgIdState = mutableStateOf<Long?>(null)
 
@@ -317,7 +327,11 @@ class MainActivity : ComponentActivity() {
             PhantomCheckTheme {
                 PhantomCheckApp(
                     requestedTab = requestedTabState.value,
-                    onConsumedRequestedTab = { requestedTabState.value = null },
+                    requestedInsightSubTab = requestedInsightSubTabState.value,
+                    onConsumedRequestedTab = {
+                        requestedTabState.value = null
+                        requestedInsightSubTabState.value = null
+                    },
                     requestedEditTodoId = requestedEditTodoIdState.value,
                     onConsumedEditTodoId = { requestedEditTodoIdState.value = null },
                     requestedBriefingMsgId = requestedBriefingMsgIdState.value,
@@ -334,11 +348,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun parseIntentTab(intent: Intent?) {
-        when (intent?.getStringExtra(DailySummaryPolicy.EXTRA_OPEN_TAB)) {
-            DailySummaryPolicy.TAB_STATS -> requestedTabState.value = MainTab.STATS
-            com.phantom.checker.widget.ReminderWidgetProvider.TAB_NOTES -> requestedTabState.value = MainTab.NOTES
-            "memory" -> requestedTabState.value = MainTab.MEMORY
-            com.phantom.checker.service.BriefingScheduler.TAB_ASSISTANT -> requestedTabState.value = MainTab.ASSISTANT
+        mapLegacyTabExtra(intent?.getStringExtra(DailySummaryPolicy.EXTRA_OPEN_TAB))?.let { (tab, subTab) ->
+            requestedTabState.value = tab
+            if (subTab != null) requestedInsightSubTabState.value = subTab
         }
         val briefingMsgId = intent?.getLongExtra(com.phantom.checker.service.BriefingScheduler.EXTRA_BRIEFING_MSG_ID, -1L) ?: -1L
         if (briefingMsgId > 0L) {
@@ -352,6 +364,21 @@ class MainActivity : ComponentActivity() {
             requestedEditTodoIdState.value = todoId
         }
     }
+}
+
+/**
+ * 單一深連結映射函式（R2 相容保證）：所有既有通知、Widget、教學跳轉不中斷。
+ * 既有字串契約（DailySummaryPolicy.TAB_STATS、ReminderWidgetProvider.TAB_NOTES、
+ * BriefingScheduler.TAB_ASSISTANT、"memory"、"partner"）完全不變。
+ */
+private fun mapLegacyTabExtra(raw: String?): Pair<MainTab, InsightSubTab?>? = when (raw) {
+    DailySummaryPolicy.TAB_STATS -> MainTab.INSIGHT to InsightSubTab.STATS
+    "partner" -> MainTab.INSIGHT to InsightSubTab.PARTNER
+    "insight" -> MainTab.INSIGHT to null
+    com.phantom.checker.widget.ReminderWidgetProvider.TAB_NOTES -> MainTab.NOTES to null
+    "memory" -> MainTab.MEMORY to null
+    com.phantom.checker.service.BriefingScheduler.TAB_ASSISTANT -> MainTab.ASSISTANT to null
+    else -> null
 }
 
 private fun isNotificationListenerEnabled(context: Context): Boolean {
@@ -370,19 +397,25 @@ private fun isPostNotificationsGranted(context: Context): Boolean {
     }
 }
 
+/** D1：底部導覽 6 → 5（統計併入夥伴，改名「洞察」） */
 private enum class MainTab(val title: String) {
     MESSAGES("訊息"),
-    ASSISTANT("AI 助手"),
-    MEMORY("記憶"),
+    ASSISTANT("助手"),
     NOTES("記事"),
-    STATS("統計"),
-    PARTNER("夥伴")
+    MEMORY("記憶"),
+    INSIGHT("洞察")
+}
+
+private enum class InsightSubTab(val title: String) {
+    PARTNER("夥伴"),
+    STATS("統計")
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun PhantomCheckApp(
     requestedTab: MainTab? = null,
+    requestedInsightSubTab: InsightSubTab? = null,
     onConsumedRequestedTab: () -> Unit = {},
     requestedEditTodoId: Long? = null,
     onConsumedEditTodoId: () -> Unit = {},
@@ -396,6 +429,7 @@ private fun PhantomCheckApp(
     val assistantSnackbarHostState = remember { SnackbarHostState() }
 
     var selectedTab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(MainTab.MESSAGES) }
+    var insightSubTab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(InsightSubTab.PARTNER) }
     var requestedMemoryFilter by remember { mutableStateOf<String?>(null) }
     val saveableStateHolder = rememberSaveableStateHolder()
     var showSearchBar by remember { mutableStateOf(false) }
@@ -406,9 +440,12 @@ private fun PhantomCheckApp(
     var lastLoadedFilter by remember { mutableStateOf<MessageFilter?>(null) }
     var lastLoadedRefreshTrigger by remember { mutableIntStateOf(-1) }
 
-    LaunchedEffect(requestedTab) {
+    LaunchedEffect(requestedTab, requestedInsightSubTab) {
         if (requestedTab != null) {
             selectedTab = requestedTab
+            if (requestedInsightSubTab != null) {
+                insightSubTab = requestedInsightSubTab
+            }
             onConsumedRequestedTab()
         }
     }
@@ -509,7 +546,10 @@ private fun PhantomCheckApp(
                 OnboardingStep.TODO_AND_BATCH,
                 OnboardingStep.CALENDAR_SUGGESTION -> MainTab.NOTES
                 OnboardingStep.PARTNER_TAB,
-                OnboardingStep.BRIEFING_PROACTIVE -> MainTab.PARTNER
+                OnboardingStep.BRIEFING_PROACTIVE -> {
+                    insightSubTab = InsightSubTab.PARTNER
+                    MainTab.INSIGHT
+                }
                 else -> MainTab.MESSAGES
             }
         }
@@ -637,12 +677,12 @@ private fun PhantomCheckApp(
     }
 
     // 依分頁、篩選或搜尋詞載入資料（15s TTL 快取，切換分頁不重複查詢 DB）
-    LaunchedEffect(selectedTab, searchQuery, activeFilter, refreshTrigger) {
+    LaunchedEffect(selectedTab, insightSubTab, searchQuery, activeFilter, refreshTrigger) {
         val q = searchQuery.trim()
         val now = System.currentTimeMillis()
         val filterChanged = lastLoadedFilter != activeFilter
         val refreshChanged = lastLoadedRefreshTrigger != refreshTrigger
-        if (q.isEmpty() && !filterChanged && !refreshChanged) {
+        if (q.isEmpty() && !filterChanged && !refreshChanged && !(selectedTab == MainTab.INSIGHT && insightSubTab == InsightSubTab.STATS)) {
             val lastMs = tabLastLoadedMs[selectedTab] ?: 0L
             if (now - lastMs < 15_000L) {
                 isLoading = false
@@ -749,8 +789,7 @@ private fun PhantomCheckApp(
                     MainTab.ASSISTANT -> Unit
                     MainTab.MEMORY -> Unit
                     MainTab.NOTES -> Unit
-                    MainTab.PARTNER -> Unit
-                    MainTab.STATS -> {
+                    MainTab.INSIGHT -> if (insightSubTab == InsightSubTab.STATS) {
                         val summary = db.aiSummaryDao().latest()
                         val cal = Calendar.getInstance().apply {
                             set(Calendar.HOUR_OF_DAY, 0)
@@ -1502,7 +1541,7 @@ private fun PhantomCheckApp(
                             ) { Text("取消") }
                         }
                     }
-                } else {
+                } else if (LocalConfiguration.current.screenWidthDp < 600) {
                     val isCompactTabBar = tabBarDisplayMode == TabBarDisplayMode.COMPACT
                     AnimatedVisibility(
                         visible = tabBarDisplayMode != TabBarDisplayMode.AUTO_HIDE || tabBarVisible,
@@ -1523,30 +1562,26 @@ private fun PhantomCheckApp(
                                     val icon = when (tab) {
                                         MainTab.MESSAGES -> Icons.Default.Email
                                         MainTab.ASSISTANT -> AutoAwesomeIcon
-                                        MainTab.MEMORY -> MemoryIcon
                                         MainTab.NOTES -> Icons.Default.Edit
-                                        MainTab.STATS -> Icons.Default.Info
-                                        MainTab.PARTNER -> Icons.Default.Person
+                                        MainTab.MEMORY -> MemoryIcon
+                                        MainTab.INSIGHT -> Icons.Default.Person
                                     }
-                                    val tabLabel = if (tab == MainTab.PARTNER) partnerTabLabel else tab.title
-                                    val targetKey = when (tab) {
-                                        MainTab.ASSISTANT -> OnboardingTargets.AI_ASSISTANT_TAB
-                                        MainTab.MEMORY -> OnboardingTargets.MEMORY_TAB
-                                        MainTab.NOTES -> OnboardingTargets.NOTES_TAB
-                                        MainTab.STATS -> OnboardingTargets.STATS_TAB
-                                        MainTab.PARTNER -> OnboardingTargets.PARTNER_TAB
-                                        MainTab.MESSAGES -> null
-                                    }
-                                    val itemModifier = if (targetKey != null) {
-                                        Modifier
-                                            .weight(1f)
-                                            .onGloballyPositioned { coords ->
-                                                targetBounds = targetBounds + (targetKey to coords.boundsInRoot())
+                                    val tabLabel = tab.title
+                                    val itemModifier = Modifier
+                                        .weight(1f)
+                                        .onGloballyPositioned { coords ->
+                                            val rect = coords.boundsInRoot()
+                                            when (tab) {
+                                                MainTab.ASSISTANT -> targetBounds = targetBounds + (OnboardingTargets.AI_ASSISTANT_TAB to rect)
+                                                MainTab.MEMORY -> targetBounds = targetBounds + (OnboardingTargets.MEMORY_TAB to rect)
+                                                MainTab.NOTES -> targetBounds = targetBounds + (OnboardingTargets.NOTES_TAB to rect)
+                                                MainTab.INSIGHT -> targetBounds = targetBounds +
+                                                    (OnboardingTargets.PARTNER_TAB to rect) +
+                                                    (OnboardingTargets.STATS_TAB to rect)
+                                                MainTab.MESSAGES -> Unit
                                             }
-                                    } else {
-                                        Modifier.weight(1f)
-                                    }
-                                    val customIcon: (@Composable () -> Unit)? = if (tab == MainTab.PARTNER && partnerAvatarBitmap != null) {
+                                        }
+                                    val customIcon: (@Composable () -> Unit)? = if (tab == MainTab.INSIGHT && partnerAvatarBitmap != null) {
                                         {
                                             com.phantom.checker.util.AssistantAvatarCircle(
                                                 avatarBitmap = partnerAvatarBitmap,
@@ -1575,6 +1610,33 @@ private fun PhantomCheckApp(
             },
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
+        val screenWidthDp = LocalConfiguration.current.screenWidthDp
+        val isExpandedWidth = screenWidthDp >= 600
+        val horizPad = auroraHorizontalPadding()
+        val pullThresholdPx = with(LocalDensity.current) { 56.dp.toPx() }
+        val pullDownSearchConnection = remember(selectedTab, pullThresholdPx) {
+            object : NestedScrollConnection {
+                private var overscrollAccum = 0f
+                override fun onPostScroll(
+                    consumed: Offset,
+                    available: Offset,
+                    source: NestedScrollSource
+                ): Offset {
+                    if (selectedTab != MainTab.ASSISTANT && source == NestedScrollSource.UserInput) {
+                        if (available.y > 0f) {
+                            overscrollAccum += available.y
+                            if (overscrollAccum >= pullThresholdPx) {
+                                overscrollAccum = 0f
+                                showSearchBar = true
+                            }
+                        } else if (available.y < 0f) {
+                            overscrollAccum = 0f
+                        }
+                    }
+                    return Offset.Zero
+                }
+            }
+        }
         PhantomBackgroundBox(
             layer = if (selectedTab == MainTab.ASSISTANT) {
                 com.phantom.checker.util.BackgroundLayer.CHAT
@@ -1584,25 +1646,159 @@ private fun PhantomCheckApp(
             glassState = glassState,
             modifier = Modifier.fillMaxSize()
         ) {
+        Row(modifier = Modifier.fillMaxSize()) {
+            // D7：大螢幕（≥600dp）導覽軌取代底欄
+            if (isExpandedWidth && !isMultiSelectMode) {
+                NavigationRail(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(80.dp)
+                        .padding(top = padding.calculateTopPadding()),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.88f)
+                ) {
+                    Spacer(Modifier.height(12.dp))
+                    MainTab.entries.forEach { tab ->
+                        val icon = when (tab) {
+                            MainTab.MESSAGES -> Icons.Default.Email
+                            MainTab.ASSISTANT -> AutoAwesomeIcon
+                            MainTab.NOTES -> Icons.Default.Edit
+                            MainTab.MEMORY -> MemoryIcon
+                            MainTab.INSIGHT -> Icons.Default.Person
+                        }
+                        NavigationRailItem(
+                            selected = selectedTab == tab,
+                            onClick = {
+                                haptic(HapticFeedbackType.TextHandleMove)
+                                selectedTab = tab
+                            },
+                            icon = { Icon(icon, contentDescription = tab.title) },
+                            label = {
+                                Text(
+                                    text = tab.title,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        )
+                    }
+                }
+            }
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .weight(1f)
+                .fillMaxHeight()
+                .nestedScroll(pullDownSearchConnection)
                 .padding(padding)
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = horizPad, vertical = 4.dp)
         ) {
-            // 頂部下拉搜尋把手（切到 AI 助手分頁時平滑隱藏）
-            AnimatedVisibility(
-                visible = selectedTab != MainTab.ASSISTANT,
-                enter = expandVertically(expandFrom = Alignment.Top) + fadeIn(),
-                exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
-            ) {
-                PhantomPullSearchHandle(
-                    glassState = glassState,
-                    onOpenSearch = { showSearchBar = true },
-                    modifier = Modifier.onGloballyPositioned { coords ->
-                        targetBounds = targetBounds + (OnboardingTargets.SEARCH_PILL to coords.boundsInRoot())
+            // §4.0 頂部 Small 應用列（助手分頁由 ChatScreen 自繪應用列；D5 移除 22dp 把手視覺、保留下拉手勢）
+            if (selectedTab != MainTab.ASSISTANT) {
+                var showTopOverflow by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = AuroraTokens.SmallTopBarHeight),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = selectedTab.title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    if (screenWidthDp >= 360) {
+                        Surface(
+                            onClick = { showSearchBar = true },
+                            shape = RoundedCornerShape(50),
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp)
+                                .widthIn(min = 120.dp)
+                                .onGloballyPositioned { coords ->
+                                    targetBounds = targetBounds + (OnboardingTargets.SEARCH_PILL to coords.boundsInRoot())
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "開啟全域搜尋",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = if (searchQuery.isNotBlank()) searchQuery else "搜尋訊息、設定…",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (searchQuery.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                        IconButton(
+                            onClick = { showSearchBar = true },
+                            modifier = Modifier
+                                .size(AuroraTokens.MinTouchTarget)
+                                .onGloballyPositioned { coords ->
+                                    targetBounds = targetBounds + (OnboardingTargets.SEARCH_PILL to coords.boundsInRoot())
+                                }
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = "開啟全域搜尋")
+                        }
                     }
-                )
+                    IconButton(
+                        onClick = { ctx.startActivity(Intent(ctx, SettingsActivity::class.java)) },
+                        modifier = Modifier
+                            .size(AuroraTokens.MinTouchTarget)
+                            .onGloballyPositioned { coords ->
+                                targetBounds = targetBounds + (OnboardingTargets.SETTINGS_GEAR to coords.boundsInRoot())
+                            }
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = "設定")
+                    }
+                    Box {
+                        IconButton(
+                            onClick = { showTopOverflow = true },
+                            modifier = Modifier.size(AuroraTokens.MinTouchTarget)
+                        ) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "更多選項")
+                        }
+                        DropdownMenu(
+                            expanded = showTopOverflow,
+                            onDismissRequest = { showTopOverflow = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("重新整理") },
+                                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                                onClick = {
+                                    showTopOverflow = false
+                                    refreshTrigger++
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("設定中心") },
+                                leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                                onClick = {
+                                    showTopOverflow = false
+                                    ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
             if (isLoading) {
@@ -1858,34 +2054,64 @@ private fun PhantomCheckApp(
                             targetBounds = targetBounds + (key to rect)
                         }
                     )
-                    MainTab.STATS -> StatsTab(
-                        state = statsState,
-                        glassState = glassState,
-                        visibleCards = visibleStatsCards,
-                        onSummaryGenerated = { refreshTrigger++ },
-                        onShowMessage = { msg ->
-                            scope.launch { snackbarHostState.showSnackbar(msg) }
+                    MainTab.INSIGHT -> Column(modifier = Modifier.fillMaxSize()) {
+                        PhantomSecondaryTabRow(
+                            tabs = InsightSubTab.entries.map { it.title },
+                            selectedIndex = insightSubTab.ordinal,
+                            onSelect = { idx ->
+                                haptic(HapticFeedbackType.TextHandleMove)
+                                insightSubTab = InsightSubTab.entries[idx]
+                            },
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        AnimatedContent(
+                            targetState = insightSubTab,
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            transitionSpec = {
+                                val dir = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                                (fadeIn(
+                                    animationSpec = tween(220, delayMillis = 60, easing = PhantomMotion.EmphasizedDecelerate)
+                                ) + slideInHorizontally(
+                                    animationSpec = tween(260, easing = PhantomMotion.EmphasizedDecelerate)
+                                ) { full -> dir * full / 12 })
+                                    .togetherWith(fadeOut(animationSpec = tween(110)))
+                                    .using(SizeTransform(clip = false) { _, _ -> snap() })
+                            },
+                            label = "insightSubTabContent"
+                        ) { sub ->
+                            when (sub) {
+                                InsightSubTab.PARTNER -> com.phantom.checker.ui.partner.PartnerTab(
+                                    glassState = glassState,
+                                    onStartChat = { selectedTab = MainTab.ASSISTANT },
+                                    onOpenPersonaSettings = {
+                                        ctx.startActivity(
+                                            Intent(ctx, SettingsActivity::class.java).apply {
+                                                putExtra("highlight_card_key", "memory_assistant")
+                                            }
+                                        )
+                                    },
+                                    onShowMessage = { msg ->
+                                        scope.launch { snackbarHostState.showSnackbar(msg) }
+                                    }
+                                )
+                                InsightSubTab.STATS -> StatsTab(
+                                    state = statsState,
+                                    glassState = glassState,
+                                    visibleCards = visibleStatsCards,
+                                    onSummaryGenerated = { refreshTrigger++ },
+                                    onShowMessage = { msg ->
+                                        scope.launch { snackbarHostState.showSnackbar(msg) }
+                                    }
+                                )
+                            }
                         }
-                    )
-                    MainTab.PARTNER -> com.phantom.checker.ui.partner.PartnerTab(
-                        glassState = glassState,
-                        onStartChat = { selectedTab = MainTab.ASSISTANT },
-                        onOpenPersonaSettings = {
-                            ctx.startActivity(
-                                Intent(ctx, SettingsActivity::class.java).apply {
-                                    putExtra("highlight_card_key", "memory_assistant")
-                                }
-                            )
-                        },
-                        onShowMessage = { msg ->
-                            scope.launch { snackbarHostState.showSnackbar(msg) }
-                        }
-                    )
+                    }
                 }
               }
             }
             }
             }
+        }
         }
     }
 
