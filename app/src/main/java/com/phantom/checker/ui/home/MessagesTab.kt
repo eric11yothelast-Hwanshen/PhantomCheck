@@ -92,7 +92,9 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
+import com.phantom.checker.ui.components.AuroraTokens
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -354,7 +356,7 @@ internal fun SearchResultsSection(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 internal fun MessagesHomeTab(
     todayCount: Int,
@@ -497,245 +499,273 @@ internal fun MessagesHomeTab(
             }
         }
 
-        // 頂部統計玻璃卡（固定）
-        PhantomGlassCard(
-            glassState = glassState,
+        // §4.1 統計條：單張 20dp surfaceContainer 三格等寬（移除右側重複之重新整理／設定鈕，已搬至頂部應用列）
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .onGloballyPositioned { coords ->
                     onReportBounds(OnboardingTargets.STATS_CARD, coords.boundsInRoot())
                 },
-            cornerRadius = 20.dp,
-            contentPadding = 14.dp
+            shape = RoundedCornerShape(AuroraTokens.CornerCard),
+            color = MaterialTheme.colorScheme.surfaceContainer
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    FlowRow(
-                        verticalArrangement = Arrangement.Center,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("今日 ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        PhantomAnimatedCount(count = todayCount, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text(" 則・未讀 ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        PhantomAnimatedCount(count = unreadCount, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("・詐騙 ", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        PhantomAnimatedCount(count = todayScamCount, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        PhantomAnimatedCount(
+                            count = todayCount,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "今日",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = "點選 App 查看訊息；長按可釘選、靜音或刪除",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        PhantomAnimatedCount(
+                            count = unreadCount,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = if (unreadCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "未讀",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        PhantomAnimatedCount(
+                            count = todayScamCount,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = if (todayScamCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "詐騙",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
-                Column(horizontalAlignment = Alignment.End) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = onRefresh,
-                            modifier = Modifier.size(48.dp)
+                if (unreadCount > 0) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "長按 App 可釘選、靜音或刪除",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = onMarkAllRead,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "重新整理",
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = onOpenSettings,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .onGloballyPositioned { coords ->
-                                    onReportBounds(OnboardingTargets.SETTINGS_GEAR, coords.boundsInRoot())
-                                }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "設定",
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                    }
-                    if (unreadCount > 0) {
-                        TextButton(onClick = onMarkAllRead) {
-                            Text("全部標已讀")
+                            Text("全部標已讀", style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
             }
         }
 
-        // 快速篩選 Chip 列（可收合，避免標籤自動換行佔兩行；collapsed 只保留全部／未讀）
+        // §4.1 篩選列：單排 3 顆智慧 chips（全部／未讀／高風險）＋「更多」ModalBottomSheet
         val activeTag = (activeFilter as? MessageFilter.Tag)?.tag
         val visibleFilters = PhantomPrefs.getVisibleHomeFilters(ctx)
         var filterChipsCollapsed by remember { mutableStateOf(PhantomPrefs.isHomeFilterChipsCollapsed(ctx)) }
-        val chipShape = RoundedCornerShape(8.dp)
+        var showMoreFiltersSheet by remember { mutableStateOf(false) }
+        val chipShape = RoundedCornerShape(AuroraTokens.CornerChip)
+        val hasExtraActiveFilter = activeFilter != MessageFilter.All &&
+            activeFilter != MessageFilter.Unread &&
+            activeFilter != MessageFilter.Scams
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .onGloballyPositioned { coords ->
                     onReportBounds(OnboardingTargets.FILTER_CHIPS, coords.boundsInRoot())
                 },
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            FlowRow(
+            LazyRow(
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                FilterChip(
-                    selected = activeFilter == MessageFilter.All,
-                    onClick = { onSelectFilter(MessageFilter.All) },
-                    shape = chipShape,
-                    modifier = Modifier.height(32.dp),
-                    label = { Text("全部", style = MaterialTheme.typography.labelMedium) }
-                )
-                FilterChip(
-                    selected = activeFilter == MessageFilter.Unread,
-                    onClick = { onSelectFilter(MessageFilter.Unread) },
-                    shape = chipShape,
-                    modifier = Modifier.height(32.dp),
-                    label = { Text("未讀", style = MaterialTheme.typography.labelMedium) }
-                )
-                // 收合時僅顯示全部／未讀（與目前生效的篩選一顆），不換行、不浪費右側空間
-                if ((!filterChipsCollapsed || activeFilter == MessageFilter.Starred) &&
-                    ("starred" in visibleFilters || activeFilter == MessageFilter.Starred)
-                ) {
+                item(key = "fc_all") {
                     FilterChip(
-                        selected = activeFilter == MessageFilter.Starred,
-                        onClick = { onSelectFilter(MessageFilter.Starred) },
+                        selected = activeFilter == MessageFilter.All,
+                        onClick = { onSelectFilter(MessageFilter.All) },
                         shape = chipShape,
-                        modifier = Modifier.height(32.dp),
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Star,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp)
-                            )
-                        },
-                        label = { Text("星標", style = MaterialTheme.typography.labelMedium) }
+                        label = { Text("全部", style = MaterialTheme.typography.labelMedium) }
                     )
                 }
-                if ((!filterChipsCollapsed || activeFilter == MessageFilter.Scams) &&
-                    ("scams" in visibleFilters || activeFilter == MessageFilter.Scams)
-                ) {
+                item(key = "fc_unread") {
+                    FilterChip(
+                        selected = activeFilter == MessageFilter.Unread,
+                        onClick = { onSelectFilter(MessageFilter.Unread) },
+                        shape = chipShape,
+                        label = { Text("未讀", style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
+                item(key = "fc_scams") {
                     FilterChip(
                         selected = activeFilter == MessageFilter.Scams,
                         onClick = { onSelectFilter(MessageFilter.Scams) },
                         shape = chipShape,
-                        modifier = Modifier.height(32.dp),
-                        label = { Text("詐騙", style = MaterialTheme.typography.labelMedium) }
+                        label = { Text("高風險", style = MaterialTheme.typography.labelMedium) }
                     )
                 }
-                if ((!filterChipsCollapsed || activeFilter == MessageFilter.Filtered) &&
-                    ("filtered" in visibleFilters || activeFilter == MessageFilter.Filtered)
-                ) {
-                    FilterChip(
-                        selected = activeFilter == MessageFilter.Filtered,
-                        onClick = { onSelectFilter(MessageFilter.Filtered) },
-                        shape = chipShape,
-                        modifier = Modifier.height(32.dp),
-                        label = { Text("已過濾", style = MaterialTheme.typography.labelMedium) }
-                    )
+                if (hasExtraActiveFilter) {
+                    item(key = "fc_active_extra") {
+                        val extraLabel = when (activeFilter) {
+                            MessageFilter.Starred -> "⭐ 星標"
+                            MessageFilter.Filtered -> "已過濾"
+                            MessageFilter.Noted -> "已記事"
+                            MessageFilter.Todoed -> "已待辦"
+                            is MessageFilter.Tag -> "🏷 ${activeFilter.tag.name}"
+                            else -> ""
+                        }
+                        FilterChip(
+                            selected = true,
+                            onClick = { onSelectFilter(MessageFilter.All) },
+                            shape = chipShape,
+                            label = { Text("$extraLabel ×", style = MaterialTheme.typography.labelMedium) }
+                        )
+                    }
                 }
-                if ((!filterChipsCollapsed || activeFilter == MessageFilter.Noted) &&
-                    ("noted" in visibleFilters || activeFilter == MessageFilter.Noted)
-                ) {
-                    FilterChip(
-                        selected = activeFilter == MessageFilter.Noted,
-                        onClick = { onSelectFilter(MessageFilter.Noted) },
-                        shape = chipShape,
-                        modifier = Modifier.height(32.dp),
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Edit,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp)
+                if (!filterChipsCollapsed) {
+                    if ("starred" in visibleFilters && activeFilter != MessageFilter.Starred) {
+                        item(key = "fc_starred") {
+                            FilterChip(
+                                selected = false,
+                                onClick = { onSelectFilter(MessageFilter.Starred) },
+                                shape = chipShape,
+                                label = { Text("星標", style = MaterialTheme.typography.labelMedium) }
                             )
-                        },
-                        label = { Text("已記事", style = MaterialTheme.typography.labelMedium) }
-                    )
-                }
-                if ((!filterChipsCollapsed || activeFilter == MessageFilter.Todoed) &&
-                    ("todoed" in visibleFilters || activeFilter == MessageFilter.Todoed)
-                ) {
-                    FilterChip(
-                        selected = activeFilter == MessageFilter.Todoed,
-                        onClick = { onSelectFilter(MessageFilter.Todoed) },
-                        shape = chipShape,
-                        modifier = Modifier.height(32.dp),
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp)
+                        }
+                    }
+                    if ("filtered" in visibleFilters && activeFilter != MessageFilter.Filtered) {
+                        item(key = "fc_filtered") {
+                            FilterChip(
+                                selected = false,
+                                onClick = { onSelectFilter(MessageFilter.Filtered) },
+                                shape = chipShape,
+                                label = { Text("已過濾", style = MaterialTheme.typography.labelMedium) }
                             )
-                        },
-                        label = { Text("已待辦", style = MaterialTheme.typography.labelMedium) }
-                    )
+                        }
+                    }
                 }
-                if (activeTag != null) {
-                    val tagColor = parseTagColor(activeTag.colorHex)
-                    FilterChip(
-                        selected = true,
-                        onClick = onOpenTagPicker,
+                item(key = "fc_more") {
+                    AssistChip(
+                        onClick = { showMoreFiltersSheet = true },
                         shape = chipShape,
-                        modifier = Modifier.height(32.dp),
-                        leadingIcon = {
-                            Box(
-                                modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(tagColor)
-                            )
-                        },
-                        trailingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Clear,
-                                contentDescription = "關閉標籤篩選",
-                                modifier = Modifier
-                                    .size(14.dp)
-                                    .clickable { onSelectFilter(MessageFilter.All) }
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = tagColor.copy(alpha = 0.2f)
-                        ),
-                        label = { Text(activeTag.name, style = MaterialTheme.typography.labelMedium) }
-                    )
-                }
-                if (!filterChipsCollapsed && ("tag" in visibleFilters || activeTag != null)) {
-                    FilterChip(
-                        selected = activeTag != null,
-                        onClick = onOpenTagPicker,
-                        shape = chipShape,
-                        modifier = Modifier.height(32.dp),
-                        label = { Text("標籤 ▾", style = MaterialTheme.typography.labelMedium) }
+                        label = { Text("更多", style = MaterialTheme.typography.labelMedium) }
                     )
                 }
             }
-            Spacer(Modifier.width(2.dp))
-            Box(
-                modifier = Modifier
-                    .pressableScale(0.92f)
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
-                    .clickable {
-                        filterChipsCollapsed = !filterChipsCollapsed
-                        PhantomPrefs.setHomeFilterChipsCollapsed(ctx, filterChipsCollapsed)
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                PhantomChevron(
-                    expanded = !filterChipsCollapsed,
-                    contentDescription = if (filterChipsCollapsed) "展開篩選標籤" else "收合篩選標籤",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    iconSize = 18.dp
-                )
+        }
+
+        if (showMoreFiltersSheet) {
+            ModalBottomSheet(onDismissRequest = { showMoreFiltersSheet = false }) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "更多篩選條件",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = activeFilter == MessageFilter.Starred,
+                            onClick = {
+                                onSelectFilter(MessageFilter.Starred)
+                                showMoreFiltersSheet = false
+                            },
+                            label = { Text("⭐ 星標訊息") }
+                        )
+                        FilterChip(
+                            selected = activeFilter == MessageFilter.Filtered,
+                            onClick = {
+                                onSelectFilter(MessageFilter.Filtered)
+                                showMoreFiltersSheet = false
+                            },
+                            label = { Text("已過濾訊息") }
+                        )
+                        FilterChip(
+                            selected = activeFilter == MessageFilter.Noted,
+                            onClick = {
+                                onSelectFilter(MessageFilter.Noted)
+                                showMoreFiltersSheet = false
+                            },
+                            label = { Text("📝 已記事") }
+                        )
+                        FilterChip(
+                            selected = activeFilter == MessageFilter.Todoed,
+                            onClick = {
+                                onSelectFilter(MessageFilter.Todoed)
+                                showMoreFiltersSheet = false
+                            },
+                            label = { Text("✓ 已待辦") }
+                        )
+                        FilterChip(
+                            selected = activeTag != null,
+                            onClick = {
+                                showMoreFiltersSheet = false
+                                onOpenTagPicker()
+                            },
+                            label = { Text(if (activeTag != null) "🏷 ${activeTag.name} ▾" else "🏷 依標籤篩選 ▾") }
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "預設單排收合篩選列",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        com.phantom.checker.ui.components.FluidSwitch(
+                            checked = filterChipsCollapsed,
+                            onCheckedChange = { next ->
+                                filterChipsCollapsed = next
+                                PhantomPrefs.setHomeFilterChipsCollapsed(ctx, next)
+                            }
+                        )
+                    }
+                }
             }
         }
         if (activeFilter == MessageFilter.All) {
@@ -831,9 +861,9 @@ internal fun MessagesHomeTab(
         }
         val is24h = remember(homeSettingsVersion) { PhantomPrefs.is24HourFormat(ctx) }
         val listSpacing = if (activeFilter == MessageFilter.All) {
-            if (layoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER) 0.dp else 12.dp
+            if (layoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER) 0.dp else 2.dp
         } else {
-            12.dp
+            8.dp
         }
         LazyColumn(
             state = listState,
@@ -1079,16 +1109,18 @@ internal fun MessagesHomeTab(
                                 onClick = { onOpenApp(app.packageName, app.appLabel) },
                                 onLongClick = { onLongPressApp(app) }
                             )
+                        val segShape = AuroraTokens.segmentedItemShape(idx, appGroups.size)
                         Box(modifier = Modifier.fillMaxWidth().then(itemStackModifier)) {
-                        PhantomGlassCard(
-                            glassState = glassState,
-                            modifier = rowModifier,
-                            cornerRadius = 20.dp,
-                            contentPadding = if (isCompactCard) 8.dp else 12.dp,
-                            overlapOpaqueBoost = isOverlapMode
+                        Surface(
+                            modifier = rowModifier.clip(segShape),
+                            shape = segShape,
+                            color = MaterialTheme.colorScheme.surfaceContainer
                         ) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 72.dp)
+                                    .padding(horizontal = 14.dp, vertical = if (isCompactCard) 8.dp else 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Box {
