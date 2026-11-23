@@ -33,3 +33,20 @@
 -dontwarn dev.chrisbanes.haze.**
 -dontwarn javax.annotation.**
 -dontwarn org.codehaus.mojo.animal_sniffer.**
+
+# #449 shared 協定 DTO（Gson 反射保留欄位與建構子）
+-keep class com.phantom.checker.shared.** {
+    <init>(...);
+    <fields>;
+}
+
+# #449 Ktor 3.6.0 server/CIO/WebSockets 與 BouncyCastle R8 規則（KTOR-7539 自補）
+-keep class io.ktor.** { *; }
+-keep class kotlinx.coroutines.** { *; }
+-keep class org.bouncycastle.** { *; }
+-dontwarn io.ktor.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.slf4j.**
+-dontwarn java.lang.instrument.**
+-dontwarn sun.misc.**
+

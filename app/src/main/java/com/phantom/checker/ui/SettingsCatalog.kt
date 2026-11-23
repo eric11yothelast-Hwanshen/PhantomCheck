@@ -132,6 +132,7 @@ object SettingsCatalog {
         SettingSearchItem("schedule_memo_route", "memory_assistant", R.string.catalog_schedule_memo_route_title, R.string.catalog_schedule_memo_route_desc, R.string.catalog_schedule_memo_route_aliases),
         SettingSearchItem("permission_hub", "hub", R.string.search_s_1579f9, R.string.catalog_permission_hub_desc, R.string.catalog_permission_hub_aliases, page = "PermissionHubActivity"),
         SettingSearchItem("assistant_hub", "hub", R.string.catalog_assistant_hub_title, R.string.catalog_assistant_hub_desc, R.string.catalog_assistant_hub_aliases, page = "AssistantHubActivity"),
+        SettingSearchItem("desktop_link", "hub", R.string.catalog_desktop_link_title, R.string.catalog_desktop_link_desc, R.string.catalog_desktop_link_aliases, page = "LinkHubActivity"),
         SettingSearchItem("contacts_integration", "hub", R.string.catalog_contacts_integration_title, R.string.catalog_contacts_integration_desc, R.string.catalog_contacts_integration_aliases, page = "AssistantHubActivity"),
         SettingSearchItem("briefing_morning_enabled", "hub", R.string.catalog_briefing_morning_enabled_title, R.string.catalog_briefing_morning_enabled_desc, R.string.catalog_briefing_morning_enabled_aliases, page = "AssistantHubActivity"),
         SettingSearchItem("briefing_evening_enabled", "hub", R.string.catalog_briefing_evening_enabled_title, R.string.catalog_briefing_evening_enabled_desc, R.string.catalog_briefing_evening_enabled_aliases, page = "AssistantHubActivity"),

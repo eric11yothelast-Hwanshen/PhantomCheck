@@ -2934,4 +2934,35 @@
     <string name="widget_health_snap_unauth_msg">Health Connect not authorized. Tap to open permission settings</string>
     <string name="widget_health_snap_steps_label">Today\'s Steps</string>
     <string name="widget_health_snap_sleep_label">Sleep</string>
+
+    <!-- #449 Desktop Link Hub -->
+    <string name="catalog_desktop_link_title">Desktop Link (LAN)</string>
+    <string name="catalog_desktop_link_desc">Pair and connect PhantomCheck Desktop over local Wi-Fi (wss TLS + pairing code)</string>
+    <string name="catalog_desktop_link_aliases">desktop|computer|pc|link|lan|pair|qr|連線|電腦|桌面|連結</string>
+    <string name="link_hub_title">Desktop Link</string>
+    <string name="link_hub_back">Back</string>
+    <string name="link_hub_master_title">Enable Desktop Link Server</string>
+    <string name="link_hub_master_desc">Runs a local wss:// server on your Wi-Fi network (auto-stops after 30 min idle)</string>
+    <string name="link_hub_status_title">Connection Status</string>
+    <string name="link_hub_status_running">Running on port %1$d · %2$d connected</string>
+    <string name="link_hub_status_stopped">Stopped</string>
+    <string name="link_hub_manual_address_label">Manual address (fallback)</string>
+    <string name="link_hub_copy_address">Copy</string>
+    <string name="link_hub_copied_toast">Address copied</string>
+    <string name="link_hub_fingerprint_label">Cert SHA-256: %1$s…</string>
+    <string name="link_hub_pair_title">Pair New Desktop</string>
+    <string name="link_hub_qr_desc">Desktop pairing QR code</string>
+    <string name="link_hub_code_ttl">Valid for %1$s (single-use)</string>
+    <string name="link_hub_code_expired">Code expired</string>
+    <string name="link_hub_regenerate_code">Regenerate Code</string>
+    <string name="link_hub_paired_devices_title">Paired Desktops</string>
+    <string name="link_hub_paired_empty">No paired desktops yet</string>
+    <string name="link_hub_last_seen">Last seen: %1$s</string>
+    <string name="link_hub_unpair">Unpair</string>
+    <string name="link_hub_unknown_title">Unknown Connection Attempts</string>
+    <string name="link_hub_unknown_empty">No rejected attempts recorded</string>
+    <string name="link_hub_clear">Clear</string>
+    <string name="link_hub_doze_title">Background &amp; Doze Notice</string>
+    <string name="link_hub_doze_desc">Android Doze or screen-off power saving may pause LAN connections. You can exempt PhantomCheck from battery optimization if you need longer background sessions.</string>
+    <string name="link_hub_battery_exempt_btn">Battery Optimization Exemption</string>
 </resources>

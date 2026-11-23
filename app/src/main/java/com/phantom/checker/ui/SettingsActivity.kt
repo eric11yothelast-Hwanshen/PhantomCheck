@@ -981,6 +981,7 @@ fun FilterSettingsScreen(
             "ApiKeySettingsActivity" -> ApiKeySettingsActivity::class.java
             "PermissionHubActivity" -> PermissionHubActivity::class.java
             "AssistantHubActivity" -> AssistantHubActivity::class.java
+            "LinkHubActivity" -> LinkHubActivity::class.java
             "LinkedAppsActivity" -> LinkedAppsActivity::class.java
             else -> null
         }
@@ -1510,6 +1511,12 @@ fun FilterSettingsScreen(
                                 ) {
                                     Text(stringResource(R.string.settings_s_5a83e6), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
+                            }
+                            OutlinedButton(
+                                onClick = { ctx.startActivity(Intent(ctx, LinkHubActivity::class.java)) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(stringResource(R.string.link_hub_title), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }

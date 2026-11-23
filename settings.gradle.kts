@@ -6,3 +6,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "PhantomCheck"
 include(":app")
+include(":shared")
+include(":desktop")

@@ -112,6 +112,9 @@
             android:name=".ui.AssistantHubActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".ui.LinkHubActivity"
+            android:exported="false" />
 
         <service
             android:name=".service.StatsForegroundService"
