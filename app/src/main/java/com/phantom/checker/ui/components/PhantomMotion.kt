@@ -4,9 +4,14 @@ import android.provider.Settings
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.ui.text.TextStyle
@@ -94,6 +99,107 @@ object PhantomMotion {
     /** 清單進場 stagger 的單項延遲與最多參與項數（M3） */
     const val StaggerStepMillis = 36L
     const val StaggerMaxItems = 8
+
+    // ── Aurora II 新增動效常數（N1–N7，#409，僅追加不改既有） ──
+
+    /** N1：設定中心同 Activity 內分類頁切換（前進） */
+    val PageEnter: EnterTransition =
+        slideInHorizontally(
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMediumLow,
+            ),
+            initialOffsetX = { it / 10 },
+        ) + fadeIn(
+            animationSpec = tween(
+                durationMillis = 180,
+                delayMillis = 40,
+                easing = EmphasizedDecelerate,
+            ),
+        )
+
+    /** N1：設定中心同 Activity 內分類頁切換（被覆蓋頁退場） */
+    val PageExit: ExitTransition =
+        slideOutHorizontally(
+            animationSpec = tween(durationMillis = 200, easing = EmphasizedAccelerate),
+            targetOffsetX = { -it / 20 },
+        ) + fadeOut(animationSpec = tween(durationMillis = 120))
+
+    /** N1：返回方向（進場） */
+    val PagePopEnter: EnterTransition =
+        slideInHorizontally(
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioNoBouncy,
+                stiffness = Spring.StiffnessMediumLow,
+            ),
+            initialOffsetX = { -it / 20 },
+        ) + fadeIn(
+            animationSpec = tween(
+                durationMillis = 180,
+                delayMillis = 40,
+                easing = EmphasizedDecelerate,
+            ),
+        )
+
+    /** N1：返回方向（退場） */
+    val PagePopExit: ExitTransition =
+        slideOutHorizontally(
+            animationSpec = tween(durationMillis = 200, easing = EmphasizedAccelerate),
+            targetOffsetX = { it / 10 },
+        ) + fadeOut(animationSpec = tween(durationMillis = 120))
+
+    /** N2：預測性返回縮放／圓角／平移常數（全在 graphicsLayer/clip draw-phase 讀取） */
+    const val PredictiveBackMaxScaleDelta = 0.10f
+    val PredictiveBackMaxCornerDp: Dp = 28.dp
+    val PredictiveBackMaxTranslationDp: Dp = 8.dp
+    val PredictiveBackCommitSpring = spring<Float>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessMedium,
+    )
+    val PredictiveBackCancelSpring = spring<Float>(
+        dampingRatio = 0.75f,
+        stiffness = Spring.StiffnessMediumLow,
+    )
+
+    /** N3：全域搜尋膠囊 → overlay 轉場（不用共享元素） */
+    const val SearchPillFadeOutMillis = 120
+    val SearchOverlayEnter: EnterTransition =
+        fadeIn(animationSpec = tween(durationMillis = 200, easing = EmphasizedDecelerate)) +
+            scaleIn(
+                initialScale = 0.96f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMedium,
+                ),
+            )
+    val SearchOverlayExit: ExitTransition =
+        fadeOut(animationSpec = tween(durationMillis = 120)) +
+            scaleOut(
+                targetScale = 0.96f,
+                animationSpec = tween(durationMillis = 160, easing = EmphasizedAccelerate),
+            )
+
+    /** N4：設定首頁 Large → Small 標題縮放比例（22sp / 28sp） */
+    const val TopBarCollapseScaleRatio = 0.786f
+
+    /** N5：底部導覽 5 項指示器常數 */
+    val NavIndicatorSpring = spring<Float>(dampingRatio = 0.5f, stiffness = 400f)
+    val NavIndicatorHorizontalInsetDp: Dp = 16.dp
+    val NavIndicatorHeightDp: Dp = 32.dp
+
+    /** N6：洞察／記憶／日曆二級分頁指示器彈簧 */
+    val SecondaryTabIndicatorSpring = spring<Float>(
+        dampingRatio = Spring.DampingRatioNoBouncy,
+        stiffness = Spring.StiffnessMediumLow,
+    )
+
+    /** N7：設定首頁釘選磁磚新增／移除／重排常數 */
+    const val PinPopInInitialScale = 0.92f
+    const val PinRemoveFadeOutMillis = 120
+    val PinReorderSpring = spring<IntOffset>(
+        dampingRatio = 0.85f,
+        stiffness = Spring.StiffnessMediumLow,
+    )
 }
 
 /**
