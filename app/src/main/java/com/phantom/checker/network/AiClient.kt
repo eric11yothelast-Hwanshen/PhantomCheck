@@ -2952,9 +2952,45 @@ object AiClient {
         return urls.toList()
     }
 
+    private val groundingUnsupportedKeys = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    private fun groundingCacheKey(profile: AiProviderProfile): String {
+        val keySuffix = profile.apiKey.trim().takeLast(6)
+        return "${profile.baseUrl.trim()}|${profile.model.trim()}|$keySuffix"
+    }
+
     /**
-     * #389 具來源聯網查詢（Gemini 3+ OpenAI 相容層 tools=[{"google_search":{}}]；非 Gemini 退化 BYOK 或誠實回報不支援）。
-     * - 省 token 模式一律跳過；429 靜默退避並退款；查無誠實回報，絕不以既有知識頂替。
+     * #447 機器可判讀條件分辨「key/tier 不支援原生 google_search grounding」的 HTTP 400：
+     * 僅當 400 且回傳包含 INVALID_ARGUMENT 或明確提及 google_search / tools / grounding / billing 時才回退，
+     * 避免把所有 400（例如無效請求格式）一律誤判為不支援 grounding。
+     */
+    internal fun isGroundingUnsupported400(httpCode: Int, rawBody: String): Boolean {
+        if (httpCode != 400) return false
+        val lower = rawBody.lowercase()
+        val hasToolOrGroundingSignal = lower.contains("google_search") ||
+            lower.contains("grounding") ||
+            lower.contains("search_retrieval") ||
+            lower.contains("billing") ||
+            (lower.contains("tools") && (lower.contains("not supported") || lower.contains("invalid") || lower.contains("unknown")))
+        if (hasToolOrGroundingSignal) return true
+
+        val errorObj = runCatching {
+            val parsed = JsonParser.parseString(rawBody)
+            if (parsed.isJsonArray) parsed.asJsonArray.firstOrNull()?.asJsonObject?.getAsJsonObject("error")
+            else parsed.asJsonObject.getAsJsonObject("error")
+        }.getOrNull()
+        val status = errorObj?.get("status")?.takeIf { !it.isJsonNull }?.asString.orEmpty()
+        val msg = errorObj?.get("message")?.takeIf { !it.isJsonNull }?.asString.orEmpty().lowercase()
+        return status.equals("INVALID_ARGUMENT", ignoreCase = true) &&
+            (msg.contains("tool") || msg.contains("search") || msg.contains("ground") || msg.contains("billing") || msg.contains("permission") || msg.contains("enabled"))
+    }
+
+    /**
+     * #389 / #447 具來源聯網查詢：
+     * 1) Gemini 3+ 原生 google_search grounding（遇不支援 400 時靜默退款＋快取旗標並改走下位）
+     * 2) BYOK 外部搜尋端點（Perplexity sonar 等）
+     * 3) 免費搜尋引擎後端（DuckDuckGo IA → DDG HTML → Wikipedia）＋ 現有一般模型摘要
+     * 4) 全不可用時誠實回報失敗，絕不以模型既有知識頂替。
      */
     suspend fun runGroundedQuery(
         context: Context,
@@ -2972,29 +3008,34 @@ object AiClient {
         }
 
         val profile = getProfileForPurpose(context, purpose)
-        if (isGeminiGroundingSupported(profile) && !profile!!.apiKey.isBlank()) {
-            val quotaOk = if (purpose == AiPurpose.PROACTIVE) {
-                PhantomPrefs.canUseProactiveAiTodayAndIncrement(context)
+        fun tryCheckAndIncrementQuota(): Boolean = if (purpose == AiPurpose.PROACTIVE) {
+            PhantomPrefs.canUseProactiveAiTodayAndIncrement(context)
+        } else {
+            PhantomPrefs.canUseAiTodayAndIncrement(context)
+        }
+        fun refund() {
+            if (purpose == AiPurpose.PROACTIVE) {
+                PhantomPrefs.refundTodayProactiveAiUsage(context)
             } else {
-                PhantomPrefs.canUseAiTodayAndIncrement(context)
+                PhantomPrefs.refundTodayAiUsage(context)
             }
-            if (!quotaOk) {
+        }
+
+        val effectiveSystemPrompt = if (isZhTwLocale()) {
+            systemPrompt
+        } else {
+            "$systemPrompt\n${buildLanguageDirective()}"
+        }
+
+        // 1. Gemini 3+ 原生 Google Search grounding（若尚未被標記為不支援 grounding）
+        if (isGeminiGroundingSupported(profile) && !profile!!.apiKey.isBlank() &&
+            groundingUnsupportedKeys[groundingCacheKey(profile)] != true
+        ) {
+            if (!tryCheckAndIncrementQuota()) {
                 return@withContext Result.failure(IllegalStateException("今日 AI 查詢額度已達上限。"))
-            }
-            fun refund() {
-                if (purpose == AiPurpose.PROACTIVE) {
-                    PhantomPrefs.refundTodayProactiveAiUsage(context)
-                } else {
-                    PhantomPrefs.refundTodayAiUsage(context)
-                }
             }
 
             val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
-            val effectiveSystemPrompt = if (isZhTwLocale()) {
-                systemPrompt
-            } else {
-                "$systemPrompt\n${buildLanguageDirective()}"
-            }
             val reqObj = ChatRequest(
                 model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
                 messages = listOf(
@@ -3012,30 +3053,109 @@ object AiClient {
                 .header("Content-Type", "application/json")
                 .post(jsonBody.toRequestBody("application/json; charset=utf-8".toMediaType()))
                 .build()
-            return@withContext try {
+            var shouldFallbackFrom400 = false
+            val geminiResult: Result<GroundedResult>? = try {
                 enforceRateLimit()
                 chatOkHttpClient.newCall(httpReq).execute().use { resp ->
                     val raw = resp.body?.string().orEmpty()
                     if (resp.code == 429) {
                         refund()
-                        return@withContext Result.failure(IllegalStateException("Gemini 聯網查詢頻率已達上限（429），已靜默退避。"))
-                    }
-                    if (!resp.isSuccessful) {
+                        Result.failure(IllegalStateException("Gemini 聯網查詢頻率已達上限（429），已靜默退避。"))
+                    } else if (!resp.isSuccessful) {
                         refund()
-                        return@withContext Result.failure(IllegalStateException("聯網查詢失敗（HTTP ${resp.code}）。"))
+                        if (isGroundingUnsupported400(resp.code, raw)) {
+                            groundingUnsupportedKeys[groundingCacheKey(profile)] = true
+                            shouldFallbackFrom400 = true
+                            null
+                        } else {
+                            Result.failure(IllegalStateException("聯網查詢失敗（HTTP ${resp.code}）。"))
+                        }
+                    } else {
+                        val root = runCatching { JsonParser.parseString(raw).asJsonObject }.getOrNull()
+                        val msgContent = runCatching {
+                            root?.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject
+                                ?.getAsJsonObject("message")?.get("content")
+                        }.getOrNull()
+                        val replyText = extractReplyText(msgContent).trim()
+                        if (replyText.isBlank()) {
+                            refund()
+                            Result.failure(IllegalStateException("查無可用最新資料。"))
+                        } else {
+                            val sources = extractGroundedSources(root, replyText)
+                            Result.success(GroundedResult(text = replyText, sources = sources))
+                        }
                     }
-                    val root = runCatching { JsonParser.parseString(raw).asJsonObject }.getOrNull()
-                    val msgContent = runCatching {
-                        root?.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject
-                            ?.getAsJsonObject("message")?.get("content")
-                    }.getOrNull()
-                    val replyText = extractReplyText(msgContent).trim()
-                    if (replyText.isBlank()) {
-                        refund()
-                        return@withContext Result.failure(IllegalStateException("查無可用最新資料。"))
-                    }
-                    val sources = extractGroundedSources(root, replyText)
-                    Result.success(GroundedResult(text = replyText, sources = sources))
+                }
+            } catch (e: CancellationException) {
+                refund()
+                throw e
+            } catch (e: RetiredAiEndpointException) {
+                refund()
+                Result.failure(e)
+            } catch (e: NonJsonAiResponseException) {
+                refund()
+                Result.failure(e)
+            } catch (e: Exception) {
+                refund()
+                Result.failure(IllegalStateException("聯網查詢連線失敗（${e.javaClass.simpleName}）。"))
+            }
+            if (!shouldFallbackFrom400 && geminiResult != null) {
+                return@withContext geminiResult
+            }
+        }
+
+        // 2. BYOK 外部搜尋端點（如 Perplexity sonar）
+        if (com.phantom.checker.util.EncryptedByokStore.isExternalSearchConfigured(context)) {
+            val byokReply = queryExternalSearchEndpoint(context, cleanQuery)
+            if (!byokReply.isNullOrBlank()) {
+                val sources = extractGroundedSources(null, byokReply)
+                return@withContext Result.success(GroundedResult(text = byokReply, sources = sources))
+            }
+        }
+
+        // 3. 免費搜尋引擎後端（DuckDuckGo IA → DDG HTML → Wikipedia）＋ 現有一般模型摘要
+        if (profile != null && profile.apiKey.isNotBlank()) {
+            if (!tryCheckAndIncrementQuota()) {
+                return@withContext Result.failure(IllegalStateException("今日 AI 查詢額度已達上限。"))
+            }
+            val snippets = FreeWebSearchEngine.search(cleanQuery, preferZh = isZhTwLocale())
+            if (snippets.isEmpty()) {
+                refund()
+                return@withContext Result.failure(IllegalStateException("查無可用最新資料（免費搜尋引擎目前無結果或網路不可用）。"))
+            }
+            val formattedSnippets = snippets.mapIndexed { idx, s ->
+                "[${idx + 1}] ${s.title}\n${s.snippet}\nURL: ${s.url}"
+            }.joinToString("\n\n")
+            val groundedSystem = if (isZhTwLocale()) {
+                "$effectiveSystemPrompt\n\n以下是免費搜尋引擎（DuckDuckGo / Wikipedia）取得的公開來源片段，請【僅依以下來源】精簡摘要回答並附上對應來源網址；若來源不足以回答請誠實說明，絕不以既有知識頂替：\n\n$formattedSnippets"
+            } else {
+                "$effectiveSystemPrompt\n\nBelow are public snippets from free search engines (DuckDuckGo / Wikipedia). Answer concisely 【ONLY based on these sources】 and include the source URLs. If insufficient, state so honestly without fabricating from prior knowledge:\n\n$formattedSnippets"
+            }
+            val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
+            val reqObj = ChatRequest(
+                model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
+                messages = listOf(
+                    ChatMessage("system", groundedSystem),
+                    ChatMessage("user", cleanQuery)
+                ),
+                maxTokens = maxTokens.coerceIn(120, 800),
+                temperature = 0.2
+            )
+            return@withContext try {
+                enforceRateLimit()
+                val res = getApi(profile.baseUrl).chat(
+                    url = fullUrl,
+                    auth = "Bearer ${profile.apiKey.trim()}",
+                    body = reqObj
+                )
+                val replyText = extractReplyText(res.choices.firstOrNull()?.message?.content).trim()
+                if (replyText.isBlank()) {
+                    refund()
+                    Result.failure(IllegalStateException("查無可用最新資料。"))
+                } else {
+                    val cited = extractGroundedSources(null, replyText)
+                    val mergedSources = (cited + snippets.map { it.url }).distinct().take(6)
+                    Result.success(GroundedResult(text = replyText, sources = mergedSources))
                 }
             } catch (e: CancellationException) {
                 refund()
@@ -3052,18 +3172,8 @@ object AiClient {
             }
         }
 
-        // 非 Gemini 3+：退化既有 BYOK 外部搜尋端點（如 Perplexity sonar）；Mistral chat completions 無 websearch
-        if (com.phantom.checker.util.EncryptedByokStore.isExternalSearchConfigured(context)) {
-            val byokReply = queryExternalSearchEndpoint(context, cleanQuery)
-            if (!byokReply.isNullOrBlank()) {
-                val sources = extractGroundedSources(null, byokReply)
-                return@withContext Result.success(GroundedResult(text = byokReply, sources = sources))
-            }
-            return@withContext Result.failure(IllegalStateException("外部搜尋端點未回傳可用結果，請稍後再試。"))
-        }
-
         Result.failure(
-            IllegalStateException("此供應商不支援聯網查詢（請使用 Gemini 3+ 預設檔，或於設定填寫 BYOK 外部搜尋端點）。")
+            IllegalStateException("目前未設定可用的 AI API 金鑰或 BYOK 外部搜尋端點，無法執行聯網查詢。")
         )
     }
 

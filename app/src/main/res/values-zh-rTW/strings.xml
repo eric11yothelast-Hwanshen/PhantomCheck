@@ -847,7 +847,7 @@
     <string name="chat_s_3193f7">圖片會消耗較多 token，建議搭配簡短提問</string>
     <string name="chat_s_3e9b6f">移除圖片</string>
     <string name="chat_s_93e855">已切換對話模型：%1$s・%2$s</string>
-    <string name="chat_s_ea28d8">目前供應商不支援聯網查詢（請使用 Gemini 3+ 預設檔，或於設定填寫 BYOK 外部搜尋端點）</string>
+    <string name="chat_s_ea28d8">請先設定任一 AI 供應商 API 金鑰或 BYOK 外部搜尋端點即可使用聯網查詢（免費模式使用 DuckDuckGo／Wikipedia；付費 Gemini key 可用 Google Search）</string>
     <string name="chat_s_89f22e">🔍 聯網中</string>
     <string name="chat_s_c5c547">🔍 聯網</string>
     <string name="chat_s_987c2c">常用指令與圖片上傳</string>
@@ -1685,7 +1685,7 @@
     <string name="settings_s_3cbf66">預設關閉｜零 AI 呼叫、零外部查詢</string>
     <string name="settings_s_30d213">啟用主動情報查詢</string>
     <string name="settings_s_76d807">僅外送關注清單中的查詢詞（queryHint），絕不送原始訊息、聯絡人或敏感記憶。</string>
-    <string name="settings_s_02bba4">路由建議（二選一）：主力使用 Mistral 時，可於「API 金鑰設定」將「主動情報萃取與摘要」用途單獨綁定一個 Gemini 3+ 設定檔（原生 Google Search grounding），或填寫 BYOK 外部搜尋端點。</string>
+    <string name="settings_s_02bba4">路由建議：免費模式使用 DuckDuckGo／Wikipedia 搭配目前 AI 供應商查詢；付費 Gemini 3+ key 可用原生 Google Search grounding，亦可於設定填寫 BYOK 外部搜尋端點。</string>
     <string name="settings_s_9495a3">每日至多一次從近期非敏感素材萃取最多 5 個待確認候選（絕不直接推播；敏感記憶硬排除）。</string>
     <string name="settings_s_3a10f2">背景查詢頻率（僅連網且電量充足時執行）</string>
     <string name="settings_s_5aba96">每 6 小時</string>

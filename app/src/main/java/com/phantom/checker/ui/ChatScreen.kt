@@ -270,7 +270,7 @@ fun ChatAssistantTab(
     var activeProfile by remember { mutableStateOf(AiClient.getProfileForPurpose(appCtx, com.phantom.checker.util.AiPurpose.CHAT)) }
     var webSearchEnabled by remember { mutableStateOf(false) }
     val webSearchSupported = remember(activeProfile) {
-        AiClient.isGeminiGroundingSupported(activeProfile) ||
+        (activeProfile != null && activeProfile!!.apiKey.isNotBlank()) ||
             com.phantom.checker.util.EncryptedByokStore.isExternalSearchConfigured(appCtx)
     }
     var hasApiKey by remember { mutableStateOf(activeProfile != null) }
