@@ -350,10 +350,46 @@ fun ChatAssistantTab(
         withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
             val allSessions = db.chatDao().allSessions()
+            val nowMs = System.currentTimeMillis()
             val startOfDay = NotificationCollectorService.startOfTodayMillis()
             val stats = db.messageDao().statsOverview(startOfDay)
             val topApps = db.messageDao().todayRecentApps(startOfDay)
-            val chips = buildList {
+
+            // #424 狀態驅動動態建議 chips（純本機條件、零 AI、零 token，最多 4 顆，不足以既有靜態 chips 補齊）
+            val dynamicChips = LinkedHashSet<String>()
+            if (stats.unread > 50) {
+                dynamicChips.add("精選今日必讀")
+            }
+            val hasTodayConflict = if (com.phantom.checker.util.CalendarBridge.isCalendarEnabledForAi(appCtx)) {
+                runCatching {
+                    val endOfDay = startOfDay + 24L * 60L * 60L * 1000L
+                    val timed = com.phantom.checker.util.CalendarBridge.queryInstances(appCtx, startOfDay, endOfDay)
+                        .filter { !it.allDay }
+                        .sortedBy { it.beginMs }
+                    timed.zipWithNext().any { (a, b) -> b.beginMs < a.endMs }
+                }.getOrDefault(false)
+            } else false
+            if (hasTodayConflict) {
+                dynamicChips.add("查看今日行程衝突")
+            }
+            val hasHcData = runCatching {
+                com.phantom.checker.util.HealthConnectBridge.hasAnyReadPermission(appCtx) &&
+                    com.phantom.checker.util.HealthConnectBridge.readLast7DaysTrend(appCtx).any {
+                        it.sleepHours > 0f || it.steps > 0L || it.avgHeartRateBpm > 0L || it.distanceMeters > 0.0 || it.caloriesKcal > 0.0
+                    }
+            }.getOrDefault(false)
+            if (hasHcData) {
+                dynamicChips.add("看健康摘要")
+            }
+            val hasOverdueTodo = runCatching {
+                db.todoDao().pendingTodos().any { it.dueAt < nowMs }
+            }.getOrDefault(false)
+            if (hasOverdueTodo) {
+                dynamicChips.add("檢查逾期事項")
+            }
+
+            // Fallback 沿用現行靜態 chips 補齊至最多 4 顆
+            val fallbackChips = buildList {
                 add("昨日簡報")
                 if (stats.today > 0) {
                     add("今天有哪些必看訊息？")
@@ -368,8 +404,13 @@ fun ChatAssistantTab(
                     add("幫我檢查最近的訊息風險")
                 }
             }
+            for (c in fallbackChips) {
+                if (dynamicChips.size >= 4) break
+                dynamicChips.add(c)
+            }
+
             sessions = allSessions
-            suggestionChips = chips
+            suggestionChips = dynamicChips.take(4)
             val loadedProfiles = AiClient.getProfiles(appCtx)
             val loadedActive = AiClient.getProfileForPurpose(appCtx, com.phantom.checker.util.AiPurpose.CHAT)
             profiles = loadedProfiles

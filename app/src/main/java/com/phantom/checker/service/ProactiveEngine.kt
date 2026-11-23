@@ -93,11 +93,16 @@ object ProactiveEngine {
         val leadMinutes = PhantomPrefs.getProactiveReminderLeadMinutes(appCtx)
         val leadWindowMs = leadMinutes * 60_000L
 
+        // #424 回饋驅動主題節流：近 7 日單一主題 👎≥2 時等待窗拉長 1.5 倍（從未給回饋者倍數=1.0，與 v4.0.0 行為一致）
+        val scheduleThrottled = isTopicThrottledByFeedback(appCtx, PhantomPrefs.PROACTIVE_TOPIC_SCHEDULE, nowMs)
+        val conflictThrottled = isTopicThrottledByFeedback(appCtx, PhantomPrefs.PROACTIVE_TOPIC_CONFLICT, nowMs)
+        val todoThrottled = isTopicThrottledByFeedback(appCtx, PhantomPrefs.PROACTIVE_TOPIC_TODO, nowMs)
+
         // 1. 行程即將開始（依使用者設定提前分鐘數窗口）＋ 跨上下文撞期
         val soonEvents = calEvents
             .filter { !it.allDay && it.beginMs in nowMs..(nowMs + leadWindowMs) }
             .sortedBy { it.beginMs }
-        if (soonEvents.isNotEmpty() && PhantomPrefs.isProactiveTopicEnabled(appCtx, PhantomPrefs.PROACTIVE_TOPIC_SCHEDULE)) {
+        if (soonEvents.isNotEmpty() && !scheduleThrottled && PhantomPrefs.isProactiveTopicEnabled(appCtx, PhantomPrefs.PROACTIVE_TOPIC_SCHEDULE)) {
             for (ev in soonEvents) {
                 val soonKey = "event:${ev.eventId}:$dayKey:soon${leadMinutes}m"
                 if (soonKey !in deliveredMilestones) {
@@ -105,7 +110,7 @@ object ProactiveEngine {
                         .format(DateTimeFormatter.ofPattern("HH:mm", Locale.US))
                     highPriorityParts.add("⏰ 行程即將開始（$hhmm，提前 ${leadMinutes} 分鐘）：${ev.title}")
                     newMilestoneKeys.add(soonKey)
-                    if (PhantomPrefs.isProactiveTopicEnabled(appCtx, PhantomPrefs.PROACTIVE_TOPIC_CONFLICT)) {
+                    if (!conflictThrottled && PhantomPrefs.isProactiveTopicEnabled(appCtx, PhantomPrefs.PROACTIVE_TOPIC_CONFLICT)) {
                         val conflictKey = "event:${ev.eventId}:$dayKey:conflict"
                         if (conflictKey !in deliveredMilestones) {
                             val conflicts = CalendarBridge.findConflictingEvents(appCtx, ev.beginMs, ev.endMs)
@@ -127,7 +132,7 @@ object ProactiveEngine {
         }
 
         // 2. 待辦關鍵里程碑（逾期 / 提前 leadMinutes 分鐘內 / 24 小時內）
-        if (PhantomPrefs.isProactiveTopicEnabled(appCtx, PhantomPrefs.PROACTIVE_TOPIC_TODO)) {
+        if (!todoThrottled && PhantomPrefs.isProactiveTopicEnabled(appCtx, PhantomPrefs.PROACTIVE_TOPIC_TODO)) {
             val overdueWindowStart = nowMs - 30L * 60_000L
             val soonEnd = nowMs + leadWindowMs
             val due24hEnd = nowMs + 24L * 60L * 60_000L
@@ -221,21 +226,86 @@ object ProactiveEngine {
         val headerTitle = if (isMorning) "☀️ $assistantName 早間簡報" else "🌙 $assistantName 晚間簡報"
 
         val facts = mutableListOf<String>()
-        if (PhantomPrefs.BRIEFING_CONTENT_SCHEDULE in prefsSet && CalendarBridge.isCalendarEnabledForAi(appCtx)) {
-            val dayFilter = if (isMorning) "today" else "tomorrow"
-            val calSummary = runCatching {
-                CalendarBridge.queryFreeSlotsSummary(appCtx, days = 1, dayFilter = dayFilter)
-            }.getOrDefault("")
-            if (calSummary.isNotBlank()) facts.add(calSummary.trim())
-        }
-        if (PhantomPrefs.BRIEFING_CONTENT_TODO in prefsSet) {
-            val todos = runCatching { db.todoDao().pendingTodos() }.getOrDefault(emptyList())
-            val overdue = todos.count { it.dueAt < nowMs }
-            if (todos.isNotEmpty()) {
-                val topTitles = todos.take(4).joinToString("、") { it.title.trim() }
-                facts.add("未完成待辦 ${todos.size} 筆（逾期 $overdue 筆）：$topTitles")
+        val dayStartMs = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val tomorrowStartMs = today.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+
+        if (isMorning) {
+            // #424 早報段落 1：今日本機日曆行程（含衝突檢查後提醒，未授權／無行程誠實顯示「無資料」）
+            if (PhantomPrefs.BRIEFING_CONTENT_SCHEDULE in prefsSet) {
+                if (CalendarBridge.isCalendarEnabledForAi(appCtx)) {
+                    val calSummary = runCatching {
+                        CalendarBridge.queryFreeSlotsSummary(appCtx, days = 1, dayFilter = "today")
+                    }.getOrDefault("").trim()
+                    val timedToday = runCatching {
+                        CalendarBridge.queryInstances(appCtx, dayStartMs, tomorrowStartMs)
+                            .filter { !it.allDay }
+                            .sortedBy { it.beginMs }
+                    }.getOrDefault(emptyList())
+                    val conflictingPairs = timedToday.zipWithNext().filter { (a, b) -> b.beginMs < a.endMs }
+                    val conflictLine = if (conflictingPairs.isNotEmpty()) {
+                        val titles = conflictingPairs.take(2).joinToString("；") { (a, b) -> "${a.title} 與 ${b.title}" }
+                        "\n⚠️ 今日行程撞期提醒：$titles"
+                    } else ""
+                    facts.add(
+                        if (calSummary.isNotBlank()) "📅 今日行程：$calSummary$conflictLine"
+                        else "📅 今日行程：無資料"
+                    )
+                } else {
+                    facts.add("📅 今日行程：無資料（本機日曆尚未授權或未勾選）")
+                }
+            }
+            // #424 早報段落 2：今日待辦
+            if (PhantomPrefs.BRIEFING_CONTENT_TODO in prefsSet) {
+                val todos = runCatching { db.todoDao().pendingTodos() }.getOrDefault(emptyList())
+                val overdue = todos.count { it.dueAt < nowMs }
+                if (todos.isNotEmpty()) {
+                    val topTitles = todos.take(4).joinToString("、") { it.title.trim() }
+                    facts.add("✅ 今日待辦：未完成 ${todos.size} 筆（逾期 $overdue 筆）— $topTitles")
+                } else {
+                    facts.add("✅ 今日待辦：無資料")
+                }
+            }
+        } else {
+            // #424 晚報段落 1：今日回顧一句（純本機統計，零編造）
+            val todayStats = runCatching { db.messageDao().statsOverview(dayStartMs) }.getOrNull()
+            val doneTodayCount = runCatching {
+                db.todoDao().all().count { it.isDone && it.completedAt != null && it.completedAt in dayStartMs until tomorrowStartMs }
+            }.getOrDefault(0)
+            val recapText = if (todayStats != null) {
+                "今日共收錄 ${todayStats.today} 則通知（未讀 ${todayStats.unread} 則、高風險 ${todayStats.scam} 則），完成 $doneTodayCount 項待辦。"
+            } else {
+                "今日完成 $doneTodayCount 項待辦。"
+            }
+            facts.add("📝 今日回顧：$recapText")
+
+            // #424 晚報段落 2：明日行程預覽（逐字引自 CalendarBridge，缺資料寫「無資料」）
+            if (PhantomPrefs.BRIEFING_CONTENT_SCHEDULE in prefsSet) {
+                if (CalendarBridge.isCalendarEnabledForAi(appCtx)) {
+                    val tomorrowSummary = runCatching {
+                        CalendarBridge.queryFreeSlotsSummary(appCtx, days = 1, dayFilter = "tomorrow")
+                    }.getOrDefault("").trim()
+                    facts.add(
+                        if (tomorrowSummary.isNotBlank()) "📅 明日行程預覽：$tomorrowSummary"
+                        else "📅 明日行程預覽：無資料"
+                    )
+                } else {
+                    facts.add("📅 明日行程預覽：無資料（本機日曆尚未授權或未勾選）")
+                }
+            }
+
+            // #424 晚報段落 3：逾期未辦
+            if (PhantomPrefs.BRIEFING_CONTENT_TODO in prefsSet) {
+                val todos = runCatching { db.todoDao().pendingTodos() }.getOrDefault(emptyList())
+                val overdueTodos = todos.filter { it.dueAt < nowMs }
+                if (overdueTodos.isNotEmpty()) {
+                    val overdueTitles = overdueTodos.take(4).joinToString("、") { it.title.trim() }
+                    facts.add("⏰ 逾期未辦（${overdueTodos.size} 筆）：$overdueTitles")
+                } else {
+                    facts.add("⏰ 逾期未辦：無資料")
+                }
             }
         }
+
         if (PhantomPrefs.BRIEFING_CONTENT_IMPORTANT_NOTIFS in prefsSet) {
             val since24h = nowMs - 24L * 60L * 60L * 1000L
             val highRisk = runCatching {
@@ -266,32 +336,47 @@ object ProactiveEngine {
             facts.add("關注地區：$regionKeyword")
         }
 
-        // #381 Health Connect 生理數據整合（僅晨間簡報、增強不依賴、原始數值不出本機、僅附查表規則一句結論）
+        // #381 / #424 Health Connect 生理數據整合（晨間簡報健康快照：昨夜睡眠／昨日步數，依授權；缺資料寫「無資料」）
         if (isMorning && PhantomPrefs.isHealthBriefingEnabled(appCtx)) {
-            val hcAuthorized = runCatching {
-                com.phantom.checker.util.HealthConnectBridge.hasAllReadPermissions(appCtx)
-            }.getOrDefault(false)
-            if (hcAuthorized) {
+            val hcPerm = runCatching {
+                com.phantom.checker.util.HealthConnectBridge.getPermissionStatus(appCtx)
+            }.getOrDefault(com.phantom.checker.util.HealthConnectBridge.HealthPermissionStatus())
+            if (hcPerm.anyGranted) {
                 val snapshot = runCatching {
                     com.phantom.checker.util.HealthConnectBridge.readMorningSnapshot(appCtx)
                 }.getOrNull()
                 if (snapshot != null) {
+                    val sleepStr = when {
+                        !hcPerm.sleep -> "未授權"
+                        snapshot.lastNightSleepHours > 0f -> String.format(Locale.US, "%.1f 小時", snapshot.lastNightSleepHours)
+                        else -> "無資料"
+                    }
+                    val stepsStr = when {
+                        !hcPerm.steps -> "未授權"
+                        snapshot.yesterdaySteps > 0L -> String.format(Locale.US, "%,d 步", snapshot.yesterdaySteps)
+                        else -> "無資料"
+                    }
+                    facts.add("❤️ 健康快照：昨夜睡眠 $sleepStr、昨日步數 $stepsStr")
                     val hasEarlyBefore9Am = if (CalendarBridge.isCalendarEnabledForAi(appCtx)) {
-                        val dayStart = today.atStartOfDay(zone).toInstant().toEpochMilli()
                         val nineAm = today.atTime(LocalTime.of(9, 0)).atZone(zone).toInstant().toEpochMilli()
                         runCatching {
-                            CalendarBridge.queryInstances(appCtx, dayStart, nineAm)
-                                .any { !it.allDay && it.beginMs in dayStart until nineAm }
+                            CalendarBridge.queryInstances(appCtx, dayStartMs, nineAm)
+                                .any { !it.allDay && it.beginMs in dayStartMs until nineAm }
                         }.getOrDefault(false)
                     } else false
                     com.phantom.checker.util.HealthConnectBridge.evaluateLookupRule(snapshot, hasEarlyBefore9Am)
                         ?.let { ruleAdvice ->
                             facts.add("❤️ 生理節奏建議：$ruleAdvice")
                         }
+                } else {
+                    facts.add("❤️ 健康快照：無資料")
                 }
-            } else if (PhantomPrefs.shouldShowHealthSoftInvite(appCtx, nowMs)) {
-                facts.add("💡 連接穿戴裝置可獲得睡眠建議（可至權限授予中心開啟 Health Connect）")
-                PhantomPrefs.markHealthSoftInviteShown(appCtx, nowMs)
+            } else {
+                facts.add("❤️ 健康快照：無資料（Health Connect 尚未授權）")
+                if (PhantomPrefs.shouldShowHealthSoftInvite(appCtx, nowMs)) {
+                    facts.add("💡 連接穿戴裝置可獲得睡眠建議（可至權限授予中心開啟 Health Connect）")
+                    PhantomPrefs.markHealthSoftInviteShown(appCtx, nowMs)
+                }
             }
         }
 
@@ -349,7 +434,8 @@ object ProactiveEngine {
             sendNotif = true,
             respectDailyCap = false, // 簡報走獨立 getBriefingDailyCap 額度，已於上方檢查
             nowMs = nowMs,
-            milestoneKeys = briefingMilestone
+            milestoneKeys = briefingMilestone,
+            bypassActiveChatGuard = force
         ) ?: return@withContext false
 
         PhantomPrefs.setLastBriefingDay(appCtx, isMorning, dayKey)
@@ -482,6 +568,98 @@ object ProactiveEngine {
 
     const val PROACTIVE_SESSION_TITLE = "AI 助手簡報與主動提醒"
 
+    // #424 回饋驅動節流常數與對話中不打斷靜默窗
+    const val FEEDBACK_LOOKBACK_DAYS = 7L
+    const val FEEDBACK_DOWN_THROTTLE_MIN_COUNT = 2
+    const val FEEDBACK_DOWN_WINDOW_MULTIPLIER = 1.5
+    const val FEEDBACK_UP_FLOOR_MULTIPLIER = 0.75
+    const val ACTIVE_CHAT_QUIET_WINDOW_MS = 15L * 60_000L
+
+    private fun messageMatchesProactiveTopic(content: String, topic: String): Boolean = when (topic) {
+        PhantomPrefs.PROACTIVE_TOPIC_SCHEDULE ->
+            content.contains("行程即將開始") || content.contains("今日全天事件") || content.contains("📅")
+        PhantomPrefs.PROACTIVE_TOPIC_CONFLICT ->
+            content.contains("偵測到撞期") || content.contains("行程撞期")
+        PhantomPrefs.PROACTIVE_TOPIC_TODO ->
+            content.contains("待辦")
+        PhantomPrefs.PROACTIVE_TOPIC_INTEREST, PhantomPrefs.PROACTIVE_TOPIC_REGION ->
+            content.contains("情報") || content.contains("焦點")
+        else -> false
+    }
+
+    /**
+     * #424 依近 7 日該主題 👍/👎 回饋計算等待窗倍率：
+     * - 👎 ≥ 2：倍率 1.5（拉長等待窗降低打擾）
+     * - 👍 ≥ 2 且 👎 == 0：倍率 0.75（縮短至 floor 上限）
+     * - 從未給回饋：1.0（與 v4.0.0 預設行為一致）
+     */
+    internal suspend fun computeTopicCooldownMultiplier(
+        appCtx: Context,
+        topic: String,
+        nowMs: Long = System.currentTimeMillis()
+    ): Double = withContext(Dispatchers.IO) {
+        val db = AppDatabaseHolder.db(appCtx)
+        val proactiveSession = db.chatDao().allSessions()
+            .firstOrNull { it.title == PROACTIVE_SESSION_TITLE }
+            ?: return@withContext 1.0
+        val cutoffMs = nowMs - FEEDBACK_LOOKBACK_DAYS * 24L * 60L * 60L * 1000L
+        val recentMsgs = db.chatDao().messagesForSession(proactiveSession.id)
+            .filter { it.createdAt >= cutoffMs && messageMatchesProactiveTopic(it.content, topic) }
+        if (recentMsgs.isEmpty()) return@withContext 1.0
+        var upCount = 0
+        var downCount = 0
+        recentMsgs.forEach { msg ->
+            when (PhantomPrefs.getProactiveMessageFeedback(appCtx, msg.id)) {
+                "up", "helpful" -> upCount++
+                "down", "noisy" -> downCount++
+            }
+        }
+        when {
+            downCount >= FEEDBACK_DOWN_THROTTLE_MIN_COUNT -> FEEDBACK_DOWN_WINDOW_MULTIPLIER
+            upCount >= 2 && downCount == 0 -> FEEDBACK_UP_FLOOR_MULTIPLIER
+            else -> 1.0
+        }
+    }
+
+    /** #424 判斷指定主題是否因近期 👎≥2 回饋尚處於拉長後的等待冷卻窗內 */
+    internal suspend fun isTopicThrottledByFeedback(
+        appCtx: Context,
+        topic: String,
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean = withContext(Dispatchers.IO) {
+        val multiplier = computeTopicCooldownMultiplier(appCtx, topic, nowMs)
+        if (multiplier <= 1.0) return@withContext false
+        val db = AppDatabaseHolder.db(appCtx)
+        val proactiveSession = db.chatDao().allSessions()
+            .firstOrNull { it.title == PROACTIVE_SESSION_TITLE }
+            ?: return@withContext false
+        val lastTopicMsg = db.chatDao().messagesForSession(proactiveSession.id)
+            .lastOrNull { messageMatchesProactiveTopic(it.content, topic) }
+            ?: return@withContext false
+        val baseWindowMin = PhantomPrefs.getProactiveDedupWindowMinutes(appCtx).coerceAtLeast(10)
+        val effectiveWaitMs = (baseWindowMin * multiplier * 60_000.0).toLong()
+        (nowMs - lastTopicMsg.createdAt) in 0L until effectiveWaitMs
+    }
+
+    /** #424 判斷使用者是否正於近 15 分鐘內與 AI 對話（一般聊天室最後一筆 user 訊息在 15 分鐘內） */
+    internal suspend fun isUserActivelyChatting(
+        db: com.phantom.checker.data.AppDatabase,
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        val recentNormalSessions = db.chatDao().allSessions()
+            .filter { it.title != PROACTIVE_SESSION_TITLE }
+            .take(5)
+        for (session in recentNormalSessions) {
+            val lastUserTs = db.chatDao().messagesForSession(session.id)
+                .lastOrNull { it.role == ChatMessageEntity.ROLE_USER }
+                ?.createdAt ?: continue
+            if (nowMs - lastUserTs in 0L..ACTIVE_CHAT_QUIET_WINDOW_MS) {
+                return true
+            }
+        }
+        return false
+    }
+
     /** 取得或建立專屬「主動訊息」聊天室（不再誤寫入一般對話第一筆 session） */
     suspend fun getOrCreateProactiveSessionId(
         db: com.phantom.checker.data.AppDatabase,
@@ -494,7 +672,7 @@ object ProactiveEngine {
             )
     }
 
-    /** 統一投遞主動訊息（寫入專屬主動訊息聊天室＋可選通知；統一經過里程碑＋10分鐘內容雜湊去重閘門、每日上限與獨立勿擾） */
+    /** 統一投遞主動訊息（寫入專屬主動訊息聊天室＋可選通知；統一經過里程碑＋10分鐘內容雜湊去重閘門、每日上限、15 分鐘對話不打斷與獨立勿擾） */
     suspend fun deliverProactiveMessage(
         ctx: Context,
         title: String,
@@ -504,7 +682,8 @@ object ProactiveEngine {
         respectDailyCap: Boolean = true,
         nowMs: Long = System.currentTimeMillis(),
         milestoneKeys: List<String> = emptyList(),
-        previewOverride: String? = null
+        previewOverride: String? = null,
+        bypassActiveChatGuard: Boolean = false
     ): Long? = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
         val dayKey = LocalDate.now(ZoneId.systemDefault()).format(DateTimeFormatter.ISO_LOCAL_DATE)
@@ -513,9 +692,14 @@ object ProactiveEngine {
         ) {
             return@withContext null
         }
+        val db = AppDatabaseHolder.db(appCtx)
+        // #424 使用者 15 分鐘內有對話不投遞主動訊息，標記 dirty 併入下一輪
+        if (!bypassActiveChatGuard && isUserActivelyChatting(db, nowMs)) {
+            PhantomPrefs.setProactiveDirty(appCtx, true)
+            return@withContext null
+        }
         val contentHash = shouldAllowProactiveDelivery(appCtx, body, milestoneKeys, dayKey, nowMs)
             ?: return@withContext null
-        val db = AppDatabaseHolder.db(appCtx)
         val msgId = writeAssistantMessage(db, body, nowMs)
         PhantomPrefs.incrementProactiveDailySentCount(appCtx, dayKey)
         PhantomPrefs.recordProactiveContentHash(appCtx, contentHash, nowMs)
