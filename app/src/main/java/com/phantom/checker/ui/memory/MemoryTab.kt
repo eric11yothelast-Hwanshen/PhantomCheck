@@ -722,10 +722,11 @@ internal fun MemoryTab(
 
         Spacer(Modifier.height(6.dp))
 
-        // #357 圖像化記憶統計四格總覽（點擊直達對應篩選）
-        Row(
+        // §4.4 單張卡四等分統計總覽（點擊直達對應篩選）
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            shape = RoundedCornerShape(com.phantom.checker.ui.components.AuroraTokens.CornerCard),
+            color = MaterialTheme.colorScheme.surfaceContainer
         ) {
             val statTiles = listOf(
                 MemoryStatTile("🧠", "長期", longTermMemories.size, MemoryFilterChip.LONG_TERM),
@@ -733,56 +734,77 @@ internal fun MemoryTab(
                 MemoryStatTile("⚖️", "衝突", conflictMemories.size, MemoryFilterChip.CONFLICT, conflictMemories.isNotEmpty()),
                 MemoryStatTile("🛡️", "免疫", scamImmunityMemories.size, MemoryFilterChip.SCAM_IMMUNITY)
             )
-            statTiles.forEach { tile ->
-                val isSelected = selectedFilter == tile.filter
-                val containerColor = when {
-                    isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
-                    tile.highlightError -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f)
-                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                }
-                val valueColor = when {
-                    isSelected -> MaterialTheme.colorScheme.primary
-                    tile.highlightError -> MaterialTheme.colorScheme.error
-                    else -> MaterialTheme.colorScheme.onSurface
-                }
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = containerColor,
-                    border = BorderStroke(
-                        width = if (isSelected) 1.2.dp else 0.75.dp,
-                        color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-                        else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-                    ),
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(14.dp))
-                        .clickable {
-                            selectedFilter = if (selectedFilter == tile.filter) MemoryFilterChip.ALL else tile.filter
-                        }
-                ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                statTiles.forEach { tile ->
+                    val isSelected = selectedFilter == tile.filter
+                    val containerColor = when {
+                        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
+                        tile.highlightError -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
+                        else -> Color.Transparent
+                    }
+                    val valueColor = when {
+                        isSelected -> MaterialTheme.colorScheme.primary
+                        tile.highlightError -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = containerColor,
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable {
+                                selectedFilter = if (selectedFilter == tile.filter) MemoryFilterChip.ALL else tile.filter
+                            }
                     ) {
-                        Text(
-                            text = "${tile.emoji} ${tile.label}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "${tile.count}",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = valueColor,
-                            maxLines = 1
-                        )
+                        Column(
+                            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = "${tile.emoji} ${tile.label}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${tile.count}",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = valueColor,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
             }
         }
+
+        // §4.4 二級分頁（N6）：記憶｜規則｜防詐免疫
+        val primaryMemoryTabIndex = when (selectedFilter) {
+            MemoryFilterChip.AUTO_MEMO -> 1
+            MemoryFilterChip.SCAM_IMMUNITY -> 2
+            else -> 0
+        }
+        com.phantom.checker.ui.components.PhantomSecondaryTabRow(
+            tabs = listOf("記憶", "規則", "防詐免疫"),
+            selectedIndex = primaryMemoryTabIndex,
+            badges = listOf(0, autoNotes.size, scamImmunityMemories.size),
+            onSelect = { idx ->
+                selectedFilter = when (idx) {
+                    1 -> MemoryFilterChip.AUTO_MEMO
+                    2 -> MemoryFilterChip.SCAM_IMMUNITY
+                    else -> MemoryFilterChip.ALL
+                }
+            }
+        )
 
         Spacer(Modifier.height(8.dp))
 

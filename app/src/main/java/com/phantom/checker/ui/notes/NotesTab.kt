@@ -1948,19 +1948,11 @@ private fun LocalCalendarSectionCard(
                     }
                 }
             } else if (expanded) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CalendarRangeMode.entries.forEach { mode ->
-                        FilterChip(
-                            selected = rangeMode == mode,
-                            onClick = { rangeMode = mode },
-                            label = { Text(mode.label, style = MaterialTheme.typography.labelSmall) }
-                        )
-                    }
-                }
+                com.phantom.checker.ui.components.PhantomSecondaryTabRow(
+                    tabs = CalendarRangeMode.entries.map { it.label },
+                    selectedIndex = rangeMode.ordinal,
+                    onSelect = { idx -> rangeMode = CalendarRangeMode.entries[idx] }
+                )
                 if (loading) {
                     Text(
                         text = "載入本機行程中…",
