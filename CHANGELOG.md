@@ -206,6 +206,26 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - `PhantomPrefs` 與 `AppUpdateHelper` 新增 `downloadId`＋`targetVersion` 持久化（版本不符時自動清理舊紀錄與殘留 `.apk` 檔案）；除 `BroadcastReceiver` 外新增 `Dispatchers.IO` 協程每 600ms 輪詢 `DownloadManager.query()` 並綁定 `ON_RESUME` 重查，背景或關閉畫面期間下載完成後返回 App 即自動切換為「安裝更新（vX.Y.Z）」並觸發安裝流程。
   - 下載失敗（`STATUS_FAILED`）或 APK 檔案損毀（`< 100 KB`）時顯示具體白話原因（網路中斷、空間不足、HTTP 錯誤等）並提供「重新下載」與「改用瀏覽器下載更新」備援按鈕；Android 8+ 若 `canRequestPackageInstalls()` 未授權，`installApk()` 回傳 `NEEDS_UNKNOWN_SOURCES_PERMISSION` 並於卡片內顯示一步引導鈕跳轉 `ACTION_MANAGE_UNKNOWN_APP_SOURCES`，授權返回後 `ON_RESUME` 自動續接彈出系統安裝器（完整保留 `#374` 稍後提醒 snooze 與 `#391` 更新說明捲動預覽）。
 
+### English
+- **Tag Compare**: [`v3.7.0...v3.8.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.7.0...v3.8.0) (`versionCode = 47`, `versionName = "3.8.0"`)
+- **Release Assets (Dual APKs)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`), for general users and in-place signature upgrades.
+  - `app-debug.apk`: Debug build for development testing and troubleshooting.
+
+**Added & Behavior Changes**
+- **Health Connect Chat Summary Injection & Background Proactive Health Alerts (#403 / PR #410, Privacy Behavior Change)**:
+  - **Privacy Behavior Change (Chat Health Summary Injection)**: When the user asks about sleep, steps, heart rate, fatigue, or exercise in AI Assistant chat and "Allow AI to read health summary" is enabled, `LocalDataConnector.buildHealthContext()` injects 7-day daily aggregated values (`DailyHealthPoint` sleep hours, steps, resting HR, and 7-day average) and today's morning snapshot (`MorningHealthSnapshot`) as `<health_context>` into the prompt sent to the user's configured AI provider; **only 7-day aggregated values are sent—raw physiological sample series never leave the device** (documented in `PRIVACY.md` Section 2.2). When Health Connect is not installed, permission is not granted, or the toggle is off, AI honestly informs the user and guides them to Settings without fabricating data.
+  - **Proactive Health Observation Alerts (`HealthObservationPolicy` in `ProactiveMonitorWorker`)**: Pure local lookup-table rules (zero LLM tokens): 2 consecutive nights sleep `< 6h` (`sleep_2nights_under_6h`), 3 consecutive days steps `< 2000` (`steps_3days_under_2000`), or resting HR `>= 12 bpm` above 7-day average (`hr_elevated_12bpm`, requiring >= 4 valid baseline days); delivers gentle care alerts via `ProactiveEngine.deliverProactiveMessage` (`NotifIds.HEALTH_PROACTIVE = 1014`), strictly capped at 1/day and 2/7 days per rule, respecting DND and daily proactive caps.
+  - **Independent Toggle**: Added "Allow AI to read health summary" (`health_ai_query_enabled`, default on) to `PermissionHubActivity` Health Connect card and `SettingsCatalog` (disabling stops chat injection and background alerts without affecting the local 7-day trend chart in Stats).
+
+**Changed & Fixed**
+- **Fixed Weekly AI Summary Truncation & Added Full-Text Expand in Stats (#402 / PR #410)**: Raised `AiClient.summarizeWeekly()` `maxTokens` from `1400` (Groq `1000`) to `2400` (Groq `1600`, fallback `1400` on HTTP 413), enforced complete-sentence endings, and auto-continues once (`maxTokens = 1200`) when `finishReason` is `length`/`max_tokens` or `endsWithCompleteSentence` is false; removed `.take(70)` hard truncation in `StatsTab` in favor of `maxLines = 2` + "Expand Full Text".
+- **Unified Proactive Message System Notifications, Deep Links & Channel Check (#404 / PR #410)**: Consolidated `ProactiveEngine.deliverBriefing` (`1008`/`1009`) into `deliverProactiveMessage`, sharing dedup, DND, `SESSION_PROACTIVE_BRIEFING`, unread badge, and system notifications; tapping any proactive/briefing notification deep-links directly to the proactive chatroom and clears the unread badge; added `ProactiveEngine.isBriefingChannelBlocked()` one-time banner when `assistant_briefing` is `IMPORTANCE_NONE`.
+- **Fixed Settings AI Semantic Search "Unparseable Response Format" (#405 / PR #410)**: Enabled `response_format: {"type": "json_object"}` (with automatic HTTP 400 fallback) + `parseSettingsSearchIdsLenient()` fallback chain + 1 strict retry, clearly distinguishing empty results (`emptyList()`) from parse failure (`null`).
+- **Settings Local Keyword Search Tokenization, Synonyms & Colloquial Aliases (#406 / PR #410)**: Added `STOP_WORDS`, bigram sliding tokenization, 16 `SYNONYM_GROUPS`, weighted scoring (`+12` title, `+10` aliases, `+6` description), and 3–5 colloquial `aliases` for all 136 `SettingsCatalog` items.
+- **Eliminated Mid-Sentence Truncation in Proactive Messages, Briefings & Continuity Pills (#407 / PR #410)**: Removed `.take(...)` hard truncations in `ProactiveEngine`, `TaskTemplateEngine.runAggregation`, and `PhantomPrefs.saveChatContinuityAnchor` (relaxed to 500 chars); `AiClient.generateBriefingText()` falls back to the full template on truncation; continuity/todo/briefing cards support tap-to-expand.
+- **Fixed Update Download Stuck on "Downloading" & Unknown-Sources Permission Guide (#408 / PR #410)**: Persisted `downloadId` + `targetVersion` in `PhantomPrefs`/`AppUpdateHelper`, added 600ms `DownloadManager.query()` polling + `ON_RESUME` re-check, plain-language failure reasons with retry/browser fallback, and Android 8+ `ACTION_MANAGE_UNKNOWN_APP_SOURCES` one-step guide.
+
 ## [3.7.0] - 2026-11-23
 
 - **Tag 對照**：[`v3.6.0...v3.7.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.6.0...v3.7.0)（`versionCode = 46`、`versionName = "3.7.0"`）
@@ -229,6 +249,20 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - **Markdown 排版精修（`PhantomMarkdownText.kt`）**：引用塊改為右側 `10.dp` 圓角＋左側 `3.5.dp` 圓角膠囊飾條與更舒適內距；程式碼區塊升級 `12.dp` 圓角＋`1.dp` 細邊框與 `12.dp` 內距；表格外框升級 `12.dp` 圓角並新增奇數資料列斑馬紋底色（`headerBg.copy(alpha = 0.35f)`），Markdown 文字與語法解析邏輯零變動。
   - **全域 Activity 視窗轉場（`styles.xml`＋`res/anim/phantom_{open,close}_{enter,exit}.xml`）**：`Theme.PhantomCheck` 新增 `PhantomWindowAnimation` 定義子頁面開啟／返回之輕量水平位移（`8%p`／`-4%p`）與透明度轉場，系統視窗動畫縮放＝0 時由 Android 框架自動省略。
   - **嚴格邊界與零回歸保證**：本輪**零新增第三方依賴**、未使用 `SharedTransitionLayout`／`LookaheadScope`、`CenterFocusCardStack` 中央聚焦堆疊捲動物理與幾何 **0 diff**，全數 37 處檔案變更皆位於 `ui/` 與 `res/`（`data/`、`service/`、`network/`、`util/` 皆 **0 diff**），零功能回歸。
+
+### English
+- **Tag Compare**: [`v3.6.0...v3.7.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.6.0...v3.7.0) (`versionCode = 46`, `versionName = "3.7.0"`)
+- **Release Assets (Dual APKs)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`), for general users and in-place signature upgrades.
+  - `app-debug.apk`: Debug build for development testing and troubleshooting.
+
+**Added & Optimized**
+- **Phantom Aurora Global UI/UX Visual & Motion Overhaul (#398 / PR #399)**:
+  - **Shared Motion Core `PhantomMotion.kt` (New)**: Defined Material 3 Emphasized curves, `ExpandEnter`/`ExpandExit`, staggered list entry (`phantomEnter`/`phantomItem` with `LocalPhantomEnterRegistry`), `phantomPopIn`, `PhantomChevron` (0°↔180° spring), `phantomSheen` glass highlight border, `phantomPressable`, and `PhantomAnimatedCount`, respecting `ANIMATOR_DURATION_SCALE = 0`.
+  - **`FluidSwitch` & `LiquidGlassTabBar` & `pressableScale` Upgrades**: Draw-phase continuous `lerp` color/glow/checkmark in `FluidSwitch`; spring icon bounce (`1f → 1.12f`) in `LiquidGlassTabBar`; `Animatable` scale + `touchSlop`/scroll early release in `pressableScale`.
+  - **Shared Cards, Directional Tab Transitions & 12 Subpage Alignment**: Applied `phantomSheen`/`phantomPopIn` to `PhantomGlassCard`, `MessageCard`, `PhantomDialog`, `EmptyStateView`; directional `AnimatedContent` across 6 main tabs with `SaveableStateProvider`; unified motion across all 5 tabs, Settings, 12 subpages, and `Onboarding.kt` (`spring` spotlight hole).
+  - **Chatroom, `PhantomMarkdownText` & Global Activity Window Transitions**: `animateItem()` bubbles, draw-phase `TypingDotsIndicator` (zero per-frame recomposition), refined `PhantomMarkdownText` blockquotes/code blocks/zebra tables, and `PhantomWindowAnimation` (`styles.xml` + `res/anim/phantom_*.xml`).
+  - **Strict Boundaries & Zero Regression**: Zero new dependencies, **0 diff** in `CenterFocusCardStack`, `data/`, `service/`, `network/`, and `util/` (all 37 changed files in `ui/` and `res/`).
 
 ## [3.6.0] - 2026-11-22
 
@@ -270,6 +304,25 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - **GitHub 監控連續失敗誠實通知**：`GitHubMonitorWorker` 新增連續失敗計數與降頻日誌，連續失敗達第 3 次時發出單次誠實提醒通知引導檢查網路或 PAT 權限，成功同步後自動歸零重置。
   - **開機重排 Catch-up 補齊 24 小時地板**：`BootReceiver` 除待辦事項外，對 `scheduled` 訊息提醒（`messageDao().allScheduledReminders()`）同步套用 24 小時 `catchUpFloorMs` 過濾，避免重開機時補發過久以前的歷史逾期訊息提醒；並完成 Room `1→23` 遷移鏈、`PendingIntent` `FLAG_IMMUTABLE`、`Dispatchers.IO` 與五大 OEM 廠牌背景限制相容複驗。
 
+### English
+- **Tag Compare**: [`v3.5.0...v3.6.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.5.0...v3.6.0) (`versionCode = 45`, `versionName = "3.6.0"`)
+- **Release Assets (Dual APKs)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`), for general users and in-place signature upgrades.
+  - `app-debug.apk`: Debug build for development testing and troubleshooting.
+
+**Added**
+- **Proactive Intel Hub Phase A: Watch Topics, Daily AI Extraction & Dedicated Quota (#388 / PR #395)**: Non-destructive Room v22 → v23 (`watch_topics` table), `WatchTopicEngine` + `WatchTopicExtractWorker` (strictly excluding `🔒 Sensitive` memories in both SQL and Kotlin, extracting up to 5 pending candidates requiring user confirmation), `AiPurpose.PROACTIVE` (default 12/day), and `WatchTopicManagerDialog`.
+- **Proactive Intel Hub Phase B: Gemini Grounding Web Search & Chat Toggle (#389 / PR #395)**: Optional `tools` in `ChatRequest`, `AiClient.runGroundedQuery()` injecting `google_search` for **Gemini 3+** with multi-path citation URL parsing, and in-chat "🔍 Web Search" chip (honest disabled state for unsupported providers without BYOK search endpoint).
+- **Proactive Intel Hub Phase C/D/E: Periodic Queries, Dedup Digest, Push, Settings & Privacy (#390 / PR #395)**: `WatchQueryPlanner` (zero-token), `DigestComposer` (12h cache, SHA-256 dedup), `ProactiveIntelWorker` (`NotifIds.PROACTIVE_INTEL = 1013`), Settings "Proactive Intel Hub" card (off by default, `PRIVACY.md` Section 6 updated: sends only confirmed `title`/`queryHint` `<= 80` chars), "💬 Follow Up" button, and "Stop Watching" notification action.
+- **About & Auto-Update Card Release Notes Preview (#391 / PR #395)**: Extended `AppUpdateHelper` with `releaseNotes` & `publishedDate`, and added scrollable `ReleaseNotesPreviewBox` in Settings About and update dialog.
+- **Partner Tab Cardless Full-Width Header & Custom Region Background (#392 / PR #395)**: Moved assistant avatar/name to top as a cardless full-width banner (`76.dp` avatar) with `assistant_header.jpg` internal storage slot and gradient scrim.
+- **Assistant & UI Customization Extensions (#393 / PR #395)**: Added 5 personalization settings: AI Chat font scale (`85%–130%`), Message Center font scale (`85%–130%`), chat bubble corner radius (`8–24dp`), chat bubble max width (`70%–95%`), and Home Favorites row cap (`All / 4 / 6 / 8`).
+
+**Changed & Fixed**
+- **Fixed Action-Only Chat Replies Showing "AI Returned No Displayable Content" (#386 / PR #395)**: Unified `hasExtendedProposals()` and `hasAnyProposal()` in `ParsedChatActions` so successful action-only responses no longer show the empty-reply error.
+- **Zero-Hallucination Calendar Queries (#387 / PR #395)**: Expanded `LocalDataConnector.isCalendarQuery()`, added `CalendarBridge.queryScheduleSummary()` and `calendar_query` action, and enforced verbatim local calendar results with honest refusal when unauthorized or empty.
+- **Global Health Check & OEM Compatibility Re-Verification (#394 / PR #395)**: Fixed `DownloadManager` receiver flag to `RECEIVER_NOT_EXPORTED`, added 3-failure honest alert in `GitHubMonitorWorker`, and applied 24h `catchUpFloorMs` to `scheduled` message reminders in `BootReceiver`.
+
 ## [3.5.0] - 2026-11-22
 
 ### 新增功能
@@ -304,6 +357,22 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - 修復 `BootReceiver` 於每次重開機或應用更新時對所有歷史逾期待辦無條件呼叫 `deliverTodoReminder` 造成重複通知轟炸的 bug，改為限制 24 小時逾期窗口內且加上每日里程碑去重 key（`boot_todo:<id>:<dayKey>`）。
   - 完成跨頁狀態隔離（`ChatScreen` 確認卡綁定 `sessionId`）、四廠牌受限設定導引、深淺色／`fontScale = 1.3`／窄螢幕防裁切與安全常數清點審計。
 
+### English
+- **Tag Compare**: [`v3.4.0...v3.5.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.4.0...v3.5.0) (`versionCode = 44`, `versionName = "3.5.0"`)
+- **Release Assets (Dual APKs)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`).
+  - `app-debug.apk`: Debug build for development testing.
+
+**Added & Behavior Changes**
+- **Proactive Alert Milestone Dedup & Feedback (#372, #377 / PR #383, Behavior Change)**: Switched proactive alerts from state-based to event-milestone deduplication (at most once per 24h before / N min before / overdue, plus 10-minute content-hash gate); added 👍/👎 feedback, separate daily caps for briefings and proactive alerts, and configurable lead time, all-day alert time, monitor interval, and dedup cooldown.
+- **Local Calendar Multi-View & Account-Grouped Management (#373 / PR #383)**: Filters visible/synced calendars by default, adds account-grouped batch selection and "Select All Visible" in Settings, plus Day/Week/Month views in Notes tab.
+- **Update Reminder Snooze State Machine (#374 / PR #383, Behavior Change)**: Replaced daily-once gate with `update_snooze_until_ms` state machine (only "Later" sets snooze; dismissing never swallows alerts; max 1 retry per process).
+- **Tightened Auto-Scam Detection & False-Positive Reduction (#375 / PR #383, Behavior Change)**: Separated weak `urlPresent` from strong `intelHit`/`cryptoAddressPresent`; automatic `scam` tagging requires intel hit, crypto address, or concrete scam-operation signals; generic links or conflicts with 30-day high-reputation senders downgrade to confirmation cards; tightened `hasSuspiciousFeature` triggers and added feedback write-back to reputation & encrypted benign-domain LRU.
+- **Chatroom Bottom-Right Timestamps (#376 / PR #383)**: Unified `10sp` `HH:mm` timestamps (`Locale.US`) on user/AI/proactive/system bubbles with large-font/narrow-screen safety and toggle.
+- **AI Diary / Daily Review & Long-Term Goal Tracking (#378, #379 / PR #383)**: Non-destructive Room v21 → v22 (`diary_days`, `goals`, `goal_progress`); daily 00:30 zero-token SQL timeline + monthly overview (optional collapsible AI annotation); long-term goals with recurring sub-todos, auto-downgrade after 3 missed periods, and intimacy integration (100% usable without API key).
+- **Declarative Agentic Capability Table & Blocked-Action Rerouting (#380 / PR #383)**: Added `IntentCapabilityRegistry` (`REMINDER`/`MEMO`/`CALENDAR_ADD`/`OPEN_APP`) with automatic safe fallback paths, plain-language failure reasons, and "Execution Method" on confirmation cards.
+- **Health Connect Integration & Multi-Brand Health Check (#381, #382 / PR #383)**: Added `androidx.health.connect:connect-client:1.1.0` for local morning-briefing lookup rules (raw values never leave device), 7-day sleep/steps trend chart in Stats, Android 13/14+ Health Connect permission entry, and fixed `BootReceiver` duplicate overdue to-do notifications.
+
 ## [3.4.0] - 2026-11-21
 
 ### 新增功能
@@ -323,6 +392,20 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **白名單全量比對、統一去重寫入與一次性清理（#362 / PR #369）**：`AiRuleDao.activeWhitelistAll()` 解除 `LIMIT 20` 截斷，修正第 21 筆以後白名單靜默失效；`WhitelistRuleHelper.upsertWhitelist` 統一 6 處寫入路徑進行去重與停用規則重新啟用；`MessageDetailActivity`、`PendingAiAnalysisWorker` 與 `NotificationCollectorService` 深度分析重查 DB 白名單並標註手動觸發 provenance；`NotificationCollectorService.dedupWhitelistRulesIfNeeded` 執行一次性精確重複列合併（保留最舊一筆，不改動停用狀態）。
 - **記憶頁篩選 chips 遮擋與大字體適配修復（#363 / PR #369）**：`MemoryTab` 展開模式將批次管理與收合鈕移至獨立頂部控制列，兩排分層 `LazyRow` 獨佔全寬並加上 `clipToBounds()` 與 trailing `contentPadding`；收合模式保留 `8.dp` 明確間距；所有 chip 與膠囊統一採用 `heightIn(min = 34.dp)` 支援 `fontScale = 1.3` 與 `360dp` 窄螢幕不截字、不重疊。
 - **AI 工具調用精度、防幻覺鐵律與本地直連查詢（#364 / PR #369）**：`ChatScreenParts` 注入系統能力宣告與防幻覺約束，實作單意圖單卡優先序（`calendar_free_query > usage_query > search_messages > memory_list > todo_list`）與次要查詢誠實提示；新增 `LocalDataConnector` 直連本機日曆與 `UsageStatsBridge`；實作 `usage_query` 查詢系統 `UsageStatsManager` 真實前景時間與啟動次數（未授權誠實回報並引導至授權頁），同步修復 `PermissionHubActivity` 使用情況權限狀態與跳轉。
+
+### English
+- **Tag Compare**: [`v3.3.0...v3.4.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.3.0...v3.4.0) (`versionCode = 43`, `versionName = "3.4.0"`)
+- **Release Assets (Dual APKs)**:
+  - `app-release.apk` & `app-debug.apk`.
+
+**Added, Changed & Fixed**
+- **Full-Table Whitelist Matching & Unified Dedup (#362 / PR #369)**: Removed `LIMIT 20` via `AiRuleDao.activeWhitelistAll()`, unified 6 write paths in `WhitelistRuleHelper.upsertWhitelist`, re-checked DB whitelist in deep analysis, and ran one-time `dedupWhitelistRulesIfNeeded`.
+- **Memory Tab Filter Chips Overlap Fix (#363 / PR #369)**: Dedicated top control bar and 2-row full-width `LazyRow` with `heightIn(min = 34.dp)` for `fontScale = 1.3` and `360dp` screens.
+- **AI Tool-Call Precision, Anti-Hallucination & Local Data Connectors (#364 / PR #369)**: Added `LocalDataConnector` and `UsageStatsBridge` (`usage_query` via `UsageStatsManager` with honest permission guidance).
+- **Proactive Calendar Intel Engine (`CalendarInsightEngine`) (#365 / PR #369)**: `CalendarInsightWorker` (default 60 min) queries external intel for upcoming 48h events using only "title + date (`<= 60` chars)" with `eventId|beginMs|intelHash` dedup.
+- **Proactive Chatroom, Auto-Memory Extraction & Continuity Components (#366 / PR #369)**: Default-collapsed proactive chatroom with live unread badge (`99+`), auto-extraction of up to 2 non-sensitive conflict-free memories, top unresolved-items pill bar (max 3), and 7-day expiring continuity anchors.
+- **Dual-Threshold `DecisionEngine` & False-Positive Feedback (#367 / PR #369)**: Deterministic signals prioritized, AI semantic cap `confirmThreshold - 10` (default 60), centralized reversible/irreversible matrix, and 4-category feedback write-back.
+- **Scheduled Task Templates, Declarative Action Registry & Status Fixes (#368 / PR #369)**: Room v20 → v21 (`task_template`), `TaskTemplateEngine` 3-step wizard + WYSIWYG preview, `LinkedAppActionRegistry` single source, and `GitHubMonitorWorker` sync/error status.
 
 ## [3.3.0] - 2026-11-21
 
@@ -348,6 +431,17 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **深淺色對比度稽核修正（#356 / PR #359）**：`PhantomGlassCard` 統一提供主題與 `CardBgMode.DARK` 感知的 `LocalContentColor`，多個設定／樞紐頁補齊 `Scaffold.contentColor` 與 `TopAppBar` 標題／返回鈕對比色。
 - **整合二檢與小型瑕疵修正（#358 / PR #359）**：修正 `MemoryTab` 局部 `data class` 提升至檔案頂層、`ProactiveEngine` 補齊非機密異常日誌，並完成 `SettingsCatalog` 一致性與 OEM 相容性驗證。
 
+### English
+- **Tag Compare**: [`v3.2.0...v3.3.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.2.0...v3.3.0) (`versionCode = 42`, `versionName = "3.3.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+
+**Added, Changed & Fixed**
+- **Memory & Calendar Write Confirmation Toggles (#347, #348 / PR #359)**: Added `memory_write_confirm` and `calendar_write_confirm`, plus collapsible `N/M` local calendar overview in Settings.
+- **Stats "Morning/Evening Briefing Card" & Daily AI Summary Removal (#349 / PR #359, Behavior Change)**: Added briefing card in Stats (migrating `stats_summary` → `stats_briefing`), 3-path `messageId` dedup scoring, and removed daily AI summary (weekly summary unaffected; existing `ai_summary` data preserved).
+- **Intimacy Detail Sheet & Partner/Memory Tab Redesign (#350, #351, #357 / PR #359)**: Clickable intimacy card showing 4-stage journey and point breakdown; 4-tile visual stats + 2-row layered filters in Memory tab.
+- **Settings "Permissions & AI Companion" Hub Card & Onboarding Alignment (#354, #355 / PR #359)**: Merged Permission Hub and AI Companion cards with legacy deep-link redirect; plain-language 20-step Home / 9-step Settings tours.
+- **Permissions, Pre-Send Notification Check & Security Hardening (#345, #346, #352, #353, #356, #358 / PR #359)**: Added `PACKAGE_USAGE_STATS`, pre-send notification permission check, Gson `JsonObject` for Discord Webhook, and light/dark contrast fixes.
+
 ## [3.2.0] - 2026-11-20
 
 ### 行為變更
@@ -366,6 +460,20 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 ### 變更與修正
 - **v3.0.0–v3.1.0 全功能健檢與修復（#334 / PR #342）**：修正 `CalendarBridge.queryFreeSlotsSummary` 對 `ALL_DAY` 事件未以 UTC `LocalDate` 邊界對齊與 ±1 日視窗導致 UTC+8 跨日誤判空檔的問題；修正 `ChatScreen` 的 `memory_view`／`memory_list` 關鍵字比對曾涵蓋敏感記憶 `content` 欄位，避免側錄探測。
 - **新手教學 20 步與設定教學 10 步重寫（#341 / PR #342）**：主頁教學重寫為 20 步（涵蓋 `MEMORY`、`PARTNER` 分頁、防詐免疫、通訊錄綁定、日曆建議卡、早晚簡報與權限授予中心，保留 400ms 雙條件 auto-skip 與空資料庫合併步）；設定教學擴充為 10 步（新增「權限授予中心」與「AI 夥伴與主動推播」兩步，同步 `SETTINGS_CARD_ORDER` 與 `BringIntoViewRequester`＋`withFrameNanos`）。
+
+### English
+- **Tag Compare**: [`v3.1.0...v3.2.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.1.0...v3.2.0) (`versionCode = 41`, `versionName = "3.2.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+
+**Added, Changed & Fixed**
+- **Schedule Memo Routing Fix (#333 / PR #342, Behavior Change)**: Schedule notifications default to creating only local calendar suggestion cards (`schedule_memo_route = suggest_calendar`).
+- **v3.0.0–v3.1.0 Health Check & Fixes (#334 / PR #342)**: Fixed `CalendarBridge.queryFreeSlotsSummary` `ALL_DAY` UTC cross-day bug and excluded sensitive memory `content` matching in `ChatScreen`.
+- **Memory × Anti-Scam Visualization (#335 / PR #342)**: Added "Scam Immunity" filter chip & section in Memory tab with Snackbar jump.
+- **Contacts Integration (#336 / PR #342)**: Room v20 (`contact_aliases`), local nickname binding, zero-token relationship import, VIP whitelist sync, and offline acquaintance-impersonation detection (raw contacts never sent to AI).
+- **Proactive Push & Personal Briefing Engine (#337 / PR #342)**: 08:45/22:25 briefings, 15-min zero-token SHA-256 change detection, "What I Know About You" card, optional `ACCESS_COARSE_LOCATION`, and BYOK external search endpoint.
+- **AI Companion Tab (#338 / PR #342)**: Added 6th tab "AI Companion" with custom name/avatar, companion days, intimacy formula, 7-day activity, and profile card.
+- **Linked Apps Hub & Cross-App Action Cards (#339 / PR #342)**: Added `LinkedAppsActivity` (6 local cards, GitHub PAT 15-min polling, encrypted Discord Webhook) and "Confirm Before Execute" cross-app cards.
+- **Settings Reorganization & 20/10-Step Tours (#340, #341 / PR #342)**: Added `PermissionHubActivity` and `AssistantHubActivity`; rewrote Home (20-step) and Settings (10-step) tours.
 
 ## [3.1.0] - 2026-11-20
 
@@ -392,6 +500,16 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - 頂部搜尋框改由 48dp 搜尋按鈕觸發展開（`AnimatedVisibility`＋`FocusRequester` 自動聚焦），支援有字維持展開、清空失焦收合與 `BackHandler` 先清字再收合，保留「搜尋→全選→批次刪除」完整流程。
   - 統一記憶頁頂部列（標題、搜尋鈕、新增、齒輪）排版與 48dp 觸控目標。
 
+### English
+- **Tag Compare**: [`v3.0.0...v3.1.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.0.0...v3.1.0) (`versionCode = 40`, `versionName = "3.1.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+
+**Added, Changed & Fixed**
+- **AI Response Compatibility & Collapsible Chain-of-Thought (#326 / PR #330)**: Polymorphic chunk list/string support (fixing `zai-glm-5-3` crashes), default-collapsed "Reasoning" section, removed image vision false-positive gate, and non-destructive Room v18 → v19 migration.
+- **Memory Tab UI Optimization (#327 / PR #330)**: Collapsible filter tag bar with persisted state, button-triggered auto-focus search bar, and unified `48dp` touch targets.
+- **Memory × Anti-Scam Cross-Check & Scam Immunity (#328 / PR #330)**: Added `ContactContext` offline acquaintance-impersonation detection, context-contradiction cross-check, `scam_immunity` memory category, and memory/contact version-stamped analysis cache.
+- **Local Calendar Integration (#329 / PR #330)**: Calendar selection in Settings (none selected by default), AI free-slot queries, `calendar_add` confirmation cards with conflict warnings, and `ACTION_INSERT` fallback.
+
 ## [3.0.0] - 2026-11-20
 
 ### 新增
@@ -412,6 +530,16 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **聊天時間格式固定 Locale.US（#316 / PR #320）**：`CHAT_TIME_FORMATTER` 以 `DateTimeFormatter.ofPattern("MM/dd HH:mm", Locale.US)` 建立，zh-TW 顯示逐字不變，其他系統地區不再出現非 ASCII 數字漂移。
 - **教學 auto-skip 雙條件（#316 / PR #320）**：新手教學 auto-skip 延遲 400ms 後仍需 bounds 已量測且目標仍缺席，才自動跳步，避免極慢機型在分頁切換進行中誤跳。
 - **Safe Browsing 卡過時文案移除（#316 / PR #320）**：「Key 狀態：已於 App 加密儲存（優先於 BuildConfig）」改為「Key 狀態：已於 App 加密儲存」，並移除不可達的「Key 狀態：已從 local.properties 注入」分支（`getSafeBrowsingKeySource` 僅回傳 EncryptedPrefs／NONE）。
+
+### English
+- **Tag Compare**: [`v2.20.0...v3.0.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v2.20.0...v3.0.0) (`versionCode = 39`, `versionName = "3.0.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+
+**Added, Changed & Fixed**
+- **AI Memory Bank Core Engine (#314 / PR #319)**: Long/short-term layering, conflict confirmation cards, privacy tiers, and batch forget; consolidated legacy auto-memo/rules into Memory Bank.
+- **Memory Tab (#315) & Custom AI Assistant (Name / Personality / Verbosity / Avatar)**: Plus Token Saver quick toggle (dual-mode budget: 8 normal / 4 saver).
+- **Safe Browsing Key Moved to BYOK (#316 / PR #318)**: Removed BuildConfig/`local.properties` fallback in favor of encrypted Settings input.
+- **Onboarding Auto-Skip Dual Conditions & Safe Browsing Card Copy Fix (#316 / PR #320)**.
 
 ## [2.20.0] - 2026-11-20
 
