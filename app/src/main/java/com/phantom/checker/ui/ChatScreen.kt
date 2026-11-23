@@ -426,9 +426,15 @@ fun ChatAssistantTab(
         }
     }
 
-    LaunchedEffect(messages.size, isSending) {
+    var lastScrolledSessionId by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(currentSessionId, messages.size, isSending) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.lastIndex)
+            if (lastScrolledSessionId != currentSessionId) {
+                listState.scrollToItem(messages.lastIndex)
+                lastScrolledSessionId = currentSessionId
+            } else {
+                listState.animateScrollToItem(messages.lastIndex)
+            }
         }
     }
 
@@ -2816,18 +2822,19 @@ fun ChatAssistantTab(
                 modifier = Modifier
                     .clip(RoundedCornerShape(16.dp))
                     .clickable {
-                        scope.launch {
-                            if (isViewingProactiveRoom) {
-                                isViewingProactiveRoom = false
-                                val restoreId = previousNormalSessionId
-                                currentSessionId = restoreId
-                                if (restoreId != null) {
-                                    loadMessages(restoreId)
-                                } else {
-                                    messages = emptyList()
-                                }
-                            } else {
-                                previousNormalSessionId = currentSessionId
+                        if (isViewingProactiveRoom) {
+                            messages = emptyList()
+                            isViewingProactiveRoom = false
+                            val restoreId = previousNormalSessionId
+                            currentSessionId = restoreId
+                            if (restoreId != null) {
+                                scope.launch { loadMessages(restoreId) }
+                            }
+                        } else {
+                            messages = emptyList()
+                            previousNormalSessionId = currentSessionId
+                            isViewingProactiveRoom = true
+                            scope.launch {
                                 val proactiveSid = withContext(Dispatchers.IO) {
                                     com.phantom.checker.service.ProactiveEngine.getOrCreateProactiveSessionId(
                                         AppDatabaseHolder.db(appCtx)
@@ -2836,9 +2843,10 @@ fun ChatAssistantTab(
                                 val now = System.currentTimeMillis()
                                 PhantomPrefs.setProactiveChatLastReadAt(appCtx, now)
                                 proactiveLastReadAt = now
-                                isViewingProactiveRoom = true
-                                currentSessionId = proactiveSid
-                                loadMessages(proactiveSid)
+                                if (isViewingProactiveRoom) {
+                                    currentSessionId = proactiveSid
+                                    loadMessages(proactiveSid)
+                                }
                             }
                         }
                     }
@@ -3015,6 +3023,7 @@ fun ChatAssistantTab(
                 val showBubbleTimestamp = remember(chatLayoutVer) {
                     PhantomPrefs.isChatTimestampEnabled(appCtx)
                 }
+                androidx.compose.runtime.key(currentSessionId) {
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
@@ -5605,6 +5614,7 @@ fun ChatAssistantTab(
                             }
                         }
                     }
+                }
                 }
             }
         }
