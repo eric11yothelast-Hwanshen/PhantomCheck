@@ -69,6 +69,276 @@ For the complete changelog, see [CHANGELOG.md](CHANGELOG.md).
 - **#431 Locale-Aware AI Output & Bilingual Scam Lexicon (PR #434)**:
   - AI prompts across risk analysis, auto-memo, weekly summary, deep analysis, briefings, diary annotations, proactive intel, and chat automatically follow the system locale (`zh-TW` vs. English), while `IndicatorExtractor`, `MemoryEngine`, and `ContactContext` add English scam lexicons (unpaid toll, parcel redelivery, bank ATO / safe account, Hi Mum impersonation, crypto pig-butchering, OTP harvesting) for offline rule-based detection.
 
+### v4.1.0 Release Highlights (versionCode 49, 2026-11-23)
+
+- **#416 Messages Tab Stats Card Redesign (PR #426)**: Single-row 3-column layout (Today / Unread / Scam) + 1dp vertical dividers; "Mark All Read" moved to row end, zero height jump when unread drops 99→0.
+- **#417 Forced Dark Mode Fix (PR #426)**: Window theme switched to `android:Theme.Material` with dark `android:windowBackground`/`android:colorBackground` (`phantom_window_bg #FF0E0A18`), eliminating white flashes during Activity transitions while keeping high contrast in Compose.
+- **#418 Memory Tab Stats Card & Sub-Tab Separation (PR #426)**: Reduced visual weight on the Memory "Long-term / Short-term / Conflict / Immune" stats card (`alpha 0.35`) and clearly separated it from the "Memories | Rules | Scam Immunity" sub-tabs by 10dp spacing.
+- **#419 Zero-Hallucination AI Health Queries (PR #426)**: Extended Health Connect to read distance (`DistanceRecord`) and calories burned (`TotalCaloriesBurnedRecord`) with per-type permission checks; shows "Unauthorized" or "No records / No data" when missing, with anti-hallucination refusal examples and `health_query` action.
+- **#420 Stats Tab Health Detail Card (PR #426)**: Added Day/Week/Month switcher (today's health snapshot, 7-day summary + scrollable daily table, 30-day summary + trend), computed locally with zero tokens.
+- **#421 AI Diary Annotation Fix (PR #426)**: Added `DIARY_ANNOTATION` AI purpose (`ai_model_diary_annotation` can bind an independent model or follow default); 3-state diagnostics when unavailable (Token Saver / No Provider / Category Disabled) with shortcut buttons; added "Still generate diary annotations in Token Saver mode" toggle (`diary_annotation_in_saver`, default off).
+- **#422 Proactive vs. Regular Chatroom Overlap Fix (PR #426)**: Clears messages before switching, rebuilds message list with `key(currentSessionId)`, and adds secondary coroutine confirmation to prevent fast-switch race conditions.
+- **#423 Settings Health Check & Search Expansion (PR #426)**: Added `diary_annotation_in_saver`, `ai_model_diary_annotation`, `proactive_intel_enabled`, and `proactive_extract_enabled` to catalog (all with symmetric read/write); added "Dark / Theme" synonym group, expanded health synonyms with distance/calories, and routed global settings search to `SETTINGS_SEARCH` purpose profile.
+- **#424 Smarter & More Proactive AI (PR #426)**: Morning/evening briefings degrade honestly per section (marking missing data as "No data"); feedback-driven throttling (7-day same-topic `👎>=2` scales cooldown ×1.5, `👍>=2` with no `👎` scales ×0.75, no feedback unchanged); suppresses proactive delivery within 15 min of active chat (marks dirty for next round); added dynamic state-driven zero-token chat suggestion chips (up to 4).
+- **#425 Fixed All-Day Events Falsely Triggering Schedule Conflicts (PR #426)**: `ALL_DAY` events are excluded from timed schedule conflict checks; displays an all-day event info card when detected (applies to both adding calendar events and notification-to-schedule).
+
+### v4.0.0 Release Highlights (versionCode 48, 2026-11-23)
+
+- **v4.0.0 Global Information Architecture (IA) Overhaul & Search-First Settings Hub (#409 / PR #413)**: (1) **Navigation 6→5 ("Insights" merges "Companion | Stats", D1)**: Bottom bar streamlined to 5 tabs (Messages, AI Assistant, Notes, Memory, Insights; 64dp height, N5 indicator width/offset spring), "Insights" switches "Companion | Stats" via `PhantomSecondaryTabRow`, and legacy notification/widget/onboarding deep links map seamlessly; (2) **Settings Hub Refactor (D2)**: Added `SettingsHomeScreen` and `SettingsCategoryRegistry` with top 56dp dual-mode search bar (local keyword + AI semantic search), 6 editable pinned quick-setting tiles (inline `FluidSwitch` toggles), recently adjusted pills, and 8 categories (merging Personalization & Appearance, N1/N2 shared X-axis transitions, preserving `highlight_card_key` deep links); (3) **Messages Home Simplification & Center Stack Preserved (D3)**: `CenterFocusCardStack` geometry preserved with **0 diff**, top stats redesigned as a 3-column card with 3 smart filter pills + "Filter ▾" BottomSheet, standard list upgraded to Segmented Grouped List; (4) **Advanced Settings Collapsed & Search Auto-Expand (D4)**: 24 expert settings + Shizuku collapsed in `SettingsAdvancedSection`, auto-expanding and pulsing (`N7`) on search hits; (5) **Removed 22dp Pull Handle Visual, Kept Pull-Down Gesture (D5)**: Removed persistent 22dp handle bar, kept list-top overscroll search gesture and persistent 56dp top-bar search pill; (6) **Onboarding Streamlined (D6)**: Home 20→8 steps, Settings 9→5 steps, existing completion flags never reset; (7) **Large-Screen `NavigationRail` (D7)**: `>= 600dp` switches to left `NavigationRail` + centered `840dp` container; (8) **New Components, Motion N1–N7 & Zero-Regression Guarantee**: Added `PhantomPageScaffold`, `GlobalSearchOverlay` (5 scope chips / recent searches / quick actions / pinned), `SettingsRow`, and ID-only `UiLayoutPrefs` (`phantom_ui_v400`), appended N1–N7 draw-phase constants to `PhantomMotion` with `PredictiveBackHandler`; **0 diff** in `service/`, `data/`, `network/`, and `util/` (pure UI overhaul).
+
+### v3.8.0 Release Highlights (versionCode 47, 2026-11-23)
+
+- **7 Device-Reported Fixes & Health Connect Summary / Proactive Observation (#402–#408 / PR #410)**: (1) **Weekly AI Summary No Longer Truncated (#402)**: Raised `summarizeWeekly` `maxTokens` to `2400` (Groq `1600`), auto-continues on `finish_reason == "length"` or incomplete sentences, removed `.take(70)` in Stats in favor of "Expand Full Text"; (2) **Health Connect Chat Summary Injection & Proactive Health Observation (#403, Privacy Behavior Change)**: When asking about sleep/steps/HR/fatigue in chat with "Allow AI to read health summary" enabled (default on, in Permission Hub & Settings), injects only 7-day daily aggregated values and today's morning snapshot (raw samples never leave device, documented in `PRIVACY.md`; honestly refuses when unauthorized), plus local lookup `HealthObservationPolicy` in `ProactiveMonitorWorker` (2 nights sleep `<6h`, 3 days steps `<2000`, resting HR `>=12bpm` above 7-day average, max 1/day and 2/week per rule, `NotifIds.HEALTH_PROACTIVE = 1014`); (3) **Unified Proactive System Notifications (#404)**: Briefings (`1008`/`1009`) and all proactive alerts share `deliverProactiveMessage` discipline, deep-linking to the proactive chatroom and clearing unread badges, with one-time banner if `assistant_briefing` channel is blocked; (4) **Settings AI Semantic Search Fix (#405)**: Enabled `json_object` mode (with HTTP 400 fallback) + lenient parse chain + 1 strict retry, distinguishing empty results from parse errors; (5) **Settings Keyword Search Enhancement (#406)**: Added stop-word removal, bigram tokenization, 16 synonym groups, weighted scoring, and 3–5 colloquial `aliases` for all 136 catalog items; (6) **Eliminated Mid-Sentence Truncation in Proactive Messages & Previews (#407)**: Removed `.take(...)` hard truncations in `ProactiveEngine`, `TaskTemplateEngine`, and continuity anchors, with template fallback and tap-to-expand cards; (7) **Auto-Popup Installer After Update Download (#408)**: Persisted `downloadId` + `version`, added `BroadcastReceiver` + `Dispatchers.IO` `DownloadManager.query` polling + `ON_RESUME` re-check, failure reasons/retry, and Android 8+ `canRequestPackageInstalls()` one-step guide.
+
+### v3.7.0 Release Highlights (versionCode 46, 2026-11-23)
+
+- **Phantom Aurora Global UI/UX Visual & Motion Overhaul (#398 / PR #399)**: Added shared motion core `PhantomMotion.kt` (Material 3 Emphasized curves, `phantomEnter`/`phantomItem` staggered list entry with `LocalPhantomEnterRegistry`, `phantomPopIn`, `PhantomChevron` spring rotation, `phantomSheen` glass highlight border, `PhantomAnimatedCount`, and automatic static fallback when `ANIMATOR_DURATION_SCALE = 0`); upgraded `FluidSwitch` (draw-phase continuous color, outer glow, dynamic thumb checkmark), `LiquidGlassTabBar` (spring icon bounce & color transition), and `pressableScale` (`Animatable` + `touchSlop`/scroll early release + edge glow); applied `phantomSheen` to `PhantomGlassCard`, `PhantomFloatingSurface`, `MessageCard`, `PhantomSearchBarPill`, and `phantomPopIn` to `PhantomDialog` and `EmptyStateView`; directional `AnimatedContent` across 6 main tabs (preserving `SaveableStateProvider`) with unified motion across all 5 tabs, Settings, all 12 subpages, and `Onboarding.kt` (`spring` spotlight hole); chatroom `animateItem()` bubbles, user bubble sheen (preserving `8–24dp` corner radius & `70%–95%` width), draw-phase wave `TypingDotsIndicator` (zero per-frame recomposition); refined `PhantomMarkdownText` blockquotes, code blocks, and zebra-striped tables; added global Activity window transitions (`styles.xml` + 4 `res/anim` XMLs). Zero new dependencies, **0 diff** in `CenterFocusCardStack`, all 37 changed files in `ui/` and `res/`, zero regressions.
+
+### v3.5.0 Release Highlights (versionCode 44, 2026-11-22)
+
+- **Event-Milestone Proactive Alert Deduplication & Feedback (#372, #377 / PR #383, Behavior Change)**: Switched proactive alerts from state-based to event-milestone deduplication (each todo/event reminds at most once at 24h before, N min before, and overdue, with cross-day cleanup) and unified into the 10-minute content-hash gate; added "👍 Helpful / 👎 Disruptive" feedback, separate daily caps for briefings and proactive alerts, and tunable lead time, all-day reminder hour, check interval, and dedup cooldown.
+- **Local Calendar Multi-View & Account-Grouped Governance (#373 / PR #383)**: Reads `VISIBLE`/`SYNC_EVENTS` to filter visible calendars by default; Settings supports account-grouped batch selection and one-tap "Select All Visible"; Notes tab added Day/Week/Month views and unselected-calendar guide card, with free-slot queries noting selected/unselected counts.
+- **Update Reminder Snooze State Machine (#374 / PR #383, Behavior Change)**: Removed once-per-day-per-version gate in favor of `update_snooze_until_ms` state machine (shows dialog + notification on launch when online and unsnoozed; only tapping "Later" sets snooze, swiping/dismissing never swallows alerts; max 1 auto-retry per process on failure).
+- **Tightened Anti-Scam Auto-Detection & False-Positive Reduction (#375 / PR #383, Behavior Change)**: Separated `urlPresent` (weak signal) from `intelHit`/`cryptoAddressPresent` (strong signal); automatic `scam` tagging requires threat-intel hit, crypto address, or concrete scam-operation signals; generic links or conflicts with 30-day high-reputation senders downgrade to confirmation cards; tightened `hasSuspiciousFeature` bare-word triggers and added feedback write-back to sender reputation and encrypted benign-domain LRU.
+- **Bottom-Right Chat Bubble Timestamps (#376 / PR #383)**: Unified `10sp` `HH:mm` (`CHAT_TIME_FORMATTER` `Locale.US`) at bottom-right of user/AI/proactive/system bubbles without clipping on large fonts or narrow widths, with Settings toggle.
+- **AI Diary / Daily Review & Long-Term Goal Tracking (#378, #379 / PR #383)**: Non-destructive Room v21 → v22 (`diary_days`, `goals`, `goal_progress`); daily 00:30 zero-token SQL timeline + monthly overview (optional collapsible AI annotations); long-term goals broken into recurring sub-todos via confirmation cards, auto-downgrading 1 level after 3 overdue periods, integrated into Partner intimacy (100% usable without API key).
+- **Declarative Agentic Capability Table & Blocked-Action Rerouting (#380 / PR #383)**: Added `IntentCapabilityRegistry` (`REMINDER` / `MEMO` / `CALENDAR_ADD` / `OPEN_APP`) to automatically downgrade to safe fallback paths with user notice when blocked, or show plain-language reasons + Permission Hub button if all fail; confirmation cards display execution mode.
+- **Health Connect Physiological Integration & OEM Health Check (#381, #382 / PR #383)**: Added `androidx.health.connect:connect-client:1.1.0`; morning briefing integrates local sleep/steps/HR lookup rules (raw values never leave device); Stats tab added 7-day sleep/steps trend chart; added Android 13/14+ Health Connect permission guide (honest fallback without GMS) and fixed duplicate overdue-todo notifications on `BootReceiver` reboot.
+
+### v3.4.0 Release Highlights (versionCode 43, 2026-11-21)
+
+- **Full-Table Whitelist Matching & Unified Dedup Fix (#362 / PR #369)**: Removed `LIMIT 20` truncation in `AiRuleDao.activeWhitelistAll()`; `WhitelistRuleHelper.upsertWhitelist` unified 6 write paths with dedup and re-enabling disabled rules; deep analysis re-queries DB whitelist and marks provenance; `dedupWhitelistRulesIfNeeded` merged existing exact duplicates.
+- **Memory Tab Filter Chips Overlap Fix (#363 / PR #369)**: Separated top controls and two full-width `LazyRow`s (`clipToBounds()` + trailing `contentPadding`) in `MemoryTab` expanded mode, standardizing `heightIn(min = 34.dp)` for `fontScale = 1.3` and `360dp` narrow screens.
+- **AI Tool-Calling Precision, Anti-Hallucination & Direct Local Queries (#364 / PR #369)**: `ChatScreenParts` injects system capability declarations and single-intent single-card priority; added `LocalDataConnector` for local calendar and `UsageStatsBridge`; implemented `usage_query` querying real `UsageStatsManager` foreground time and launch counts with honest permission prompts.
+- **Proactive Calendar Intel Engine (`CalendarInsightEngine`) (#365 / PR #369)**: `CalendarInsightWorker` (default 60 min, configurable 30/60/120/180 min `UPDATE`) queries external intel for checked calendar events in the next 48h using only "title + date (<=60 chars)", deduplicated by `eventId|beginMs|intelHash` and respecting BYOK / token saver / daily cap / independent DND.
+- **Proactive Message Chatroom, Auto Memory Extraction & Continuity Components (#366 / PR #369)**: Dedicated proactive chatroom collapsed by default with live unread badge (`99+`, protected from Clear All); auto-extracts up to 2 non-sensitive conflict-free memories per chat with subtle notice and delete BottomSheet (sensitive/conflict 100% require confirmation); added top unresolved-items pill bar (up to 3) and 7-day expiring continuity anchors.
+- **Dual-Threshold Auto-Decision Layer (`DecisionEngine`) & False-Positive Feedback (#367 / PR #369)**: Deterministic signals take priority with AI semantic cap (`confirmThreshold - 10`, default 60), centralized reversible/irreversible matrix and provenance tags; 4-category "This judgment is wrong" feedback writes back to rules and invalidates caches.
+- **Scheduled Task Templates, Declarative Action Registry & Status Fixes (#368 / PR #369)**: Non-destructive Room v20 → v21 (`task_template`); `TaskTemplateEngine` separates zero-AI aggregation from optional polishing with a 3-step wizard + WYSIWYG preview in `AssistantHubActivity`; added single-source `LinkedAppActionRegistry` (including `discord_digest_stats_readonly` demo connector) and fixed `GitHubMonitorWorker` sync/error status writes.
+
+### v3.3.0 Release Highlights (versionCode 42, 2026-11-21)
+
+- **Memory & Calendar Write Confirmation Toggles (#347, #348 / PR #359)**: Added `memory_write_confirm` (sensitive/conflict/delete still always confirm) and `calendar_write_confirm` (still checks conflicts when off), plus collapsible `N/M` local calendar overview in Settings.
+- **Stats "Morning/Evening Briefing Card" & Daily AI Summary Removal (#349 / PR #359, Behavior Change)**: Added briefing card in Stats (migrating `stats_summary` → `stats_briefing`), 3-path `messageId` dedup scoring, and removed daily AI summary (weekly summary unaffected and gated by token-saver mode; existing `ai_summary` data preserved).
+- **Intimacy Detail Sheet & Partner/Memory Tab Redesign (#350, #351, #357 / PR #359)**: Clickable intimacy card showing 4-stage journey and point breakdown, removed duplicate personality/verbosity toggles, unified avatar pill badges and equal-height event cards; added 4-tile visual stats + 2-row "Memories / Rules" layered filters in Memory tab.
+- **Settings "Permissions & AI Companion" Hub Card & Tour Alignment (#354, #355 / PR #359)**: Merged Permission Hub and AI Companion cards with legacy deep-link redirect; plain-language 20-step Home / 9-step Settings tours and `SettingsCatalog` copy.
+- **Permissions, Pre-Send Notification Check & Security Hardening (#345, #346, #352, #353, #356, #358 / PR #359)**: Added `PACKAGE_USAGE_STATS` in Manifest; pre-send notification permission check with warning guide; Gson `JsonObject` for Discord Webhook and stripped response content from logs; dynamic purpose model counts and light/dark contrast fixes.
+
+### v3.2.0 Release Highlights (versionCode 41, 2026-11-20)
+
+- **Schedule Memo Routing Fix (#333 / PR #342, Behavior Change)**: Schedule-type notifications default to creating only local calendar suggestion cards (`schedule_memo_route = suggest_calendar`) instead of duplicate todos/notes or alarms; revertible in Settings.
+- **v3.0.0–v3.1.0 Full-Feature Health Check & Fixes (#334 / PR #342)**: Fixed `CalendarBridge.queryFreeSlotsSummary` UTC day-boundary bug on `ALL_DAY` events and excluded sensitive memory `content` matching in `ChatScreen` `memory_view`/`memory_list`.
+- **Memory × Anti-Scam Visualization (#335 / PR #342)**: Added "Scam Immunity" filter chip and section (linking to source messages) in Memory tab, plus Snackbar "View" button after saving `scam_immunity` in chat.
+- **Contacts Integration (#336 / PR #342)**: Upgraded Room to v20 (non-destructive `contact_aliases` table); supports local nickname binding, zero-token relationship group import, VIP trust-circle whitelist sync, and offline impersonation detection (raw contacts never sent to AI).
+- **Proactive Push & Personal Briefing Engine (#337 / PR #342)**: 08:45 morning / 22:25 evening briefings, 15-minute zero-token SHA-256 change-detection proactive alerts (independent DND & daily cap), "What I Know About You" profile card, optional one-time `ACCESS_COARSE_LOCATION` region lookup, and BYOK external search endpoint.
+- **AI Companion Tab (#338 / PR #342)**: Added 6th tab "AI Companion" (custom assistant name & avatar) with companion days, intimacy formula, 7-day activity card, and profile card.
+- **Linked Apps Hub & Cross-App Action Cards (#339 / PR #342)**: Added `LinkedAppsActivity` (6 local capability cards, GitHub PAT 15-min polling, encrypted Discord Webhook) and "Confirm Before Execute" cross-app action cards (email, navigation, alarm, open app).
+- **Settings Reorganization & 20/10-Step Tours (#340, #341 / PR #342)**: Added `PermissionHubActivity` (7 permissions, Shizuku kept separate) and `AssistantHubActivity`; rewrote Home tour to 20 steps and expanded Settings tour to 10 steps.
+
+### v3.1.0 Release Highlights (versionCode 40, 2026-11-20)
+
+- **AI Response Compatibility & Collapsible Chain-of-Thought (#326 / PR #330)**: Full compatibility for polymorphic response chunk lists/plain strings (fixing crashes on models like `zai-glm-5-3`), default-collapsed "Reasoning" section for CoT responses, removed image vision false-block gate, and non-destructive Room v18 → v19 migration preserving chat history.
+- **Memory Tab UI Optimization (#327 / PR #330)**: Collapsible/persistent filter tag row, button-triggered auto-focus top search bar, and unified top-bar layout with 48dp touch targets.
+- **Memory × Anti-Scam Cross-Check & Scam Immunity (#328 / PR #330)**: Added `ContactContext` offline acquaintance-impersonation detection (falling back to memory-only when denied), context contradiction injection into risk analysis, `scam_immunity` memory category (one-tap from Scam Center + weekly auto-summary, always confirmation-gated), memory/contacts version stamps in analysis cache, and master toggle (default on; off matches v3.0.0).
+- **Local Calendar Integration (#329 / PR #330)**: Selectable calendars in Settings (none checked by default), AI Assistant free-slot queries, `calendar_add` confirmation card with conflict warnings, "📅 Add to Calendar" suggestion card on schedule-type notifications, and `ACTION_INSERT` fallback when write permission is absent.
+
+### v3.0.0 Release Highlights (versionCode 39, 2026-11-20)
+
+- **AI Memory Bank Core Engine (#314 / PR #319)**: Long/short-term tiers, conflict confirmation cards, privacy tiers, and batch forget; consolidated legacy auto-memo/rules into Memory Bank management.
+- **Memory Tab (#315) & Custom AI Assistant (Name / Personality / Verbosity / Avatar)**, plus Token Saver quick toggle (dual-mode budget: 8 memories normal / 4 token-saver).
+- **Safe Browsing Key Switched to BYOK (#316 / PR #318)**: Removed BuildConfig / `local.properties` fallback in favor of encrypted in-app Settings input.
+- **Onboarding Auto-Skip Dual Condition & Safe Browsing Card Copy Fix (#316 / PR #320)**.
+
+### v2.20.0 Release Highlights (versionCode 38)
+
+- **Scrollable & Height-Capped To-Do Expanded Area on Notes Tab (#310 / PR #311)**: Capped `NotesTab` expanded to-do area at 2/3 of `BoxWithConstraints` available height (short lists wrap content); pinned filter pills at top, enabled vertical scrolling inside the list, and reset scroll on filter switch so large todo lists no longer squeeze notes below.
+
+### v2.19.0 Release Highlights (versionCode 37)
+
+- **Center Stack v6 Edge-Fill & Short-List Mode (#298 / PR #302)**: Added head/tail edge-fill compensation (`pAbove`/`pBelow` symmetric fill pitch) and top-aligned compact short-list mode to `CenterFocusCardStack`, adjusting `edgeGap` to `6dp` (first card to Favorites and last card to bottom bar both `6dp`).
+- **Storage Optimization & Database Maintenance (#299 / PR #303, #306 / PR #307)**: Enabled R8 code/resource shrinking in `release` builds; upgraded Room to v17 (`MIGRATION_16_17`) with query indexes; added periodic `VACUUM`, 300-entry avatar cache cap, and expired `intel_cache` cleanup; added storage breakdown and "Compact Database Now" button in Settings "Data Management".
+- **Battery & Stability Optimization (#300 / PR #304)**: Relaxed KeepAlive (15→45 min) and Shizuku (300→600 s) polling, switched Heartbeat to `KEEP` debouncing with low-frequency reconnect check when persistent notification is off, hardened `StatsForegroundService` startup and rescue exponential backoff, added screen-off early exit, and pre-compiled hot-path Regex/date formatters.
+- **UI Component Splitting (#301 / PR #305)**: Split `MainActivity` and `ChatScreen` into dedicated tab/component files (`MessagesTab.kt`, `NotesTab.kt`, `StatsTab.kt`, `TodoSection.kt`, `ChatScreenParts.kt`) with zero behavior change.
+
+### v2.18.0 Release Highlights (versionCode 36)
+
+- **Removed Built-In Personal Defaults for Full Generalization (#292 / PR #293)**: "My Name" no longer pre-fills any default display name; stopped auto-writing personal AI rules and performed one-time cleanup of legacy auto-written carrier whitelist and shopping tag rules (user-created rules untouched); removed brand-specific references from sample copy and AI prompts.
+- **Fixed Conflicting Settings Copy (#292 / PR #293)**: Quick Settings "AI Risk Analysis" subtitle dynamically displays the configurable character threshold (1–30 chars) instead of hardcoding 10; aligned "Daily AI Quota" range (0–100, step 10) with AI Assistant, unified unit naming, and clearly marked paused toggles when Token Saver is active.
+
+### v2.17.0 Release Highlights (versionCode 35)
+
+- **Home/Settings Onboarding Fixes, OEM Restricted-Settings Guide & Shizuku One-Tap Grant (#288 / PR #289)**:
+  - Delays onboarding until Android 13+ system notification permission dialogs dismiss; merges 4 message-action steps into one prompt when DB is empty, auto-switches tabs per step, and highlights settings gear, auto-note rules, add todo, and centered search pill.
+  - Added "Toggle grayed out / can't enable?" troubleshooting on permission guide card (Xiaomi/Redmi/POCO, Samsung Auto Blocker, OPPO/realme/OnePlus, vivo/iQOO + "Go to App Info"), direct Notification Access detail page link (Android 11+, falling back to list), and one-tap Notification Access grant when Shizuku is connected.
+  - Restored full 8-step Settings tour, auto-clearing search and expanding Personalization/Shizuku cards and scrolling to Whitelist card.
+- **Privacy Policy & Disclaimer (#284 / PR #286)**: Added `PRIVACY.md` and `DISCLAIMER.md` (documentation only).
+- **GPL-3.0 Open-Source License (#285 / PR #287)**: Added root `LICENSE` (GNU GPL v3.0 full text) and README license section.
+
+### v2.16.0 Release Highlights (versionCode 34)
+
+- **Center Stack v5 Polish (#280 / PR #281)**:
+  - **Tighter Vertical Margins**: Added `edgeGap = 4dp` (replacing `8dp`) in `CenterFocusCardStack` to extend vertical visibility; reduced Home `CENTER` outer spacing `12dp → 8dp` and Notes `CENTER` header bottom spacing `8dp → 4dp` (non-`CENTER` modes and shared card frame unchanged).
+  - **Damped Spring Snapping & Silky Transitions**: Switched to official `snapFlingBehavior` with `spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow)`; added `FastOutSlowInEasing` near-focus scale easing (`0.94f → 1.0f`, seamlessly joining `0.04f` step-down to `0.82f` floor at `absU = 1`) and `6dp` focus shadow gradient in `graphicsLayer` draw phase, keeping linear `translationY` tracking and all v3/v4 geometry invariants.
+
+### v2.15.0 Release Highlights (versionCode 33)
+
+- **Center Stack v4 Fixes (#276 / PR #277)**:
+  - **Fixed Above-Focus Card Clipping & Missing Draw on Fast Fling**: Switched to symmetric `contentPadding` (`leading >= 3 * exposure` paired with `trailing`, total scroll range `(n - 1) * 40dp` and snap feel unchanged) so 2–3 cards above focus stay natively in the visible range with top-band app icon/name visible; single `clipToBounds` kept only on the outermost stack container.
+  - **Initial Top-Alignment & Linear Transition**: Anchors flush at `8dp` with zero whitespace when `firstVisibleItemIndex == 0` and `offset == 0`; replaced `smoothstep` head/tail transition with `zone`-normalized linear `lerp` for monotonic continuity without boolean switching.
+  - **Notes Short-List Geometry Fix**: Made transition width dynamic `zone = min(1.5f, (n - 1) / 2f)`, eliminating head/tail overlap that caused the 2nd note to sink when `n <= 4`; Notes tab continues sharing the stack component with dynamic height.
+  - **Single-Line To-Do Due Subtitle**: Added `maxLines = 1`, `softWrap = false`, and `Ellipsis` to `NotesTodoRow` due info so it no longer wraps into two lines next to action buttons (both expanded and collapsed).
+
+### v2.14.0 Release Highlights (versionCode 32)
+
+- **Compact Center Stack Cards (#270 / PR #272)**: Locked card height to `92dp` (`104dp` cap for large fonts) with `12dp` padded three-part layout eliminating empty black space, `40dp` stack offset & `edgeFade`, `scaleStep = 0.04f` (`0.82f` floor), and `40dp` bottom peek band showing app name + unread count / note tags identically across Messages and Notes.
+- **Auto Update Check Changed to Once Per App Launch (#271 / PR #273)**: Removed daily check gate and dialog dedup; checks GitHub latest release on every launch when enabled and online (notification-shade alerts stay capped at once per version per day; rotation/navigation in the same process does not re-request).
+
+### v2.13.0 Release Highlights (versionCode 31)
+
+- **Messages / Notes Center Stack v3 (#263 / PR #264)**: Switched to `LazyColumn` + `SnapPosition.Start` uniform snapping for continuous multi-card inertial flings, smoothstep continuous lerp across top/mid/bottom anchors eliminating jumps, dynamic layer count, `8dp` margins, and dynamic `contentPadding` for zero whitespace and full card fill (`44dp` exposure, `scaleStep = 0.035f`, opaque inside viewport).
+- **Fixed Dual-Path Duplicate SMS Recording (PR #268)**: `SmsAutoReplyReceiver` handles auto-reply only without writing to DB; SMS records are handled solely by the notification interception path with deduplication (issue #106 pending on-device verification).
+
+### v2.12.0 Release Highlights (versionCode 30)
+
+- **Messages Tab Top-to-Center Stack Refactor (#249)**: Refactored `CenterFocusCardStack` (v2) with fixed `112dp` card height, `24dp` equidistant peek, and `0.06f` scale decrement; top-aligned at `10dp` initially, smoothly transitioning to vertical center past halfway, computed purely in `graphicsLayer` without recomposition.
+- **Notes Tab Shared Stack & Removal of "Peek Top" (#250)**: Notes "Center Stack" now shares the new `CenterFocusCardStack` (fixed `112dp`, 2-line body ellipsis, corner icon buttons); removed `PEEK_TOP` (auto-migrating `peek_top` to `CENTER`), and streamlined Settings and `SettingsCatalog` to "Standard List / Center Stack".
+- **AI Auto-Todo Smart Time Inference & 30-Minute Lead Reminder (#252)**: `buildSystemPrompt` injects current time to infer `todo_due`, combining `ClientTimeParser` (including year-rollover `MM/dd`) and `+2h` fallback, scheduling reminders 30 minutes before event time (including duplicate update rescheduling).
+- **Pinning Notes Preserves Original Timestamp (#251)**: `onTogglePinNote` updates only `pinned` without overwriting `updatedAt`.
+- **Per-Purpose Binding & Sync for Deep Analysis / Daily Summary Chips (#253)**: Detail and Stats chips now write `setPurposeProfileId`, read `getProfileForPurpose`, sync live with `PhantomSettingsBus` and `ON_RESUME`, and include dedicated purpose label prefixes.
+- **Daily & Weekly Summary Punctuality Hardening (#254)**: Added `maybeCatchUp` for missed runs, `Result.retry()` for daily failures (max 3 retries, 10-min backoff), scheduled-time anchoring for weekly summaries, and relaxed weekly constraints to `NetworkType.CONNECTED`.
+
+### v2.11.0 Release Highlights (versionCode 29)
+
+- **Home Card Layout Rewritten as Center-Focus Vertical Wheel Stack (#240)**: Removed broken "Peek Top / Peek Bottom" modes in favor of `VerticalPager` center-focus wheel (focused card `scale=1.0`/`alpha=1.0` centered with highest zIndex, up to 2 symmetric scaled cards above/below at `0.92f`/`0.84f`, further hidden, native snap, first/last cards centerable); Settings streamlined to "Standard List / Center Stack" (legacy auto-migrated).
+- **Notes Tab Overhaul (#241)**: Collapsible todos (default collapsed, persistent state, showing only the nearest non-overdue incomplete todo); smart todo sort (non-overdue soonest → overdue → completed); 3 note card layout modes ("Standard List / Peek Top / Center Stack") configured in Personalization.
+- **Collapsible Sub-Sections in Settings (#242)**: "Per-App Throttle Overrides" and "Custom Quick Commands" collapse with independently persisted state, unaffected by collapsing/reopening main category cards.
+- **Eliminated Square Black Corners Outside Floating Surfaces (#243)**: Dialog windows and `ModalBottomSheet`s use fully transparent outer containers (`PhantomDialog`, `containerColor = Transparent`), drawing opaque dark backgrounds only inside rounded containers so wallpapers show 100% outside corners.
+- **Live UI/Settings Sync & On-Time Summaries (#244, #246)**: Layout modes and collapse states sync immediately via `PhantomSettingsBus`; daily/weekly summaries switched to self-rescheduling `OneTimeWorkRequest` so schedule changes trigger on time without drift.
+- **Single-Line Collapsible Home Filter Row & AI-Adjustable New Settings (#245, #247)**: Filter chips collapse without wrapping; added layout modes to AI Assistant / Settings search so AI can switch Home and Notes layouts directly in chat.
+
+### v2.10.0 Release Highlights (versionCode 28)
+
+- **Three-Way Home Card Layout Mode (#230)**: Replaced legacy toggle and `StackedAppCard` with "Standard List", "Peek Top (Card Deck)", and "Peek Bottom (Folder)" modes (with `SnapFlingBehavior` and bleed-through protection), wired to `SettingsCatalog` (`personal_home_card_layout`) and `PhantomSettingsBus`.
+- **Sender Avatar Extraction & Display (#231)**: Upgraded Room to v16 (`MIGRATION_15_16`) adding `sender_avatars` table; extracts and downsamples notification `Person` avatars (auto-cleaned after 30 days) for display in thread lists (40dp) and non-own chat bubbles (28dp) with fallback to app icon → colored initial circle.
+- **Self-Reply Echo Suppression & Self Identity Detection (#237)**: Added `own_reply_echo` table to suppress duplicate echo ingestion within 3 minutes, plus "My Name" (`notif_my_display_names`) editor in Settings "Messages & Notifications" to mark group messages from self as own replies.
+- **Floating Layer, Gesture & Search Polish (#229, #232, #233, #234)**: Fixed rounded-corner safe insets on drawer/rule panels and unified scrim to `0.45f`; compact left-aligned Notes search pill; added `VelocityTracker` projection and 0.35 threshold to drawer drag; strengthened auto-todo similarity dedup (`dice >= 0.9`).
+- **Liquid Drop Tab Bar & Global Smoothness Optimization (#235, #236)**: Reused `Path`/`Brush` in `LiquidGlassTabBar`, tuned liquid spring and synchronous drag; preserved tab state via `rememberSaveableStateHolder` and completed global smoothness audit.
+
+### v2.9.0 Release Highlights (versionCode 27)
+
+- **Floating Layer Rendering & Scrim Fixes (#222)**: Added `PhantomFloatingSurface` (no blur, `.clip(shape)` before `.background()`, dark `0xF012151E` / light `0.95f` opaque fill + `0.65f` scrim), fixing rounded-corner overflow and bleed-through on history drawer and note rules panel while keeping in-page glass cards unchanged.
+- **AI History Drawer Drag Performance Fix (#223)**: Deferred drawer offset and scrim alpha reads to layout/draw phases with `derivedStateOf` and `snapshotFlow`, eliminating per-frame recomposition storms during drag.
+- **Message Card Stack Visibility Enhancement (#224)**: Changed `StackedAppCard` layer color to `lerp(surfaceVariant, onSurface, 0.25f)`, raised alpha to `0.55f`/`0.35f`, tuned scale to `0.96f`/`0.92f`, and added 1dp `outlineVariant` border on layer 1.
+- **Live Sync for AI Settings Changes (#225)**: Added `PhantomSettingsBus` so any supported setting changed via AI chat or settings search updates Home, Stats, AI Assistant, and Settings UI immediately.
+- **Semantic Keyword-Only "Never Auto-Note" (#226)**: `saveAutoMemoIfPresent` applies literal gates only to `never` rules with app/sender criteria; keyword-only `never` rules are evaluated semantically by AI (`memoV4`) to avoid false blocks across unrelated services.
+
+### v2.8.0 Release Highlights (versionCode 26)
+
+- **Toggleable Message Card Stack Effect (#212)**: `StackedAppCard` draws 0/1/2 3D stack layers behind cards based on message count (with scroll parallax and tap collapse feedback), toggleable in Settings Personalization.
+- **Favorites Badges & IME Fix (#213, #214)**: Fixed Favorites row badges and `HomeSortOrder.UNREAD` to use true unread counts (hidden at 0, `99+` above 99); fixed AI Assistant input bar keyboard overlap (single `imePadding` + auto-scroll at bottom).
+- **AI Assistant Side History Drawer & Resume Setting (#215, #216)**: Replaced history sheet with left slide-out glass drawer (drag gesture + `BackHandler`); added `ai_chat_tab_behavior` to choose between starting a new chat or resuming the last conversation.
+- **Floating Note Rules Panel & AI Semantic Matching (#217)**: Moved note rules to a floating glass panel opened from top-right `Tune` button; `AiClient` supports semantic keyword category matching (`memoV3`).
+- **Custom Stats Cards, Daily App Leaderboard & 4 New Charts (#218)**: Added "Today's Top 5 App Message Leaderboard" and 4 pure Canvas charts, plus a "Stats" Settings category to customize visibility of 12 stats cards.
+- **Notes Home-Screen Widget (#219)**: Added 2x2 "PhantomCheck Notes" widget (`NotesWidgetProvider`, pinned first up to 5 notes, tap opens Notes tab) with live diff sync across all write paths.
+
+### v2.7.0 Release Highlights (versionCode 25)
+
+- **Auto-Note / To-Do Rules & Source Backtracking (#203, #204)**: Upgraded Room to v15 (`MIGRATION_14_15`) adding `memo_rules` and `MemoRuleEngine` (`never > todo > note`); added "Auto-Note Rules" card in Notes tab (natural-language AI parsing + confirmation card and manual add), `ChatScreen` `add_rule` `kind="memo"`, Home "Noted / Todoed" filters and icons, one-tap source message jump on todo rows, and 3-scope "Never Auto-Note/Todo" dialog.
+- **Top Pull-Down Search Handle & Fixed Home Header (#205, #206)**: Refactored `MessagesHomeTab` into fixed header (stats / category filters / favorites) + independently scrolling message list; moved refresh/settings into stats card right column and added 22dp `PhantomPullSearchHandle` (pull-down or tap) for full-screen search.
+- **Conversation IME Fix & Right-Aligned Self-Reply Bubbles (#207)**: Added `windowSoftInputMode="adjustResize"` to fix keyboard double lift; all 3 reply paths persist `isOwn = true` rendered as right-aligned tinted bubbles, strictly excluded from stats, unread, ScamCenter, summaries, and dedup queries.
+- **Search & Global Theme Contrast Fixes (#208)**: Replaced theme-blind `Color.Gray`/`Color.Red`, explicitly set body `onSurface`, made `PhantomFullScreenSearchOverlay` opaque, and set `CardBgMode.TRANSPARENT` slider floor to 15% (fallback `>= 0.35`).
+- **18-Step Onboarding & Global OEM Health Check (#209, #210)**: Expanded Home tour to 18 steps covering pull-down search, quick reply, note rules, and source backtracking (completed users not re-triggered); added `adjustResize` to all text-input Activities and audited OEM/insets compatibility.
+
+### v2.6.0 Release Highlights (versionCode 24)
+
+- **Bottom Quick-Reply Bar on Conversation Detail Page (#197)**: Added persistent reply input bar in `ConversationScreen` (keyboard avoidance, auto-scroll, hidden in multi-select); `sendReplyToNotification` targets `MessagingStyle` threads via `conversationKey` and chains into `ReplyProxyManager` continuous notification reply and SMS fallback.
+- **Crash-Proofed Reply Chain & AI Actions (#196)**: Fixed `ReplyProxyManager` `RemoteInput` `PendingIntent` to `FLAG_MUTABLE`, added `try/catch` and `firstOrNull()` guards across `ReplyProxyReceiver`, `ReplyProxyManager`, and `ChatScreen`, with unified `PhantomReply`/`PhantomChatAction` logcat.
+- **Dedicated Whitelist Page & Collapse Persistence (#199)**: Added `WhitelistManagementActivity` (`exported="false"`) for grouped whitelist management, simplified Settings to an entry button, and persisted group collapse state in `PhantomPrefs` wired to `SettingsCatalog`.
+- **Todo Flow Real-Time Sync (#198)**: `TodoDao.observeAll()` keeps Notes tab and `ChatScreen` todo menu synced immediately with widget changes; added `ON_RESUME` refresh for `remindAt` in `MessageDetailActivity`.
+- **Search & Transparent Background UI Polish (#193, #194, #195)**: Fixed full-screen search overlay z-order in `ConversationScreen` and `AppThreadsScreen`; unified `PhantomSearchBarPill` to 36dp mini glass pill (`>=48dp` touch target); removed opaque background from `SwipeToRevealRow` so custom wallpapers show through.
+- **Global Dependencies, AGP 9 & `targetSdk` 36 Upgrade (#200)**: Upgraded Gradle `9.9.1`, AGP `9.5.1` (built-in Kotlin), Kotlin `2.4.21`, Compose BOM `2026.09.00`, Room `2.8.5` (kapt → KSP `2.3.14`), Retrofit `3.0.0`, WorkManager `2.12.0`, `compileSdk` `37` / `targetSdk` `36`, and migrated `Glass.kt` to Haze `2.1.0` `hazeBlur` API.
+
+### v2.5.0 Release Highlights (versionCode 23)
+
+- **Continuous Quick Reply from Notification Shade (#183)**: Added `ReplyProxyManager`/`ReplyProxyReceiver` (`exported="false"`) and `NotifIds` `120000..129999` range; `ChatScreen` replies launch `MessagingStyle` proxy notifications (up to 8 history items, 8-session LRU, SMS fallback, `AlarmManager` idle timeout 15/30/60/off), with Settings and `SettingsCatalog` entries.
+- **Conversation Page Glass Black-Background Fix (#184)**: Fixed `.clip(shape)` ordering in `Components.kt` `PhantomGlassCard` and `phantomGlassSurface` after `glassSurface(...)` (`ui/components/` untouched).
+- **Pre-AI Duplicate Notification Folding (#185)**: Added pure-function `NotificationFoldUtil` (24h chained window, Dice >= 0.85, never folding high-risk or differing numbers/URLs) applied to Chat RAG, daily/weekly summaries, and deep analysis history.
+- **Daily Auto Update Check (#186)**: `MainActivity` `ON_RESUME` silently checks once per day; `UpdateAvailable` sends once-per-version-per-day notification (`NotifIds.UPDATE_AVAILABLE = 1007`) + dialog, with `update_auto_check_enabled` toggle in Settings About and `SettingsCatalog`.
+- **Auto-Note Dedup & Smart To-Do Routing (#187, #188)**: Similar auto-notes from same app within 7 days (Dice >= 0.9) update in place without overwriting `pinned`; `AiClient` adds `memo_type` (`note|todo`) and `todo_due` to create deduplicated `TodoEntity` with scheduled reminders and widget refresh, sharing extracted `ClientTimeParser`.
+- **Widget Notification Sync & Enlarged Buttons (#189)**: Completing/deleting todos or reminders clears active notifications; enlarged `widget_reminder.xml` buttons to `16sp` bold + `minHeight="32dp"` + ripple feedback, and raised `reminder_widget_info` `minHeight` to `72dp`.
+
+### v2.4.0 Release Highlights (versionCode 22)
+
+- **AI 5-in-1 Token Saver & Vision Fix (#174, #173)**: Implemented `prompt_cache_key` and byte-identical static prefix caching, incremental chat context summaries, dual-model confidence routing (`mistral-small-2603` first, escalating 30–70 without double-charging quota), dynamic image size estimation, and daily/weekly summary dedup caps; fixed `mistral-small-2603` being misclassified as text-only.
+- **Card Black-Background Overflow Fix & Surface Modes (#175)**: Unified `PhantomGlassCard` single clip shape, fixed API < S double-layer stacking, and added "Card Surface Mode" (Follow Glass / Transparency Slider / Dark Surface) in Appearance.
+- **To-Do Enhancements (#176)**: Upgraded Room to v14 (`MIGRATION_13_14`), adding `completedAt`, priority (Low/Medium/High), notes, and daily/weekly repeat spawning; Notes tab supports filtering, smart sorting, manual add, and full editor dialog.
+- **Whitelist Fixes & Management UI (#177)**: Permanently injected whitelist into Chat system prompt (compressed by app when long), added `whitelist_delete` action and grouped whitelist management card in Settings, invalidating rule caches across all write paths.
+- **Comprehensive AI Feature Health Check (#178)**: Supplemented `CHAT` (todos/memos/VIP/mute/keywords) and `DEEP_ANALYSIS` (sender history) context, and unified DB read-back verification across all AI write actions.
+- **Home-Screen Widget Interactions (#179)**: 2x1 todo widget supports per-item "Done ✓ / Edit ✎ / Delete ✕" buttons with independent `PendingIntent` and `goAsync()` live sync.
+- **Unified Pull-Down Search (#180)**: Added custom glass search pill and full-screen search overlay (live filtering + AI semantic search entry) across Messages, Conversation, Notes, and Thread pages.
+- **Onboarding Fixes & Expansion (#181)**: Removed chained auto-skipping, added dynamic top/bottom card avoidance around spotlight hole, expanded Home tour to 15 steps (`SEARCH_PILL`) and Settings tour to 8 steps.
+
+### v2.3.1 Release Highlights (versionCode 21)
+
+- **AI Tag Dispatch Parse Tolerance & Failure Notification Improvements (#169)**: `parseAnalysisJson`/`parseBatchAnalysisJson` support fence stripping, balanced-brace multi-object extraction, and lenient preprocessing; single analysis supports OpenAI-compatible `json_object` and one corrective retry (no double quota charge), test button shows first 200 chars on failure; failure notifications use 24h sliding window (5 triggers, 6h cooldown) with `ai_tag_failure_notif_enabled` toggle.
+- **Background Page Black-Screen Fix & Picker Fallback (#170)**: `PhantomBackgroundBox` explicitly draws theme background when unset/loading/failed; `SettingsActivity` persists picking state via `rememberSaveable` and offers `OpenDocument` file picker fallback on Photo Picker failure.
+- **Onboarding Expansion & Health Check (#171)**: Expanded Home tour to 14 steps (Notes/Auto-Memo, Stats/Offline Queue, Todo Reminders/Batch, 3-Layer Backgrounds & Per-Purpose Models), proofread 4-tab copy, updated 6-step Settings tour, and fixed replay step reset without re-triggering completed users.
+
+### v2.3.0 Release Highlights (versionCode 20)
+
+- **Image Vision Upload & Background Picker Fixes (#162)**: `ChatScreen` images use bounds-first `inSampleSize` downsampling (`<= 1024px`, doubling on OOM retry) and honest error categorization, updated Groq/DeepSeek vision support lists, and fixed `BackgroundImageHelper` `inJustDecodeBounds` returning `null` on all 3 background layers.
+- **Per-Purpose AI Model Routing (#163)**: 6 AI purposes can bind independent Profiles or follow default (auto-memo follows message analysis) via 6 dropdown rows with connection tests in `ApiKeySettingsActivity`; `ChatScreen` switcher changes only chat model.
+- **Offline AI Retry Queue (#164)**: Upgraded Room to v13 (`MIGRATION_12_13`) adding `pending_ai_analysis` table; transient failures enqueue for WorkManager `PendingAiAnalysisWorker` exponential-backoff retry (up to 20/round, max 3 attempts) with low-intrusion notification and top banner controls.
+- **"Notes" Tab & AI Auto-Memo (#166)**: Replaced "Scam Alerts" tab with "Notes" (integrating todos and manual/auto notes CRUD, pinning, color tags; Scam Center moved to Messages/Stats entries) and added `ai_auto_memo_enabled` auto-summary memos.
+- **UX Polish & Length Threshold (#165, #167)**: Moved "Clear Read" to Settings "Messages & Notifications"; added AI analysis length threshold slider (1–30 chars, default 10) wired to `SettingsCatalog`.
+
+### v2.2.0 Release Highlights (versionCode 19)
+
+- **About Card Update Checker & APK Download/Install (#157)**: Updated author to "Hwanshen (幻神)", added manual "Check for Updates" (GitHub REST API, 10s timeout) with `DownloadManager` + `FileProvider` + `ACTION_VIEW` system installer integration (including `REQUEST_INSTALL_PACKAGES` and unknown-sources guide).
+- **Custom Multi-Layer Backgrounds & Visual Sliders (#159)**: Added 3-layer backgrounds (Global / AI Chat / Conversation via `PickVisualMedia` + JPEG 85 downsampling & single `LruCache`), dark scrim slider (0–100%, default 35% day / 60% night), and glass card strength slider.
+- **AI Assistant Action Capabilities Expansion (#160)**: Added `search_messages` (inline clickable result cards), `todo_list`/`todo_done`/`todo_delete`/`todo_edit`, `vip_pin`, `mute_app`, `mark_read` (protecting scam records), and `export_messages` (reusing `MessageExporter` CSV), with all mutating actions gated by confirmation cards.
+- **Global Codebase Health Check Fixes (#158)**: Fixed cross-session `pendingTodoQueue` blocking, added 30s TTL cache for `user_tag_rules` with full-path cache invalidation, fixed `tag_rule` missing-tag handling to skip honestly, pre-compiled hot-path Regex, and verified schedules/caches.
+
+### v2.1.0 Release Highlights (versionCode 18)
+
+- **AI Natural-Language To-Do Reminders & Widget Integration (#143)**: Upgraded Room to v12 (`MIGRATION_11_12`) adding `todos` table; AI Assistant supports `reminder_add` with deterministic time-parsing fallback, confirmation cards, and management Sheet, scheduled via `AlarmManager.setAndAllowWhileIdle`, rescheduled on boot by `BootReceiver`, and synced with `ReminderWidgetProvider`.
+- **Multi-Select Batch Management on Conversation & Thread Lists (#144)**: Added multi-select batch actions (read / star / delete, up to 100 items) on `ConversationScreen` and `AppThreadsScreen`, disabling swipe/tap during selection and strictly protecting scam records while cleaning `message_tags` cross-refs.
+- **AI Assistant & Quick Command UX Improvements (#142, #145, #146)**: AI Assistant opens to a new chat by default with "Clear All Conversations" in history drawer; dedicated inline `SnackbarHost` prevents covering input bar; quick commands added "Follow Default" mode with dynamic resolution.
+- **Group Thread Splitting, About Section & Release Flow (#140, #141, #112)**: Room v11 (`MIGRATION_10_11`) `MessagingStyle` `conversationKey` fixes LINE group splitting; added "About" section at bottom of Settings (runtime version sync); `release.yml` extracts `CHANGELOG.md` version sections alongside auto PR lists.
+
+### v2.0.0 Release Highlights (versionCode 17)
+
+- **AI Tag Memory & Fallback Protection (#131, #132)**: Upgraded Room to v10 (`MIGRATION_9_10`), adding deterministic zero-token `TagRuleEngine` and `user_rule` tag memory (`manual > user_rule > ai_rules > auto > App category`); AI tag failures fall back to app category with anti-spam low-priority alerts, plus "AI Tag Dispatch Test" in Settings.
+- **AI Assistant Reliability & Token Optimization (#127–#130)**: Fixed bare JSON and numeric setting execution chains, Groq free-tier TPM budget control with 413/429 multi-stage fallback, conditional settings catalog loading, RAG dedup, and long-history summarization.
+- **Multimodal Input, Layout Simplification & Custom Navigation (#133–#135)**: Added dual-function "+" menu ("Quick Commands" + "Image Vision Upload"), auto-hiding top title bar and compact input on AI tab, and 3-way bottom bar mode ("Standard / Compact / Auto-Hide") in Appearance.
+- **Three Non-Stats Widgets & Global Optimization (#136–#138)**: Added "Latest AI Summary (2x2)", "High-Risk Actions (2x2)", and "Todo Reminders (2x1)" widgets; completed notification hot-path caching, unified icon `LruCache`, and M3 8dp/48dp layout audit.
+
+### v1.13.1 Release Highlights (versionCode 16)
+
+- **AI Chat Stability & Multi-Action Fixes (#122, #123)**: Added `HTTP 413`-specific error messages in `AiClient` with halved-limit auto-retry in chat (min 25) and quota refund on deep analysis `413`; `ChatScreen` supports multi-action parsing, merged checkable `whitelist` confirmation cards, and honest error reporting without raw JSON fallback.
+- **In-Chat Numeric Adjustment & Settings Navigation (#124, #125)**: Added `setting_adjust` slider confirmation cards for RAG limit, daily AI quota, and same-key throttle; added `open_setting` navigation to target Settings cards, full settings catalog summary in system prompt to prevent fabricated UI paths, and fixed unknown-setting fallback and non-toggle candidate buttons.
+
+### v1.13.0 Release Highlights (versionCode 15)
+
+- **Comprehensive AI Chat Enhancements (#114, #116, #118, #119)**: `PhantomMarkdownText` completed tables (alignment + horizontal scroll), italics, strikethrough, links, blockquotes, rules, task lists, and nested lists; added per-turn RAG limit slider (50–800, default 400, 100 in token-saver); direct boolean setting toggles in chat (`SettingsCatalog`); RAG defaults to Today + Yesterday with sender filter, plus confirmation-gated quick reply, open app, delete message (scam protected), and tag message actions.
+- **Structured Whitelist & Model Preset Updates (#115, #117)**: Updated default provider model presets (Mistral `mistral-small-2603`, OpenAI `gpt-6.1-terra`, Groq `openai/gpt-oss-120b`, Gemini `gemini-4-hydrogen`, etc.); upgraded Room to v9 (`MIGRATION_8_9`) for sender/single-message structured whitelist that marks safe and skips subsequent analysis, alerts, and intel pre-checks.
+- **Comprehensive Settings Search Audit (#120)**: Aligned `SettingsCatalog` with actual UI card by card, adding daily summary notification and Liquid Glass effect entries and verifying local/AI dual search paths.
+
+### v1.12.1 Release Highlights (versionCode 14)
+
+- **Settings Search Catalog Fixes & Direct Page Launch (#109)**: Fixed 5 misrouted settings search cards (including routing SMS Auto-Reply to AI card), added "Scam Alert Center" and "Filter Keyword Rules & Hit Actions" entries, added "Go" direct page launch in AI navigation banner (Auto-Reply, Scam Center, Tag Management, API Key Settings), and added home-screen widget instructions in Data Management.
+
+### v1.12.0 Release Highlights (versionCode 13)
+
+- **Settings Search & Notification Ingestion Fixes (#99, #101)**: Split "Same-Key Duplicate Throttle" in settings search to Notifications card and aligned subtitle; messaging notifications with updated `postTime` capture consecutive identical-content messages (`dedupCache` only blocks reconnect replays; non-messaging keeps throttling).
+- **Data Integrity & Security Hardening (#100, #102, #103, #104)**: Retention cleanup directly excludes scam evidence and cleans orphan tags; `NotifIds` centralizes mutually exclusive IDs; `AiClient.sanitizeForPrompt` protects 4 AI prompt-injection points; SMS auto-reply adds 4h cooldown, 3/day cap, and template self-echo guard.
+- **Technical Debt Cleanup & Performance Optimization (#105)**: Immediate boot delivery for overdue reminders, `UPDATE` policy for `HeartbeatPolicy`/`WeeklySummaryPolicy`, 30s cache + layer decoupling for `PhantomPrefs` throttle map, 7-day/hourly SQL aggregation, and shared widget icon `LruCache`.
+
+### v1.11.0 Release Highlights
+
+- **Consecutive Message Fix & Custom Throttling (#96)**: Implemented content-aware same-key throttling, stacked message tail extraction, DB-windowed replay dedup, and multi-tier title fallback; added "Treat digit micro-changes as same update" toggle and per-app throttle seconds override.
+- **AI Assistant Response Truncation Fix (#95)**: Raised `chatAssistant` `maxTokens` to `4096` with relaxed chat timeouts (`read 120s / callTimeout 180s`), honestly annotating truncation when `finish_reason == "length"`.
+- **Watchdog & Hot-Path Battery Optimization (#94)**: Switched `ShizukuWatchdogService` to 5-min / 60s adaptive backoff, conditionalized `requestRebind` on `!isConnected`, and added `appLabelCache` (`LruCache(64)`) and 30s TTL rule caches on the notification hot path.
+
 ---
 
 ## Installation Guide (No Compilation Required)
