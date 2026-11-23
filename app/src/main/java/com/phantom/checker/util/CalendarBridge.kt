@@ -227,7 +227,7 @@ object CalendarBridge {
         list
     }
 
-    /** 寫入前重疊衝突檢查（部分重疊亦計入），與空檔查詢共用 queryInstances 層 */
+    /** 寫入前重疊衝突檢查（部分重疊亦計入；排除全天 ALL_DAY 事件，全天事件改由資訊提示呈現），與空檔查詢共用 queryInstances 層 */
     suspend fun findConflictingEvents(
         ctx: Context,
         startMs: Long,
@@ -236,8 +236,39 @@ object CalendarBridge {
     ): List<CalendarEventInstance> = withContext(Dispatchers.IO) {
         val safeEnd = max(endMs, startMs + 60_000L)
         queryInstances(ctx, startMs, safeEnd, selectedCalendarIds).filter { inst ->
-            inst.beginMs < safeEnd && inst.endMs > startMs
+            !inst.allDay && inst.beginMs < safeEnd && inst.endMs > startMs
         }
+    }
+
+    /** 查詢指定時間窗所屬日期內的全天（ALL_DAY）事件，用於無撞期時的資訊性提示（沿用既有 UTC 日期邊界語意） */
+    suspend fun findAllDayEventsInWindow(
+        ctx: Context,
+        startMs: Long,
+        endMs: Long,
+        selectedCalendarIds: Set<Long> = PhantomPrefs.getSelectedCalendarIds(ctx)
+    ): List<CalendarEventInstance> = withContext(Dispatchers.IO) {
+        val safeEnd = max(endMs, startMs + 60_000L)
+        val zone = ZoneId.systemDefault()
+        val startDate = Instant.ofEpochMilli(startMs).atZone(zone).toLocalDate()
+        val endDate = Instant.ofEpochMilli(safeEnd - 1L).atZone(zone).toLocalDate()
+        val rangeStartMs = startDate.minusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val rangeEndMs = endDate.plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli()
+        queryInstances(ctx, rangeStartMs, rangeEndMs, selectedCalendarIds)
+            .filter { inst ->
+                if (!inst.allDay) return@filter false
+                val evStartDateUtc = Instant.ofEpochMilli(inst.beginMs).atZone(ZoneOffset.UTC).toLocalDate()
+                val evEndDateUtcRaw = Instant.ofEpochMilli(inst.endMs).atZone(ZoneOffset.UTC).toLocalDate()
+                val evEndDateUtc = if (evEndDateUtcRaw.isAfter(evStartDateUtc)) evEndDateUtcRaw else evStartDateUtc.plusDays(1)
+                !endDate.isBefore(evStartDateUtc) && !startDate.isAfter(evEndDateUtc.minusDays(1))
+            }
+            .distinctBy { it.eventId }
+    }
+
+    /** 格式化全天行程資訊提示行（不觸發撞期警示） */
+    fun formatAllDayInfoNote(allDayEvents: List<CalendarEventInstance>): String? {
+        if (allDayEvents.isEmpty()) return null
+        val titles = allDayEvents.take(3).joinToString("、") { it.title }
+        return "📋 當日另有全天行程：$titles（全天，未計入撞期）"
     }
 
     /**

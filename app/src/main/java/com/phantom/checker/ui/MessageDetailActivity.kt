@@ -159,6 +159,7 @@ fun MessageDetailScreen(
     var calendarSuggestion by remember { mutableStateOf<com.phantom.checker.util.CalendarBridge.NotificationCalendarSuggestion?>(null) }
     var calendarWritableCals by remember { mutableStateOf<List<com.phantom.checker.util.CalendarBridge.CalendarAccountInfo>>(emptyList()) }
     var calendarConflicts by remember { mutableStateOf<List<com.phantom.checker.util.CalendarBridge.CalendarEventInstance>>(emptyList()) }
+    var calendarAllDayEvents by remember { mutableStateOf<List<com.phantom.checker.util.CalendarBridge.CalendarEventInstance>>(emptyList()) }
 
     val lifecycleOwner = ctx as? LifecycleOwner
     DisposableEffect(lifecycleOwner) {
@@ -198,6 +199,13 @@ fun MessageDetailScreen(
                         startMs = sug.startMs,
                         endMs = sug.endMs
                     )
+                    calendarAllDayEvents = if (calendarConflicts.isEmpty()) {
+                        com.phantom.checker.util.CalendarBridge.findAllDayEventsInWindow(
+                            ctx = appCtx,
+                            startMs = sug.startMs,
+                            endMs = sug.endMs
+                        )
+                    } else emptyList()
                 }
             }
         }
@@ -471,6 +479,22 @@ fun MessageDetailScreen(
                                             color = MaterialTheme.colorScheme.onErrorContainer,
                                             modifier = Modifier.padding(8.dp)
                                         )
+                                    }
+                                } else {
+                                    com.phantom.checker.util.CalendarBridge.formatAllDayInfoNote(calendarAllDayEvents)?.let { infoNote ->
+                                        Spacer(Modifier.height(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                text = infoNote,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(8.dp)
+                                            )
+                                        }
                                     }
                                 }
                                 Spacer(Modifier.height(8.dp))

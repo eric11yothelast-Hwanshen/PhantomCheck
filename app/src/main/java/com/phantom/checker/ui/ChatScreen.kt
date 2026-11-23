@@ -1652,6 +1652,13 @@ fun ChatAssistantTab(
                                         startMs = parsedStart,
                                         endMs = parsedEnd
                                     )
+                                    val allDayEvents = if (conflicts.isEmpty()) {
+                                        com.phantom.checker.util.CalendarBridge.findAllDayEventsInWindow(
+                                            ctx = appCtx,
+                                            startMs = parsedStart,
+                                            endMs = parsedEnd
+                                        )
+                                    } else emptyList()
                                     if (!confirmRequired && hasWritePerm && writableCals.isNotEmpty() && conflicts.isEmpty()) {
                                         val targetCal = writableCals.first()
                                         val res = com.phantom.checker.util.CalendarBridge.insertEvent(
@@ -1667,7 +1674,8 @@ fun ChatAssistantTab(
                                         val startFormatted = formatChatTime(parsedStart)
                                         res.fold(
                                             onSuccess = {
-                                                immediateExtraReplies.add("📅 已直接寫入本機日曆（${targetCal.displayName}）：「${cap.title}」（$startFormatted）。")
+                                                val allDaySuffix = com.phantom.checker.util.CalendarBridge.formatAllDayInfoNote(allDayEvents)?.let { "\n$it" } ?: ""
+                                                immediateExtraReplies.add("📅 已直接寫入本機日曆（${targetCal.displayName}）：「${cap.title}」（$startFormatted）。$allDaySuffix")
                                             },
                                             onFailure = { err ->
                                                 immediateExtraReplies.add("寫入日曆失敗：${err.localizedMessage ?: "未知錯誤"}。")
@@ -1684,7 +1692,8 @@ fun ChatAssistantTab(
                                                 location = cap.location,
                                                 notes = cap.notes,
                                                 writableCalendars = writableCals,
-                                                conflicts = conflicts
+                                                conflicts = conflicts,
+                                                allDayEvents = allDayEvents
                                             )
                                         )
                                     }
@@ -4391,6 +4400,22 @@ fun ChatAssistantTab(
                                             color = MaterialTheme.colorScheme.onErrorContainer,
                                             modifier = Modifier.padding(8.dp)
                                         )
+                                    }
+                                } else {
+                                    com.phantom.checker.util.CalendarBridge.formatAllDayInfoNote(pendingCal.allDayEvents)?.let { infoNote ->
+                                        Spacer(Modifier.height(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text(
+                                                text = infoNote,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.padding(8.dp)
+                                            )
+                                        }
                                     }
                                 }
                                 Spacer(Modifier.height(8.dp))

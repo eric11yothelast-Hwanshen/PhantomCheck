@@ -981,7 +981,8 @@ internal data class PendingCalendarAddition(
     val location: String?,
     val notes: String?,
     val writableCalendars: List<com.phantom.checker.util.CalendarBridge.CalendarAccountInfo>,
-    val conflicts: List<com.phantom.checker.util.CalendarBridge.CalendarEventInstance>
+    val conflicts: List<com.phantom.checker.util.CalendarBridge.CalendarEventInstance>,
+    val allDayEvents: List<com.phantom.checker.util.CalendarBridge.CalendarEventInstance> = emptyList()
 )
 
 internal data class ParsedChatActions(

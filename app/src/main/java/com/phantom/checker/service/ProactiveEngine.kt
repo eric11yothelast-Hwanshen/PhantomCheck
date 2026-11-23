@@ -114,6 +114,10 @@ object ProactiveEngine {
                                 val freeSummary = CalendarBridge.queryFreeSlotsSummary(appCtx, days = 1, dayFilter = "today")
                                 highPriorityParts.add("⚠️ 偵測到撞期：${CalendarBridge.formatConflictSummary(conflicts)}\n替代空檔參考：${freeSummary.trim()}")
                                 newMilestoneKeys.add(conflictKey)
+                            } else {
+                                val allDayNotes = CalendarBridge.findAllDayEventsInWindow(appCtx, ev.beginMs, ev.endMs)
+                                    .filter { it.eventId != ev.eventId }
+                                CalendarBridge.formatAllDayInfoNote(allDayNotes)?.let { highPriorityParts.add(it) }
                             }
                         }
                     }
