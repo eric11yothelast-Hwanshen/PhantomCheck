@@ -2965,4 +2965,6 @@
     <string name="link_hub_doze_title">Background &amp; Doze Notice</string>
     <string name="link_hub_doze_desc">Android Doze or screen-off power saving may pause LAN connections. You can exempt PhantomCheck from battery optimization if you need longer background sessions.</string>
     <string name="link_hub_battery_exempt_btn">Battery Optimization Exemption</string>
+    <string name="link_hub_audit_title">Command Audit Log (max 200)</string>
+    <string name="link_hub_audit_empty">No desktop commands recorded yet</string>
 </resources>

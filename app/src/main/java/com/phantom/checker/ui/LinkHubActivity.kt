@@ -109,6 +109,7 @@ private fun LinkHubScreen(onBack: () -> Unit) {
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var pairedDevices by remember { mutableStateOf(DesktopLinkStore.getPairedDevices(appCtx)) }
     var unknownAttempts by remember { mutableStateOf(DesktopLinkStore.getUnknownAttempts(appCtx)) }
+    var auditLogs by remember { mutableStateOf(DesktopLinkStore.getAuditLogs(appCtx)) }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -116,6 +117,7 @@ private fun LinkHubScreen(onBack: () -> Unit) {
             nowMs = System.currentTimeMillis()
             pairedDevices = DesktopLinkStore.getPairedDevices(appCtx)
             unknownAttempts = DesktopLinkStore.getUnknownAttempts(appCtx)
+            auditLogs = DesktopLinkStore.getAuditLogs(appCtx)
         }
     }
 
@@ -433,6 +435,55 @@ private fun LinkHubScreen(onBack: () -> Unit) {
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = FontFamily.Monospace,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 5.5 指令審計紀錄（上限 200 筆）
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.link_hub_audit_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            if (auditLogs.isNotEmpty()) {
+                                TextButton(onClick = {
+                                    DesktopLinkStore.clearAuditLogs(appCtx)
+                                    auditLogs = emptyList()
+                                }) {
+                                    Text(stringResource(R.string.link_hub_clear))
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        if (auditLogs.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.link_hub_audit_empty),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            auditLogs.take(20).forEach { entry ->
+                                val mark = if (entry.ok) "✓" else "✕"
+                                Text(
+                                    text = "${timeFmt.format(Date(entry.timestamp))} · $mark ${entry.command} ${entry.detail}".trim(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = if (entry.ok) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                                     modifier = Modifier.padding(vertical = 2.dp)
                                 )
                             }

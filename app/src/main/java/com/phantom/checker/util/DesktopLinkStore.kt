@@ -27,6 +27,14 @@ data class UnknownAttempt(
     val instanceId: String = ""
 )
 
+data class CommandAuditEntry(
+    val timestamp: Long = 0L,
+    val instanceId: String = "",
+    val command: String = "",
+    val ok: Boolean = true,
+    val detail: String = ""
+)
+
 enum class PairCodeCheckResult {
     VALID,
     EXPIRED,
@@ -34,8 +42,8 @@ enum class PairCodeCheckResult {
 }
 
 /**
- * #449 桌面端連線安全儲存層（EncryptedSharedPreferences AES256_SIV / AES256_GCM）：
- * - 儲存配對桌機 secret、TLS KeyStore 密碼、開關與連接埠、未知連線嘗試紀錄。
+ * #449 / #450 桌面端連線安全儲存層（EncryptedSharedPreferences AES256_SIV / AES256_GCM）：
+ * - 儲存配對桌機 secret、TLS KeyStore 密碼、開關與連接埠、未知連線嘗試紀錄與 200 筆指令審計紀錄。
  * - 6 位數配對碼僅存於記憶體（TTL 5 分鐘、單次有效）。
  */
 object DesktopLinkStore {
@@ -46,7 +54,9 @@ object DesktopLinkStore {
     private const val KEY_KS_PASSWORD = "desktop_link_ks_password"
     private const val KEY_PAIRED_DEVICES = "desktop_link_paired_devices"
     private const val KEY_UNKNOWN_ATTEMPTS = "desktop_link_unknown_attempts"
+    private const val KEY_AUDIT_LOGS = "desktop_link_audit_logs"
     private const val MAX_UNKNOWN_ATTEMPTS = 40
+    private const val MAX_AUDIT_LOGS = 200
 
     private val gson = Gson()
     private val secureRandom = SecureRandom()
@@ -137,7 +147,40 @@ object DesktopLinkStore {
     @Synchronized
     fun removePairedDevice(ctx: Context, instanceId: String) {
         val list = getPairedDevices(ctx).filterNot { it.instanceId == instanceId }
-        securePrefs(ctx)?.edit()?.putString(KEY_PAIRED_DEVICES, gson.toJson(list))?.apply()
+        val filteredAudit = getAuditLogs(ctx).filterNot { it.instanceId == instanceId }
+        securePrefs(ctx)?.edit()
+            ?.putString(KEY_PAIRED_DEVICES, gson.toJson(list))
+            ?.putString(KEY_AUDIT_LOGS, gson.toJson(filteredAudit))
+            ?.apply()
+    }
+
+    fun getAuditLogs(ctx: Context): List<CommandAuditEntry> {
+        val raw = securePrefs(ctx)?.getString(KEY_AUDIT_LOGS, null).orEmpty()
+        if (raw.isBlank()) return emptyList()
+        return runCatching {
+            val type = object : TypeToken<List<CommandAuditEntry>>() {}.type
+            gson.fromJson<List<CommandAuditEntry>>(raw, type).orEmpty()
+        }.getOrDefault(emptyList())
+    }
+
+    @Synchronized
+    fun recordAuditLog(
+        ctx: Context,
+        instanceId: String,
+        command: String,
+        ok: Boolean,
+        detail: String = "",
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        val list = getAuditLogs(ctx).toMutableList()
+        list.add(0, CommandAuditEntry(nowMs, instanceId, command, ok, detail.take(80)))
+        val trimmed = list.take(MAX_AUDIT_LOGS)
+        securePrefs(ctx)?.edit()?.putString(KEY_AUDIT_LOGS, gson.toJson(trimmed))?.apply()
+    }
+
+    @Synchronized
+    fun clearAuditLogs(ctx: Context) {
+        securePrefs(ctx)?.edit()?.remove(KEY_AUDIT_LOGS)?.apply()
     }
 
     fun getUnknownAttempts(ctx: Context): List<UnknownAttempt> {

@@ -51,6 +51,16 @@
 - **每日萃取隔離**：若開啟「每日自動萃取關注主題」，萃取階段會以本機 SQL 與程式碼雙層硬排除所有 `privacyTier=sensitive` 敏感記憶，所有素材經提示詞淨化（`sanitizeForPrompt`）後才送往您設定的 AI 服務商；萃取候選僅寫入本機資料庫待確認，絕不直接推播。
 - **憑證與快取**：所有外部端點金鑰一律儲存於 Android `EncryptedSharedPreferences`，絕不寫入程式碼或日誌；查詢結果僅於本機 Room 資料庫暫存 12 小時供去重與簡報共用。
 
+### 7. 區域網路連線（電腦端連結）／ LAN Connection (Desktop Link)
+- **僅限區域網路（LAN-only）**：電腦端連結功能預設關閉；啟用後僅於您的本地 Wi-Fi 區域網路開啟加密 WebSocket（`wss://`）伺服器，**無任何雲端中繼、外部伺服器或開發者節點介入**。
+  *(Disabled by default. When enabled, the server listens only on your local Wi-Fi LAN over encrypted `wss://` with **zero cloud relay or developer servers**.)*
+- **傳輸加密與雙重驗證**：全程使用本機軟體產生之自簽 TLS 憑證（RSA 2048，私鑰存於 App 私有空間並以 `EncryptedSharedPreferences` 保護密碼），搭配 QR / 單次 6 位數配對碼（TTL 5 分鐘）、憑證 SHA-256 指紋綁定及 HMAC challenge-response 驗證；未知裝置或指紋不符一律立即拒絕並記錄。
+  *(Protected by a locally generated self-signed TLS certificate, SHA-256 fingerprint pinning, single-use 6-digit pairing codes (5-minute TTL), and HMAC challenge-response authentication. Unknown instances or mismatched fingerprints are rejected and logged.)*
+- **電腦端可讀寫範圍與硬排除紅線**：電腦端僅作為顯示器與遙控器，不永久落地您的訊息資料庫；僅傳輸訊息摘要白名單（寄件者、90 字預覽、時間、風險標籤、星號與已讀狀態）、本機統計快照、待辦清單、AI 助手對話與白名單／標籤設定。**`privacyTier=sensitive` 敏感記憶、通訊錄原始內容、日曆原始內容與訊息全文絕不透過桌面端協定傳送。**
+  *(The desktop client acts strictly as a remote display and controller without persisting your message database. Only whitelisted message previews, local stats, todos, AI chat, and whitelist/tag rules are transmitted. **Sensitive memories (`PRIVACY_SENSITIVE`), raw contacts, raw calendar entries, and full message bodies are never transmitted.**)*
+- **指令審計與平台限制**：所有來自電腦端的寫入與查詢指令皆寫入手機端審計紀錄（上限 200 筆）；Android Doze 休眠或關閉螢幕時，系統可能暫停區網連線（屬作業系統平台限制）。您隨時可在手機「桌面端連線」頁面一鍵「移除配對」，立即撤銷該電腦的 HMAC 憑證並清除其審計紀錄。
+  *(Desktop commands are recorded in an on-device audit log (up to 200 entries). Android Doze or screen-off power saving may pause LAN connections as a platform limitation. You can tap "Unpair" at any time in Desktop Link settings to revoke the device's HMAC secret and clear its audit log.)*
+
 ---
 
 ## 三、資料匯出與刪除

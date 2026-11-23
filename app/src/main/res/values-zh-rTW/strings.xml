@@ -2965,4 +2965,6 @@
     <string name="link_hub_doze_title">休眠與省電說明</string>
     <string name="link_hub_doze_desc">Android Doze 休眠或關閉螢幕時，系統可能暫停區網伺服器連線（屬平台限制）。若需較長時間連線，可引導加入電池最佳化豁免。</string>
     <string name="link_hub_battery_exempt_btn">電池最佳化豁免設定</string>
+    <string name="link_hub_audit_title">指令審計紀錄（上限 200 筆）</string>
+    <string name="link_hub_audit_empty">尚無桌面端操作紀錄</string>
 </resources>
