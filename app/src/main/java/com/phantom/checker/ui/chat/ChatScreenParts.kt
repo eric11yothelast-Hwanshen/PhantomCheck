@@ -392,7 +392,7 @@ internal suspend fun buildRagSystemPrompt(
     val calEnabledForAi = com.phantom.checker.util.CalendarBridge.isCalendarEnabledForAi(ctx)
     val usagePermGranted = com.phantom.checker.util.UsageStatsBridge.hasUsageStatsPermission(ctx)
     val healthAiEnabled = PhantomPrefs.isHealthAiQueryEnabled(ctx)
-    val healthPermGranted = healthAiEnabled && com.phantom.checker.util.HealthConnectBridge.hasAllReadPermissions(ctx)
+    val healthPermGranted = healthAiEnabled && com.phantom.checker.util.HealthConnectBridge.hasAnyReadPermission(ctx)
     val externalSearchReady = com.phantom.checker.util.EncryptedByokStore.getExternalSearchBaseUrl(ctx).isNotBlank() &&
         com.phantom.checker.util.EncryptedByokStore.getExternalSearchApiKey(ctx).isNotBlank()
 
@@ -405,20 +405,21 @@ internal suspend fun buildRagSystemPrompt(
         appendLine("- 可用：訊息記錄庫、待辦事項、自動記事、長期/短期記憶庫" +
             (if (calEnabledForAi) "、本機日曆（已授權且已勾選）" else "") +
             (if (usagePermGranted) "、App 使用情況（已授權系統使用情況存取）" else "") +
-            (if (healthPermGranted) "、Health Connect 健康摘要（已授權近 7 日睡眠／步數／心率匯總）" else "") +
+            (if (healthPermGranted) "、Health Connect 健康摘要（依已授權型別提供近 7 日睡眠／步數／心率／距離／熱量匯總）" else "") +
             (if (externalSearchReady) "、外部情報搜尋（已設定 BYOK 端點）" else "")
         )
         val unavailableSources = buildList {
             add("其他 App 內部未透過通知送達的聊天／檔案內容")
             if (!calEnabledForAi) add("本機日曆（尚未授權或未勾選日曆）")
             if (!usagePermGranted) add("App 使用情況／螢幕時間／啟動次數（尚未授權 PACKAGE_USAGE_STATS）")
-            if (!healthPermGranted) add("Health Connect 睡眠／步數／心率數據（尚未授權或已關閉允許 AI 讀取健康摘要）")
+            if (!healthPermGranted) add("Health Connect 睡眠／步數／心率／距離／熱量數據（尚未授權或已關閉允許 AI 讀取健康摘要）")
             if (!externalSearchReady) add("即時上網搜尋（未設定外部搜尋 BYOK 端點）")
             add("任何未注入本提示詞中的統計或外部資料")
         }
         appendLine("- 不可用：${unavailableSources.joinToString("、")}")
         appendLine("- 鐵律：不在可用清單上或未注入的資料一律回答查不到並說明需要什麼授權，禁止估算、推測或編造任何數字、啟動次數、健康數值與行程。回答中出現的每一個行程、課名、時間、地點都必須逐字來自 <calendar_context> 或本機查詢結果；未注入或查詢為空時只能回答「查不到本機日曆中相關資料」並引導至權限中心勾選日曆，嚴禁列出任何具體行程。")
         appendLine("- 行程拒答正反例：✅ 正確：「查不到本機日曆中相關資料，請至權限中心勾選您的日曆後再試。」｜❌ 錯誤：「15:10–16:00 數位邏輯設計…」（凡未逐字出現於 <calendar_context> 或本機查詢結果的任何課名、時段、地點皆屬違規編造）。")
+        appendLine("- 健康拒答正反例：✅ 正確：「查不到：尚未授權距離讀取，請至權限中心開啟。」｜❌ 錯誤：「大約走了 32 公里」（凡未逐字出現於 <health_context> 的數值皆屬違規編造，嚴禁以步數×步幅推算距離；若未注入 <health_context>，任何健康／生理提問一律誠實拒答並引導至權限中心，不得以記憶或常識猜測生理數值）。")
         if (!localCtx.calendarContext.isNullOrBlank()) {
             appendLine("<calendar_context>")
             appendLine(localCtx.calendarContext)
@@ -435,7 +436,7 @@ internal suspend fun buildRagSystemPrompt(
             appendLine("<health_context>")
             appendLine(localCtx.healthContext)
             appendLine("</health_context>")
-            appendLine("（已由本機 Health Connect 直接查詢如上；請完全依據 <health_context> 如實回覆，僅可引用上述匯總數值，嚴禁估算或編造任何睡眠、步數與心率數據。）")
+            appendLine("（已由本機 Health Connect 直接查詢如上；請完全依據 <health_context> 如實回覆，僅可引用上述匯總數值，嚴禁估算、禁止以步數×步幅推算距離，或編造任何睡眠、步數、心率、距離與熱量數據。）")
         }
         appendLine(PhantomPrefs.buildAssistantPersonaPromptBlock(ctx))
         appendLine("動作指令格式：多筆動作請各自獨立放在 ```json ... ``` 區塊，勿合併。")
@@ -454,6 +455,7 @@ internal suspend fun buildRagSystemPrompt(
         appendLine("- 回覆：{\"action\":\"reply_message\",\"messageId\":123,\"replyText\":\"內容\"} | 開App：{\"action\":\"open_app\",\"messageId\":123}")
         appendLine("- 搜訊息：{\"action\":\"search_messages\",\"query\":\"關鍵字\",\"packageName\":\"可選\",\"sender\":\"可選\",\"days\":2}")
         appendLine("- 查詢 App 使用情況（系統以 UsageStatsManager 取得真實數據，未授權則誠實回報並引導授權）：{\"action\":\"usage_query\",\"days\":1,\"top\":8}")
+        appendLine("- 查詢本機健康明細（系統直接由 Health Connect 本機聚合產生每日表，零額度純本機，未授權型別誠實標示「—」並引導至權限中心）：{\"action\":\"health_query\",\"days\":7}")
         appendLine("- 待辦管理：{\"action\":\"todo_list\"} | {\"action\":\"todo_done\",\"title\":\"...\"} | {\"action\":\"todo_delete\",\"title\":\"...\"} | {\"action\":\"todo_edit\",\"title\":\"...\",\"newTitle\":\"可選\",\"time\":\"yyyy-MM-dd HH:mm\"}")
         appendLine("- VIP釘選：{\"action\":\"vip_pin\",\"sender\":\"...\",\"packageName\":\"可選\",\"pin\":true} | App靜音：{\"action\":\"mute_app\",\"appLabel\":\"...\",\"mute\":true}")
         appendLine("- 標已讀：{\"action\":\"mark_read\",\"scope\":\"today|app|all\",\"packageName\":\"可選\"} | 匯出CSV：{\"action\":\"export_messages\",\"packageName\":\"可選\",\"days\":7}")
@@ -951,6 +953,10 @@ internal data class UsageQueryProposal(
     val top: Int = 8
 )
 
+internal data class HealthQueryProposal(
+    val days: Int = 7
+)
+
 internal data class CalendarQueryProposal(
     val date: String? = null,
     val day: String? = null
@@ -1012,6 +1018,7 @@ internal data class ParsedChatActions(
     val calendarFreeQueryProposals: List<CalendarFreeQueryProposal> = emptyList(),
     val calendarAddProposals: List<CalendarAddProposal> = emptyList(),
     val usageQueryProposals: List<UsageQueryProposal> = emptyList(),
+    val healthQueryProposals: List<HealthQueryProposal> = emptyList(),
     val crossAppActions: List<com.phantom.checker.util.CrossAppActionProposal> = emptyList(),
     val demotedQueryHints: List<String> = emptyList(),
     val invalidActionErrors: List<String> = emptyList()
@@ -1033,6 +1040,7 @@ internal data class ParsedChatActions(
             calendarFreeQueryProposals.isNotEmpty() ||
             calendarAddProposals.isNotEmpty() ||
             usageQueryProposals.isNotEmpty() ||
+            healthQueryProposals.isNotEmpty() ||
             demotedQueryHints.isNotEmpty()
 
     /** #386 共用判斷：是否包含任何原始動作提案（核心＋延伸＋跨 App） */
@@ -1095,6 +1103,7 @@ private val KNOWN_CHAT_ACTIONS = setOf(
     "tag_message",
     "search_messages",
     "usage_query",
+    "health_query",
     "todo_list",
     "todo_done",
     "todo_delete",
@@ -1184,6 +1193,7 @@ private fun parseSingleActionJson(
     calendarFreeOut: MutableList<CalendarFreeQueryProposal>,
     calendarAddOut: MutableList<CalendarAddProposal>,
     usageQueryOut: MutableList<UsageQueryProposal>,
+    healthQueryOut: MutableList<HealthQueryProposal>,
     crossAppOut: MutableList<com.phantom.checker.util.CrossAppActionProposal>,
     errorsOut: MutableList<String>
 ): Boolean {
@@ -1579,6 +1589,12 @@ private fun parseSingleActionJson(
             }?.coerceIn(1, 20) ?: 8
             usageQueryOut.add(UsageQueryProposal(days = days, top = top))
         }
+        "health_query" -> {
+            val days = obj.get("days")?.takeIf { !it.isJsonNull }?.let { el ->
+                runCatching { el.asInt }.getOrNull() ?: el.asString?.trim()?.toIntOrNull()
+            }?.coerceIn(1, 30) ?: 7
+            healthQueryOut.add(HealthQueryProposal(days = days))
+        }
         "calendar_add" -> {
             val title = obj.get("title")?.takeIf { !it.isJsonNull }?.asString?.let { AiClient.sanitizeForPrompt(it) }?.trim().orEmpty()
             val startRaw = (obj.get("start") ?: obj.get("time"))?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
@@ -1657,6 +1673,7 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
     val calendarFreeQueries = mutableListOf<CalendarFreeQueryProposal>()
     val calendarAdds = mutableListOf<CalendarAddProposal>()
     val usageQueries = mutableListOf<UsageQueryProposal>()
+    val healthQueries = mutableListOf<HealthQueryProposal>()
     val crossAppActions = mutableListOf<com.phantom.checker.util.CrossAppActionProposal>()
     val errors = mutableListOf<String>()
 
@@ -1672,7 +1689,7 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
             errors.add("動作指令格式無法解析，請重新嘗試。")
         } else {
             objs.forEach { (_, jsonStr) ->
-                parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, whitelistDeletes, toggles, candidates, adjusts, openSettings, msgActions, searchProposals, todoManages, vipPins, muteApps, markReads, exports, memoryViews, memoryAdds, memoryUpdates, memoryDeletes, calendarQueries, calendarFreeQueries, calendarAdds, usageQueries, crossAppActions, errors)
+                parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, whitelistDeletes, toggles, candidates, adjusts, openSettings, msgActions, searchProposals, todoManages, vipPins, muteApps, markReads, exports, memoryViews, memoryAdds, memoryUpdates, memoryDeletes, calendarQueries, calendarFreeQueries, calendarAdds, usageQueries, healthQueries, crossAppActions, errors)
             }
         }
     }
@@ -1690,7 +1707,7 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
     val inlineRangesToRemove = mutableListOf<IntRange>()
     splitBalancedJsonObjects(withoutFenced).forEach { (range, jsonStr) ->
         if (jsonStr.contains("\"action\"", ignoreCase = true)) {
-            val handled = parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, whitelistDeletes, toggles, candidates, adjusts, openSettings, msgActions, searchProposals, todoManages, vipPins, muteApps, markReads, exports, memoryViews, memoryAdds, memoryUpdates, memoryDeletes, calendarQueries, calendarFreeQueries, calendarAdds, usageQueries, crossAppActions, errors)
+            val handled = parseSingleActionJson(jsonStr, rules, tagRules, quickCommands, reminders, whitelists, whitelistDeletes, toggles, candidates, adjusts, openSettings, msgActions, searchProposals, todoManages, vipPins, muteApps, markReads, exports, memoryViews, memoryAdds, memoryUpdates, memoryDeletes, calendarQueries, calendarFreeQueries, calendarAdds, usageQueries, healthQueries, crossAppActions, errors)
             if (handled) {
                 inlineRangesToRemove.add(range)
             }
@@ -1717,11 +1734,12 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
         .replace(ACTION_EMPTY_ARRAY_LINE_REGEX, "")
         .trim()
 
-    // #364 / #387 單意圖單卡：同一次回覆的查詢型動作按固定優先序
-    // calendar_query > calendar_free_query > usage_query > search_messages > memory_list > todo_list 最多保留一張，
+    // #364 / #387 / #419 單意圖單卡：同一次回覆的查詢型動作按固定優先序
+    // calendar_query > calendar_free_query > health_query > usage_query > search_messages > memory_list > todo_list 最多保留一張，
     // 其餘降級為一行誠實提示（寫入型動作不受限制）。
     var finalCalendarQueries = calendarQueries.distinct()
     var finalCalendarFree = calendarFreeQueries.distinct()
+    var finalHealthQueries = healthQueries.distinct()
     var finalUsageQueries = usageQueries.distinct()
     var finalSearches = searchProposals.distinct()
     var finalMemoryViews = memoryViews.distinct()
@@ -1733,6 +1751,7 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
     val primaryQueryKind: String? = when {
         finalCalendarQueries.isNotEmpty() -> "calendar_query"
         finalCalendarFree.isNotEmpty() -> "calendar_free_query"
+        finalHealthQueries.isNotEmpty() -> "health_query"
         finalUsageQueries.isNotEmpty() -> "usage_query"
         finalSearches.isNotEmpty() -> "search_messages"
         finalMemoryViews.isNotEmpty() -> "memory_list"
@@ -1751,6 +1770,12 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
         } else if (finalCalendarFree.isNotEmpty()) {
             demotedHints.add("本機日曆空檔查詢")
             finalCalendarFree = emptyList()
+        }
+        if (primaryQueryKind == "health_query") {
+            finalHealthQueries = finalHealthQueries.take(1)
+        } else if (finalHealthQueries.isNotEmpty()) {
+            demotedHints.add("本機健康明細查詢")
+            finalHealthQueries = emptyList()
         }
         if (primaryQueryKind == "usage_query") {
             finalUsageQueries = finalUsageQueries.take(1)
@@ -1805,6 +1830,7 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
         calendarFreeQueryProposals = finalCalendarFree,
         calendarAddProposals = calendarAdds.distinct(),
         usageQueryProposals = finalUsageQueries,
+        healthQueryProposals = finalHealthQueries,
         crossAppActions = crossAppActions.distinct(),
         demotedQueryHints = demotedHints,
         invalidActionErrors = errors.distinct()

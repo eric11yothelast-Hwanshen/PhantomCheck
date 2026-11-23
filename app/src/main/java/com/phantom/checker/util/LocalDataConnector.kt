@@ -54,12 +54,15 @@ object LocalDataConnector {
         "app使用", "app 使用", "usage", "screen time"
     )
 
-    /** #403 健康／生理關鍵字（命中時依設定與授權狀態注入近 7 日聚合匯總數值或誠實拒答） */
+    /** #403 / #419 健康／生理關鍵字（命中時依設定與授權狀態注入近 7 日聚合匯總數值或誠實拒答） */
     internal val HEALTH_KEYWORDS = listOf(
-        "睡眠", "睡多久", "睡了多久", "睡幾小時", "睡幾個小時", "幾點睡", "晚睡", "熬夜",
-        "步數", "走幾步", "走了幾步", "走路", "萬步",
+        "睡眠", "睡多久", "睡了多久", "睡幾小時", "睡幾個小時", "幾點睡", "晚睡", "熬夜", "睡眠品質", "作息", "休息",
+        "步數", "走幾步", "走了幾步", "走路", "萬步", "走路距離", "前一天走了",
+        "距離", "公里", "距离",
         "心率", "心跳", "靜止心率", "bpm",
-        "健康", "生理", "運動", "活動量", "卡路里", "熱量",
+        "健康", "生理", "身體", "體能", "身体", "体能",
+        "運動", "運動量", "活動量", "活動紀錄", "健身", "鍛鍊", "活动", "锻炼",
+        "卡路里", "熱量", "热量", "消耗", "大卡", "千卡", "熱量攝取",
         "health connect", "healthconnect"
     )
 
@@ -119,32 +122,51 @@ object LocalDataConnector {
     private suspend fun buildHealthContext(ctx: Context): String {
         val availability = HealthConnectBridge.checkAvailability(ctx)
         if (availability == HealthConnectBridge.SdkAvailability.UNAVAILABLE) {
-            return "此裝置未安裝或未支援 Health Connect，無法讀取睡眠、步數與心率數據。請誠實告知使用者「裝置未安裝或未支援 Health Connect，無法查詢健康數據」，並建議至「權限中心」查看說明，嚴禁估算或編造任何數值。"
+            return "此裝置未安裝或未支援 Health Connect，無法讀取健康數據。請誠實告知使用者「裝置未安裝或未支援 Health Connect，無法查詢健康數據」，並建議至「權限中心」查看說明，嚴禁估算或編造任何數值。"
         }
         if (availability == HealthConnectBridge.SdkAvailability.PROVIDER_UPDATE_REQUIRED) {
-            return "Health Connect 服務需要更新或安裝才可讀取睡眠、步數與心率數據。請誠實告知使用者「Health Connect 需要安裝或更新，無法查詢」，並建議至「權限中心」點擊安裝／更新，嚴禁估算或編造任何數值。"
+            return "Health Connect 服務需要更新或安裝才可讀取健康數據。請誠實告知使用者「Health Connect 需要安裝或更新，無法查詢」，並建議至「權限中心」點擊安裝／更新，嚴禁估算或編造任何數值。"
         }
-        if (!HealthConnectBridge.hasAllReadPermissions(ctx)) {
-            return "Health Connect（睡眠／步數／心率）讀取權限尚未授權，無法查詢真實生理與健康數據。請誠實告知使用者「尚未授權 Health Connect，無法查詢」，並建議前往「權限中心」開啟「Health Connect（睡眠／步數／心率）」授權，嚴禁估算或編造任何數值。"
+        val perm = HealthConnectBridge.getPermissionStatus(ctx)
+        if (!perm.anyGranted) {
+            return "Health Connect（睡眠／步數／心率／距離／熱量）讀取權限尚未授權，無法查詢真實生理與健康數據。請誠實告知使用者「尚未授權 Health Connect，無法查詢」，並建議前往「權限中心」開啟 Health Connect 授權，嚴禁估算或編造任何數值。"
         }
         val trend = HealthConnectBridge.readLast7DaysTrend(ctx)
         val snapshot = HealthConnectBridge.readMorningSnapshot(ctx)
-        val hasAnyData = trend.any { it.sleepHours > 0f || it.steps > 0L || it.avgHeartRateBpm > 0L }
+        val hasSleep = trend.any { it.sleepHours > 0f }
+        val hasSteps = trend.any { it.steps > 0L }
+        val hasHr = trend.any { it.avgHeartRateBpm > 0L }
+        val hasDist = trend.any { it.distanceMeters > 0.0 }
+        val hasCal = trend.any { it.caloriesKcal > 0.0 }
+        val hasAnyData = hasSleep || hasSteps || hasHr || hasDist || hasCal
+
+        fun typeStatus(granted: Boolean, hasData: Boolean): String = when {
+            !granted -> "未授權，禁止估算"
+            !hasData -> "已授權但近 7 日無紀錄"
+            else -> "已授權"
+        }
+
+        val permSummaryLine = "各型別授權狀態：睡眠（${typeStatus(perm.sleep, hasSleep)}）、步數（${typeStatus(perm.steps, hasSteps)}）、心率（${typeStatus(perm.heartRate, hasHr)}）、距離（${typeStatus(perm.distance, hasDist)}）、總消耗熱量（${typeStatus(perm.calories, hasCal)}）。"
         if (trend.isEmpty() || !hasAnyData) {
-            return "Health Connect 已授權，但近 7 日查無任何睡眠、步數或心率紀錄。請誠實告知使用者「Health Connect 近 7 日尚無同步紀錄」，嚴禁估算或編造任何數值。"
+            return "Health Connect 已授權，但近 7 日查無任何同步紀錄。$permSummaryLine 請誠實告知使用者「Health Connect 近 7 日尚無同步紀錄」，嚴禁以步數×步幅估算距離或編造任何數值。"
         }
         return buildString {
-            appendLine("Health Connect 近 7 日真實聚合匯總數值（僅可引用以下數據回答，嚴禁估算或編造未列出的數值與原始時間序列）：")
+            appendLine("Health Connect 近 7 日真實聚合匯總數值（僅可引用以下數據回答，嚴禁估算或編造未列出的數值與原始時間序列；禁止以步數×步幅估算距離，未授權型別只能誠實回報未授權並引導至權限中心）：")
+            appendLine(permSummaryLine)
             if (snapshot != null) {
-                val sleepStr = String.format(Locale.US, "%.1f 小時", snapshot.lastNightSleepHours)
-                val hrStr = if (snapshot.yesterdayAvgHeartRate > 0L) "${snapshot.yesterdayAvgHeartRate} bpm" else "無紀錄"
-                val baseHrStr = if (snapshot.baseline7dAvgHeartRate > 0L) "${snapshot.baseline7dAvgHeartRate} bpm" else "樣本不足"
-                appendLine("- 今晨快照：昨晚睡眠 $sleepStr、昨日步數 ${snapshot.yesterdaySteps} 步、昨日平均心率 $hrStr（7 日基準心率 $baseHrStr）")
+                val sleepStr = if (!perm.sleep) "未授權" else String.format(Locale.US, "%.1f 小時", snapshot.lastNightSleepHours)
+                val stepsStr = if (!perm.steps) "未授權" else "${snapshot.yesterdaySteps} 步"
+                val hrStr = if (!perm.heartRate) "未授權" else if (snapshot.yesterdayAvgHeartRate > 0L) "${snapshot.yesterdayAvgHeartRate} bpm" else "無紀錄"
+                val baseHrStr = if (!perm.heartRate) "未授權" else if (snapshot.baseline7dAvgHeartRate > 0L) "${snapshot.baseline7dAvgHeartRate} bpm" else "樣本不足"
+                appendLine("- 今晨快照：昨晚睡眠 $sleepStr、昨日步數 $stepsStr、昨日平均心率 $hrStr（7 日基準心率 $baseHrStr）")
             }
             trend.forEach { pt ->
-                val s = String.format(Locale.US, "%.1f 小時", pt.sleepHours)
-                val hr = if (pt.avgHeartRateBpm > 0L) "${pt.avgHeartRateBpm} bpm" else "無紀錄"
-                appendLine("- ${pt.dayLabel}：睡眠 $s、步數 ${pt.steps} 步、平均心率 $hr")
+                val s = if (!perm.sleep) "未授權" else if (pt.sleepHours > 0f) String.format(Locale.US, "%.1f 小時", pt.sleepHours) else "無紀錄"
+                val st = if (!perm.steps) "未授權" else if (pt.steps > 0L) "${pt.steps} 步" else "無紀錄"
+                val hr = if (!perm.heartRate) "未授權" else if (pt.avgHeartRateBpm > 0L) "${pt.avgHeartRateBpm} bpm" else "無紀錄"
+                val dist = if (!perm.distance) "未授權" else if (pt.distanceMeters > 0.0) HealthConnectBridge.formatDistance(pt.distanceMeters) else "無紀錄"
+                val cal = if (!perm.calories) "未授權" else if (pt.caloriesKcal > 0.0) "${pt.caloriesKcal.toLong()} kcal" else "無紀錄"
+                appendLine("- ${pt.dayLabel}：睡眠 $s、步數 $st、平均心率 $hr、距離 $dist、熱量 $cal")
             }
         }.trim()
     }

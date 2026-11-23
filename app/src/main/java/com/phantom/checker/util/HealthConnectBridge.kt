@@ -6,9 +6,11 @@ import android.net.Uri
 import android.os.Build
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import kotlinx.coroutines.Dispatchers
@@ -20,20 +22,49 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
- * #381 Health Connect 生理數據整合橋接層（androidx.health.connect:connect-client:1.1.0）：
+ * #381 / #419 Health Connect 生理數據整合橋接層（androidx.health.connect:connect-client:1.1.0）：
  * 1. 增強不依賴：未安裝 HC（含無 GMS 機型）或未授權時誠實降級，絕不 crash（getOrCreate 必 catch IllegalStateException）。
- * 2. 原始生理數值永不出本機：僅於本機 aggregate 聚合，透過固定查表式規則產出單句建議結論。
- * 3. 無 API key 時讀取與 Stats 7 日趨勢照常運作。
+ * 2. 原始生理數值永不出本機：僅於本機 aggregate 聚合，採 per-type 權限查詢，已授 3 權限的既有用戶不回退。
+ * 3. 無 API key 時讀取與 Stats 趨勢／明細照常運作。
  */
 object HealthConnectBridge {
 
     private const val HC_PROVIDER_PACKAGE = "com.google.android.apps.healthdata"
 
+    val PERM_READ_SLEEP: String = HealthPermission.getReadPermission(SleepSessionRecord::class)
+    val PERM_READ_STEPS: String = HealthPermission.getReadPermission(StepsRecord::class)
+    val PERM_READ_HEART_RATE: String = HealthPermission.getReadPermission(HeartRateRecord::class)
+    val PERM_READ_DISTANCE: String = HealthPermission.getReadPermission(DistanceRecord::class)
+    val PERM_READ_TOTAL_CALORIES: String = HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class)
+
+    /** 既有用戶核心三權限（保持不變以免破壞已授三權限者之行為） */
     val REQUIRED_READ_PERMISSIONS: Set<String> = setOf(
-        HealthPermission.getReadPermission(SleepSessionRecord::class),
-        HealthPermission.getReadPermission(StepsRecord::class),
-        HealthPermission.getReadPermission(HeartRateRecord::class)
+        PERM_READ_SLEEP,
+        PERM_READ_STEPS,
+        PERM_READ_HEART_RATE
     )
+
+    /** #419 擴充權限（距離、總消耗熱量），採 per-type 漸進式授權 */
+    val OPTIONAL_READ_PERMISSIONS: Set<String> = setOf(
+        PERM_READ_DISTANCE,
+        PERM_READ_TOTAL_CALORIES
+    )
+
+    /** 完整 5 項讀取權限（供權限中心請求使用） */
+    val ALL_READ_PERMISSIONS: Set<String> = REQUIRED_READ_PERMISSIONS + OPTIONAL_READ_PERMISSIONS
+
+    data class HealthPermissionStatus(
+        val sleep: Boolean = false,
+        val steps: Boolean = false,
+        val heartRate: Boolean = false,
+        val distance: Boolean = false,
+        val calories: Boolean = false
+    ) {
+        val anyGranted: Boolean get() = sleep || steps || heartRate || distance || calories
+        val allCoreGranted: Boolean get() = sleep && steps && heartRate
+        val allGranted: Boolean get() = sleep && steps && heartRate && distance && calories
+        val grantedCount: Int get() = listOf(sleep, steps, heartRate, distance, calories).count { it }
+    }
 
     enum class SdkAvailability {
         AVAILABLE,
@@ -45,7 +76,9 @@ object HealthConnectBridge {
         val dayLabel: String, // MM/dd
         val sleepHours: Float,
         val steps: Long,
-        val avgHeartRateBpm: Long
+        val avgHeartRateBpm: Long,
+        val distanceMeters: Double = 0.0,
+        val caloriesKcal: Double = 0.0
     )
 
     data class MorningHealthSnapshot(
@@ -79,15 +112,27 @@ object HealthConnectBridge {
         }
     }
 
-    suspend fun hasAllReadPermissions(ctx: Context): Boolean = withContext(Dispatchers.IO) {
-        val client = getClientSafely(ctx) ?: return@withContext false
+    /** 取得 5 項健康讀取權限的 per-type 授權狀態 */
+    suspend fun getPermissionStatus(ctx: Context): HealthPermissionStatus = withContext(Dispatchers.IO) {
+        val client = getClientSafely(ctx) ?: return@withContext HealthPermissionStatus()
         try {
             val granted = client.permissionController.getGrantedPermissions()
-            granted.containsAll(REQUIRED_READ_PERMISSIONS)
+            HealthPermissionStatus(
+                sleep = PERM_READ_SLEEP in granted,
+                steps = PERM_READ_STEPS in granted,
+                heartRate = PERM_READ_HEART_RATE in granted,
+                distance = PERM_READ_DISTANCE in granted,
+                calories = PERM_READ_TOTAL_CALORIES in granted
+            )
         } catch (_: Throwable) {
-            false
+            HealthPermissionStatus()
         }
     }
+
+    suspend fun hasAnyReadPermission(ctx: Context): Boolean = getPermissionStatus(ctx).anyGranted
+
+    /** 核心三權限檢查（保留原簽名與語意，不強制要求新權限，避免破壞既有用戶） */
+    suspend fun hasAllReadPermissions(ctx: Context): Boolean = getPermissionStatus(ctx).allCoreGranted
 
     /** 誠實引導 Intent：Android 14+ 開啟系統 Health Connect 設定；Android 13 導向安裝頁 */
     fun buildInstallOrSettingsIntent(ctx: Context): Intent {
@@ -108,16 +153,21 @@ object HealthConnectBridge {
         ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
-    /** 本機聚合近 7 日睡眠、步數（不指定 DataOrigin 以自動涵蓋 Android 內建步數）與平均心率 */
-    suspend fun readLast7DaysTrend(ctx: Context): List<DailyHealthPoint> = withContext(Dispatchers.IO) {
+    /** 本機聚合近 7 日健康數據（per-type 查詢：僅查詢已授權型別，未授權型別維持 0） */
+    suspend fun readLast7DaysTrend(ctx: Context): List<DailyHealthPoint> = readRecentDaysTrend(ctx, days = 7)
+
+    /** 本機聚合近 N 日健康數據（per-type 查詢，支援 1..30 日） */
+    suspend fun readRecentDaysTrend(ctx: Context, days: Int = 7): List<DailyHealthPoint> = withContext(Dispatchers.IO) {
         val client = getClientSafely(ctx) ?: return@withContext emptyList()
-        if (!hasAllReadPermissions(ctx)) return@withContext emptyList()
+        val perm = getPermissionStatus(ctx)
+        if (!perm.anyGranted) return@withContext emptyList()
+        val clampedDays = days.coerceIn(1, 30)
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
         val labelFmt = DateTimeFormatter.ofPattern("MM/dd", Locale.US)
         val out = mutableListOf<DailyHealthPoint>()
 
-        for (offset in 6L downTo 0L) {
+        for (offset in (clampedDays - 1).toLong() downTo 0L) {
             val day = today.minusDays(offset)
             val start = day.atStartOfDay(zone).toInstant()
             val end = day.plusDays(1).atStartOfDay(zone).toInstant()
@@ -125,47 +175,138 @@ object HealthConnectBridge {
             val sleepStart = day.minusDays(1).atTime(LocalTime.of(18, 0)).atZone(zone).toInstant()
             val sleepEnd = day.atTime(LocalTime.of(12, 0)).atZone(zone).toInstant()
 
-            val sleepHours = runCatching {
-                val res = client.aggregate(
-                    AggregateRequest(
-                        metrics = setOf(SleepSessionRecord.SLEEP_DURATION_TOTAL),
-                        timeRangeFilter = TimeRangeFilter.between(sleepStart, sleepEnd)
+            val sleepHours = if (perm.sleep) {
+                runCatching {
+                    val res = client.aggregate(
+                        AggregateRequest(
+                            metrics = setOf(SleepSessionRecord.SLEEP_DURATION_TOTAL),
+                            timeRangeFilter = TimeRangeFilter.between(sleepStart, sleepEnd)
+                        )
                     )
-                )
-                val dur = res[SleepSessionRecord.SLEEP_DURATION_TOTAL]
-                if (dur != null) (dur.toMinutes() / 60f) else 0f
-            }.getOrDefault(0f)
+                    val dur = res[SleepSessionRecord.SLEEP_DURATION_TOTAL]
+                    if (dur != null) (dur.toMinutes() / 60f) else 0f
+                }.getOrDefault(0f)
+            } else 0f
 
-            val steps = runCatching {
-                val res = client.aggregate(
-                    AggregateRequest(
-                        metrics = setOf(StepsRecord.COUNT_TOTAL),
-                        timeRangeFilter = TimeRangeFilter.between(start, end)
+            val steps = if (perm.steps) {
+                runCatching {
+                    val res = client.aggregate(
+                        AggregateRequest(
+                            metrics = setOf(StepsRecord.COUNT_TOTAL),
+                            timeRangeFilter = TimeRangeFilter.between(start, end)
+                        )
                     )
-                )
-                res[StepsRecord.COUNT_TOTAL] ?: 0L
-            }.getOrDefault(0L)
+                    res[StepsRecord.COUNT_TOTAL] ?: 0L
+                }.getOrDefault(0L)
+            } else 0L
 
-            val avgHr = runCatching {
-                val res = client.aggregate(
-                    AggregateRequest(
-                        metrics = setOf(HeartRateRecord.BPM_AVG),
-                        timeRangeFilter = TimeRangeFilter.between(start, end)
+            val avgHr = if (perm.heartRate) {
+                runCatching {
+                    val res = client.aggregate(
+                        AggregateRequest(
+                            metrics = setOf(HeartRateRecord.BPM_AVG),
+                            timeRangeFilter = TimeRangeFilter.between(start, end)
+                        )
                     )
-                )
-                res[HeartRateRecord.BPM_AVG] ?: 0L
-            }.getOrDefault(0L)
+                    res[HeartRateRecord.BPM_AVG] ?: 0L
+                }.getOrDefault(0L)
+            } else 0L
+
+            val distanceMeters = if (perm.distance) {
+                runCatching {
+                    val res = client.aggregate(
+                        AggregateRequest(
+                            metrics = setOf(DistanceRecord.DISTANCE_TOTAL),
+                            timeRangeFilter = TimeRangeFilter.between(start, end)
+                        )
+                    )
+                    res[DistanceRecord.DISTANCE_TOTAL]?.inMeters ?: 0.0
+                }.getOrDefault(0.0)
+            } else 0.0
+
+            val caloriesKcal = if (perm.calories) {
+                runCatching {
+                    val res = client.aggregate(
+                        AggregateRequest(
+                            metrics = setOf(TotalCaloriesBurnedRecord.ENERGY_TOTAL),
+                            timeRangeFilter = TimeRangeFilter.between(start, end)
+                        )
+                    )
+                    res[TotalCaloriesBurnedRecord.ENERGY_TOTAL]?.inKilocalories ?: 0.0
+                }.getOrDefault(0.0)
+            } else 0.0
 
             out.add(
                 DailyHealthPoint(
                     dayLabel = day.format(labelFmt),
                     sleepHours = sleepHours,
                     steps = steps,
-                    avgHeartRateBpm = avgHr
+                    avgHeartRateBpm = avgHr,
+                    distanceMeters = distanceMeters,
+                    caloriesKcal = caloriesKcal
                 )
             )
         }
         out
+    }
+
+    /** 格式化距離（自動切換 m / km） */
+    fun formatDistance(meters: Double): String {
+        if (meters <= 0.0) return "—"
+        return if (meters >= 1000.0) {
+            String.format(Locale.US, "%.2f km", meters / 1000.0)
+        } else {
+            "${meters.toLong()} m"
+        }
+    }
+
+    /** #419 零 token 純本機 health_query 確定性回覆卡（含每日明細小表與未授權型別提示） */
+    suspend fun buildHealthQueryReport(ctx: Context, days: Int = 7): String = withContext(Dispatchers.IO) {
+        val clampedDays = days.coerceIn(1, 30)
+        when (checkAvailability(ctx)) {
+            SdkAvailability.UNAVAILABLE ->
+                return@withContext "❤️ 查不到健康數據：此裝置未安裝或未支援 Health Connect，無法讀取生理紀錄（可至「權限中心」查看說明）。"
+            SdkAvailability.PROVIDER_UPDATE_REQUIRED ->
+                return@withContext "❤️ 查不到健康數據：Health Connect 需要安裝或更新，請至「權限中心」點擊安裝／更新後再試。"
+            SdkAvailability.AVAILABLE -> Unit
+        }
+        val perm = getPermissionStatus(ctx)
+        if (!perm.anyGranted) {
+            return@withContext "❤️ 查不到健康數據：尚未授權任何 Health Connect 讀取權限，請前往「權限中心」開啟 Health Connect 授權。"
+        }
+        val trend = readRecentDaysTrend(ctx, clampedDays)
+        val hasAnyData = trend.any {
+            it.sleepHours > 0f || it.steps > 0L || it.avgHeartRateBpm > 0L || it.distanceMeters > 0.0 || it.caloriesKcal > 0.0
+        }
+        val missingTypes = buildList {
+            if (!perm.sleep) add("睡眠")
+            if (!perm.steps) add("步數")
+            if (!perm.heartRate) add("心率")
+            if (!perm.distance) add("距離")
+            if (!perm.calories) add("熱量")
+        }
+        buildString {
+            appendLine("❤️ **Health Connect 近 $clampedDays 日健康明細（本機聚合，零額度）**")
+            if (!hasAnyData) {
+                appendLine("近 $clampedDays 日查無已同步的健康紀錄。")
+            } else {
+                appendLine()
+                appendLine("| 日期 | 睡眠 | 步數 | 均心率 | 距離 | 熱量 |")
+                appendLine("| --- | --- | --- | --- | --- | --- |")
+                trend.forEach { pt ->
+                    val sleepStr = if (!perm.sleep) "—" else if (pt.sleepHours > 0f) String.format(Locale.US, "%.1fh", pt.sleepHours) else "—"
+                    val stepsStr = if (!perm.steps) "—" else if (pt.steps > 0L) String.format(Locale.US, "%,d", pt.steps) else "—"
+                    val hrStr = if (!perm.heartRate) "—" else if (pt.avgHeartRateBpm > 0L) "${pt.avgHeartRateBpm}" else "—"
+                    val distStr = if (!perm.distance) "—" else formatDistance(pt.distanceMeters)
+                    val calStr = if (!perm.calories) "—" else if (pt.caloriesKcal > 0.0) "${pt.caloriesKcal.toLong()} kcal" else "—"
+                    appendLine("| ${pt.dayLabel} | $sleepStr | $stepsStr | $hrStr | $distStr | $calStr |")
+                }
+            }
+            if (missingTypes.isNotEmpty()) {
+                appendLine()
+                appendLine("ℹ️ 尚未授權型別（顯示「—」）：${missingTypes.joinToString("、")}；可至「權限中心」補授權。")
+            }
+        }.trim()
     }
 
     /** 晨間簡報用本機聚合快照（前一晚睡眠＋昨日步數與心率＋7 日基準心率） */

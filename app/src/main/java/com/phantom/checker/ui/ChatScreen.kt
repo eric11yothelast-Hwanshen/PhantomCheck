@@ -1625,6 +1625,17 @@ fun ChatAssistantTab(
                             }
                         }
 
+                        // #419 本機健康明細查詢（HealthConnectBridge 純本機聚合，零 token）
+                        if (parsed.healthQueryProposals.isNotEmpty()) {
+                            parsed.healthQueryProposals.forEach { hq ->
+                                val report = com.phantom.checker.util.HealthConnectBridge.buildHealthQueryReport(
+                                    ctx = appCtx,
+                                    days = hq.days
+                                )
+                                immediateExtraReplies.add(report)
+                            }
+                        }
+
                         // #364 單意圖單卡降級提示（不靜默遺漏任何次要查詢意圖）
                         if (parsed.demotedQueryHints.isNotEmpty()) {
                             immediateExtraReplies.add(

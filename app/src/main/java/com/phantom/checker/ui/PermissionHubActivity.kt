@@ -342,32 +342,42 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                             }
                             HorizontalDivider()
                             val hcAvailability = remember { com.phantom.checker.util.HealthConnectBridge.checkAvailability(appCtx) }
-                            var hcGranted by remember { mutableStateOf(false) }
+                            var hcPermStatus by remember { mutableStateOf(com.phantom.checker.util.HealthConnectBridge.HealthPermissionStatus()) }
                             var healthAiQueryEnabled by remember { mutableStateOf(PhantomPrefs.isHealthAiQueryEnabled(appCtx)) }
                             androidx.compose.runtime.LaunchedEffect(Unit) {
-                                hcGranted = com.phantom.checker.util.HealthConnectBridge.hasAllReadPermissions(appCtx)
+                                hcPermStatus = com.phantom.checker.util.HealthConnectBridge.getPermissionStatus(appCtx)
                             }
                             val hcPermLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
                                 androidx.health.connect.client.PermissionController.createRequestPermissionResultContract()
                             ) { grantedSet ->
-                                hcGranted = grantedSet.containsAll(com.phantom.checker.util.HealthConnectBridge.REQUIRED_READ_PERMISSIONS)
+                                hcPermStatus = com.phantom.checker.util.HealthConnectBridge.HealthPermissionStatus(
+                                    sleep = com.phantom.checker.util.HealthConnectBridge.PERM_READ_SLEEP in grantedSet,
+                                    steps = com.phantom.checker.util.HealthConnectBridge.PERM_READ_STEPS in grantedSet,
+                                    heartRate = com.phantom.checker.util.HealthConnectBridge.PERM_READ_HEART_RATE in grantedSet,
+                                    distance = com.phantom.checker.util.HealthConnectBridge.PERM_READ_DISTANCE in grantedSet,
+                                    calories = com.phantom.checker.util.HealthConnectBridge.PERM_READ_TOTAL_CALORIES in grantedSet
+                                )
                             }
+                            val hcGranted = hcPermStatus.allGranted
                             PermissionRow(
-                                name = "Health Connect（睡眠／步數／心率）",
-                                granted = hcGranted,
+                                name = "Health Connect（睡眠／步數／心率／距離／熱量）",
+                                granted = hcPermStatus.anyGranted,
                                 desc = when {
                                     hcAvailability == com.phantom.checker.util.HealthConnectBridge.SdkAvailability.UNAVAILABLE ->
                                         "此裝置未支援或未安裝 Health Connect（例如部分無 GMS 機型），App 其餘功能不受影響"
                                     hcAvailability == com.phantom.checker.util.HealthConnectBridge.SdkAvailability.PROVIDER_UPDATE_REQUIRED ->
-                                        "需安裝或更新 Health Connect 才可讀取穿戴裝置睡眠、步數與心率"
-                                    hcGranted ->
-                                        "已授權本機聚合讀取，原始生理時間序列永不出本機，僅用於統計 7 日趨勢、晨間規則建議與健康匯總提問"
+                                        "需安裝或更新 Health Connect 才可讀取穿戴裝置睡眠、步數、心率、距離與消耗熱量"
+                                    hcPermStatus.allGranted ->
+                                        "已授權全部 5 項本機聚合讀取（睡眠／步數／心率／距離／熱量），原始生理時間序列永不出本機"
+                                    hcPermStatus.anyGranted ->
+                                        "已授權 ${hcPermStatus.grantedCount}/5 項（可正常運作）；點右側可補授距離／熱量等其餘項目"
                                     else ->
-                                        "選配授權：於 Stats 顯示 7 日睡眠／步數趨勢，並於晨間簡報與 AI 助手提供查表式節奏建議"
+                                        "選配授權：於統計頁顯示每日健康明細與趨勢，並於晨間簡報與 AI 助手提供零幻覺本機健康查詢"
                                 },
                                 actionLabel = when {
                                     hcAvailability != com.phantom.checker.util.HealthConnectBridge.SdkAvailability.AVAILABLE -> "安裝／查看"
                                     hcGranted -> "管理權限"
+                                    hcPermStatus.anyGranted -> "補授權"
                                     else -> "立即授予"
                                 }
                             ) {
@@ -377,7 +387,7 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                                     }
                                 } else {
                                     runCatching {
-                                        hcPermLauncher.launch(com.phantom.checker.util.HealthConnectBridge.REQUIRED_READ_PERMISSIONS)
+                                        hcPermLauncher.launch(com.phantom.checker.util.HealthConnectBridge.ALL_READ_PERMISSIONS)
                                     }.onFailure {
                                         runCatching {
                                             ctx.startActivity(com.phantom.checker.util.HealthConnectBridge.buildInstallOrSettingsIntent(ctx))
