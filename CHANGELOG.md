@@ -1,6 +1,7 @@
-# 更新日誌（CHANGELOG）
+# 更新日誌（CHANGELOG） / Changelog
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
+This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses Semantic Versioning.
 
 ## [4.3.0] - 2026-11-23
 
