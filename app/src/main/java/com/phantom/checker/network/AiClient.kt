@@ -25,6 +25,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -463,8 +464,79 @@ object AiClient {
         return base + path
     }
 
+    /** 目標 AI 端點已退役時拋出（如 GitHub Models 2026-07-30 退役），阻斷無效請求並引導遷移。 */
+    class RetiredAiEndpointException(message: String) : IOException(message)
+
+    /** HTTP 2xx 但回應非有效 JSON（Content-Type 非 JSON 或本文首字非 '{'/'['）時拋出，保留完整診斷資訊。 */
+    class NonJsonAiResponseException(
+        val httpCode: Int,
+        val contentType: String,
+        val bodyPreview: String
+    ) : IOException("HTTP $httpCode 回應非 JSON（Content-Type: $contentType）：$bodyPreview")
+
+    private const val GITHUB_MODELS_RETIREMENT_URL =
+        "https://github.blog/changelog/2026-07-30-github-models-is-now-retired/"
+
+    private val RETIRED_GITHUB_MODELS_HOSTS = setOf(
+        "models.github.ai",
+        "models.inference.ai.azure.com"
+    )
+
+    internal fun isRetiredGitHubModelsHost(host: String): Boolean {
+        val h = host.trim().lowercase(Locale.ROOT)
+        return RETIRED_GITHUB_MODELS_HOSTS.any { retired ->
+            h == retired || h.endsWith(".$retired")
+        }
+    }
+
+    internal fun buildGitHubModelsRetiredMessage(): String =
+        "GitHub Models 已於 2026-07-30 全面退役（inference API 與 BYOK 皆停用），請改用 Microsoft Foundry／各模型官方 API／OpenRouter 等供應商（$GITHUB_MODELS_RETIREMENT_URL）"
+
+    /**
+     * 統一 AI 傳輸層攔截器（供 okHttpClient 與 chatOkHttpClient 共用）：
+     * 1. GitHub Models 退役端點偵測（直接攔截並回報遷移說明）
+     * 2. 自動補齊 Accept: application/json 與 Accept-Charset: utf-8
+     * 3. HTTP 2xx 非 JSON 回應偵測（peekBody 保留狀態碼、Content-Type、前 300 字原始本文）
+     */
+    internal val aiTransportInterceptor: Interceptor = Interceptor { chain ->
+        val original = chain.request()
+        if (isRetiredGitHubModelsHost(original.url.host)) {
+            throw RetiredAiEndpointException(buildGitHubModelsRetiredMessage())
+        }
+        val reqBuilder = original.newBuilder()
+        if (original.header("Accept").isNullOrBlank()) {
+            reqBuilder.header("Accept", "application/json")
+        }
+        if (original.header("Accept-Charset").isNullOrBlank()) {
+            reqBuilder.header("Accept-Charset", "utf-8")
+        }
+        val response = chain.proceed(reqBuilder.build())
+        if (response.isSuccessful) {
+            val contentType = response.header("Content-Type")?.trim().orEmpty()
+            val contentTypeLower = contentType.lowercase(Locale.ROOT)
+            val isJsonContentType = contentTypeLower.contains("application/json") ||
+                contentTypeLower.contains("+json") ||
+                contentTypeLower.contains("text/json")
+            val peeked = runCatching { response.peekBody(8192L).string() }.getOrDefault("")
+            val trimmedStart = peeked.trimStart()
+            val looksLikeJson = trimmedStart.startsWith("{") || trimmedStart.startsWith("[")
+            if (!isJsonContentType || !looksLikeJson) {
+                val ctDisplay = contentType.ifBlank { "(none)" }
+                val preview = peeked.replace(WHITESPACE_REGEX, " ").trim().take(300).ifBlank { "(empty)" }
+                response.close()
+                throw NonJsonAiResponseException(
+                    httpCode = response.code,
+                    contentType = ctDisplay,
+                    bodyPreview = preview
+                )
+            }
+        }
+        response
+    }
+
     private val okHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
+            .addInterceptor(aiTransportInterceptor)
             .connectTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .readTimeout(90, TimeUnit.SECONDS)
@@ -489,6 +561,7 @@ object AiClient {
 
     private val chatOkHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
+            .addInterceptor(aiTransportInterceptor)
             .connectTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .readTimeout(120, TimeUnit.SECONDS)
@@ -1758,7 +1831,7 @@ object AiClient {
             null
         }
         val clean = (parsed ?: raw).replace(WHITESPACE_REGEX, " ").trim()
-        return clean.takeIf { it.isNotEmpty() }?.take(220)
+        return clean.takeIf { it.isNotEmpty() }?.take(300)
     }
 
     internal fun estimateTokens(text: String): Int = ((text.length + 3) / 4).coerceAtLeast(1)
@@ -2963,6 +3036,12 @@ object AiClient {
             } catch (e: CancellationException) {
                 refund()
                 throw e
+            } catch (e: RetiredAiEndpointException) {
+                refund()
+                Result.failure(e)
+            } catch (e: NonJsonAiResponseException) {
+                refund()
+                Result.failure(e)
             } catch (e: Exception) {
                 refund()
                 Result.failure(IllegalStateException("聯網查詢連線失敗（${e.javaClass.simpleName}）。"))
