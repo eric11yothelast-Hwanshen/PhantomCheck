@@ -36,11 +36,13 @@ class NotesWidgetProvider : AppWidgetProvider() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val allNotes = AppDatabaseHolder.db(appCtx).noteDao().all()
-                val topNotes = allNotes.take(MAX_ITEMS)
-                lastSnapshot = computeSnapshotKey(allNotes.size, topNotes)
-                val views = buildRemoteViews(appCtx, allNotes.size, topNotes, System.currentTimeMillis())
-                appWidgetManager.updateAppWidget(appWidgetIds, views)
+                kotlinx.coroutines.withTimeout(8_500L) {
+                    val allNotes = AppDatabaseHolder.db(appCtx).noteDao().all()
+                    val topNotes = allNotes.take(MAX_ITEMS)
+                    lastSnapshot = computeSnapshotKey(allNotes.size, topNotes)
+                    val views = buildRemoteViews(appCtx, allNotes.size, topNotes, System.currentTimeMillis())
+                    appWidgetManager.updateAppWidget(appWidgetIds, views)
+                }
             } catch (_: Exception) {
             } finally {
                 pendingResult.finish()
@@ -55,6 +57,11 @@ class NotesWidgetProvider : AppWidgetProvider() {
         if (remaining.isEmpty()) {
             lastSnapshot = null
         }
+    }
+
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        lastSnapshot = null
     }
 
     companion object {

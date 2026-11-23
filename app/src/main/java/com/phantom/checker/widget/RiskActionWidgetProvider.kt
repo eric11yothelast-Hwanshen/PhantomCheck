@@ -34,10 +34,12 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val target = findTargetMessage(appCtx)
-                lastMessageId = target?.id
-                val views = buildRemoteViews(appCtx, target)
-                appWidgetManager.updateAppWidget(appWidgetIds, views)
+                kotlinx.coroutines.withTimeout(8_500L) {
+                    val target = findTargetMessage(appCtx)
+                    lastMessageId = target?.id
+                    val views = buildRemoteViews(appCtx, target)
+                    appWidgetManager.updateAppWidget(appWidgetIds, views)
+                }
             } catch (_: Exception) {
             } finally {
                 pendingResult.finish()
@@ -56,41 +58,43 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val db = AppDatabaseHolder.db(appCtx)
-                val msg = db.messageDao().byId(msgId)
-                if (msg != null) {
-                    if (action == ACTION_MARK_SCAM) {
-                        db.messageDao().update(
-                            msg.copy(
-                                riskLabel = "scam",
-                                riskScore = maxOf(msg.riskScore, 90),
-                                isRead = true
+                kotlinx.coroutines.withTimeout(8_500L) {
+                    val db = AppDatabaseHolder.db(appCtx)
+                    val msg = db.messageDao().byId(msgId)
+                    if (msg != null) {
+                        if (action == ACTION_MARK_SCAM) {
+                            db.messageDao().update(
+                                msg.copy(
+                                    riskLabel = "scam",
+                                    riskScore = maxOf(msg.riskScore, 90),
+                                    isRead = true
+                                )
                             )
-                        )
-                    } else {
-                        db.messageDao().update(
-                            msg.copy(
-                                riskLabel = "safe",
-                                riskScore = 0,
-                                riskReason = "已由桌面小工具加入白名單",
-                                isRead = true
+                        } else {
+                            db.messageDao().update(
+                                msg.copy(
+                                    riskLabel = "safe",
+                                    riskScore = 0,
+                                    riskReason = "已由桌面小工具加入白名單",
+                                    isRead = true
+                                )
                             )
-                        )
-                        val sender = msg.sender.trim()
-                        if (sender.isNotEmpty()) {
-                            com.phantom.checker.data.WhitelistRuleHelper.upsertWhitelist(
-                                dao = db.aiRuleDao(),
-                                ruleText = "信任「$sender」的訊息（桌面小工具加入白名單）",
-                                sender = sender,
-                                packageName = msg.packageName,
-                                onCacheInvalidate = { com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches() }
-                            )
+                            val sender = msg.sender.trim()
+                            if (sender.isNotEmpty()) {
+                                com.phantom.checker.data.WhitelistRuleHelper.upsertWhitelist(
+                                    dao = db.aiRuleDao(),
+                                    ruleText = "信任「$sender」的訊息（桌面小工具加入白名單）",
+                                    sender = sender,
+                                    packageName = msg.packageName,
+                                    onCacheInvalidate = { com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches() }
+                                )
+                            }
                         }
                     }
+                    lastMessageId = null
+                    updateAllIfChanged(appCtx, force = true)
+                    StatsForegroundService.startOrRefresh(appCtx, force = true)
                 }
-                lastMessageId = null
-                updateAllIfChanged(appCtx, force = true)
-                StatsForegroundService.startOrRefresh(appCtx, force = true)
             } catch (_: Exception) {
             } finally {
                 pendingResult.finish()
@@ -105,6 +109,11 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
         if (remaining.isEmpty()) {
             lastMessageId = null
         }
+    }
+
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        lastMessageId = null
     }
 
     companion object {

@@ -32,19 +32,21 @@ class AiSummaryWidgetProvider : AppWidgetProvider() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val latest = AppDatabaseHolder.db(appCtx).aiSummaryDao().latest()
-                val dateText = latest?.date?.toString().orEmpty()
-                val bodyText = if (latest == null || latest.summary.isBlank()) {
-                    com.phantom.checker.PhantomApplication.str(R.string.widget_ai_s_8eb256)
-                } else {
-                    stripMarkdown(latest.summary)
-                        .replace(Regex("\\s+"), " ")
-                        .trim()
-                        .take(140)
+                kotlinx.coroutines.withTimeout(8_500L) {
+                    val latest = AppDatabaseHolder.db(appCtx).aiSummaryDao().latest()
+                    val dateText = latest?.date?.toString().orEmpty()
+                    val bodyText = if (latest == null || latest.summary.isBlank()) {
+                        com.phantom.checker.PhantomApplication.str(R.string.widget_ai_s_8eb256)
+                    } else {
+                        stripMarkdown(latest.summary)
+                            .replace(Regex("\\s+"), " ")
+                            .trim()
+                            .take(140)
+                    }
+                    lastSnapshot = dateText to bodyText
+                    val views = buildRemoteViews(appCtx, dateText, bodyText)
+                    appWidgetManager.updateAppWidget(appWidgetIds, views)
                 }
-                lastSnapshot = dateText to bodyText
-                val views = buildRemoteViews(appCtx, dateText, bodyText)
-                appWidgetManager.updateAppWidget(appWidgetIds, views)
             } catch (_: Exception) {
             } finally {
                 pendingResult.finish()
@@ -59,6 +61,11 @@ class AiSummaryWidgetProvider : AppWidgetProvider() {
         if (remaining.isEmpty()) {
             lastSnapshot = null
         }
+    }
+
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        lastSnapshot = null
     }
 
     companion object {

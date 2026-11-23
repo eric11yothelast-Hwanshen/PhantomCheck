@@ -31,11 +31,13 @@ class StatsMiniWidgetProvider : AppWidgetProvider() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val startOfDay = NotificationCollectorService.startOfTodayMillis()
-                val stats = AppDatabaseHolder.db(appCtx).messageDao().statsOverview(startOfDay)
-                lastWidgetStats = stats.today to stats.scam
-                val views = buildRemoteViews(appCtx, stats.today, stats.scam)
-                appWidgetManager.updateAppWidget(appWidgetIds, views)
+                kotlinx.coroutines.withTimeout(8_500L) {
+                    val startOfDay = NotificationCollectorService.startOfTodayMillis()
+                    val stats = AppDatabaseHolder.db(appCtx).messageDao().statsOverview(startOfDay)
+                    lastWidgetStats = stats.today to stats.scam
+                    val views = buildRemoteViews(appCtx, stats.today, stats.scam)
+                    appWidgetManager.updateAppWidget(appWidgetIds, views)
+                }
             } catch (_: Exception) {
             } finally {
                 pendingResult.finish()
@@ -50,6 +52,11 @@ class StatsMiniWidgetProvider : AppWidgetProvider() {
         if (remaining.isEmpty()) {
             lastWidgetStats = null
         }
+    }
+
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        lastWidgetStats = null
     }
 
     companion object {

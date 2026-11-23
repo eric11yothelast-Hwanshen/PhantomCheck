@@ -39,30 +39,32 @@ class ReminderWidgetProvider : AppWidgetProvider() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val db = AppDatabaseHolder.db(appCtx)
-                when (action) {
-                    ACTION_COMPLETE_ITEM -> {
-                        if (itemType == TYPE_TODO) {
-                            val todo = db.todoDao().byId(itemId)
-                            if (todo != null && !todo.isDone) {
-                                ReminderScheduler.completeTodoWithRecurrence(appCtx, todo, true)
+                kotlinx.coroutines.withTimeout(8_500L) {
+                    val db = AppDatabaseHolder.db(appCtx)
+                    when (action) {
+                        ACTION_COMPLETE_ITEM -> {
+                            if (itemType == TYPE_TODO) {
+                                val todo = db.todoDao().byId(itemId)
+                                if (todo != null && !todo.isDone) {
+                                    ReminderScheduler.completeTodoWithRecurrence(appCtx, todo, true)
+                                }
+                            }
+                        }
+                        ACTION_DELETE_ITEM -> {
+                            if (itemType == TYPE_TODO) {
+                                db.todoDao().deleteById(itemId)
+                                ReminderScheduler.cancelTodo(appCtx, itemId)
+                            } else if (itemType == TYPE_MSG) {
+                                val msg = db.messageDao().byId(itemId)
+                                if (msg != null) {
+                                    db.messageDao().update(msg.copy(remindAt = null))
+                                }
+                                ReminderScheduler.cancel(appCtx, itemId)
                             }
                         }
                     }
-                    ACTION_DELETE_ITEM -> {
-                        if (itemType == TYPE_TODO) {
-                            db.todoDao().deleteById(itemId)
-                            ReminderScheduler.cancelTodo(appCtx, itemId)
-                        } else if (itemType == TYPE_MSG) {
-                            val msg = db.messageDao().byId(itemId)
-                            if (msg != null) {
-                                db.messageDao().update(msg.copy(remindAt = null))
-                            }
-                            ReminderScheduler.cancel(appCtx, itemId)
-                        }
-                    }
+                    updateAllIfChanged(appCtx)
                 }
-                updateAllIfChanged(appCtx)
             } catch (_: Exception) {
             } finally {
                 pendingResult.finish()
@@ -80,11 +82,13 @@ class ReminderWidgetProvider : AppWidgetProvider() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val now = System.currentTimeMillis()
-                val items = loadUpcomingItems(appCtx, now)
-                lastSnapshot = computeSnapshotKey(items)
-                val views = buildRemoteViews(appCtx, items)
-                appWidgetManager.updateAppWidget(appWidgetIds, views)
+                kotlinx.coroutines.withTimeout(8_500L) {
+                    val now = System.currentTimeMillis()
+                    val items = loadUpcomingItems(appCtx, now)
+                    lastSnapshot = computeSnapshotKey(items)
+                    val views = buildRemoteViews(appCtx, items)
+                    appWidgetManager.updateAppWidget(appWidgetIds, views)
+                }
             } catch (_: Exception) {
             } finally {
                 pendingResult.finish()
@@ -99,6 +103,11 @@ class ReminderWidgetProvider : AppWidgetProvider() {
         if (remaining.isEmpty()) {
             lastSnapshot = null
         }
+    }
+
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        lastSnapshot = null
     }
 
     companion object {

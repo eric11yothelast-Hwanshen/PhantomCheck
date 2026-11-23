@@ -39,28 +39,30 @@ class StatsDetailWidgetProvider : AppWidgetProvider() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val startOfDay = NotificationCollectorService.startOfTodayMillis()
-                val dao = AppDatabaseHolder.db(appCtx).messageDao()
-                val snap = dao.statsSnapshot(startOfDay)
-                val dayData = loadSevenDayCounts(appCtx)
-                val recentPkgs = snap.recentPackages().take(3)
-                lastDetailSig = DetailSignature(
-                    today = snap.today,
-                    unread = snap.unread,
-                    scam = snap.scam,
-                    recentPkgs = recentPkgs,
-                    dayStartMs = startOfDay
-                )
-                val views = buildRemoteViews(
-                    context = appCtx,
-                    today = snap.today,
-                    unread = snap.unread,
-                    scam = snap.scam,
-                    dayCounts = dayData.first,
-                    dayLabels = dayData.second,
-                    recentPkgs = recentPkgs
-                )
-                appWidgetManager.updateAppWidget(appWidgetIds, views)
+                kotlinx.coroutines.withTimeout(8_500L) {
+                    val startOfDay = NotificationCollectorService.startOfTodayMillis()
+                    val dao = AppDatabaseHolder.db(appCtx).messageDao()
+                    val snap = dao.statsSnapshot(startOfDay)
+                    val dayData = loadSevenDayCounts(appCtx)
+                    val recentPkgs = snap.recentPackages().take(3)
+                    lastDetailSig = DetailSignature(
+                        today = snap.today,
+                        unread = snap.unread,
+                        scam = snap.scam,
+                        recentPkgs = recentPkgs,
+                        dayStartMs = startOfDay
+                    )
+                    val views = buildRemoteViews(
+                        context = appCtx,
+                        today = snap.today,
+                        unread = snap.unread,
+                        scam = snap.scam,
+                        dayCounts = dayData.first,
+                        dayLabels = dayData.second,
+                        recentPkgs = recentPkgs
+                    )
+                    appWidgetManager.updateAppWidget(appWidgetIds, views)
+                }
             } catch (_: Exception) {
             } finally {
                 pendingResult.finish()
@@ -75,6 +77,11 @@ class StatsDetailWidgetProvider : AppWidgetProvider() {
         if (remaining.isEmpty()) {
             lastDetailSig = null
         }
+    }
+
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        lastDetailSig = null
     }
 
     private data class DetailSignature(
