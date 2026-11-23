@@ -41,6 +41,7 @@ import com.phantom.checker.util.UpdateCheckResult
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -48,6 +49,15 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.mutableStateMapOf
+import com.phantom.checker.ui.components.AuroraCenteredContent
+import com.phantom.checker.ui.components.AuroraTokens
+import com.phantom.checker.ui.components.PhantomPageScaffold
+import com.phantom.checker.ui.components.PhantomPredictiveBackContainer
+import com.phantom.checker.ui.components.PhantomTopBarStyle
+import com.phantom.checker.ui.components.SettingsAdvancedSection
+import com.phantom.checker.ui.components.auroraHorizontalPadding
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -301,11 +311,13 @@ class SettingsActivity : ComponentActivity() {
         val initialCardKey = intent?.getStringExtra("highlight_card_key")?.let { raw ->
             if (raw == "permission_hub" || raw == "assistant_hub") "hub" else raw
         }
+        val initialSettingId = intent?.getStringExtra("highlight_setting_id")
         setContent {
             PhantomCheckTheme {
                 FilterSettingsScreen(
                     onBack = { finish() },
-                    initialHighlightCardKey = initialCardKey
+                    initialHighlightCardKey = initialCardKey,
+                    initialHighlightSettingId = initialSettingId
                 )
             }
         }
@@ -320,7 +332,8 @@ private val SETTINGS_CARD_ORDER = listOf(
 @Composable
 fun FilterSettingsScreen(
     onBack: () -> Unit,
-    initialHighlightCardKey: String? = null
+    initialHighlightCardKey: String? = null,
+    initialHighlightSettingId: String? = null
 ) {
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
@@ -962,387 +975,391 @@ fun FilterSettingsScreen(
     }
 
     val glassState = remember { HazeState() }
+    var activeCategory by rememberSaveable { mutableStateOf<SettingsCategory?>(null) }
+    var activeHighlightSettingId by remember { mutableStateOf<String?>(null) }
+    var inCategorySearchOpen by remember { mutableStateOf(false) }
+    var inCategorySearchQuery by remember { mutableStateOf("") }
+    val advancedExpandedMap = remember { mutableStateMapOf<SettingsCategory, Boolean>() }
+
+    LaunchedEffect(activeHighlightSettingId) {
+        if (activeHighlightSettingId != null) {
+            kotlinx.coroutines.delay(3000L)
+            activeHighlightSettingId = null
+        }
+    }
+
+    val allCardKeys = SETTINGS_CARD_ORDER
+    val hasActiveQuery = remember(searchQuery) { searchQuery.isNotBlank() }
+    val localMatchedItems = remember(searchQuery) {
+        SettingsCatalog.searchByKeywords(searchQuery)
+    }
+    val isLocalFiltering = hasActiveQuery && aiMatchedIds.isEmpty()
+    val aiMatchedCardKeys = remember(aiMatchedIds) {
+        aiMatchedIds.mapNotNull { id ->
+            SettingsCatalog.findById(id)?.cardKey
+        }.toSet()
+    }
+    val highlightedCardKeys = remember(isLocalFiltering, localMatchedItems, aiMatchedCardKeys, activeHighlightSettingId) {
+        val fromSetting = activeHighlightSettingId?.let { SettingsCatalog.findById(it)?.cardKey }
+        when {
+            fromSetting != null -> setOf(fromSetting)
+            aiMatchedCardKeys.isNotEmpty() -> aiMatchedCardKeys
+            isLocalFiltering -> localMatchedItems.map { it.cardKey }.toSet()
+            else -> emptySet()
+        }
+    }
+
+    fun navigateToSettingItem(item: SettingSearchItem) {
+        UiLayoutPrefs.recordRecentSetting(appCtx, item.id)
+        val targetActivityClass = when (item.page) {
+            "AutoReplySettingsActivity" -> AutoReplySettingsActivity::class.java
+            "ScamCenterActivity" -> ScamCenterActivity::class.java
+            "TagManagementActivity" -> TagManagementActivity::class.java
+            "WhitelistManagementActivity" -> WhitelistManagementActivity::class.java
+            "ApiKeySettingsActivity" -> ApiKeySettingsActivity::class.java
+            "PermissionHubActivity" -> PermissionHubActivity::class.java
+            "AssistantHubActivity" -> AssistantHubActivity::class.java
+            "LinkedAppsActivity" -> LinkedAppsActivity::class.java
+            else -> null
+        }
+        if (targetActivityClass != null) {
+            ctx.startActivity(Intent(ctx, targetActivityClass))
+            return
+        }
+        val route = SettingsCategoryRegistry.routeFor(item.id)
+        val targetCat = route?.category ?: SettingsCategoryRegistry.categoryForLegacyCardKey(item.cardKey)
+        if (targetCat != null) {
+            if (route?.isFoldedByDefault == true) {
+                advancedExpandedMap[targetCat] = true
+            }
+            activeCategory = targetCat
+            activeHighlightSettingId = item.id
+            when (item.cardKey) {
+                "quick" -> expandQuick = true
+                "personalization" -> expandPersonalization = true
+                "stats" -> expandStats = true
+                "ai" -> expandAi = true
+                "memory_assistant" -> expandMemoryAssistant = true
+                "notif" -> expandNotif = true
+                "data" -> expandData = true
+                "appearance" -> expandAppearance = true
+                "shizuku" -> expandShizuku = true
+                "intel" -> expandIntel = true
+                "about" -> expandAbout = true
+            }
+        }
+    }
+
+    LaunchedEffect(initialHighlightCardKey, initialHighlightSettingId) {
+        if (!initialHighlightSettingId.isNullOrBlank()) {
+            val item = SettingsCatalog.findById(initialHighlightSettingId)
+            if (item != null) {
+                navigateToSettingItem(item)
+                return@LaunchedEffect
+            }
+        }
+        val key = initialHighlightCardKey ?: return@LaunchedEffect
+        val mappedCat = SettingsCategoryRegistry.categoryForLegacyCardKey(key)
+        if (mappedCat != null) {
+            if (key == "shizuku") advancedExpandedMap[mappedCat] = true
+            activeCategory = mappedCat
+        }
+        when (key) {
+            "quick" -> expandQuick = true
+            "personalization" -> expandPersonalization = true
+            "stats" -> expandStats = true
+            "ai" -> expandAi = true
+            "memory_assistant" -> expandMemoryAssistant = true
+            "notif" -> expandNotif = true
+            "data" -> expandData = true
+            "appearance" -> expandAppearance = true
+            "shizuku" -> expandShizuku = true
+            "intel" -> expandIntel = true
+            "about" -> expandAbout = true
+        }
+    }
+
+    fun runAiSettingsSearch() {
+        val q = searchQuery.trim()
+        if (q.isEmpty() || isAiSearching) return
+        scope.launch {
+            isAiSearching = true
+            val catalogText = SettingsCatalog.buildAiSearchCatalogText()
+            val allowedIds = SettingsCatalog.ITEMS.map { it.id }.toSet()
+            val result = AiClient.searchSettings(
+                query = q,
+                catalogText = catalogText,
+                allowedIds = allowedIds,
+                context = appCtx
+            )
+            isAiSearching = false
+            result.onSuccess { ids ->
+                val matchedItems = ids.mapNotNull { id -> SettingsCatalog.findById(id) }
+                if (matchedItems.isEmpty()) {
+                    aiMatchedIds = emptyList()
+                    aiSearchNote = "查無相符的設定項目"
+                    snackbarHostState.showSnackbar("查無相符的設定項目")
+                    return@onSuccess
+                }
+                aiMatchedIds = matchedItems.map { it.id }
+                aiSearchNote = "✨ AI 語意命中 ${matchedItems.size} 項設定（點選直達）"
+            }.onFailure { err ->
+                snackbarHostState.showSnackbar(err.message ?: "AI 搜尋失敗")
+            }
+        }
+    }
+
+    val shizukuReady = ShizukuManager.state.collectAsState().value.isReady
+    val homeSummaries = remember(
+        tokenSaverEnabled,
+        aiRiskEnabled,
+        dailyAiLimit,
+        todayAiUsage,
+        quietHoursEnabled,
+        quietStartMinute,
+        quietEndMinute,
+        persistentStats,
+        memoryChatCaptureEnabled,
+        assistantName,
+        homeCardLayoutMode,
+        retentionDays,
+        mutedApps,
+        batteryWhitelisted,
+        shizukuReady
+    ) {
+        val profileCount = AiClient.getProfiles(appCtx).size
+        val activeModel = AiClient.getActiveProfile(appCtx)?.model?.takeIf { it.isNotBlank() } ?: "未設定"
+        val quietSummary = if (quietHoursEnabled) {
+            "勿擾 %02d:%02d–%02d:%02d".format(
+                quietStartMinute / 60, quietStartMinute % 60,
+                quietEndMinute / 60, quietEndMinute % 60
+            )
+        } else {
+            "勿擾關閉 · 常駐通知${if (persistentStats) "開" else "關"}"
+        }
+        val displayAssistantName = assistantName.ifBlank { "幻訊" }
+        val themeLabel = ThemePreferences.getThemeMode(appCtx).label
+        val layoutLabel = if (homeCardLayoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER) "中央堆疊" else "分組清單"
+        val notifAccessGranted = androidx.core.app.NotificationManagerCompat
+            .getEnabledListenerPackages(appCtx).contains(appCtx.packageName)
+        val pendingPermCount = listOf(
+            notifAccessGranted,
+            batteryWhitelisted
+        ).count { !it }
+        val permSummary = buildString {
+            append(if (pendingPermCount > 0) "$pendingPermCount 項待授權" else "核心權限已就緒")
+            if (shizukuReady) append(" · Shizuku 已連線")
+        }
+        val versionName = runCatching {
+            ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: ""
+        }.getOrDefault("")
+        SettingsHomeSummaries(
+            quickSummary = "省 token ${if (tokenSaverEnabled) "開" else "關"} · AI 風險分析${if (aiRiskEnabled) "開" else "關"}",
+            aiSummary = "$profileCount 組 Profile · 對話：$activeModel · 今日 $todayAiUsage/$dailyAiLimit",
+            notifSummary = quietSummary,
+            assistantSummary = "助手：$displayAssistantName · 記憶擷取${if (memoryChatCaptureEnabled) "開" else "關"}",
+            permissionsSummary = permSummary,
+            permissionsBadge = if (pendingPermCount > 0) "$pendingPermCount 待處理" else null,
+            appearanceSummary = "$themeLabel · 排列：$layoutLabel",
+            dataSummary = "保留 $retentionDays 天 · 靜音 ${mutedApps.size} 個 App",
+            aboutSummary = "v$versionName · 自動檢查更新${if (PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)) "開" else "關"}",
+            versionDisplay = "v$versionName"
+        )
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    expandedHeight = 52.dp,
-                    title = {
-                        Text(
-                            text = "全部設定",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1
-                        )
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
+        PhantomPredictiveBackContainer(
+            enabled = activeCategory != null,
+            onBack = {
+                inCategorySearchOpen = false
+                inCategorySearchQuery = ""
+                activeCategory = null
+            }
+        ) {
+            AnimatedContent(
+                targetState = activeCategory,
+                transitionSpec = {
+                    if (targetState != null && initialState == null) {
+                        PhantomMotion.PageEnter togetherWith PhantomMotion.PageExit
+                    } else {
+                        PhantomMotion.PagePopEnter togetherWith PhantomMotion.PagePopExit
                     }
-                )
-            },
-            snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
-        ) { padding ->
-            val allCardKeys = SETTINGS_CARD_ORDER
-            LaunchedEffect(initialHighlightCardKey) {
-                val key = initialHighlightCardKey ?: return@LaunchedEffect
-                when (key) {
-                    "quick" -> expandQuick = true
-                    "personalization" -> expandPersonalization = true
-                    "stats" -> expandStats = true
-                    "ai" -> expandAi = true
-                    "memory_assistant" -> expandMemoryAssistant = true
-                    "notif" -> expandNotif = true
-                    "data" -> expandData = true
-                    "appearance" -> expandAppearance = true
-                    "shizuku" -> expandShizuku = true
-                    "intel" -> expandIntel = true
-                    "about" -> expandAbout = true
-                }
-                val idx = allCardKeys.indexOf(key)
-                if (idx >= 0) {
-                    listState.animateScrollToItem(idx)
-                }
-            }
-            val hasActiveQuery = remember(searchQuery) { searchQuery.isNotBlank() }
-            val localMatchedItems = remember(searchQuery) {
-                SettingsCatalog.searchByKeywords(searchQuery)
-            }
-            val isLocalFiltering = hasActiveQuery && aiMatchedIds.isEmpty()
-            val aiMatchedCardKeys = remember(aiMatchedIds) {
-                aiMatchedIds.mapNotNull { id ->
-                    SettingsCatalog.findById(id)?.cardKey
-                }.toSet()
-            }
-            val highlightedCardKeys = remember(isLocalFiltering, localMatchedItems, aiMatchedCardKeys) {
-                when {
-                    aiMatchedCardKeys.isNotEmpty() -> aiMatchedCardKeys
-                    isLocalFiltering -> localMatchedItems.map { it.cardKey }.toSet()
-                    else -> emptySet()
-                }
-            }
-            val visibleCardKeys = remember(isLocalFiltering, localMatchedItems, aiMatchedCardKeys, allCardKeys) {
-                when {
-                    aiMatchedCardKeys.isNotEmpty() -> aiMatchedCardKeys
-                    isLocalFiltering -> localMatchedItems.map { it.cardKey }.toSet()
-                    else -> allCardKeys.toSet()
-                }
-            }
-
-            fun expandAndScrollToSettingItem(item: SettingSearchItem) {
-                val targetCard = item.cardKey
-                when (targetCard) {
-                    "quick" -> expandQuick = true
-                    "personalization" -> expandPersonalization = true
-                    "stats" -> expandStats = true
-                    "ai" -> expandAi = true
-                    "memory_assistant" -> expandMemoryAssistant = true
-                    "notif" -> expandNotif = true
-                    "data" -> expandData = true
-                    "appearance" -> expandAppearance = true
-                    "shizuku" -> expandShizuku = true
-                    "intel" -> expandIntel = true
-                    "about" -> expandAbout = true
-                }
-                val targetActivityClass = when (item.page) {
-                    "AutoReplySettingsActivity" -> AutoReplySettingsActivity::class.java
-                    "ScamCenterActivity" -> ScamCenterActivity::class.java
-                    "TagManagementActivity" -> TagManagementActivity::class.java
-                    "WhitelistManagementActivity" -> WhitelistManagementActivity::class.java
-                    "ApiKeySettingsActivity" -> ApiKeySettingsActivity::class.java
-                    "PermissionHubActivity" -> PermissionHubActivity::class.java
-                    "AssistantHubActivity" -> AssistantHubActivity::class.java
-                    "LinkedAppsActivity" -> LinkedAppsActivity::class.java
-                    else -> null
-                }
-                if (targetActivityClass != null) {
-                    ctx.startActivity(Intent(ctx, targetActivityClass))
-                    return
-                }
-                scope.launch {
-                    val orderedVisible = allCardKeys.filter { it in visibleCardKeys }
-                    val scrollIdx = orderedVisible.indexOf(targetCard).takeIf { it >= 0 }
-                        ?: allCardKeys.indexOf(targetCard)
-                    if (scrollIdx >= 0) {
-                        listState.animateScrollToItem(scrollIdx)
-                    }
-                }
-            }
-
-            fun runAiSettingsSearch() {
-                val q = searchQuery.trim()
-                if (q.isEmpty() || isAiSearching) return
-                scope.launch {
-                    isAiSearching = true
-                    val catalogText = SettingsCatalog.buildAiSearchCatalogText()
-                    val allowedIds = SettingsCatalog.ITEMS.map { it.id }.toSet()
-                    val result = AiClient.searchSettings(
-                        query = q,
-                        catalogText = catalogText,
-                        allowedIds = allowedIds,
-                        context = appCtx
-                    )
-                    isAiSearching = false
-                    result.onSuccess { ids ->
-                        val matchedItems = ids.mapNotNull { id ->
-                            SettingsCatalog.findById(id)
-                        }
-                        if (matchedItems.isEmpty()) {
+                },
+                label = "settingsCategoryNav"
+            ) { currentCategory ->
+                if (currentCategory == null) {
+                    SettingsHomeScreen(
+                        onBack = onBack,
+                        searchQuery = searchQuery,
+                        onSearchQueryChange = { next ->
+                            searchQuery = next
                             aiMatchedIds = emptyList()
-                            aiSearchNote = "AI 語意搜尋查無與「$q」相符的設定項目"
-                            snackbarHostState.showSnackbar("查無相符的設定項目")
-                            return@onSuccess
+                            aiSearchNote = null
+                        },
+                        isAiSearching = isAiSearching,
+                        aiMatchedIds = aiMatchedIds,
+                        aiSearchNote = aiSearchNote,
+                        onRunAiSearch = { runAiSettingsSearch() },
+                        onClearAiSearch = {
+                            aiMatchedIds = emptyList()
+                            aiSearchNote = null
+                        },
+                        summaries = homeSummaries,
+                        snackbarHostState = snackbarHostState,
+                        onOpenCategory = { cat ->
+                            inCategorySearchOpen = false
+                            inCategorySearchQuery = ""
+                            activeCategory = cat
+                        },
+                        onSelectSettingItem = { item -> navigateToSettingItem(item) },
+                        onReplayTour = { tourStepIndex = 1 },
+                        onReportTourBounds = { key, rect ->
+                            cardBounds[key] = rect
+                        },
+                        onShowMessage = { msg ->
+                            scope.launch { snackbarHostState.showSnackbar(msg) }
                         }
-                        aiMatchedIds = matchedItems.map { it.id }
-                        val targetCards = matchedItems.map { it.cardKey }.toSet()
-                        if ("quick" in targetCards) expandQuick = true
-                        if ("personalization" in targetCards) expandPersonalization = true
-                        if ("stats" in targetCards) expandStats = true
-                        if ("ai" in targetCards) expandAi = true
-                        if ("memory_assistant" in targetCards) expandMemoryAssistant = true
-                        if ("notif" in targetCards) expandNotif = true
-                        if ("data" in targetCards) expandData = true
-                        if ("appearance" in targetCards) expandAppearance = true
-                        if ("shizuku" in targetCards) expandShizuku = true
-                        if ("intel" in targetCards) expandIntel = true
-                        if ("about" in targetCards) expandAbout = true
-
-                        aiSearchNote = "✨ AI 語意命中 ${matchedItems.size} 項設定（點選直達）："
-                        val firstCardKey = matchedItems.firstOrNull()?.cardKey
-                        val orderedVisible = allCardKeys.filter { it in targetCards }
-                        val scrollIdx = orderedVisible.indexOf(firstCardKey).takeIf { it >= 0 } ?: 0
-                        listState.animateScrollToItem(scrollIdx)
-                    }.onFailure { err ->
-                        snackbarHostState.showSnackbar(err.message ?: "AI 搜尋失敗")
+                    )
+                } else {
+                    val categoryCardKeys = remember(currentCategory) {
+                        when (currentCategory) {
+                            SettingsCategory.QUICK -> setOf("quick")
+                            SettingsCategory.AI -> setOf("ai")
+                            SettingsCategory.NOTIF -> setOf("notif")
+                            SettingsCategory.ASSISTANT -> setOf("hub", "memory_assistant", "intel")
+                            SettingsCategory.PERMISSIONS -> setOf("hub", "shizuku")
+                            SettingsCategory.APPEARANCE -> setOf("personalization", "appearance", "stats")
+                            SettingsCategory.DATA -> setOf("data")
+                            SettingsCategory.ABOUT -> setOf("about")
+                        }
                     }
-                }
-            }
+                    val visibleCardKeys = categoryCardKeys
+                    val horizPad = auroraHorizontalPadding()
+                    val isAdvancedExpanded = advancedExpandedMap[currentCategory] == true
+                    val advancedItemsInCat = remember(currentCategory) {
+                        SettingsCategoryRegistry.advancedItemsInCategory(currentCategory)
+                    }
+                    val inCatMatches = remember(currentCategory, inCategorySearchQuery) {
+                        val q = inCategorySearchQuery.trim()
+                        if (q.isEmpty()) emptyList()
+                        else SettingsCatalog.searchByKeywords(q).filter {
+                            SettingsCategoryRegistry.categoryFor(it.id) == currentCategory
+                        }
+                    }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .phantomGlassSource(glassState)
-                    .padding(padding)
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { next ->
-                        searchQuery = next
-                        aiMatchedIds = emptyList()
-                        aiSearchNote = null
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
-                    placeholder = {
-                        Text(
-                            text = "搜尋設定、開關或用自然語言提問…",
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = "搜尋設定")
-                    },
-                    trailingIcon = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = {
-                                    searchQuery = ""
-                                    aiMatchedIds = emptyList()
-                                    aiSearchNote = null
-                                }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "清除搜尋")
-                                }
-                            }
+                    PhantomPageScaffold(
+                        title = currentCategory.title,
+                        onBack = {
+                            inCategorySearchOpen = false
+                            inCategorySearchQuery = ""
+                            activeCategory = null
+                        },
+                        topBarStyle = PhantomTopBarStyle.Medium,
+                        actions = {
                             IconButton(
-                                onClick = { runAiSettingsSearch() },
-                                enabled = searchQuery.isNotBlank() && !isAiSearching
-                            ) {
-                                if (isAiSearching) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp),
-                                        strokeWidth = 2.dp
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = AutoAwesomeIcon,
-                                        contentDescription = "AI 語意搜尋設定",
-                                        tint = if (searchQuery.isNotBlank()) MaterialTheme.colorScheme.primary
-                                        else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                onClick = {
+                                    inCategorySearchOpen = !inCategorySearchOpen
+                                    if (!inCategorySearchOpen) inCategorySearchQuery = ""
                                 }
-                            }
-                        }
-                    }
-                )
-
-                if (aiSearchNote != null) {
-                    val matchedItems = remember(aiMatchedIds) {
-                        aiMatchedIds.mapNotNull { id -> SettingsCatalog.findById(id) }
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = aiSearchNote!!,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
+                                Icon(
+                                    imageVector = if (inCategorySearchOpen) Icons.Default.Clear else Icons.Default.Search,
+                                    contentDescription = if (inCategorySearchOpen) "關閉頁內搜尋" else "搜尋本分類設定"
                                 )
-                                TextButton(onClick = {
-                                    aiMatchedIds = emptyList()
-                                    aiSearchNote = null
-                                }) {
-                                    Text("清除定位")
-                                }
                             }
-                            matchedItems.forEach { item ->
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .clickable { expandAndScrollToSettingItem(item) }
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = item.title,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Text(
-                                                text = item.description,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            text = if (item.page != null) "開啟頁面 →" else "跳轉卡片 ↓",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else if (isLocalFiltering && localMatchedItems.isNotEmpty()) {
-                    val topLocalMatches = remember(localMatchedItems) { localMatchedItems.take(5) }
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
+                        },
+                        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+                    ) { padding ->
+                        AuroraCenteredContent(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                .fillMaxSize()
+                                .phantomGlassSource(glassState)
+                                .padding(padding)
                         ) {
-                            Text(
-                                text = "🔍 找到 ${localMatchedItems.size} 項相關設定（點選直達）：",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            topLocalMatches.forEach { item ->
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .clickable { expandAndScrollToSettingItem(item) }
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = horizPad, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                AnimatedVisibility(
+                                    visible = inCategorySearchOpen,
+                                    enter = PhantomMotion.ExpandEnter,
+                                    exit = PhantomMotion.ExpandExit
                                 ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = item.title,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Text(
-                                                text = item.description,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            text = if (item.page != null) "開啟頁面 →" else "跳轉卡片 ↓",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = MaterialTheme.colorScheme.primary
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedTextField(
+                                            value = inCategorySearchQuery,
+                                            onValueChange = { inCategorySearchQuery = it },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(24.dp),
+                                            placeholder = { Text("在「${currentCategory.title}」內搜尋…") },
+                                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                            trailingIcon = {
+                                                if (inCategorySearchQuery.isNotEmpty()) {
+                                                    IconButton(onClick = { inCategorySearchQuery = "" }) {
+                                                        Icon(Icons.Default.Clear, contentDescription = "清除")
+                                                    }
+                                                }
+                                            }
                                         )
+                                        if (inCategorySearchQuery.isNotBlank()) {
+                                            if (inCatMatches.isEmpty()) {
+                                                Text(
+                                                    text = "本分類中查無符合「${inCategorySearchQuery.trim()}」的設定",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.padding(horizontal = 4.dp)
+                                                )
+                                            } else {
+                                                inCatMatches.take(5).forEach { matched ->
+                                                    Surface(
+                                                        onClick = {
+                                                            if (SettingsCategoryRegistry.isFoldedByDefault(matched.id)) {
+                                                                advancedExpandedMap[currentCategory] = true
+                                                            }
+                                                            activeHighlightSettingId = matched.id
+                                                            inCategorySearchOpen = false
+                                                            inCategorySearchQuery = ""
+                                                        },
+                                                        shape = RoundedCornerShape(AuroraTokens.CornerChip),
+                                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(
+                                                                text = matched.title,
+                                                                style = MaterialTheme.typography.bodyMedium,
+                                                                fontWeight = FontWeight.Medium,
+                                                                modifier = Modifier.weight(1f)
+                                                            )
+                                                            if (SettingsCategoryRegistry.isFoldedByDefault(matched.id)) {
+                                                                Text(
+                                                                    text = "進階",
+                                                                    style = MaterialTheme.typography.labelSmall,
+                                                                    color = MaterialTheme.colorScheme.primary
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
-                            }
-                        }
-                    }
-                }
 
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    if (isLocalFiltering && visibleCardKeys.isEmpty()) {
-                        item(key = "empty_search") {
-                            EmptyStateView(
-                                icon = Icons.Default.Search,
-                                title = "找不到符合「$searchQuery」的設定",
-                                description = "可點擊搜尋框右側 ✨ 圖示，讓 AI 幫您語意定位設定項目。",
-                                actionLabel = "試試 AI 語意搜尋",
-                                onAction = { runAiSettingsSearch() }
-                            )
-                        }
-                    }
-
-                    // 1. 快速設定（置頂）
-                    if ("quick" in visibleCardKeys) {
+                                LazyColumn(
+                                    state = listState,
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    // 1. 快速設定（置頂）
+                                    if ("quick" in visibleCardKeys) {
                         item(key = "card_quick") {
                             CollapsibleSettingsCard(
                                 title = "快速設定",
@@ -4569,9 +4586,13 @@ fun FilterSettingsScreen(
                 )
             }
             }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
-        }
-    }
 
         val totalTourSteps = SettingsTourStep.entries.size
         if (tourStepIndex in 1..totalTourSteps) {
