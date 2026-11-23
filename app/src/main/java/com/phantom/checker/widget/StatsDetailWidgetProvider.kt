@@ -191,14 +191,14 @@ class StatsDetailWidgetProvider : AppWidgetProvider() {
             val counts = IntArray(7)
             val labels = Array(7) { "" }
             val dayMs = 24L * 60L * 60L * 1000L
-            val weekdayNames = arrayOf("日", "一", "二", "三", "四", "五", "六")
+            val weekdayNames = arrayOf(com.phantom.checker.PhantomApplication.str(R.string.stats_s_15917f), com.phantom.checker.PhantomApplication.str(R.string.widget_stats_s_d274ee), com.phantom.checker.PhantomApplication.str(R.string.widget_stats_s_1d5639), com.phantom.checker.PhantomApplication.str(R.string.widget_stats_s_49ddb0), com.phantom.checker.PhantomApplication.str(R.string.widget_stats_s_4f8874), com.phantom.checker.PhantomApplication.str(R.string.widget_stats_s_8f07f5), com.phantom.checker.PhantomApplication.str(R.string.widget_stats_s_3d72c7))
             val dayKeyFmt = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
 
             for (i in 0 until 7) {
                 val c = Calendar.getInstance().apply {
                     timeInMillis = start7d + i * dayMs
                 }
-                labels[i] = if (i == 6) "今" else weekdayNames[c.get(Calendar.DAY_OF_WEEK) - 1]
+                labels[i] = if (i == 6) com.phantom.checker.PhantomApplication.str(R.string.widget_stats_s_d2130d) else weekdayNames[c.get(Calendar.DAY_OF_WEEK) - 1]
                 counts[i] = countMap[dayKeyFmt.format(c.time)] ?: 0
             }
             return counts to labels

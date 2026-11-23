@@ -119,10 +119,10 @@ class NotesWidgetProvider : AppWidgetProvider() {
             val diffMs = (now - ts).coerceAtLeast(0L)
             val diffMin = diffMs / 60_000L
             return when {
-                diffMin < 1L -> "剛剛"
-                diffMin < 60L -> "${diffMin}分鐘前"
-                diffMin < 24L * 60L -> "${diffMin / 60L}小時前"
-                diffMin < 7L * 24L * 60L -> "${diffMin / (24L * 60L)}天前"
+                diffMin < 1L -> com.phantom.checker.PhantomApplication.str(R.string.widget_notes_s_e81980)
+                diffMin < 60L -> com.phantom.checker.PhantomApplication.str(R.string.widget_notes_s_f61ef9, diffMin)
+                diffMin < 24L * 60L -> com.phantom.checker.PhantomApplication.str(R.string.widget_notes_s_108d7d, diffMin / 60L)
+                diffMin < 7L * 24L * 60L -> com.phantom.checker.PhantomApplication.str(R.string.widget_notes_s_34a8dc, diffMin / (24L * 60L))
                 else -> SimpleDateFormat("MM/dd", Locale.getDefault()).format(Date(ts))
             }
         }
@@ -148,7 +148,7 @@ class NotesWidgetProvider : AppWidgetProvider() {
         ): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_notes)
             views.setOnClickPendingIntent(R.id.widget_root, buildOpenNotesIntent(context))
-            views.setTextViewText(R.id.widget_notes_count, if (totalCount > 0) "${totalCount} 筆" else "")
+            views.setTextViewText(R.id.widget_notes_count, if (totalCount > 0) com.phantom.checker.PhantomApplication.str(R.string.widget_notes_s_50ed71, totalCount) else "")
 
             val rowIds = intArrayOf(
                 R.id.widget_notes_row1,

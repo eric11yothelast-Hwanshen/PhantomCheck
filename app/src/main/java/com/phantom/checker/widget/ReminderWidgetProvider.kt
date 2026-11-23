@@ -146,7 +146,7 @@ class ReminderWidgetProvider : AppWidgetProvider() {
                 db.todoDao().pendingTodos().filter { !it.isDone },
                 now
             ).map { t ->
-                val overdueTag = if (t.dueAt < now) "[逾期] " else ""
+                val overdueTag = if (t.dueAt < now) com.phantom.checker.PhantomApplication.str(R.string.widget_reminder_s_af6faa) else ""
                 UpcomingReminderItem(
                     snapshotKey = "t:${t.id}:${t.dueAt}:${t.priority}:${t.isDone}",
                     dueAt = t.dueAt,

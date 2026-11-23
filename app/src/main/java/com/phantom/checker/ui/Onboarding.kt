@@ -63,6 +63,8 @@ import androidx.compose.ui.unit.dp
 import com.phantom.checker.service.NotificationCollectorService
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.delay
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 object OnboardingTargets {
     const val NOTIFICATION_GUIDE = "notification_guide"
@@ -155,23 +157,23 @@ fun openAppDetailsSettings(context: Context) {
 }
 
 fun restrictedSettingsGuideSteps(): String = listOf(
-    "1. 在通知存取頁點一下「幻訊」的灰色開關，會彈出「受限制的設定」提示（Android 13+ 側載安裝會出現；這是系統安全機制，非故障）。",
-    "2. 點彈窗內「前往應用程式資訊」。",
-    "3. 在應用程式資訊頁找「允許受限制的設定」（右上角 ⋮ 選單內，或頁面最底部直接出現）並點擊允許。",
-    "4. 返回通知存取頁，開關已可開啟。"
+    com.phantom.checker.PhantomApplication.str(R.string.onboarding_s_1d638d),
+    com.phantom.checker.PhantomApplication.str(R.string.onboarding_s_70cd3b),
+    com.phantom.checker.PhantomApplication.str(R.string.onboarding_s_a6e90d),
+    com.phantom.checker.PhantomApplication.str(R.string.onboarding_s_b57a5b)
 ).joinToString("\n")
 
 fun restrictedSettingsOemNote(): String {
     val m = Build.MANUFACTURER.lowercase()
     return when {
         m.contains("xiaomi") || m.contains("redmi") || m.contains("poco") ->
-            "提示：若右上角沒有 ⋮，請滑到頁面最底尋找「允許受限制的設定」。開啟時系統要求按住 10 秒倒數（高敏感權限確認）屬正常現象，完成即可。"
+            com.phantom.checker.PhantomApplication.str(R.string.onboarding_s_8326c1)
         m.contains("samsung") ->
-            "提示：One UI 6.1.1+ 的「自動封鎖程式」預設開啟，可能阻擋側載 App 的特殊權限，可到「設定→安全性與隱私→自動封鎖程式」暫時關閉；部分機型的「允許受限制的設定」直接顯示在應用程式資訊頁底部。"
+            com.phantom.checker.PhantomApplication.str(R.string.onboarding_s_4728f1)
         m.contains("oppo") || m.contains("realme") || m.contains("oneplus") ->
-            "提示：入口在右上角 ⋮ 或頁面底部；ColorOS／OxygenOS 13–15 版本差異較大，若 OxygenOS 15 找不到入口，可改用下方 Shizuku 一鍵授權。"
+            com.phantom.checker.PhantomApplication.str(R.string.onboarding_s_ef67c1)
         m.contains("vivo") || m.contains("iqoo") ->
-            "提示：在受限彈窗點「更多選項」，或應用程式資訊頁 ⋮／頁面底部選「解除設定限制」。"
+            com.phantom.checker.PhantomApplication.str(R.string.onboarding_s_ff779b)
         else -> ""
     }
 }
@@ -189,11 +191,11 @@ internal fun RestrictedSettingsTroubleshootSection(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             TextButton(onClick = { expanded = !expanded }) {
-                Text(if (expanded) "收合疑難排解 ▲" else "開關變灰／無法開啟？")
+                Text(if (expanded) stringResource(R.string.onboarding_s_fd6afc) else stringResource(R.string.onboarding_s_cc3077))
             }
             if (shizukuReady) {
                 OutlinedButton(onClick = onShizukuGrant) {
-                    Text("Shizuku 一鍵授權")
+                    Text(stringResource(R.string.onboarding_s_b21584))
                 }
             }
         }
@@ -222,7 +224,7 @@ internal fun RestrictedSettingsTroubleshootSection(
                     )
                 }
                 OutlinedButton(onClick = onOpenAppDetails) {
-                    Text("前往應用程式資訊")
+                    Text(stringResource(R.string.onboarding_s_423703))
                 }
             }
         }
@@ -233,17 +235,17 @@ fun oemAutostartGuideText(): String {
     val m = Build.MANUFACTURER.lowercase()
     return when {
         m.contains("xiaomi") || m.contains("redmi") || m.contains("poco") ->
-            "小米 / Redmi：安全中心 → 授權管理 → 自啟動 → 開啟「幻訊」"
+            com.phantom.checker.PhantomApplication.str(R.string.onboarding_s_454929)
         m.contains("oppo") || m.contains("realme") || m.contains("oneplus") ->
-            "OPPO / realme / OnePlus：手機管家 → 權限隱私 → 自啟動 → 開啟「幻訊」"
+            com.phantom.checker.PhantomApplication.str(R.string.onboarding_s_e1f863)
         m.contains("vivo") || m.contains("iqoo") ->
-            "vivo / iQOO：i 管家 → 應用管理 → 權限管理 → 自啟動 → 開啟「幻訊」"
+            com.phantom.checker.PhantomApplication.str(R.string.onboarding_s_f889ff)
         m.contains("samsung") ->
-            "Samsung：設定 → 應用程式 → 幻訊 → 電池 → 選取「不受限制」"
+            com.phantom.checker.PhantomApplication.str(R.string.onboarding_s_bd1fc3)
         m.contains("huawei") || m.contains("honor") ->
-            "華為 / 榮耀：手機管家 → 應用啟動管理 → 關閉自動管理並允許自啟動與背景活動"
+            com.phantom.checker.PhantomApplication.str(R.string.onboarding_s_281ab8)
         else ->
-            "請到系統「設定 → 應用程式 → 幻訊 → 電池」允許背景運行與自啟動"
+            com.phantom.checker.PhantomApplication.str(R.string.onboarding_s_38a87d)
     }
 }
 
@@ -478,33 +480,33 @@ fun OnboardingOverlay(
                 val totalSteps = OnboardingStep.entries.size
                 val (title, body) = when (step) {
                     OnboardingStep.PERMISSION ->
-                        "步驟 ${step.index} / $totalSteps・底部 5 分頁與通知權限" to
-                            "底部 5 分頁涵蓋訊息、助手、記事、記憶與洞察。幻訊需要通知存取權才能即時備份訊息、偵測詐騙風險與自動分類。\n若開關為灰色（受限制的設定），請展開下方疑難排解。"
+                        stringResource(R.string.onboarding_s_e6af49, step.index, totalSteps) to
+                            stringResource(R.string.onboarding_s_2f4039)
                     OnboardingStep.SEARCH_PILL ->
-                        "步驟 ${step.index} / $totalSteps・全域統一搜尋" to
-                            "點擊頂部搜尋膠囊（或自頂部下拉）開啟全螢幕搜尋，一次查找訊息、設定開關、記憶與記事，無網路也能完整使用本地搜尋。"
+                        stringResource(R.string.onboarding_s_d9f86e, step.index, totalSteps) to
+                            stringResource(R.string.onboarding_s_c2d8f9)
                     OnboardingStep.MESSAGES -> {
                         val noMsgNote = if (!hasAnyAppRows) {
-                            "\n\n（目前資料庫尚無訊息，收到通知後即可實際操作，先按「下一步」繼續。）"
+                            stringResource(R.string.onboarding_s_28b5c1)
                         } else ""
-                        "步驟 ${step.index} / $totalSteps・訊息卡、篩選與手勢" to
-                            "頂部三格統計顯示今日／未讀／詐騙；點選 App 進入對話可左滑刪除與快速回覆，長按可釘選、靜音或 AI 深度分析；單排智慧篩選＋「更多」快速過濾。$noMsgNote"
+                        stringResource(R.string.onboarding_s_6198bd, step.index, totalSteps) to
+                            stringResource(R.string.onboarding_s_2afa9b, noMsgNote)
                     }
                     OnboardingStep.AI_ASSISTANT ->
-                        "步驟 ${step.index} / $totalSteps・AI 助手與確認卡" to
-                            "在「助手」分頁可用自然語言查訊、檢視待辦與主動訊息，寫入記憶／日曆或跨 App 操作皆必經確認卡；頂部 ⋮ 可切換省 token，左緣滑動可開歷史對話。"
+                        stringResource(R.string.onboarding_s_d4d7e0, step.index, totalSteps) to
+                            stringResource(R.string.onboarding_s_24ccaa)
                     OnboardingStep.NOTES_TAB ->
-                        "步驟 ${step.index} / $totalSteps・記事、待辦與行事曆" to
-                            "「記事」分頁整合待辦提醒、本機行事曆（日／週／月）與自動備忘錄；行程類通知會優先建議加入日曆並檢查撞期。"
+                        stringResource(R.string.onboarding_s_96848a, step.index, totalSteps) to
+                            stringResource(R.string.onboarding_s_d51dad)
                     OnboardingStep.MEMORY_TAB ->
-                        "步驟 ${step.index} / $totalSteps・記憶庫與防詐免疫" to
-                            "「記憶」分頁提供四格總覽與「記憶｜規則｜防詐免疫」切換，集中管理長期／短期記憶與關注主題；標記「🔒 敏感」的記憶 100% 留存本機絕不外送。"
+                        stringResource(R.string.onboarding_s_86bd41, step.index, totalSteps) to
+                            stringResource(R.string.onboarding_s_95981c)
                     OnboardingStep.INSIGHT_TAB ->
-                        "步驟 ${step.index} / $totalSteps・洞察（夥伴＋統計）" to
-                            "「洞察」整合 AI 夥伴（日記、目標、親密度、畫像卡）與統計總覽（本週重點、13 張圖表與早晚簡報），一鍵切換。"
+                        stringResource(R.string.onboarding_s_604ffb, step.index, totalSteps) to
+                            stringResource(R.string.onboarding_s_941ead)
                     OnboardingStep.SETTINGS_CENTER ->
-                        "步驟 ${step.index} / $totalSteps・設定中心與保活檢查" to
-                            "點擊右上角 ⚙ 進入新版設定中心：頂部搜尋直達 136 項設定、常用釘選與 8 大分類，進階項預設折疊但不影響搜尋。可同步完成以下保活檢查："
+                        stringResource(R.string.onboarding_s_61c048, step.index, totalSteps) to
+                            stringResource(R.string.onboarding_s_c6881c)
                 }
 
                 Text(
@@ -545,20 +547,20 @@ fun OnboardingOverlay(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (isBatteryWhitelistOk) "1. 電池最佳化白名單 ✓ 已加入" else "1. 電池最佳化白名單 ✗ 未加入",
+                                    text = if (isBatteryWhitelistOk) stringResource(R.string.onboarding_s_efe0dd) else stringResource(R.string.onboarding_s_739ac4),
                                     style = MaterialTheme.typography.labelLarge,
                                     color = if (isBatteryWhitelistOk) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
-                                    text = "避免系統休眠後中斷背景監聽",
+                                    text = stringResource(R.string.onboarding_s_d9b828),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                             if (!isBatteryWhitelistOk) {
                                 OutlinedButton(onClick = onOpenBatterySettings) {
-                                    Text("前往設定")
+                                    Text(stringResource(R.string.chat_s_bfb145))
                                 }
                             }
                         }
@@ -566,7 +568,7 @@ fun OnboardingOverlay(
                         // 2. OEM 自啟動（誠實手動確認）
                         Column(modifier = Modifier.fillMaxWidth()) {
                             Text(
-                                text = "2. 裝置自啟動權限（系統無法自動偵測，請自行確認後勾選）",
+                                text = stringResource(R.string.onboarding_s_92669f),
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -584,7 +586,7 @@ fun OnboardingOverlay(
                                     onCheckedChange = onConfirmOemAutostart
                                 )
                                 Text(
-                                    text = "我已確認完成自啟動設定",
+                                    text = stringResource(R.string.onboarding_s_743bd7),
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -597,7 +599,7 @@ fun OnboardingOverlay(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = if (isListenerEnabled) "3. 通知存取權限 ✓ 已開啟" else "3. 通知存取權限 ✗ 未開啟",
+                                text = if (isListenerEnabled) stringResource(R.string.onboarding_s_b9f01c) else stringResource(R.string.onboarding_s_7f3bc8),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = if (isListenerEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                                 fontWeight = FontWeight.SemiBold,
@@ -605,13 +607,13 @@ fun OnboardingOverlay(
                             )
                             if (!isListenerEnabled) {
                                 OutlinedButton(onClick = onOpenNotificationSettings) {
-                                    Text("前往開啟")
+                                    Text(stringResource(R.string.perm_hub_s_8d2b78))
                                 }
                             }
                         }
                         if (!isListenerEnabled) {
                             Text(
-                                text = "若開關為灰色（受限制的設定），請展開下方疑難排解。",
+                                text = stringResource(R.string.onboarding_s_7c853f),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -632,27 +634,27 @@ fun OnboardingOverlay(
                 ) {
                     if (step != OnboardingStep.SETTINGS_CENTER) {
                         TextButton(onClick = onSkip) {
-                            Text("跳過")
+                            Text(stringResource(R.string.settings_s_3002a7))
                         }
                     } else {
                         OutlinedButton(onClick = onOpenSettings) {
-                            Text("前往設定")
+                            Text(stringResource(R.string.chat_s_bfb145))
                         }
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (step == OnboardingStep.PERMISSION) {
                             OutlinedButton(onClick = onOpenNotificationSettings) {
-                                Text("前往開啟")
+                                Text(stringResource(R.string.perm_hub_s_8d2b78))
                             }
                         }
                         if (step == OnboardingStep.SETTINGS_CENTER) {
                             Button(onClick = onFinish) {
-                                Text("完成")
+                                Text(stringResource(R.string.common_done))
                             }
                         } else {
                             Button(onClick = throttledNext) {
-                                Text("下一步")
+                                Text(stringResource(R.string.settings_s_ea0ef2))
                             }
                         }
                     }

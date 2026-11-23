@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import rikka.shizuku.Shizuku
+import com.phantom.checker.R
 
 data class ShizukuState(
     val isInstalled: Boolean = false,
@@ -237,7 +238,7 @@ object ShizukuManager {
 
     suspend fun execCommand(ctx: Context, command: String): ShellResult = withContext(Dispatchers.IO) {
         val svc = ensureConnected(ctx)
-            ?: return@withContext ShellResult(1, "Shizuku 尚未連線或未授權")
+            ?: return@withContext ShellResult(1, com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_36a63e))
         return@withContext try {
             val raw = svc.exec(command) ?: "EXIT:1\nNo output"
             val firstNewline = raw.indexOf('\n')
@@ -246,7 +247,7 @@ object ShizukuManager {
             val code = header.removePrefix("EXIT:").toIntOrNull() ?: 1
             ShellResult(code, body)
         } catch (e: Exception) {
-            ShellResult(1, e.message ?: "執行失敗")
+            ShellResult(1, e.message ?: com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_896c9c))
         }
     }
 

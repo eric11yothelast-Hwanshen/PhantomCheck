@@ -35,7 +35,7 @@ class AiSummaryWidgetProvider : AppWidgetProvider() {
                 val latest = AppDatabaseHolder.db(appCtx).aiSummaryDao().latest()
                 val dateText = latest?.date?.toString().orEmpty()
                 val bodyText = if (latest == null || latest.summary.isBlank()) {
-                    "尚無 AI 摘要，請先至統計頁生成或確認網路連線。"
+                    com.phantom.checker.PhantomApplication.str(R.string.widget_ai_s_8eb256)
                 } else {
                     stripMarkdown(latest.summary)
                         .replace(Regex("\\s+"), " ")
@@ -86,7 +86,7 @@ class AiSummaryWidgetProvider : AppWidgetProvider() {
             val latest = AppDatabaseHolder.db(appCtx).aiSummaryDao().latest()
             val dateText = latest?.date?.toString().orEmpty()
             val bodyText = if (latest == null || latest.summary.isBlank()) {
-                "尚無 AI 摘要，請先至統計頁生成或確認網路連線。"
+                com.phantom.checker.PhantomApplication.str(R.string.widget_ai_s_8eb256)
             } else {
                 stripMarkdown(latest.summary)
                     .replace(Regex("\\s+"), " ")

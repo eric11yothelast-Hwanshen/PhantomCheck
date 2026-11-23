@@ -8,6 +8,7 @@ import com.phantom.checker.service.NotificationCollectorService
 import com.phantom.checker.util.PhantomPrefs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.phantom.checker.R
 
 data class ShizukuDiagItem(
     val label: String,
@@ -36,9 +37,9 @@ object ShizukuKeepAlive {
 
             val idleRes = ShizukuManager.execCommand(appCtx, "dumpsys deviceidle whitelist +$pkg")
             results += ShizukuDiagItem(
-                label = "Doze 電池白名單",
+                label = com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_d30212),
                 ok = idleRes.isSuccess,
-                detail = idleRes.output.ifBlank { if (idleRes.isSuccess) "已加入" else "失敗" }
+                detail = idleRes.output.ifBlank { if (idleRes.isSuccess) com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_7def19) else com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_a1d778) }
             )
 
             val ops = listOf(
@@ -53,28 +54,28 @@ object ShizukuKeepAlive {
                 if (!r.isSuccess) allOpsOk = false
             }
             results += ShizukuDiagItem(
-                label = "AppOps 背景與鬧鐘解限",
+                label = com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_7145fc),
                 ok = allOpsOk,
-                detail = if (allOpsOk) "4 項權限已設為 allow" else "部分項目設定失敗"
+                detail = if (allOpsOk) com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_a64090) else com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_ce31f3)
             )
 
             val bucketRes = ShizukuManager.execCommand(appCtx, "am set-standby-bucket $pkg active")
             results += ShizukuDiagItem(
                 label = "App Standby Bucket",
                 ok = bucketRes.isSuccess,
-                detail = if (bucketRes.isSuccess) "已設為 active" else bucketRes.output
+                detail = if (bucketRes.isSuccess) com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_6bd996) else bucketRes.output
             )
 
             val listenerHealed = healNotificationListener(appCtx)
             results += ShizukuDiagItem(
-                label = "通知存取權限自癒",
+                label = com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_dacf5c),
                 ok = listenerHealed.isSuccess,
                 detail = listenerHealed.output
             )
 
             val permRes = grantSelfRuntimePermissions(appCtx)
             results += ShizukuDiagItem(
-                label = "執行期權限自動補授",
+                label = com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_a629b6),
                 ok = permRes.isSuccess,
                 detail = permRes.output
             )
@@ -84,9 +85,9 @@ object ShizukuKeepAlive {
             ) {
                 val wdOk = ShizukuManager.startWatchdog(appCtx)
                 results += ShizukuDiagItem(
-                    label = "Shizuku 跨行程看門狗",
+                    label = com.phantom.checker.PhantomApplication.str(R.string.settings_s_bde005),
                     ok = wdOk,
-                    detail = if (wdOk) "運作中（每 60 秒檢查前景服務）" else "啟動失敗"
+                    detail = if (wdOk) com.phantom.checker.PhantomApplication.str(R.string.settings_s_239685) else com.phantom.checker.PhantomApplication.str(R.string.chat_s_94c54a)
                 )
             }
 
@@ -118,7 +119,7 @@ object ShizukuKeepAlive {
             } catch (_: Exception) {
             }
         }
-        ShellResult(0, "已啟用並觸發 rebind")
+        ShellResult(0, com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_1f3300))
     }
 
     suspend fun grantSelfRuntimePermissions(ctx: Context): ShellResult = withContext(Dispatchers.IO) {
@@ -138,7 +139,7 @@ object ShizukuKeepAlive {
         }
         ShellResult(
             if (okCount == perms.size) 0 else 1,
-            "已授予 $okCount/${perms.size} 項權限"
+            com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_956ab1, okCount, perms.size)
         )
     }
 
@@ -150,21 +151,21 @@ object ShizukuKeepAlive {
         val idleRes = ShizukuManager.execCommand(appCtx, "dumpsys deviceidle whitelist")
         val inWhitelist = idleRes.isSuccess && idleRes.output.contains(pkg)
         items += ShizukuDiagItem(
-            label = "Doze 白名單",
+            label = com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_f1578c),
             ok = inWhitelist,
-            detail = if (inWhitelist) "已在系統白名單" else "未在白名單"
+            detail = if (inWhitelist) com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_3c5e91) else com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_3436c3)
         )
 
         val appOpsRes = ShizukuManager.execCommand(appCtx, "cmd appops get $pkg RUN_ANY_IN_BACKGROUND")
         val bgAllowed = appOpsRes.isSuccess && appOpsRes.output.contains("allow", ignoreCase = true)
         items += ShizukuDiagItem(
-            label = "AppOps 背景限制",
+            label = com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_3d8723),
             ok = bgAllowed,
-            detail = appOpsRes.output.ifBlank { if (bgAllowed) "allow" else "受限" }
+            detail = appOpsRes.output.ifBlank { if (bgAllowed) "allow" else com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_936333) }
         )
 
         val bucketRes = ShizukuManager.execCommand(appCtx, "am get-standby-bucket $pkg")
-        val bucketText = bucketRes.output.trim().ifBlank { "未知" }
+        val bucketText = bucketRes.output.trim().ifBlank { com.phantom.checker.PhantomApplication.str(R.string.common_unknown) }
         items += ShizukuDiagItem(
             label = "Standby Bucket",
             ok = bucketRes.isSuccess && (bucketText.contains("active", true) || bucketText == "10" || bucketText == "5"),
@@ -174,17 +175,17 @@ object ShizukuKeepAlive {
         val listenerRes = ShizukuManager.execCommand(appCtx, "settings get secure enabled_notification_listeners")
         val listenerOk = listenerRes.isSuccess && listenerRes.output.contains(pkg)
         items += ShizukuDiagItem(
-            label = "系統通知監聽器",
+            label = com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_a1fe64),
             ok = listenerOk,
-            detail = if (listenerOk) "已登錄於系統設定" else "未登錄"
+            detail = if (listenerOk) com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_9270a9) else com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_7d0d75)
         )
 
         ShizukuManager.refreshState(appCtx)
         val wdActive = ShizukuManager.state.value.isWatchdogActive
         items += ShizukuDiagItem(
-            label = "Shizuku 跨行程看門狗",
+            label = com.phantom.checker.PhantomApplication.str(R.string.settings_s_bde005),
             ok = wdActive,
-            detail = if (wdActive) "運作中" else "未啟動"
+            detail = if (wdActive) com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_41215a) else com.phantom.checker.PhantomApplication.str(R.string.settings_s_a38205)
         )
 
         items
@@ -193,9 +194,9 @@ object ShizukuKeepAlive {
     suspend fun forceStopTargetApp(ctx: Context, targetPackage: String): ShellResult =
         withContext(Dispatchers.IO) {
             val safePkg = sanitizePackage(targetPackage)
-                ?: return@withContext ShellResult(1, "無效的套件名稱")
+                ?: return@withContext ShellResult(1, com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_99cbc2))
             if (safePkg == ctx.packageName) {
-                return@withContext ShellResult(1, "不可對幻訊本身執行強行停止")
+                return@withContext ShellResult(1, com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_b97c00))
             }
             ShizukuManager.execCommand(ctx, "am force-stop $safePkg")
         }
@@ -203,9 +204,9 @@ object ShizukuKeepAlive {
     suspend fun suspendTargetApp(ctx: Context, targetPackage: String): ShellResult =
         withContext(Dispatchers.IO) {
             val safePkg = sanitizePackage(targetPackage)
-                ?: return@withContext ShellResult(1, "無效的套件名稱")
+                ?: return@withContext ShellResult(1, com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_99cbc2))
             if (safePkg == ctx.packageName) {
-                return@withContext ShellResult(1, "不可凍結幻訊本身")
+                return@withContext ShellResult(1, com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_46d51b))
             }
             val res = ShizukuManager.execCommand(ctx, "pm suspend $safePkg")
             if (res.isSuccess) {
@@ -217,7 +218,7 @@ object ShizukuKeepAlive {
     suspend fun unsuspendTargetApp(ctx: Context, targetPackage: String): ShellResult =
         withContext(Dispatchers.IO) {
             val safePkg = sanitizePackage(targetPackage)
-                ?: return@withContext ShellResult(1, "無效的套件名稱")
+                ?: return@withContext ShellResult(1, com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_99cbc2))
             val res = ShizukuManager.execCommand(ctx, "pm unsuspend $safePkg")
             if (res.isSuccess) {
                 PhantomPrefs.removeShizukuSuspendedApp(ctx, safePkg)

@@ -163,8 +163,8 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
             return RemoteViews(context.packageName, R.layout.widget_risk_action).apply {
                 setOnClickPendingIntent(R.id.widget_root, openPi)
                 if (msg == null) {
-                    setTextViewText(R.id.widget_risk_sender, "目前無待處置高風險訊息")
-                    setTextViewText(R.id.widget_risk_preview, "偵測到可疑或詐騙訊息時可在此快速處置。")
+                    setTextViewText(R.id.widget_risk_sender, com.phantom.checker.PhantomApplication.str(R.string.widget_risk_s_27826a))
+                    setTextViewText(R.id.widget_risk_preview, com.phantom.checker.PhantomApplication.str(R.string.widget_risk_s_234a08))
                     setViewVisibility(R.id.widget_risk_actions_row, View.GONE)
                 } else {
                     val title = "${msg.sender.ifBlank { msg.appLabel }} · ${msg.appLabel}"
