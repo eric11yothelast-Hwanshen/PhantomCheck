@@ -63,6 +63,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -1574,131 +1575,9 @@ internal fun StatsTab(
             }
         }
 
-        // #381 Health Connect 7 日睡眠與步數迷你趨勢條（本機聚合，無 API key 亦可用；未授權誠實降級）
+        // #381 / #420 Health Connect 健康明細（日／週／月切換＋每日數值表＋週彙總＋迷你條；本機聚合零 token）
         phantomItem(12, key = "stats_health_7d") {
-            val ctx = LocalContext.current
-            val appCtx = ctx.applicationContext
-            var trend by remember { mutableStateOf<List<com.phantom.checker.util.HealthConnectBridge.DailyHealthPoint>>(emptyList()) }
-            var hcReady by remember { mutableStateOf(false) }
-            LaunchedEffect(Unit) {
-                hcReady = com.phantom.checker.util.HealthConnectBridge.hasAllReadPermissions(appCtx)
-                if (hcReady) {
-                    trend = com.phantom.checker.util.HealthConnectBridge.readLast7DaysTrend(appCtx)
-                }
-            }
-            PhantomGlassCard(
-                glassState = glassState,
-                modifier = Modifier.fillMaxWidth(),
-                cornerRadius = 20.dp,
-                contentPadding = 14.dp
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "❤️ Health Connect 7 日趨勢",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        if (!hcReady) {
-                            TextButton(
-                                onClick = {
-                                    ctx.startActivity(
-                                        android.content.Intent(ctx, com.phantom.checker.ui.PermissionHubActivity::class.java)
-                                    )
-                                }
-                            ) {
-                                Text("前往授權", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
-                    if (!hcReady || trend.isEmpty()) {
-                        Text(
-                            text = if (!hcReady) {
-                                "尚未授權 Health Connect（選配功能）。授權後可在此檢視近 7 日睡眠與步數趨勢，原始數值絕不出本機。"
-                            } else {
-                                "近 7 日尚無穿戴裝置或系統步數紀錄。"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        val maxSleep = trend.maxOf { it.sleepHours }.coerceAtLeast(8f)
-                        val maxSteps = trend.maxOf { it.steps }.coerceAtLeast(8000L)
-                        Text(
-                            text = "睡眠時數（近 7 日迷你條）",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth().height(54.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.Bottom
-                        ) {
-                            trend.forEach { pt ->
-                                val hFrac = (pt.sleepHours / maxSleep).coerceIn(0.08f, 1f)
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Bottom
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth(0.65f)
-                                            .height((34f * hFrac).dp)
-                                            .background(
-                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                                                shape = RoundedCornerShape(4.dp)
-                                            )
-                                    )
-                                    Text(
-                                        text = pt.dayLabel.takeLast(2),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                        Text(
-                            text = "每日步數（近 7 日迷你條）",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Row(
-                            modifier = Modifier.fillMaxWidth().height(54.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.Bottom
-                        ) {
-                            trend.forEach { pt ->
-                                val hFrac = (pt.steps.toFloat() / maxSteps.toFloat()).coerceIn(0.08f, 1f)
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Bottom
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth(0.65f)
-                                            .height((34f * hFrac).dp)
-                                            .background(
-                                                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f),
-                                                shape = RoundedCornerShape(4.dp)
-                                            )
-                                    )
-                                    Text(
-                                        text = pt.dayLabel.takeLast(2),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            StatsHealthDetailCard(glassState = glassState)
         }
 
         // 匯出 CSV 按鈕
@@ -1744,4 +1623,457 @@ internal fun RiskCountCard(
         )
     }
 }
+
+@Composable
+private fun StatsHealthDetailCard(
+    glassState: HazeState
+) {
+    val ctx = LocalContext.current
+    val appCtx = ctx.applicationContext
+    var selectedPeriod by remember { mutableStateOf(1) } // 0=日, 1=週, 2=月
+    var trend7d by remember { mutableStateOf<List<com.phantom.checker.util.HealthConnectBridge.DailyHealthPoint>>(emptyList()) }
+    var trend30d by remember { mutableStateOf<List<com.phantom.checker.util.HealthConnectBridge.DailyHealthPoint>>(emptyList()) }
+    var loading30d by remember { mutableStateOf(false) }
+    var hcAvailability by remember { mutableStateOf(com.phantom.checker.util.HealthConnectBridge.SdkAvailability.AVAILABLE) }
+    var hcPerm by remember { mutableStateOf(com.phantom.checker.util.HealthConnectBridge.HealthPermissionStatus()) }
+
+    LaunchedEffect(Unit) {
+        hcAvailability = com.phantom.checker.util.HealthConnectBridge.checkAvailability(appCtx)
+        hcPerm = com.phantom.checker.util.HealthConnectBridge.getPermissionStatus(appCtx)
+        if (hcPerm.anyGranted) {
+            trend7d = com.phantom.checker.util.HealthConnectBridge.readLast7DaysTrend(appCtx)
+        }
+    }
+    LaunchedEffect(selectedPeriod, hcPerm.anyGranted) {
+        if (selectedPeriod == 2 && hcPerm.anyGranted && trend30d.isEmpty()) {
+            loading30d = true
+            trend30d = com.phantom.checker.util.HealthConnectBridge.readRecentDaysTrend(appCtx, days = 30)
+            loading30d = false
+        }
+    }
+
+    val openPermHub = {
+        ctx.startActivity(
+            android.content.Intent(ctx, com.phantom.checker.ui.PermissionHubActivity::class.java)
+        )
+    }
+
+    PhantomGlassCard(
+        glassState = glassState,
+        modifier = Modifier.fillMaxWidth(),
+        cornerRadius = 20.dp,
+        contentPadding = 14.dp
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "❤️ Health Connect 健康明細",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                if (!hcPerm.allGranted) {
+                    TextButton(onClick = openPermHub) {
+                        Text(
+                            text = if (!hcPerm.anyGranted) "前往授權" else "補授權",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                }
+            }
+
+            if (hcAvailability != com.phantom.checker.util.HealthConnectBridge.SdkAvailability.AVAILABLE || !hcPerm.anyGranted) {
+                Text(
+                    text = when {
+                        hcAvailability == com.phantom.checker.util.HealthConnectBridge.SdkAvailability.UNAVAILABLE ->
+                            "此裝置未支援或未安裝 Health Connect，App 其餘功能不受影響。"
+                        hcAvailability == com.phantom.checker.util.HealthConnectBridge.SdkAvailability.PROVIDER_UPDATE_REQUIRED ->
+                            "Health Connect 需要安裝或更新，請前往權限中心操作。"
+                        else ->
+                            "尚未授權 Health Connect（選配功能）。授權後可在此檢視每日睡眠、步數、心率、距離與熱量明細，原始數值絕不出本機。"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("日" to 0, "週" to 1, "月" to 2).forEach { (label, idx) ->
+                        FilterChip(
+                            selected = selectedPeriod == idx,
+                            onClick = { selectedPeriod = idx },
+                            label = {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 1
+                                )
+                            }
+                        )
+                    }
+                }
+
+                val hasAny7d = trend7d.any {
+                    it.sleepHours > 0f || it.steps > 0L || it.avgHeartRateBpm > 0L || it.distanceMeters > 0.0 || it.caloriesKcal > 0.0
+                }
+
+                when (selectedPeriod) {
+                    0 -> {
+                        val todayPt = trend7d.lastOrNull()
+                        val yesterdayPt = trend7d.getOrNull(trend7d.size - 2) ?: todayPt
+                        if (todayPt == null || !hasAny7d) {
+                            Text(
+                                text = "近期尚無穿戴裝置或系統健康紀錄（無紀錄）。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            val sleepVal = when {
+                                !hcPerm.sleep -> "未授權"
+                                todayPt.sleepHours > 0f -> String.format(Locale.US, "%.1f 小時", todayPt.sleepHours)
+                                else -> "無紀錄"
+                            }
+                            val stepsVal = when {
+                                !hcPerm.steps -> "未授權"
+                                yesterdayPt != null && yesterdayPt.steps > 0L -> String.format(Locale.US, "%,d 步", yesterdayPt.steps)
+                                else -> "無紀錄"
+                            }
+                            val hrVal = when {
+                                !hcPerm.heartRate -> "未授權"
+                                yesterdayPt != null && yesterdayPt.avgHeartRateBpm > 0L -> "${yesterdayPt.avgHeartRateBpm} bpm"
+                                else -> "無紀錄"
+                            }
+                            val distVal = when {
+                                !hcPerm.distance -> "未授權"
+                                yesterdayPt != null && yesterdayPt.distanceMeters > 0.0 -> com.phantom.checker.util.HealthConnectBridge.formatDistance(yesterdayPt.distanceMeters)
+                                else -> "無紀錄"
+                            }
+                            val calVal = when {
+                                !hcPerm.calories -> "未授權"
+                                yesterdayPt != null && yesterdayPt.caloriesKcal > 0.0 -> "${yesterdayPt.caloriesKcal.toLong()} kcal"
+                                else -> "無紀錄"
+                            }
+                            Text(
+                                text = "當日健康快照（昨夜睡眠＋昨日活動）",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf(
+                                    "昨夜睡眠" to sleepVal,
+                                    "昨日步數" to stepsVal,
+                                    "昨日均心率" to hrVal,
+                                    "昨日距離" to distVal,
+                                    "昨日消耗熱量" to calVal
+                                ).forEach { (k, v) ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = k,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = v,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (v == "未授權") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                            modifier = if (v == "未授權") Modifier.clickable(onClick = openPermHub) else Modifier
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    1 -> {
+                        if (trend7d.isEmpty() || !hasAny7d) {
+                            Text(
+                                text = "近 7 日尚無穿戴裝置或系統健康紀錄（無紀錄）。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            val totalSteps7 = trend7d.sumOf { it.steps }
+                            val sleepSamples = trend7d.mapNotNull { it.sleepHours.takeIf { h -> h > 0f } }
+                            val avgSleep7 = if (sleepSamples.isNotEmpty()) sleepSamples.average().toFloat() else 0f
+                            val hrSamples = trend7d.mapNotNull { it.avgHeartRateBpm.takeIf { b -> b > 0L } }
+                            val avgHr7 = if (hrSamples.isNotEmpty()) hrSamples.average().toLong() else 0L
+                            val totalDist7 = trend7d.sumOf { it.distanceMeters }
+                            val totalCal7 = trend7d.sumOf { it.caloriesKcal }
+
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        text = "近 7 日彙總",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    val stepsSummary = if (!hcPerm.steps) "未授權" else if (totalSteps7 > 0L) String.format(Locale.US, "%,d 步", totalSteps7) else "無紀錄"
+                                    val sleepSummary = if (!hcPerm.sleep) "未授權" else if (avgSleep7 > 0f) String.format(Locale.US, "均 %.1fh", avgSleep7) else "無紀錄"
+                                    val hrSummary = if (!hcPerm.heartRate) "未授權" else if (avgHr7 > 0L) "均 $avgHr7 bpm" else "無紀錄"
+                                    val distSummary = if (!hcPerm.distance) "未授權" else if (totalDist7 > 0.0) com.phantom.checker.util.HealthConnectBridge.formatDistance(totalDist7) else "無紀錄"
+                                    val calSummary = if (!hcPerm.calories) "未授權" else if (totalCal7 > 0.0) "${totalCal7.toLong()} kcal" else "無紀錄"
+                                    Text(
+                                        text = "總步數 $stepsSummary · 睡眠 $sleepSummary · 心率 $hrSummary",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "總距離 $distSummary · 總熱量 $calSummary",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+
+                            val maxSleep = trend7d.maxOf { it.sleepHours }.coerceAtLeast(8f)
+                            val maxSteps = trend7d.maxOf { it.steps }.coerceAtLeast(8000L)
+                            Text(
+                                text = "睡眠時數（近 7 日迷你條）",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth().height(54.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.Bottom
+                            ) {
+                                trend7d.forEach { pt ->
+                                    val hFrac = (pt.sleepHours / maxSleep).coerceIn(0.08f, 1f)
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Bottom
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth(0.65f)
+                                                .height((34f * hFrac).dp)
+                                                .background(
+                                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                                                    shape = RoundedCornerShape(4.dp)
+                                                )
+                                        )
+                                        Text(
+                                            text = pt.dayLabel.takeLast(2),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = "每日步數（近 7 日迷你條）",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth().height(54.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.Bottom
+                            ) {
+                                trend7d.forEach { pt ->
+                                    val hFrac = (pt.steps.toFloat() / maxSteps.toFloat()).coerceIn(0.08f, 1f)
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Bottom
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth(0.65f)
+                                                .height((34f * hFrac).dp)
+                                                .background(
+                                                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f),
+                                                    shape = RoundedCornerShape(4.dp)
+                                                )
+                                        )
+                                        Text(
+                                            text = pt.dayLabel.takeLast(2),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+
+                            Text(
+                                text = "近 7 日每日明細表（可左右滑動）",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            val tableScroll = rememberScrollState()
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(tableScroll)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text("日期", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(48.dp))
+                                    Text("睡眠", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(56.dp))
+                                    Text("步數", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(68.dp))
+                                    Text("均心率", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(64.dp))
+                                    Text("距離", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(74.dp))
+                                    Text("熱量", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(76.dp))
+                                }
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                trend7d.reversed().forEach { pt ->
+                                    val sCell = if (!hcPerm.sleep) "未授權" else if (pt.sleepHours > 0f) String.format(Locale.US, "%.1fh", pt.sleepHours) else "—"
+                                    val stCell = if (!hcPerm.steps) "未授權" else if (pt.steps > 0L) String.format(Locale.US, "%,d", pt.steps) else "—"
+                                    val hrCell = if (!hcPerm.heartRate) "未授權" else if (pt.avgHeartRateBpm > 0L) "${pt.avgHeartRateBpm}" else "—"
+                                    val dCell = if (!hcPerm.distance) "未授權" else com.phantom.checker.util.HealthConnectBridge.formatDistance(pt.distanceMeters)
+                                    val cCell = if (!hcPerm.calories) "未授權" else if (pt.caloriesKcal > 0.0) "${pt.caloriesKcal.toLong()} kcal" else "—"
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(pt.dayLabel, style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.width(48.dp))
+                                        Text(sCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (sCell == "未授權") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(56.dp))
+                                        Text(stCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (stCell == "未授權") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(68.dp))
+                                        Text(hrCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (hrCell == "未授權") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(64.dp))
+                                        Text(dCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (dCell == "未授權") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(74.dp))
+                                        Text(cCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (cCell == "未授權") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(76.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    else -> {
+                        if (loading30d) {
+                            Text(
+                                text = "正在本機聚合近 30 日健康資料…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            val hasAny30d = trend30d.any {
+                                it.sleepHours > 0f || it.steps > 0L || it.avgHeartRateBpm > 0L || it.distanceMeters > 0.0 || it.caloriesKcal > 0.0
+                            }
+                            if (trend30d.isEmpty() || !hasAny30d) {
+                                Text(
+                                    text = "近 30 日尚無穿戴裝置或系統健康紀錄（無紀錄）。",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                val totalSteps30 = trend30d.sumOf { it.steps }
+                                val stepDays30 = trend30d.count { it.steps > 0L }.coerceAtLeast(1)
+                                val sleepSamples30 = trend30d.mapNotNull { it.sleepHours.takeIf { h -> h > 0f } }
+                                val avgSleep30 = if (sleepSamples30.isNotEmpty()) sleepSamples30.average().toFloat() else 0f
+                                val hrSamples30 = trend30d.mapNotNull { it.avgHeartRateBpm.takeIf { b -> b > 0L } }
+                                val avgHr30 = if (hrSamples30.isNotEmpty()) hrSamples30.average().toLong() else 0L
+                                val totalDist30 = trend30d.sumOf { it.distanceMeters }
+                                val totalCal30 = trend30d.sumOf { it.caloriesKcal }
+
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.55f),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "近 30 日彙總",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        val stepsText = if (!hcPerm.steps) "未授權" else if (totalSteps30 > 0L) String.format(Locale.US, "%,d 步（日均 %,d）", totalSteps30, totalSteps30 / stepDays30) else "無紀錄"
+                                        val sleepText = if (!hcPerm.sleep) "未授權" else if (avgSleep30 > 0f) String.format(Locale.US, "均 %.1fh", avgSleep30) else "無紀錄"
+                                        val hrText = if (!hcPerm.heartRate) "未授權" else if (avgHr30 > 0L) "均 $avgHr30 bpm" else "無紀錄"
+                                        val distText = if (!hcPerm.distance) "未授權" else if (totalDist30 > 0.0) com.phantom.checker.util.HealthConnectBridge.formatDistance(totalDist30) else "無紀錄"
+                                        val calText = if (!hcPerm.calories) "未授權" else if (totalCal30 > 0.0) "${totalCal30.toLong()} kcal" else "無紀錄"
+                                        Text("步數 $stepsText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                                        Text("睡眠 $sleepText · 心率 $hrText · 距離 $distText · 熱量 $calText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                                    }
+                                }
+
+                                val maxSleep30 = trend30d.maxOf { it.sleepHours }.coerceAtLeast(8f)
+                                val maxSteps30 = trend30d.maxOf { it.steps }.coerceAtLeast(8000L)
+                                Text("睡眠時數（近 30 日）", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().height(42.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                    verticalAlignment = Alignment.Bottom
+                                ) {
+                                    trend30d.forEach { pt ->
+                                        val hFrac = if (pt.sleepHours > 0f) (pt.sleepHours / maxSleep30).coerceIn(0.08f, 1f) else 0.04f
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height((38f * hFrac).dp)
+                                                .background(
+                                                    color = if (pt.sleepHours > 0f) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                                                    shape = RoundedCornerShape(2.dp)
+                                                )
+                                        )
+                                    }
+                                }
+                                Text("每日步數（近 30 日）", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().height(42.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                    verticalAlignment = Alignment.Bottom
+                                ) {
+                                    trend30d.forEach { pt ->
+                                        val hFrac = if (pt.steps > 0L) (pt.steps.toFloat() / maxSteps30.toFloat()).coerceIn(0.08f, 1f) else 0.04f
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height((38f * hFrac).dp)
+                                                .background(
+                                                    color = if (pt.steps > 0L) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.85f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                                                    shape = RoundedCornerShape(2.dp)
+                                                )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (!hcPerm.allGranted) {
+                    Text(
+                        text = "部分型別未授權（顯示「未授權」），點此前往權限中心補授權",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable(onClick = openPermHub)
+                    )
+                }
+                Text(
+                    text = "資料由 Health Connect 本機聚合（零額度，原始數值絕不出本機）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
 
