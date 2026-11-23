@@ -81,6 +81,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -2488,130 +2489,148 @@ fun ChatAssistantTab(
                     }
                 }
         ) {
-        // 頂部操作列
+        // §4.2 精簡頂部應用列：頭像＋助手名＋模型副標（省 token 開啟時顯示徽章）｜右：＋新對話、歷史、⋮ overflow
+        var showChatOverflow by remember { mutableStateOf(false) }
+        val pendingTodoCount = todoListItems.count { !it.isDone }
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                modifier = Modifier.weight(1f, fill = false),
+                modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { showSessionDrawer = true }) {
-                    Icon(Icons.Default.Menu, contentDescription = "歷史對話")
-                }
                 AssistantAvatarCircle(
                     avatarBitmap = assistantAvatar,
                     assistantName = assistantName,
                     size = 28.dp
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    text = if (assistantName == PhantomPrefs.DEFAULT_ASSISTANT_NAME) {
-                        "幻訊 · AI 訊息助手"
-                    } else {
-                        "$assistantName · AI 助手"
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (assistantName == PhantomPrefs.DEFAULT_ASSISTANT_NAME) {
+                            "幻訊"
+                        } else {
+                            assistantName
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = activeProfile?.model?.takeIf { it.isNotBlank() } ?: "未設定模型",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (tokenSaverEnabled) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = "省 token",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val pendingTodoCount = todoListItems.count { !it.isDone }
-                TextButton(
+                IconButton(
                     onClick = {
-                        showTodoListSheet = true
-                    }
+                        currentSessionId = null
+                        messages = emptyList()
+                        lastError = null
+                    },
+                    modifier = Modifier.size(48.dp)
                 ) {
-                    Text(if (pendingTodoCount > 0) "待辦 ($pendingTodoCount)" else "待辦")
-                }
-                IconButton(onClick = {
-                    currentSessionId = null
-                    messages = emptyList()
-                    lastError = null
-                }) {
                     Icon(Icons.Default.Add, contentDescription = "新對話")
                 }
-            }
-        }
-
-        // Provider / 模型即時切換列＋省 token 快捷開關（含資訊說明）＋搜尋、重整、設定入口
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 4.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                AiProviderSwitcherChip(
-                    profiles = profiles,
-                    activeProfile = activeProfile,
-                    onSelectProfile = { selected ->
-                        PhantomPrefs.setPurposeProfileId(appCtx, com.phantom.checker.util.AiPurpose.CHAT.id, selected.id)
-                        activeProfile = selected
-                        hasApiKey = true
-                        onShowMessage("已切換對話模型：${selected.name}・${selected.model}")
-                    },
-                    modifier = Modifier.weight(1f, fill = false),
-                    label = ""
-                )
-                FilterChip(
-                    selected = tokenSaverEnabled,
-                    onClick = {
-                        val next = !tokenSaverEnabled
-                        tokenSaverEnabled = next
-                        SettingsCatalog.applyBooleanSetting(appCtx, "quick_token_saver", next)
-                        onShowMessage(if (next) "已開啟省 token 模式" else "已關閉省 token 模式（已還原設定預算）")
-                    },
-                    label = {
-                        Text(
-                            text = if (tokenSaverEnabled) "省token:開" else "省token",
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1
+                IconButton(
+                    onClick = { showSessionDrawer = true },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(Icons.Default.Menu, contentDescription = "歷史對話")
+                }
+                Box {
+                    IconButton(
+                        onClick = { showChatOverflow = true },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Default.MoreVert,
+                            contentDescription = "更多選項"
                         )
                     }
-                )
-                IconButton(
-                    onClick = { showTokenSaverInfoDialog = true },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "省 token 模式說明",
-                        tint = if (tokenSaverEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onToggleSearch, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        imageVector = if (isSearchActive) Icons.Default.Clear else Icons.Default.Search,
-                        contentDescription = "搜尋訊息",
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                IconButton(onClick = onRefresh, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "重新整理",
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                IconButton(onClick = onOpenSettings, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "設定",
-                        modifier = Modifier.size(20.dp)
-                    )
+                    DropdownMenu(
+                        expanded = showChatOverflow,
+                        onDismissRequest = { showChatOverflow = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(if (tokenSaverEnabled) "✓ 省 token 模式（已開啟）" else "省 token 模式（未開啟）") },
+                            onClick = {
+                                showChatOverflow = false
+                                val next = !tokenSaverEnabled
+                                tokenSaverEnabled = next
+                                SettingsCatalog.applyBooleanSetting(appCtx, "quick_token_saver", next)
+                                onShowMessage(if (next) "已開啟省 token 模式" else "已關閉省 token 模式（已還原設定預算）")
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("省 token 模式影響清單") },
+                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                            onClick = {
+                                showChatOverflow = false
+                                showTokenSaverInfoDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (pendingTodoCount > 0) "待辦 ($pendingTodoCount)" else "待辦事項") },
+                            onClick = {
+                                showChatOverflow = false
+                                showTodoListSheet = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (isSearchActive) "關閉搜尋" else "搜尋對話") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            onClick = {
+                                showChatOverflow = false
+                                onToggleSearch()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("重新整理") },
+                            leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                            onClick = {
+                                showChatOverflow = false
+                                onRefresh()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("設定") },
+                            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                            onClick = {
+                                showChatOverflow = false
+                                onOpenSettings()
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -5599,6 +5618,49 @@ fun ChatAssistantTab(
             }
         }
 
+        // §4.2 輸入框上方工具列（Provider/模型切換 ＋ 🔍 聯網，單排 LazyRow 不擠壓輸入框）
+        Spacer(Modifier.height(4.dp))
+        LazyRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            item(key = "chat_tool_provider") {
+                AiProviderSwitcherChip(
+                    profiles = profiles,
+                    activeProfile = activeProfile,
+                    onSelectProfile = { selected ->
+                        PhantomPrefs.setPurposeProfileId(appCtx, com.phantom.checker.util.AiPurpose.CHAT.id, selected.id)
+                        activeProfile = selected
+                        hasApiKey = true
+                        onShowMessage("已切換對話模型：${selected.name}・${selected.model}")
+                    },
+                    label = ""
+                )
+            }
+            item(key = "chat_tool_websearch") {
+                FilterChip(
+                    selected = webSearchEnabled && webSearchSupported,
+                    onClick = {
+                        if (webSearchSupported) {
+                            webSearchEnabled = !webSearchEnabled
+                        } else {
+                            webSearchEnabled = false
+                            onShowMessage("目前供應商不支援聯網查詢（請使用 Gemini 3+ 預設檔，或於設定填寫 BYOK 外部搜尋端點）")
+                        }
+                    },
+                    label = {
+                        Text(
+                            text = if (webSearchEnabled && webSearchSupported) "🔍 聯網中" else "🔍 聯網",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                    },
+                    modifier = Modifier.alpha(if (webSearchSupported) 1f else 0.5f)
+                )
+            }
+        }
+
         // 輸入列（單一收合工具圖標 + 精簡輸入框 + 送出按鈕）
         Spacer(Modifier.height(4.dp))
         Row(
@@ -5645,25 +5707,6 @@ fun ChatAssistantTab(
                     )
                 }
             }
-            FilterChip(
-                selected = webSearchEnabled && webSearchSupported,
-                onClick = {
-                    if (webSearchSupported) {
-                        webSearchEnabled = !webSearchEnabled
-                    } else {
-                        webSearchEnabled = false
-                        onShowMessage("目前供應商不支援聯網查詢（請使用 Gemini 3+ 預設檔，或於設定填寫 BYOK 外部搜尋端點）")
-                    }
-                },
-                label = {
-                    Text(
-                        text = if (webSearchEnabled && webSearchSupported) "🔍 聯網中" else "🔍 聯網",
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1
-                    )
-                },
-                modifier = Modifier.alpha(if (webSearchSupported) 1f else 0.5f)
-            )
             OutlinedTextField(
                 value = inputText,
                 onValueChange = { inputText = it },
