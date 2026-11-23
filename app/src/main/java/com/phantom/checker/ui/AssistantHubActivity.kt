@@ -78,6 +78,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.math.roundToInt
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * #340 「AI 夥伴與主動推播」獨立設定頁：
@@ -98,6 +100,7 @@ class AssistantHubActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun AssistantHubScreen(onBack: () -> Unit) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -154,7 +157,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (!granted) {
-            Toast.makeText(ctx, "未授予粗略位置權限，請直接手動輸入地區名稱", Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, resCtx.getString(R.string.assistant_hub_s_74c529), Toast.LENGTH_SHORT).show()
             return@rememberLauncherForActivityResult
         }
         scope.launch {
@@ -176,17 +179,17 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
             if (!city.isNullOrBlank()) {
                 regionKeyword = city
                 PhantomPrefs.setProactiveRegionKeyword(appCtx, city)
-                Toast.makeText(ctx, "已填入地區：$city（僅儲存城市文字）", Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, resCtx.getString(R.string.assistant_hub_s_d77963, city), Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(ctx, "目前無法取得定位城市，請手動輸入", Toast.LENGTH_SHORT).show()
+                Toast.makeText(ctx, resCtx.getString(R.string.assistant_hub_s_052f3b), Toast.LENGTH_SHORT).show()
             }
         }
     }
 
     val contentOptions = listOf(
-        PhantomPrefs.BRIEFING_CONTENT_SCHEDULE to "今日／明日行程",
-        PhantomPrefs.BRIEFING_CONTENT_TODO to "待辦延後提醒",
-        PhantomPrefs.BRIEFING_CONTENT_IMPORTANT_NOTIFS to "重點通知摘要"
+        PhantomPrefs.BRIEFING_CONTENT_SCHEDULE to stringResource(R.string.assistant_hub_s_919d34),
+        PhantomPrefs.BRIEFING_CONTENT_TODO to stringResource(R.string.assistant_hub_s_fe0250),
+        PhantomPrefs.BRIEFING_CONTENT_IMPORTANT_NOTIFS to stringResource(R.string.assistant_hub_s_24612a)
     )
 
     PhantomBackgroundBox(
@@ -197,7 +200,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
         val hubListState = androidx.compose.foundation.lazy.rememberLazyListState()
         val hubScope = rememberCoroutineScope()
         com.phantom.checker.ui.components.PhantomPageScaffold(
-            title = "AI 夥伴與主動推播",
+            title = stringResource(R.string.catalog_assistant_hub_title),
             onBack = onBack,
             topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
             containerColor = Color.Transparent
@@ -209,13 +212,13 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
             ) {
                 val anchors = remember {
                     listOf(
-                        "簡報" to 0,
-                        "主動" to 1,
-                        "畫像" to 2,
-                        "外部搜尋" to 3,
-                        "通訊錄" to 4,
-                        "連結" to 5,
-                        "模板" to 6
+                        resCtx.getString(R.string.chat_s_8aa9b3) to 0,
+                        resCtx.getString(R.string.assistant_hub_s_c3154c) to 1,
+                        resCtx.getString(R.string.assistant_hub_s_598b36) to 2,
+                        resCtx.getString(R.string.assistant_hub_s_cfa756) to 3,
+                        resCtx.getString(R.string.assistant_hub_s_25e5e0) to 4,
+                        resCtx.getString(R.string.assistant_hub_s_5ee95c) to 5,
+                        resCtx.getString(R.string.assistant_hub_s_06d0f3) to 6
                     )
                 }
                 androidx.compose.foundation.lazy.LazyRow(
@@ -245,9 +248,9 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                 phantomItem(0, key = "hub_briefing") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("☀️🌙 早晚個人簡報排程", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(stringResource(R.string.assistant_hub_s_bee195), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             Text(
-                                "使用 setAlarmClock 精準排程並搭配 15 分鐘零 token 指紋比對；無變動日零 AI 呼叫。",
+                                stringResource(R.string.assistant_hub_s_6c23c2),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -257,7 +260,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("早間簡報（預設 08:45）", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                Text(stringResource(R.string.assistant_hub_s_ce14ad), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                                 FluidSwitch(
                                     checked = morningEnabled,
                                     onCheckedChange = {
@@ -271,7 +274,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                             OutlinedTextField(
                                 value = morningTime,
                                 onValueChange = { morningTime = it },
-                                label = { Text("早間簡報時間（HH:mm）") },
+                                label = { Text(stringResource(R.string.assistant_hub_s_40fa87)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -296,7 +299,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("晚間簡報（預設 22:25）", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                Text(stringResource(R.string.assistant_hub_s_d639b0), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                                 FluidSwitch(
                                     checked = eveningEnabled,
                                     onCheckedChange = {
@@ -310,7 +313,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                             OutlinedTextField(
                                 value = eveningTime,
                                 onValueChange = { eveningTime = it },
-                                label = { Text("晚間簡報時間（HH:mm）") },
+                                label = { Text(stringResource(R.string.assistant_hub_s_dd2f0c)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -331,7 +334,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                             if (!notifEnabled) {
                                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                                 Text(
-                                    text = "⚠️ 主動通知未開啟：簡報仍會寫入 AI 助手聊天，但無法顯示於手機通知欄。",
+                                    text = stringResource(R.string.assistant_hub_s_b4ff6a),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error
                                 )
@@ -339,12 +342,12 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                     onClick = { ProactiveEngine.openAppNotificationSettings(ctx) },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("前往系統通知設定")
+                                    Text(stringResource(R.string.settings_s_e9a953))
                                 }
                             }
                             if (!batteryIgnored) {
                                 Text(
-                                    text = "💡 建議將幻訊加入電池最佳化白名單，避免小米／Samsung／OPPO／vivo 背景限流影響定時簡報。",
+                                    text = stringResource(R.string.assistant_hub_s_901722),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -352,7 +355,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                     onClick = { openBatteryOptimizationSettings(ctx) },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("開啟電池優化白名單設定")
+                                    Text(stringResource(R.string.assistant_hub_s_b89186))
                                 }
                             }
 
@@ -361,21 +364,21 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                     PhantomPrefs.setMorningBriefingTime(appCtx, morningTime)
                                     PhantomPrefs.setEveningBriefingTime(appCtx, eveningTime)
                                     BriefingScheduler.rescheduleAll(appCtx)
-                                    Toast.makeText(ctx, "已更新早晚簡報排程", Toast.LENGTH_SHORT).show()
-                                }) { Text("儲存時間並重排") }
+                                    Toast.makeText(ctx, resCtx.getString(R.string.assistant_hub_s_57ed3c), Toast.LENGTH_SHORT).show()
+                                }) { Text(stringResource(R.string.assistant_hub_s_ae36ac)) }
                                 OutlinedButton(onClick = {
                                     scope.launch {
                                         val canNotify = ProactiveEngine.areNotificationsEnabled(appCtx)
                                         notifEnabled = canNotify
                                         ProactiveEngine.deliverBriefing(appCtx, isMorning = true, force = true)
                                         val msg = when {
-                                            !canNotify -> "已寫入 AI 助手（通知未開啟，未發送通知欄推播）"
-                                            ProactiveEngine.isInDndWindow(appCtx) -> "已寫入 AI 助手（目前為勿擾時段，不彈出通知）"
-                                            else -> "已發送測試簡報至 AI 助手與系統通知欄"
+                                            !canNotify -> resCtx.getString(R.string.assistant_hub_s_bfe543)
+                                            ProactiveEngine.isInDndWindow(appCtx) -> resCtx.getString(R.string.assistant_hub_s_137e52)
+                                            else -> resCtx.getString(R.string.assistant_hub_s_0f6fa0)
                                         }
                                         Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
                                     }
-                                }) { Text("立即試發") }
+                                }) { Text(stringResource(R.string.assistant_hub_s_1e1e6e)) }
                             }
                         }
                     }
@@ -385,14 +388,14 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                 phantomItem(1, key = "hub_proactive_controls") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("🔔 主動推播主題、節流與獨立勿擾", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(stringResource(R.string.assistant_hub_s_43d5ae), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             val topics = listOf(
-                                PhantomPrefs.PROACTIVE_TOPIC_SCHEDULE to "行程提醒",
-                                PhantomPrefs.PROACTIVE_TOPIC_TODO to "待辦到期",
-                                PhantomPrefs.PROACTIVE_TOPIC_CONFLICT to "跨上下文撞期",
-                                PhantomPrefs.PROACTIVE_TOPIC_INTEREST to "興趣情報",
-                                PhantomPrefs.PROACTIVE_TOPIC_REGION to "地區情報",
-                                PhantomPrefs.PROACTIVE_TOPIC_EXTERNAL_SEARCH to "外部情報搜尋"
+                                PhantomPrefs.PROACTIVE_TOPIC_SCHEDULE to stringResource(R.string.assistant_hub_s_28ec1f),
+                                PhantomPrefs.PROACTIVE_TOPIC_TODO to stringResource(R.string.assistant_hub_s_58b8bb),
+                                PhantomPrefs.PROACTIVE_TOPIC_CONFLICT to stringResource(R.string.assistant_hub_s_accab2),
+                                PhantomPrefs.PROACTIVE_TOPIC_INTEREST to stringResource(R.string.assistant_hub_s_848bcc),
+                                PhantomPrefs.PROACTIVE_TOPIC_REGION to stringResource(R.string.assistant_hub_s_99ed9c),
+                                PhantomPrefs.PROACTIVE_TOPIC_EXTERNAL_SEARCH to stringResource(R.string.assistant_hub_s_003c97)
                             )
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 topics.forEach { (key, label) ->
@@ -410,7 +413,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 }
                             }
 
-                            Text("每日主動提醒上限：${dailyCap.roundToInt()} 則（1–20 可調，與簡報獨立）", style = MaterialTheme.typography.bodySmall)
+                            Text(stringResource(R.string.assistant_hub_s_3c3b8f, dailyCap.roundToInt()), style = MaterialTheme.typography.bodySmall)
                             Slider(
                                 value = dailyCap,
                                 onValueChange = { dailyCap = it },
@@ -422,7 +425,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 steps = 18
                             )
 
-                            Text("每日早晚簡報上限：${briefingDailyCap.roundToInt()} 則（1–10 可調，與主動提醒獨立）", style = MaterialTheme.typography.bodySmall)
+                            Text(stringResource(R.string.assistant_hub_s_fa1dac, briefingDailyCap.roundToInt()), style = MaterialTheme.typography.bodySmall)
                             Slider(
                                 value = briefingDailyCap,
                                 onValueChange = { briefingDailyCap = it },
@@ -434,7 +437,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 steps = 8
                             )
 
-                            Text("行程／待辦主動提醒提前時間", style = MaterialTheme.typography.bodySmall)
+                            Text(stringResource(R.string.assistant_hub_s_ac6e23), style = MaterialTheme.typography.bodySmall)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf(15, 30, 60).forEach { mins ->
                                     FilterChip(
@@ -444,7 +447,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                             PhantomPrefs.setProactiveReminderLeadMinutes(appCtx, mins)
                                             PhantomSettingsBus.notifyChanged()
                                         },
-                                        label = { Text("${mins} 分鐘", style = MaterialTheme.typography.labelSmall) }
+                                        label = { Text(stringResource(R.string.assistant_hub_s_409909, mins), style = MaterialTheme.typography.labelSmall) }
                                     )
                                 }
                             }
@@ -456,12 +459,12 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                     PhantomPrefs.setProactiveAllDayRemindTime(appCtx, it)
                                     PhantomSettingsBus.notifyChanged()
                                 },
-                                label = { Text("今日全天事件提醒時刻（HH:mm，預設 09:00）") },
+                                label = { Text(stringResource(R.string.assistant_hub_s_68d2d3)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
 
-                            Text("背景指紋與里程碑檢查間隔", style = MaterialTheme.typography.bodySmall)
+                            Text(stringResource(R.string.assistant_hub_s_4fe14e), style = MaterialTheme.typography.bodySmall)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf(15, 30, 60).forEach { mins ->
                                     FilterChip(
@@ -472,12 +475,12 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                             BriefingScheduler.scheduleProactiveMonitorWorker(appCtx)
                                             PhantomSettingsBus.notifyChanged()
                                         },
-                                        label = { Text("${mins} 分鐘", style = MaterialTheme.typography.labelSmall) }
+                                        label = { Text(stringResource(R.string.assistant_hub_s_409909, mins), style = MaterialTheme.typography.labelSmall) }
                                     )
                                 }
                             }
 
-                            Text("同內容主動提醒去重冷卻時間", style = MaterialTheme.typography.bodySmall)
+                            Text(stringResource(R.string.assistant_hub_s_e1a78b), style = MaterialTheme.typography.bodySmall)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf(10, 30, 60).forEach { mins ->
                                     FilterChip(
@@ -487,7 +490,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                             PhantomPrefs.setProactiveDedupWindowMinutes(appCtx, mins)
                                             PhantomSettingsBus.notifyChanged()
                                         },
-                                        label = { Text("${mins} 分鐘", style = MaterialTheme.typography.labelSmall) }
+                                        label = { Text(stringResource(R.string.assistant_hub_s_409909, mins), style = MaterialTheme.typography.labelSmall) }
                                     )
                                 }
                             }
@@ -495,7 +498,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                             val (upCount, downCount) = remember { PhantomPrefs.getProactiveFeedbackCounts(appCtx) }
                             if (upCount > 0 || downCount > 0) {
                                 Text(
-                                    text = "主動訊息回饋累計：👍 有幫助 $upCount 次 · 👎 打擾 $downCount 次",
+                                    text = stringResource(R.string.assistant_hub_s_529e85, upCount, downCount),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -508,7 +511,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("主動推播獨立勿擾（期間仍寫入聊天不發通知）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                Text(stringResource(R.string.assistant_hub_s_81852a), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                 FluidSwitch(
                                     checked = dndEnabled,
                                     onCheckedChange = {
@@ -525,7 +528,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                         dndStart = it
                                         PhantomPrefs.setProactiveDndStart(appCtx, it)
                                     },
-                                    label = { Text("開始（HH:mm）") },
+                                    label = { Text(stringResource(R.string.assistant_hub_s_32ac23)) },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -535,7 +538,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                         dndEnd = it
                                         PhantomPrefs.setProactiveDndEnd(appCtx, it)
                                     },
-                                    label = { Text("結束（HH:mm）") },
+                                    label = { Text(stringResource(R.string.assistant_hub_s_51d928)) },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -544,7 +547,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                             HorizontalDivider(Modifier.padding(vertical = 4.dp))
 
                             Text(
-                                "📅 主動日曆情報（CalendarInsightEngine）",
+                                stringResource(R.string.assistant_hub_s_5bec5d),
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary
@@ -554,7 +557,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("定時讀日曆並主動彙整情報", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                Text(stringResource(R.string.assistant_hub_s_67ca0e), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                 FluidSwitch(
                                     checked = calInsightEnabled,
                                     onCheckedChange = {
@@ -570,7 +573,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("產出時發送通知（關＝僅寫入主動聊天室）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                Text(stringResource(R.string.assistant_hub_s_c24054), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                 FluidSwitch(
                                     checked = calInsightNotifEnabled,
                                     onCheckedChange = {
@@ -585,7 +588,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("允許上網查即將到來事件（僅傳標題＋日期 ≤60字）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                Text(stringResource(R.string.assistant_hub_s_1d23df), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                 FluidSwitch(
                                     checked = calInsightWebSearchEnabled,
                                     onCheckedChange = {
@@ -596,7 +599,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 )
                             }
                             Text(
-                                "檢查頻率（套用 WorkManager UPDATE 立即生效）",
+                                stringResource(R.string.assistant_hub_s_3324cd),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -613,7 +616,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                             com.phantom.checker.service.CalendarInsightScheduler.scheduleOrUpdate(appCtx)
                                             PhantomSettingsBus.notifyChanged()
                                         },
-                                        label = { Text(if (mins < 60) "${mins}分" else "${mins / 60}小時", maxLines = 1) }
+                                        label = { Text(if (mins < 60) stringResource(R.string.assistant_hub_s_0ac3cd, mins) else stringResource(R.string.assistant_hub_s_130374, mins / 60), maxLines = 1) }
                                     )
                                 }
                             }
@@ -621,7 +624,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                             HorizontalDivider(Modifier.padding(vertical = 4.dp))
 
                             Text(
-                                "💬 對話自動記憶與連續性",
+                                stringResource(R.string.assistant_hub_s_8ae5e7),
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary
@@ -631,7 +634,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("對話自動記憶擷取（僅寫入非敏感無衝突，敏感一律進確認卡）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                Text(stringResource(R.string.assistant_hub_s_ec53ad), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                 FluidSwitch(
                                     checked = memoryAutoExtract,
                                     onCheckedChange = {
@@ -646,7 +649,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("對話頂部未決事項膠囊列與壓縮錨點", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                Text(stringResource(R.string.assistant_hub_s_a89a9f), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                 FluidSwitch(
                                     checked = chatPendingCapsules,
                                     onCheckedChange = {
@@ -661,7 +664,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("省 token 模式下仍生成每日回顧 AI 註記（預設關閉，將耗少量 token）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                Text(stringResource(R.string.assistant_hub_s_953dc5), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                 FluidSwitch(
                                     checked = diaryAnnotationInSaver,
                                     onCheckedChange = {
@@ -685,7 +688,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                         regionKeyword = it
                                         PhantomPrefs.setProactiveRegionKeyword(appCtx, it)
                                     },
-                                    label = { Text("關注地區（例：台北）") },
+                                    label = { Text(stringResource(R.string.assistant_hub_s_9ca5db)) },
                                     singleLine = true,
                                     modifier = Modifier.weight(1f)
                                 )
@@ -696,7 +699,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                         locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
                                     }
                                 }) {
-                                    Text("定位城市")
+                                    Text(stringResource(R.string.assistant_hub_s_1b8790))
                                 }
                             }
                         }
@@ -715,30 +718,30 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                 phantomItem(3, key = "hub_external_search") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("🌐 外部情報搜尋端點（選配 BYOK 加密儲存）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(stringResource(R.string.assistant_hub_s_b86e98), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             Text(
-                                "可選填 OpenAI 相容搜尋端點（如 Perplexity https://api.perplexity.ai / sonar）；未設定時簡報將誠實跳過不報錯。省 token 模式自動停用。",
+                                stringResource(R.string.assistant_hub_s_994bd7),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             OutlinedTextField(
                                 value = extUrl,
                                 onValueChange = { extUrl = it },
-                                label = { Text("Base URL（例：https://api.perplexity.ai）") },
+                                label = { Text(stringResource(R.string.assistant_hub_s_78636f)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
                                 value = extModel,
                                 onValueChange = { extModel = it },
-                                label = { Text("Model（預設 sonar）") },
+                                label = { Text(stringResource(R.string.assistant_hub_s_63b073)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
                                 value = extKey,
                                 onValueChange = { extKey = it },
-                                label = { Text("API Key（遮罩顯示）") },
+                                label = { Text(stringResource(R.string.assistant_hub_s_8b7c08)) },
                                 visualTransformation = PasswordVisualTransformation(),
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
@@ -747,9 +750,9 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 EncryptedByokStore.setExternalSearchBaseUrl(appCtx, extUrl)
                                 EncryptedByokStore.setExternalSearchModel(appCtx, extModel)
                                 EncryptedByokStore.setExternalSearchApiKey(appCtx, extKey)
-                                Toast.makeText(ctx, "已安全儲存外部搜尋端點設定", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(ctx, resCtx.getString(R.string.assistant_hub_s_025c4f), Toast.LENGTH_SHORT).show()
                             }) {
-                                Text("儲存外部搜尋設定")
+                                Text(stringResource(R.string.assistant_hub_s_c2a89c))
                             }
                         }
                     }
@@ -770,15 +773,15 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                 phantomItem(5, key = "hub_linked_and_persona") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("🔗 連結應用程式與助手個性", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(stringResource(R.string.assistant_hub_s_7b7458), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             OutlinedButton(
                                 onClick = { ctx.startActivity(Intent(ctx, LinkedAppsActivity::class.java)) },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("開啟連結應用程式中心（GitHub／Discord／系統能力）")
+                                Text(stringResource(R.string.assistant_hub_s_1b083d))
                             }
                             HorizontalDivider()
-                            Text("助手個性風格", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(R.string.assistant_hub_s_15c312), style = MaterialTheme.typography.labelMedium)
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 AssistantPersonalityPreset.entries.forEach { preset ->
                                     FilterChip(
@@ -792,7 +795,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                     )
                                 }
                             }
-                            Text("回答詳細度", style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(R.string.settings_s_c3194a), style = MaterialTheme.typography.labelMedium)
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 AssistantVerbosity.entries.forEach { v ->
                                     FilterChip(
@@ -816,7 +819,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("前往進階助手改名／換頭像設定")
+                                Text(stringResource(R.string.assistant_hub_s_fbc15e))
                             }
                         }
                     }
@@ -832,7 +835,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                     }
                     var showWizard by remember { mutableStateOf(false) }
                     var wizardStep by remember { mutableStateOf(1) }
-                    var tplName by remember { mutableStateOf("每日重點彙整") }
+                    var tplName by remember { mutableStateOf(resCtx.getString(R.string.assistant_hub_s_7d64fb)) }
                     var tplQueryKey by remember { mutableStateOf(com.phantom.checker.data.TaskTemplateEntity.QUERY_MESSAGES_DIGEST) }
                     var tplTriggerType by remember { mutableStateOf(com.phantom.checker.data.TaskTemplateEntity.TRIGGER_DAILY) }
                     var tplTriggerTime by remember { mutableStateOf("09:00") }
@@ -844,7 +847,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
 
                     LaunchedEffect(showWizard, wizardStep, tplQueryKey) {
                         if (showWizard && wizardStep == 3) {
-                            previewText = "載入即時聚合預覽中…"
+                            previewText = resCtx.getString(R.string.assistant_hub_s_621855)
                             val agg = com.phantom.checker.service.TaskTemplateEngine.runAggregation(appCtx, tplQueryKey)
                             previewText = agg.fullText
                         }
@@ -853,13 +856,13 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(
-                                "⚖️ 雙門檻自動決策閾值",
+                                stringResource(R.string.assistant_hub_s_ae91c4),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Text(
-                                "置信閾值：${decisionThreshold.toInt()} 分（低於此門檻或僅 AI 語義無本地訊號一律進確認卡；已回饋修正 ${PhantomPrefs.getDecisionFeedbackTotalCount(appCtx)} 次）",
+                                stringResource(R.string.assistant_hub_s_0b24cd, decisionThreshold.toInt(), PhantomPrefs.getDecisionFeedbackTotalCount(appCtx)),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -884,30 +887,30 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "📋 定時任務模板（${templates.size} 個）",
+                                    stringResource(R.string.assistant_hub_s_e49eae, templates.size),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 Button(onClick = {
                                     wizardStep = 1
-                                    tplName = "每日重點彙整"
+                                    tplName = resCtx.getString(R.string.assistant_hub_s_7d64fb)
                                     tplQueryKey = com.phantom.checker.data.TaskTemplateEntity.QUERY_MESSAGES_DIGEST
                                     tplTriggerType = com.phantom.checker.data.TaskTemplateEntity.TRIGGER_DAILY
                                     tplPolish = !PhantomPrefs.isTokenSaverEnabled(appCtx)
                                     showWizard = true
                                 }) {
-                                    Text("新增模板")
+                                    Text(stringResource(R.string.assistant_hub_s_24a65b))
                                 }
                             }
                             Text(
-                                "聚合段純本地 SQL/規則零 token，潤飾段可獨立開關（與省 token 模式連動）。",
+                                stringResource(R.string.assistant_hub_s_ef35f7),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             if (templates.isEmpty()) {
                                 Text(
-                                    "尚未建立自訂定時任務模板，點擊「新增模板」體驗三步嚮導與所見即所得預覽。",
+                                    stringResource(R.string.assistant_hub_s_b02e27),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -930,12 +933,12 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                                 Column(modifier = Modifier.weight(1f)) {
                                                     Text(tpl.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                                     val freqDesc = when (tpl.triggerType) {
-                                                        com.phantom.checker.data.TaskTemplateEntity.TRIGGER_WEEKLY -> "每週 ${tpl.triggerTime}"
-                                                        com.phantom.checker.data.TaskTemplateEntity.TRIGGER_INTERVAL -> "每 ${tpl.intervalMinutes} 分鐘"
-                                                        else -> "每日 ${tpl.triggerTime}"
+                                                        com.phantom.checker.data.TaskTemplateEntity.TRIGGER_WEEKLY -> resCtx.getString(R.string.assistant_hub_s_95dae0, tpl.triggerTime)
+                                                        com.phantom.checker.data.TaskTemplateEntity.TRIGGER_INTERVAL -> resCtx.getString(R.string.assistant_hub_s_81c947, tpl.intervalMinutes)
+                                                        else -> resCtx.getString(R.string.assistant_hub_s_e188a6, tpl.triggerTime)
                                                     }
                                                     Text(
-                                                        "${com.phantom.checker.service.TaskTemplateEngine.queryKeyLabel(tpl.queryKey)} · $freqDesc · ${if (tpl.polishEnabled) "AI潤飾開" else "純聚合零token"}",
+                                                        resCtx.getString(R.string.assistant_hub_s_717be1, com.phantom.checker.service.TaskTemplateEngine.queryKeyLabel(tpl.queryKey), freqDesc, if (tpl.polishEnabled) resCtx.getString(R.string.assistant_hub_s_3cdcda) else resCtx.getString(R.string.assistant_hub_s_871fdc)),
                                                         style = MaterialTheme.typography.labelSmall,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                                     )
@@ -957,13 +960,13 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                                 TextButton(onClick = {
                                                     scope.launch {
                                                         com.phantom.checker.service.TaskTemplateEngine.executeTemplate(appCtx, tpl)
-                                                        Toast.makeText(ctx, "已試跑「${tpl.name}」並寫入主動訊息聊天室", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(ctx, resCtx.getString(R.string.assistant_hub_s_342715, tpl.name), Toast.LENGTH_SHORT).show()
                                                     }
                                                 }) {
-                                                    Text("立即試跑")
+                                                    Text(resCtx.getString(R.string.assistant_hub_s_970fbe))
                                                 }
                                                 TextButton(onClick = { deleteTemplateTarget = tpl }) {
-                                                    Text("刪除", color = MaterialTheme.colorScheme.error)
+                                                    Text(resCtx.getString(R.string.common_delete), color = MaterialTheme.colorScheme.error)
                                                 }
                                             }
                                         }
@@ -976,16 +979,16 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                     if (showWizard) {
                         AlertDialog(
                             onDismissRequest = { showWizard = false },
-                            title = { Text("定時任務模板嚮導（步驟 $wizardStep / 3）") },
+                            title = { Text(stringResource(R.string.assistant_hub_s_0621c2, wizardStep)) },
                             text = {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     when (wizardStep) {
                                         1 -> {
-                                            Text("① 選擇資料源與名稱（本地 SQL/規則白名單）", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                            Text(stringResource(R.string.assistant_hub_s_f7a2f3), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                                             OutlinedTextField(
                                                 value = tplName,
                                                 onValueChange = { tplName = it },
-                                                label = { Text("模板名稱") },
+                                                label = { Text(stringResource(R.string.assistant_hub_s_c9b6e0)) },
                                                 singleLine = true,
                                                 modifier = Modifier.fillMaxWidth()
                                             )
@@ -1003,12 +1006,12 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                             }
                                         }
                                         2 -> {
-                                            Text("② 選擇頻率與潤飾／推送模式", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                            Text(stringResource(R.string.assistant_hub_s_7dc716), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 listOf(
-                                                    com.phantom.checker.data.TaskTemplateEntity.TRIGGER_DAILY to "每日",
-                                                    com.phantom.checker.data.TaskTemplateEntity.TRIGGER_WEEKLY to "每週",
-                                                    com.phantom.checker.data.TaskTemplateEntity.TRIGGER_INTERVAL to "定時循環"
+                                                    com.phantom.checker.data.TaskTemplateEntity.TRIGGER_DAILY to stringResource(R.string.assistant_hub_s_08d65b),
+                                                    com.phantom.checker.data.TaskTemplateEntity.TRIGGER_WEEKLY to stringResource(R.string.chat_s_d6847a),
+                                                    com.phantom.checker.data.TaskTemplateEntity.TRIGGER_INTERVAL to stringResource(R.string.assistant_hub_s_3d3c93)
                                                 ).forEach { (t, lbl) ->
                                                     FilterChip(
                                                         selected = tplTriggerType == t,
@@ -1023,7 +1026,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                                         FilterChip(
                                                             selected = tplIntervalMin == mins,
                                                             onClick = { tplIntervalMin = mins },
-                                                            label = { Text("${mins}分") }
+                                                            label = { Text(stringResource(R.string.assistant_hub_s_0ac3cd, mins)) }
                                                         )
                                                     }
                                                 }
@@ -1031,7 +1034,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                                 OutlinedTextField(
                                                     value = tplTriggerTime,
                                                     onValueChange = { tplTriggerTime = it },
-                                                    label = { Text("觸發時間（HH:mm）") },
+                                                    label = { Text(stringResource(R.string.assistant_hub_s_4cfc16)) },
                                                     singleLine = true,
                                                     modifier = Modifier.fillMaxWidth()
                                                 )
@@ -1041,7 +1044,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text("AI 潤飾（關閉＝純聚合零 token）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                                Text(stringResource(R.string.assistant_hub_s_155188), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                                 FluidSwitch(checked = tplPolish, onCheckedChange = { tplPolish = it })
                                             }
                                             Row(
@@ -1049,19 +1052,19 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text("同時發送通知（關＝僅寫入主動聊天室）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                                Text(stringResource(R.string.assistant_hub_s_1b7282), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                                 FluidSwitch(checked = tplDeliverNotif, onCheckedChange = { tplDeliverNotif = it })
                                             }
                                         }
                                         else -> {
-                                            Text("③ 所見即所得預覽（即時執行本地聚合段，零 token）", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                            Text(stringResource(R.string.assistant_hub_s_d94608), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                                             Surface(
                                                 shape = RoundedCornerShape(12.dp),
                                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                                                 modifier = Modifier.fillMaxWidth()
                                             ) {
                                                 Text(
-                                                    text = previewText.ifBlank { "載入中…" },
+                                                    text = previewText.ifBlank { resCtx.getString(R.string.common_loading) },
                                                     style = MaterialTheme.typography.bodySmall,
                                                     modifier = Modifier.padding(10.dp)
                                                 )
@@ -1095,18 +1098,18 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                             }
                                             com.phantom.checker.service.TaskTemplateScheduler.scheduleOrUpdate(appCtx, entity.copy(id = newId))
                                             showWizard = false
-                                            Toast.makeText(ctx, "已建立定時任務模板「${entity.name}」", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(ctx, resCtx.getString(R.string.assistant_hub_s_9b93b8, entity.name), Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 }) {
-                                    Text(if (wizardStep < 3) "下一步" else "確認建立")
+                                    Text(if (wizardStep < 3) stringResource(R.string.settings_s_ea0ef2) else stringResource(R.string.assistant_hub_s_08e150))
                                 }
                             },
                             dismissButton = {
                                 TextButton(onClick = {
                                     if (wizardStep > 1) wizardStep-- else showWizard = false
                                 }) {
-                                    Text(if (wizardStep > 1) "上一步" else "取消")
+                                    Text(if (wizardStep > 1) stringResource(R.string.assistant_hub_s_75ef12) else stringResource(R.string.common_cancel))
                                 }
                             }
                         )
@@ -1115,8 +1118,8 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                     deleteTemplateTarget?.let { target ->
                         AlertDialog(
                             onDismissRequest = { deleteTemplateTarget = null },
-                            title = { Text("確認刪除定時任務模板") },
-                            text = { Text("確定要刪除「${target.name}」嗎？此操作不可復原並將取消對應排程。") },
+                            title = { Text(stringResource(R.string.assistant_hub_s_b70d26)) },
+                            text = { Text(stringResource(R.string.assistant_hub_s_146bda, target.name)) },
                             confirmButton = {
                                 TextButton(onClick = {
                                     val toDel = target
@@ -1126,15 +1129,15 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                             com.phantom.checker.service.AppDatabaseHolder.db(appCtx).taskTemplateDao().deleteById(toDel.id)
                                         }
                                         com.phantom.checker.service.TaskTemplateScheduler.cancel(appCtx, toDel.id)
-                                        Toast.makeText(ctx, "已刪除模板「${toDel.name}」", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(ctx, resCtx.getString(R.string.assistant_hub_s_1226d6, toDel.name), Toast.LENGTH_SHORT).show()
                                     }
                                 }) {
-                                    Text("確認刪除", color = MaterialTheme.colorScheme.error)
+                                    Text(stringResource(R.string.common_confirm_delete), color = MaterialTheme.colorScheme.error)
                                 }
                             },
                             dismissButton = {
                                 TextButton(onClick = { deleteTemplateTarget = null }) {
-                                    Text("取消")
+                                    Text(stringResource(R.string.common_cancel))
                                 }
                             }
                         )

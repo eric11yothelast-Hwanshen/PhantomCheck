@@ -56,6 +56,8 @@ import com.phantom.checker.util.PhantomSettingsBus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * #336 通訊錄整合設定元件（暱稱綁定、關係單位匯入嚮導、VIP 信任圈連動）：
@@ -67,6 +69,7 @@ import kotlinx.coroutines.withContext
 fun ContactsIntegrationSection(
     onOpenPermissionHub: (() -> Unit)? = null
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -94,7 +97,7 @@ fun ContactsIntegrationSection(
         }
         Toast.makeText(
             ctx,
-            if (hasContactsPerm) "已授予通訊錄讀取權限" else "未授予通訊錄權限，相關功能維持停用",
+            if (hasContactsPerm) stringResource(R.string.contacts_s_9599ea) else stringResource(R.string.contacts_s_83389c),
             Toast.LENGTH_SHORT
         ).show()
     }
@@ -110,13 +113,13 @@ fun ContactsIntegrationSection(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = "通訊錄整合（純本機存取，絕不外送 AI）",
+            text = stringResource(R.string.contacts_s_629632),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
         )
         Text(
-            text = "支援通訊軟體暱稱綁定本名、零 AI token 關係單位匯入，以及將通訊錄最愛／群組同步為 VIP 信任圈白名單。",
+            text = stringResource(R.string.contacts_s_4bdcd2),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -128,17 +131,17 @@ fun ContactsIntegrationSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "通訊錄權限：未授予",
+                    text = stringResource(R.string.contacts_s_335af1),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(onClick = { contactsPermLauncher.launch(Manifest.permission.READ_CONTACTS) }) {
-                    Text("授予權限")
+                    Text(stringResource(R.string.settings_s_45df2d))
                 }
                 if (onOpenPermissionHub != null) {
                     TextButton(onClick = onOpenPermissionHub) {
-                        Text("權限中心")
+                        Text(stringResource(R.string.chat_s_37a4b3))
                     }
                 }
             }
@@ -151,17 +154,17 @@ fun ContactsIntegrationSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "暱稱 ↔ 本名綁定（${aliases.size} 筆）",
+                text = stringResource(R.string.contacts_s_035adb, aliases.size),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )
             TextButton(onClick = { showAddAliasDialog = true }) {
-                Text("＋ 新增綁定")
+                Text(stringResource(R.string.contacts_s_904472))
             }
         }
         if (aliases.isEmpty()) {
             Text(
-                text = "尚未綁定暱稱。綁定後防詐比對會將該暱稱視為熟人寄件者。",
+                text = stringResource(R.string.contacts_s_f3eb79),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -201,14 +204,14 @@ fun ContactsIntegrationSection(
                                         db.contactAliasDao().deleteById(entry.id)
                                     }
                                     ContactContext.invalidateCache()
-                                    Toast.makeText(ctx, "已刪除暱稱綁定", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(ctx, resCtx.getString(R.string.contacts_s_46f879), Toast.LENGTH_SHORT).show()
                                 }
                             },
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
-                                contentDescription = "刪除綁定",
+                                contentDescription = resCtx.getString(R.string.contacts_s_f6b564),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -227,12 +230,12 @@ fun ContactsIntegrationSection(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "關係與單位資訊匯入",
+                    text = stringResource(R.string.contacts_s_163c69),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium
                 )
                 Text(
-                    text = "從通訊錄讀取公司、職稱與群組，僅列出新增或有變動項目（零 AI token）",
+                    text = stringResource(R.string.contacts_s_078ea6),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -247,14 +250,14 @@ fun ContactsIntegrationSection(
                         selectedImportKeys = cands.map { it.subject }.toSet()
                         isBusy = false
                         if (cands.isEmpty()) {
-                            Toast.makeText(ctx, "通訊錄沒有新的或有變動的關係單位資訊", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(ctx, resCtx.getString(R.string.contacts_s_a0b225), Toast.LENGTH_SHORT).show()
                         } else {
                             showImportWizard = true
                         }
                     }
                 }
             ) {
-                Text("掃描匯入")
+                Text(stringResource(R.string.contacts_s_b9d98a))
             }
         }
 
@@ -262,12 +265,12 @@ fun ContactsIntegrationSection(
 
         // C. VIP 信任圈連動白名單
         Text(
-            text = "VIP 信任圈連動白名單",
+            text = stringResource(R.string.contacts_s_93b357),
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium
         )
         Text(
-            text = "將通訊錄「我的最愛」或指定群組同步為信任白名單（僅管理 contacts_vip 來源，不動手動規則）",
+            text = stringResource(R.string.contacts_s_90a7f7),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -282,7 +285,7 @@ fun ContactsIntegrationSection(
                     PhantomPrefs.setContactsVipMode(appCtx, vipMode)
                     PhantomSettingsBus.notifyChanged()
                 },
-                label = { Text("停用") }
+                label = { Text(stringResource(R.string.contacts_s_d989e5)) }
             )
             FilterChip(
                 selected = vipMode == PhantomPrefs.CONTACTS_VIP_MODE_STARRED,
@@ -291,7 +294,7 @@ fun ContactsIntegrationSection(
                     PhantomPrefs.setContactsVipMode(appCtx, vipMode)
                     PhantomSettingsBus.notifyChanged()
                 },
-                label = { Text("我的最愛（STARRED）") }
+                label = { Text(stringResource(R.string.contacts_s_12bc94)) }
             )
             FilterChip(
                 selected = vipMode == PhantomPrefs.CONTACTS_VIP_MODE_GROUP,
@@ -300,7 +303,7 @@ fun ContactsIntegrationSection(
                     PhantomPrefs.setContactsVipMode(appCtx, vipMode)
                     PhantomSettingsBus.notifyChanged()
                 },
-                label = { Text("指定群組") }
+                label = { Text(stringResource(R.string.contacts_s_184cd5)) }
             )
         }
         if (vipMode == PhantomPrefs.CONTACTS_VIP_MODE_GROUP && groups.isNotEmpty()) {
@@ -339,14 +342,14 @@ fun ContactsIntegrationSection(
                         isBusy = false
                         Toast.makeText(
                             ctx,
-                            "VIP 同步完成：新增 ${res.added} 筆、移除 ${res.removed} 筆（共 ${res.totalVip} 位）",
+                            resCtx.getString(R.string.contacts_s_0a4809, res.added, res.removed, res.totalVip),
                             Toast.LENGTH_SHORT
                         ).show()
                     }
                 },
                 modifier = Modifier.weight(1f)
             ) {
-                Text("立即同步 VIP")
+                Text(stringResource(R.string.contacts_s_35dfd7))
             }
             OutlinedButton(
                 enabled = !isBusy,
@@ -359,14 +362,14 @@ fun ContactsIntegrationSection(
                         isBusy = false
                         Toast.makeText(
                             ctx,
-                            "已整批撤銷 $removed 筆通訊錄 VIP 白名單（手動規則不受影響）",
+                            resCtx.getString(R.string.contacts_s_750de9, removed),
                             Toast.LENGTH_SHORT
                         ).show()
                     }
                 },
                 modifier = Modifier.weight(1f)
             ) {
-                Text("整批撤銷")
+                Text(stringResource(R.string.contacts_s_7d25e1))
             }
         }
     }
@@ -379,34 +382,34 @@ fun ContactsIntegrationSection(
         var noteInput by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { showAddAliasDialog = false },
-            title = { Text("新增暱稱綁定") },
+            title = { Text(stringResource(R.string.contacts_s_d9c5a0)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = aliasInput,
                         onValueChange = { aliasInput = it },
-                        label = { Text("通訊軟體暱稱（必填）") },
+                        label = { Text(stringResource(R.string.contacts_s_f5f303)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = displayNameInput,
                         onValueChange = { displayNameInput = it },
-                        label = { Text("對應本名／聯絡人名（必填）") },
+                        label = { Text(stringResource(R.string.contacts_s_24f229)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = pkgInput,
                         onValueChange = { pkgInput = it },
-                        label = { Text("來源 App 套件名（可留空套用全部）") },
+                        label = { Text(stringResource(R.string.contacts_s_7bb28a)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = noteInput,
                         onValueChange = { noteInput = it },
-                        label = { Text("備註（選填）") },
+                        label = { Text(stringResource(R.string.contacts_s_45dc68)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -433,16 +436,16 @@ fun ContactsIntegrationSection(
                                 )
                             }
                             ContactContext.invalidateCache()
-                            Toast.makeText(ctx, "已綁定「$a → $d」", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(ctx, resCtx.getString(R.string.contacts_s_f09ffa, a, d), Toast.LENGTH_SHORT).show()
                         }
                     }
                 ) {
-                    Text("儲存綁定")
+                    Text(stringResource(R.string.contacts_s_29e0a7))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showAddAliasDialog = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -452,7 +455,7 @@ fun ContactsIntegrationSection(
     if (showImportWizard) {
         AlertDialog(
             onDismissRequest = { showImportWizard = false },
-            title = { Text("通訊錄關係單位匯入（${selectedImportKeys.size}/${importCandidates.size}）") },
+            title = { Text(stringResource(R.string.contacts_s_fa31f2, selectedImportKeys.size, importCandidates.size)) },
             text = {
                 Column(
                     modifier = Modifier
@@ -462,7 +465,7 @@ fun ContactsIntegrationSection(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = "勾選要匯入為「人物」一般記憶的項目（來源標記為通訊錄匯入，可隨時於記憶頁刪除）：",
+                        text = stringResource(R.string.contacts_s_bc6431),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -494,7 +497,7 @@ fun ContactsIntegrationSection(
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = cand.displayName + if (cand.isUpdate) "（更新）" else "（新增）",
+                                    text = cand.displayName + if (cand.isUpdate) resCtx.getString(R.string.contacts_s_23d80e) else resCtx.getString(R.string.contacts_s_7cfa5b),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.Medium
                                 )
@@ -516,16 +519,16 @@ fun ContactsIntegrationSection(
                         showImportWizard = false
                         scope.launch {
                             val imported = ContactBridge.importSelectedCandidates(db, toImport)
-                            Toast.makeText(ctx, "已匯入 $imported 筆人物關係記憶", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(ctx, resCtx.getString(R.string.contacts_s_ba3c47, imported), Toast.LENGTH_SHORT).show()
                         }
                     }
                 ) {
-                    Text("確認匯入")
+                    Text(stringResource(R.string.settings_s_7ddb23))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showImportWizard = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )

@@ -77,6 +77,8 @@ import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.launch
 import java.util.UUID
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 class ApiKeySettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -93,6 +95,7 @@ class ApiKeySettingsActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ApiKeySettingsScreen(onBack: () -> Unit) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -126,14 +129,14 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                 editingProfile = null
                 version++
                 scope.launch {
-                    snackbarHostState.showSnackbar("已加密儲存 ${saved.name}")
+                    snackbarHostState.showSnackbar(resCtx.getString(R.string.api_key_s_986ffa, saved.name))
                 }
             }
         )
     }
 
     com.phantom.checker.ui.components.PhantomPageScaffold(
-        title = "多 Provider AI 設定",
+        title = stringResource(R.string.catalog_ai_providers_title),
         onBack = onBack,
         topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
         containerColor = MaterialTheme.colorScheme.background,
@@ -144,7 +147,7 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                     showEditorDialog = true
                 }
             ) {
-                Icon(Icons.Default.Add, contentDescription = "新增 Provider")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.api_key_s_48a201))
             }
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
@@ -181,11 +184,11 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                 Column(modifier = Modifier.padding(14.dp)) {
                     val statusTitle = when (keySource) {
                         ApiKeySource.ENCRYPTED_PREFS ->
-                            "目前使用中：${activeProfile?.name ?: "未選擇"}（App 加密儲存）"
+                            stringResource(R.string.api_key_s_33e4bf, activeProfile?.name ?: resCtx.getString(R.string.api_key_s_3fcc78))
                         ApiKeySource.BUILD_CONFIG ->
-                            "目前使用中：Mistral（local.properties）"
+                            stringResource(R.string.api_key_s_1ba574)
                         ApiKeySource.NONE ->
-                            "目前狀態：尚未設定 AI Provider"
+                            stringResource(R.string.api_key_s_8de972)
                     }
                     Text(
                         text = statusTitle,
@@ -201,13 +204,13 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                     if (activeProfile != null) {
                         val tail = AiClient.getMaskedKeyTail(activeProfile.apiKey) ?: "••••"
                         Text(
-                            text = "Model：${activeProfile.model}・Key 尾碼：$tail",
+                            text = stringResource(R.string.api_key_s_556351, activeProfile.model, tail),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     } else {
                         Text(
-                            text = "請點擊右下角「+」新增 Mistral、OpenAI、Groq、Gemini、DeepSeek 等相容端點。",
+                            text = stringResource(R.string.api_key_s_4cea0e),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
@@ -224,7 +227,7 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "尚未新增任何 AI Provider 設定",
+                            text = stringResource(R.string.api_key_s_cb3133),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -238,7 +241,7 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null)
                             Spacer(Modifier.width(6.dp))
-                            Text("新增 Provider")
+                            Text(stringResource(R.string.api_key_s_48a201))
                         }
                     }
                 }
@@ -266,7 +269,7 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                                 AiClient.setActiveProvider(appCtx, profile.id)
                                 version++
                                 scope.launch {
-                                    snackbarHostState.showSnackbar("已切換使用 ${profile.name}")
+                                    snackbarHostState.showSnackbar(resCtx.getString(R.string.api_key_s_14fa43, profile.name))
                                 }
                             },
                             onTest = {
@@ -277,7 +280,7 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                                     testingProfileId = null
                                     val mapped = res.fold(
                                         onSuccess = { msg -> true to msg },
-                                        onFailure = { err -> false to (err.message ?: "連線失敗") }
+                                        onFailure = { err -> false to (err.message ?: resCtx.getString(R.string.api_key_s_380f60)) }
                                     )
                                     testResults = testResults + (profile.id to mapped)
                                 }
@@ -291,7 +294,7 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                                 testResults = testResults - profile.id
                                 version++
                                 scope.launch {
-                                    snackbarHostState.showSnackbar("已刪除 ${profile.name}")
+                                    snackbarHostState.showSnackbar(resCtx.getString(R.string.api_key_s_fc4ffb, profile.name))
                                 }
                             }
                         )
@@ -311,19 +314,19 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                                 purposeTestResults = purposeTestResults - purpose.id
                                 version++
                                 val label = if (profileId == null) {
-                                    "跟隨預設"
+                                    stringResource(R.string.settings_s_4f2580)
                                 } else {
-                                    profiles.firstOrNull { it.id == profileId }?.name ?: "已選取"
+                                    profiles.firstOrNull { it.id == profileId }?.name ?: stringResource(R.string.common_selected)
                                 }
                                 scope.launch {
-                                    snackbarHostState.showSnackbar("${purpose.label} 已設為：$label")
+                                    snackbarHostState.showSnackbar(resCtx.getString(R.string.api_key_s_d1abc6, purpose.label, label))
                                 }
                             },
                             onTestPurpose = { purpose ->
                                 if (testingPurposeId != null) return@PurposeModelsCard
                                 val target = AiClient.getProfileForPurpose(appCtx, purpose)
                                 if (target == null) {
-                                    purposeTestResults = purposeTestResults + (purpose.id to (false to "尚未設定可用 Provider"))
+                                    purposeTestResults = purposeTestResults + (purpose.id to (false to stringResource(R.string.api_key_s_26bea4)))
                                     return@PurposeModelsCard
                                 }
                                 scope.launch {
@@ -332,7 +335,7 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                                     testingPurposeId = null
                                     val mapped = res.fold(
                                         onSuccess = { msg -> true to msg },
-                                        onFailure = { err -> false to (err.message ?: "連線失敗") }
+                                        onFailure = { err -> false to (err.message ?: resCtx.getString(R.string.api_key_s_380f60)) }
                                     )
                                     purposeTestResults = purposeTestResults + (purpose.id to mapped)
                                 }
@@ -343,7 +346,7 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
             }
 
             Text(
-                text = "所有 API Key 皆以 EncryptedSharedPreferences 加密儲存於本機，支援自訂 Base URL 與 API 路徑。",
+                text = stringResource(R.string.api_key_s_2e4920),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -363,7 +366,7 @@ private fun ProviderProfileCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val tail = AiClient.getMaskedKeyTail(profile.apiKey) ?: "未填"
+    val tail = AiClient.getMaskedKeyTail(profile.apiKey) ?: stringResource(R.string.api_key_s_e71493)
     val fullEndpoint = AiClient.buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
 
     PhantomGlassCard(
@@ -407,7 +410,7 @@ private fun ProviderProfileCard(
                             )
                             Spacer(Modifier.width(3.dp))
                             Text(
-                                text = "使用中",
+                                text = stringResource(R.string.api_key_s_e6aa2c),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimary
                             )
@@ -418,7 +421,7 @@ private fun ProviderProfileCard(
             IconButton(onClick = onDelete) {
                 Icon(
                     imageVector = Icons.Default.Delete,
-                    contentDescription = "刪除",
+                    contentDescription = stringResource(R.string.common_delete),
                     tint = MaterialTheme.colorScheme.error
                 )
             }
@@ -450,7 +453,7 @@ private fun ProviderProfileCard(
                         .weight(1f)
                         .pressableScale()
                 ) {
-                    Text("設為使用中")
+                    Text(stringResource(R.string.api_key_s_aa968a))
                 }
             }
             OutlinedButton(
@@ -466,16 +469,16 @@ private fun ProviderProfileCard(
                         strokeWidth = 2.dp
                     )
                     Spacer(Modifier.width(4.dp))
-                    Text("測試中")
+                    Text(stringResource(R.string.api_key_s_9c2e54))
                 } else {
-                    Text("測試連線")
+                    Text(stringResource(R.string.settings_s_48b807))
                 }
             }
             OutlinedButton(
                 onClick = onEdit,
                 modifier = Modifier.pressableScale()
             ) {
-                Text("編輯")
+                Text(stringResource(R.string.common_edit))
             }
         }
 
@@ -519,7 +522,7 @@ private fun ProviderEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "新增 AI Provider" else "編輯 AI Provider") },
+        title = { Text(if (initial == null) stringResource(R.string.api_key_s_37d5aa) else stringResource(R.string.api_key_s_c91195)) },
         text = {
             Column(
                 modifier = Modifier
@@ -528,7 +531,7 @@ private fun ProviderEditorDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "快速填入預設模板（2026-11 最新模型）：",
+                    text = stringResource(R.string.api_key_s_f22843),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -559,7 +562,7 @@ private fun ProviderEditorDialog(
                         onClick = { showAltModels = !showAltModels },
                         modifier = Modifier.align(Alignment.Start)
                     ) {
-                        Text(if (showAltModels) "收起常見模型" else "展開 ${presetForModels.name} 其他常見模型")
+                        Text(if (showAltModels) stringResource(R.string.api_key_s_1015e5) else stringResource(R.string.api_key_s_4b21e5, presetForModels.name))
                     }
                     if (showAltModels) {
                         FlowRow(
@@ -582,8 +585,8 @@ private fun ProviderEditorDialog(
                     onValueChange = { name = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    label = { Text("名稱") },
-                    placeholder = { Text("例如：Mistral / OpenAI / Gemini") }
+                    label = { Text(stringResource(R.string.api_key_s_e0d245)) },
+                    placeholder = { Text(stringResource(R.string.api_key_s_a74d09)) }
                 )
                 OutlinedTextField(
                     value = baseUrl,
@@ -598,7 +601,7 @@ private fun ProviderEditorDialog(
                     onValueChange = { apiPath = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    label = { Text("API 路徑") },
+                    label = { Text(stringResource(R.string.api_key_s_a45647)) },
                     placeholder = { Text("v1/chat/completions") }
                 )
                 OutlinedTextField(
@@ -615,7 +618,7 @@ private fun ProviderEditorDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     label = { Text("API Key") },
-                    placeholder = { Text("請輸入 API Key…") },
+                    placeholder = { Text(stringResource(R.string.api_key_s_da07b7)) },
                     visualTransformation = if (showKey) {
                         VisualTransformation.None
                     } else {
@@ -623,7 +626,7 @@ private fun ProviderEditorDialog(
                     },
                     trailingIcon = {
                         TextButton(onClick = { showKey = !showKey }) {
-                            Text(if (showKey) "隱藏" else "顯示")
+                            Text(if (showKey) stringResource(R.string.api_key_s_6993c6) else stringResource(R.string.api_key_s_156719))
                         }
                     }
                 )
@@ -648,12 +651,12 @@ private fun ProviderEditorDialog(
                 },
                 enabled = canSave
             ) {
-                Text("儲存")
+                Text(stringResource(R.string.common_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.common_cancel))
             }
         }
     )
@@ -670,6 +673,7 @@ private fun PurposeModelsCard(
     onSelectPurposeProfile: (AiPurpose, String?) -> Unit,
     onTestPurpose: (AiPurpose) -> Unit
 ) {
+    val resCtx = LocalContext.current
     PhantomGlassCard(
         glassState = glassState,
         modifier = Modifier.fillMaxWidth(),
@@ -679,12 +683,12 @@ private fun PurposeModelsCard(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val purposeList = remember { AiPurpose.entries.filter { it != AiPurpose.AUTO_MEMO } }
             Text(
-                text = "用途模型（${purposeList.size} 類分流）",
+                text = stringResource(R.string.api_key_s_32231d, purposeList.size),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "可為各功能獨立指派模型；自動備忘錄跟隨每則訊息風險分析模型；未設定時自動跟隨上方預設 Provider。",
+                text = stringResource(R.string.api_key_s_a234d9),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -699,7 +703,7 @@ private fun PurposeModelsCard(
                 val displayModel = if (mappedProfile != null) {
                     "${mappedProfile.name}（${mappedProfile.model}）"
                 } else {
-                    "跟隨預設（${activeProfile?.model ?: "未設定"}）"
+                    resCtx.getString(R.string.api_key_s_00a4fd, activeProfile?.model ?: resCtx.getString(R.string.settings_s_79aacc))
                 }
                 var dropdownExpanded by remember(purpose.id) { mutableStateOf(false) }
                 val isTesting = testingPurposeId == purpose.id
@@ -736,7 +740,7 @@ private fun PurposeModelsCard(
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            text = (if (mappedProfile == null) "✓ " else "   ") + "跟隨預設",
+                                            text = (if (mappedProfile == null) "✓ " else "   ") + stringResource(R.string.settings_s_4f2580),
                                             fontWeight = if (mappedProfile == null) FontWeight.Bold else FontWeight.Normal
                                         )
                                     },
@@ -770,7 +774,7 @@ private fun PurposeModelsCard(
                             if (isTesting) {
                                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                             } else {
-                                Text("測試連線", style = MaterialTheme.typography.labelMedium)
+                                Text(resCtx.getString(R.string.settings_s_48b807), style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }

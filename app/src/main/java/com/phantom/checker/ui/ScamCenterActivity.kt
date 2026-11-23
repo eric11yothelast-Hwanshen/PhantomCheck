@@ -82,6 +82,8 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 class ScamCenterActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -148,7 +150,7 @@ fun ScamCenterScreen(onBack: () -> Unit) {
     }
 
     com.phantom.checker.ui.components.PhantomPageScaffold(
-        title = "詐騙警示中心",
+        title = stringResource(R.string.catalog_ai_scam_center_title),
         onBack = onBack,
         topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
         containerColor = MaterialTheme.colorScheme.background,
@@ -156,7 +158,7 @@ fun ScamCenterScreen(onBack: () -> Unit) {
             IconButton(onClick = { refreshTrigger++ }) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
-                    contentDescription = "重新整理"
+                    contentDescription = stringResource(R.string.common_refresh)
                 )
             }
         }
@@ -182,8 +184,8 @@ fun ScamCenterScreen(onBack: () -> Unit) {
                 scamMessages.isEmpty() -> {
                     EmptyStateView(
                         icon = Icons.Default.Warning,
-                        title = "目前尚無高風險詐騙訊息",
-                        description = "當 AI 偵測到高風險訊息時，將自動收錄於此處。"
+                        title = stringResource(R.string.scam_center_s_20a0cd),
+                        description = stringResource(R.string.scam_center_s_e8a8ea)
                     )
                 }
                 else -> {
@@ -194,7 +196,7 @@ fun ScamCenterScreen(onBack: () -> Unit) {
                         contentPadding = 12.dp
                     ) {
                         Text(
-                            text = "本週詐騙 $weekScamCount 則・本月詐騙 $monthScamCount 則",
+                            text = stringResource(R.string.scam_center_s_6fc667, weekScamCount, monthScamCount),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.error
@@ -202,16 +204,16 @@ fun ScamCenterScreen(onBack: () -> Unit) {
                         Spacer(Modifier.height(4.dp))
                         val diff = weekScamCount - lastWeekScamCount
                         val trendText = when {
-                            lastWeekScamCount == 0 && weekScamCount == 0 -> "本週 vs 上週：→ 持平 (0%)"
-                            lastWeekScamCount == 0 -> "本週 vs 上週：↑ +100%（上週 0 則）"
-                            diff == 0 -> "本週 vs 上週：→ 持平 (0%)"
+                            lastWeekScamCount == 0 && weekScamCount == 0 -> stringResource(R.string.scam_center_s_a71698)
+                            lastWeekScamCount == 0 -> stringResource(R.string.scam_center_s_af04da)
+                            diff == 0 -> stringResource(R.string.scam_center_s_a71698)
                             diff > 0 -> {
                                 val pct = (diff * 100) / lastWeekScamCount
-                                "本週 vs 上週：↑ +$pct%（上週 $lastWeekScamCount 則）"
+                                stringResource(R.string.scam_center_s_7ad735, pct, lastWeekScamCount)
                             }
                             else -> {
                                 val pct = ((-diff) * 100) / lastWeekScamCount
-                                "本週 vs 上週：↓ -$pct%（上週 $lastWeekScamCount 則）"
+                                stringResource(R.string.scam_center_s_7ccbfd, pct, lastWeekScamCount)
                             }
                         }
                         Text(
@@ -223,7 +225,7 @@ fun ScamCenterScreen(onBack: () -> Unit) {
                         if (top3RiskyApps.isNotEmpty()) {
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                text = "最高風險 App Top 3：${top3RiskyApps.joinToString("、") { "${it.appLabel.ifBlank { it.packageName }} (${it.cnt})" }}",
+                                text = stringResource(R.string.scam_center_s_3fe0ff, top3RiskyApps.joinToString("、") { "${it.appLabel.ifBlank { it.packageName }} (${it.cnt})" }),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -257,7 +259,7 @@ fun ScamCenterScreen(onBack: () -> Unit) {
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = "共 ${scamMessages.size} 筆高風險詐騙訊息，點擊卡片可查看完整風險分析",
+                                text = stringResource(R.string.scam_center_s_4ff991, scamMessages.size),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onErrorContainer
@@ -311,7 +313,7 @@ private fun RiskScoreBadge(
         color = MaterialTheme.colorScheme.error
     ) {
         Text(
-            text = "風險 $score",
+            text = stringResource(R.string.scam_center_s_f094d2, score),
             color = MaterialTheme.colorScheme.onError,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
@@ -327,6 +329,7 @@ private fun ScamMessageCard(
     glassState: HazeState,
     onClick: () -> Unit
 ) {
+    val resCtx = LocalContext.current
     val timeText = remember(message.timestamp) {
         SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(message.timestamp))
     }
@@ -406,9 +409,9 @@ private fun ScamMessageCard(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = if (intel.isHit) {
-                        "情報來源：${intel.sourceLabel}（$intelTimeStr）"
+                        resCtx.getString(R.string.scam_center_s_1191ba, intel.sourceLabel, intelTimeStr)
                     } else {
-                        "防詐情報：已查證，無命中紀錄（$intelTimeStr）"
+                        resCtx.getString(R.string.scam_center_s_a93acf, intelTimeStr)
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
@@ -417,7 +420,7 @@ private fun ScamMessageCard(
 
             Spacer(Modifier.height(6.dp))
             Text(
-                text = "點擊查看詳情與複製內容 ›",
+                text = resCtx.getString(R.string.scam_center_s_168334),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,
                 fontWeight = FontWeight.Medium
@@ -434,6 +437,7 @@ private fun ScamDetailDialog(
     onDismiss: () -> Unit,
     onWhitelistAdded: () -> Unit
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -468,25 +472,25 @@ private fun ScamDetailDialog(
     if (showImmunityConfirm) {
         AlertDialog(
             onDismissRequest = { showImmunityConfirm = false },
-            title = { Text("🛡️ 確認加入防詐免疫記憶") },
+            title = { Text(stringResource(R.string.scam_center_s_7825bd)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "此摘要將寫入「防詐免疫（長期記憶／推測）」並於日後遇到金錢、催促或驗證碼訊息時優先提醒 AI 辨識類似手法。確認後可隨時於記憶分頁編輯或刪除。",
+                        text = stringResource(R.string.scam_center_s_8c0e94),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     OutlinedTextField(
                         value = immunitySubject,
                         onValueChange = { immunitySubject = it },
-                        label = { Text("手法主題") },
+                        label = { Text(stringResource(R.string.scam_center_s_31626a)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = immunityContent,
                         onValueChange = { immunityContent = it },
-                        label = { Text("話術與風險特徵摘要") },
+                        label = { Text(stringResource(R.string.scam_center_s_e2b4e7)) },
                         minLines = 2,
                         maxLines = 4,
                         modifier = Modifier.fillMaxWidth()
@@ -518,16 +522,16 @@ private fun ScamDetailDialog(
                                 sourceRef = sourceRef
                             )
                             showImmunityConfirm = false
-                            Toast.makeText(ctx, "已加入防詐免疫記憶（可至記憶頁管理）", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(ctx, resCtx.getString(R.string.scam_center_s_3d57ef), Toast.LENGTH_SHORT).show()
                         }
                     }
                 ) {
-                    Text("確認寫入記憶")
+                    Text(stringResource(R.string.scam_center_s_94bf1d))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showImmunityConfirm = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -578,8 +582,8 @@ private fun ScamDetailDialog(
     if (showSuspendConfirm) {
         AlertDialog(
             onDismissRequest = { showSuspendConfirm = false },
-            title = { Text("確認凍結來源 App") },
-            text = { Text("確定要透過 Shizuku 凍結「${message.appLabel} (${message.packageName})」嗎？凍結後可至「設定 → Shizuku 進階」解除凍結。") },
+            title = { Text(stringResource(R.string.detail_s_d95488)) },
+            text = { Text(stringResource(R.string.detail_s_e4bc66, message.appLabel, message.packageName)) },
             confirmButton = {
                 Button(onClick = {
                     scope.launch {
@@ -587,17 +591,17 @@ private fun ScamDetailDialog(
                         showSuspendConfirm = false
                         Toast.makeText(
                             ctx,
-                            if (res.isSuccess) "已凍結 ${message.appLabel}" else "凍結失敗：${res.output}",
+                            if (res.isSuccess) resCtx.getString(R.string.detail_s_5b13aa, message.appLabel) else resCtx.getString(R.string.detail_s_ec28fb, res.output),
                             Toast.LENGTH_SHORT
                         ).show()
                     }
                 }) {
-                    Text("確認凍結")
+                    Text(stringResource(R.string.common_confirm_freeze))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showSuspendConfirm = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -616,7 +620,7 @@ private fun ScamDetailDialog(
                     tint = MaterialTheme.colorScheme.error
                 )
                 Text(
-                    text = "詐騙風險詳情",
+                    text = stringResource(R.string.scam_center_s_2b99b0),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
@@ -631,22 +635,22 @@ private fun ScamDetailDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                DetailRow(label = "寄件者", value = message.sender)
+                DetailRow(label = stringResource(R.string.scam_center_s_165225), value = message.sender)
                 DetailRow(
-                    label = "來源 App",
+                    label = stringResource(R.string.scam_center_s_a954a1),
                     value = if (message.packageName.isNotBlank() && message.appLabel != message.packageName) {
                         "${message.appLabel} (${message.packageName})"
                     } else {
                         message.appLabel
                     }
                 )
-                DetailRow(label = "接收時間", value = fullTimeText)
-                DetailRow(label = "風險分數", value = "${message.riskScore} / 100")
+                DetailRow(label = stringResource(R.string.scam_center_s_edf2f8), value = fullTimeText)
+                DetailRow(label = stringResource(R.string.scam_center_s_c704be), value = "${message.riskScore} / 100")
 
                 HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
                 Text(
-                    text = "完整訊息內容",
+                    text = stringResource(R.string.scam_center_s_b2984c),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -664,7 +668,7 @@ private fun ScamDetailDialog(
                 }
 
                 Text(
-                    text = "AI 風險分析理由",
+                    text = stringResource(R.string.scam_center_s_375047),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.error
@@ -675,7 +679,7 @@ private fun ScamDetailDialog(
                     color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
                 ) {
                     PhantomMarkdownText(
-                        markdown = message.riskReason.ifBlank { "（無詳細分析理由）" },
+                        markdown = message.riskReason.ifBlank { resCtx.getString(R.string.scam_center_s_6f35f7) },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(10.dp)
@@ -688,9 +692,9 @@ private fun ScamDetailDialog(
                     }
                     Text(
                         text = if (intel.isHit) {
-                            "防詐情報命中：${intel.sourceLabel}（查詢時間：$intelTimeStr）"
+                            resCtx.getString(R.string.detail_s_de193c, intel.sourceLabel, intelTimeStr)
                         } else {
-                            "防詐情報：已查證，無命中紀錄（查詢時間：$intelTimeStr）"
+                            resCtx.getString(R.string.detail_s_d3956d, intelTimeStr)
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = if (intel.isHit) {
@@ -705,20 +709,20 @@ private fun ScamDetailDialog(
                     onClick = { showWhitelistFlow = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("加入白名單（這不是詐騙）")
+                    Text(stringResource(R.string.scam_center_s_f5143d))
                 }
 
                 OutlinedButton(
                     onClick = { showImmunityConfirm = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("🛡️ 加入防詐免疫記憶")
+                    Text(stringResource(R.string.scam_center_s_a74410))
                 }
 
                 if (shizukuReady) {
                     HorizontalDivider()
                     Text(
-                        text = "Shizuku 進階處置",
+                        text = stringResource(R.string.scam_center_s_325911),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -732,20 +736,20 @@ private fun ScamDetailDialog(
                                     val res = ShizukuKeepAlive.forceStopTargetApp(appCtx, message.packageName)
                                     Toast.makeText(
                                         ctx,
-                                        if (res.isSuccess) "已強行停止 ${message.appLabel}" else "操作失敗：${res.output}",
+                                        if (res.isSuccess) resCtx.getString(R.string.detail_s_59632d, message.appLabel) else resCtx.getString(R.string.detail_s_d45d8d, res.output),
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 }
                             },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("強行停止")
+                            Text(stringResource(R.string.scam_center_s_4827cb))
                         }
                         TextButton(
                             onClick = { showSuspendConfirm = true },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("凍結 App", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(R.string.scam_center_s_359f97), color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -753,7 +757,7 @@ private fun ScamDetailDialog(
                     onClick = { showDecisionFeedback = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("此判斷有誤（回饋寫回規則庫）")
+                    Text(stringResource(R.string.common_s_c930fe))
                 }
             }
         },
@@ -762,15 +766,15 @@ private fun ScamDetailDialog(
                 onClick = {
                     val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("scam_message", message.content))
-                    Toast.makeText(ctx, "已複製訊息內容", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(ctx, resCtx.getString(R.string.detail_s_00399e), Toast.LENGTH_SHORT).show()
                 }
             ) {
-                Text("複製訊息內容")
+                Text(stringResource(R.string.scam_center_s_34455c))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("關閉")
+                Text(stringResource(R.string.common_close))
             }
         }
     )

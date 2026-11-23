@@ -50,6 +50,8 @@ import androidx.compose.ui.unit.dp
 import com.phantom.checker.service.AutoReplyConfig
 import kotlinx.coroutines.launch
 import java.util.Locale
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 class AutoReplySettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,6 +75,7 @@ private fun formatMinuteOfDay(totalMinutes: Int): String {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AutoReplySettingsScreen(onBack: () -> Unit) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -99,7 +102,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
     }
 
     com.phantom.checker.ui.components.PhantomPageScaffold(
-        title = "自動回覆設定",
+        title = stringResource(R.string.auto_reply_s_941de9),
         onBack = onBack,
         topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
         containerColor = MaterialTheme.colorScheme.background,
@@ -131,7 +134,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "LINE/IG 等通訊 App 受系統限制無法代回覆（會觸發已讀），此設定僅對 SMS 生效",
+                        text = stringResource(R.string.auto_reply_s_d7045d),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -151,12 +154,12 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "啟用 SMS 自動回覆",
+                            text = stringResource(R.string.auto_reply_s_2ba0b2),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = if (enabled) "於設定時段內自動回覆簡訊" else "目前已停用自動回覆",
+                            text = if (enabled) stringResource(R.string.auto_reply_s_e048b7) else stringResource(R.string.auto_reply_s_878ac8),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -182,14 +185,14 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "自動回覆時段",
+                        text = stringResource(R.string.auto_reply_s_8abae6),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium
                     )
                     val windowSummary = if (startMinute <= endMinute) {
-                        "每日 ${formatMinuteOfDay(startMinute)} ～ ${formatMinuteOfDay(endMinute)}"
+                        stringResource(R.string.auto_reply_s_0e4f2d, formatMinuteOfDay(startMinute), formatMinuteOfDay(endMinute))
                     } else {
-                        "每日 ${formatMinuteOfDay(startMinute)} ～ 隔日 ${formatMinuteOfDay(endMinute)}"
+                        stringResource(R.string.auto_reply_s_58106f, formatMinuteOfDay(startMinute), formatMinuteOfDay(endMinute))
                     }
                     Text(
                         text = windowSummary,
@@ -218,7 +221,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                                 .weight(1f)
                                 .pressableScale()
                         ) {
-                            Text("開始：${formatMinuteOfDay(startMinute)}")
+                            Text(stringResource(R.string.auto_reply_s_8f7bea, formatMinuteOfDay(startMinute)))
                         }
                         OutlinedButton(
                             onClick = {
@@ -238,7 +241,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                                 .weight(1f)
                                 .pressableScale()
                         ) {
-                            Text("結束：${formatMinuteOfDay(endMinute)}")
+                            Text(stringResource(R.string.auto_reply_s_036dea, formatMinuteOfDay(endMinute)))
                         }
                     }
                 }
@@ -255,7 +258,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "SMS 回覆範本",
+                        text = stringResource(R.string.auto_reply_s_7cb485),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium
                     )
@@ -268,22 +271,22 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3,
                         maxLines = 5,
-                        label = { Text("自動回覆內容") },
-                        placeholder = { Text("輸入收到簡訊時要自動回覆的文字…") }
+                        label = { Text(stringResource(R.string.auto_reply_s_bf06b5)) },
+                        placeholder = { Text(stringResource(R.string.auto_reply_s_e41a47)) }
                     )
                     Spacer(Modifier.height(2.dp))
                     Button(
                         onClick = {
                             persist()
                             scope.launch {
-                                snackbarHostState.showSnackbar("自動回覆設定已儲存")
+                                snackbarHostState.showSnackbar(resCtx.getString(R.string.auto_reply_s_c243c5))
                             }
                         },
                         modifier = Modifier
                             .align(Alignment.End)
                             .pressableScale()
                     ) {
-                        Text("儲存設定")
+                        Text(stringResource(R.string.auto_reply_s_bcc070))
                     }
                 }
             }

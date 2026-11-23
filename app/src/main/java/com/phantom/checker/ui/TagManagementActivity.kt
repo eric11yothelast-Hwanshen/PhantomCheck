@@ -78,6 +78,8 @@ import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 private val TAG_COLOR_PALETTE = listOf(
     "#7C3AED", // 品牌紫
@@ -109,6 +111,7 @@ class TagManagementActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TagManagementScreen(onBack: () -> Unit) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -195,8 +198,8 @@ fun TagManagementScreen(onBack: () -> Unit) {
     deleteCandidate?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteCandidate = null },
-            title = { Text("刪除標籤") },
-            text = { Text("確定要刪除標籤「${target.name}」嗎？這將一併移除所有訊息與分類規則上的此標籤關聯。") },
+            title = { Text(stringResource(R.string.tag_mgmt_s_66923b)) },
+            text = { Text(stringResource(R.string.tag_mgmt_s_cd8e2b, target.name)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -212,17 +215,17 @@ fun TagManagementScreen(onBack: () -> Unit) {
                             }
                             deleteCandidate = null
                             reloadAll()
-                            snackbarHostState.showSnackbar("已刪除標籤「${target.name}」")
+                            snackbarHostState.showSnackbar(resCtx.getString(R.string.tag_mgmt_s_9ef04e, target.name))
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認刪除")
+                    Text(stringResource(R.string.common_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteCandidate = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -248,7 +251,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                     }
                     showAddAppCatDialog = false
                     reloadAll()
-                    snackbarHostState.showSnackbar("已新增 App 分類規則")
+                    snackbarHostState.showSnackbar(resCtx.getString(R.string.tag_mgmt_s_8acb54))
                 }
             }
         )
@@ -257,8 +260,8 @@ fun TagManagementScreen(onBack: () -> Unit) {
     deleteAppCatCandidate?.let { rule ->
         AlertDialog(
             onDismissRequest = { deleteAppCatCandidate = null },
-            title = { Text("刪除 App 分類規則") },
-            text = { Text("確定要移除 ${rule.packageName} 的分類規則嗎？") },
+            title = { Text(stringResource(R.string.tag_mgmt_s_41fae7)) },
+            text = { Text(stringResource(R.string.tag_mgmt_s_3c913a, rule.packageName)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -269,17 +272,17 @@ fun TagManagementScreen(onBack: () -> Unit) {
                             }
                             deleteAppCatCandidate = null
                             reloadAll()
-                            snackbarHostState.showSnackbar("已刪除 App 分類規則")
+                            snackbarHostState.showSnackbar(resCtx.getString(R.string.tag_mgmt_s_af5c7d))
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認刪除")
+                    Text(stringResource(R.string.common_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteAppCatCandidate = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -305,7 +308,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                     }
                     showAddAiRuleDialog = false
                     reloadAll()
-                    snackbarHostState.showSnackbar("已新增 AI 規則（將套用於新訊息）")
+                    snackbarHostState.showSnackbar(resCtx.getString(R.string.tag_mgmt_s_00c5dc))
                 }
             }
         )
@@ -314,8 +317,8 @@ fun TagManagementScreen(onBack: () -> Unit) {
     deleteAiRuleCandidate?.let { rule ->
         AlertDialog(
             onDismissRequest = { deleteAiRuleCandidate = null },
-            title = { Text("刪除 AI 規則") },
-            text = { Text("確定要刪除這條自然語言規則嗎？\n「${rule.ruleText}」") },
+            title = { Text(stringResource(R.string.tag_mgmt_s_1a5c2f)) },
+            text = { Text(stringResource(R.string.tag_mgmt_s_d31863, rule.ruleText)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -326,17 +329,17 @@ fun TagManagementScreen(onBack: () -> Unit) {
                             }
                             deleteAiRuleCandidate = null
                             reloadAll()
-                            snackbarHostState.showSnackbar("已刪除 AI 規則")
+                            snackbarHostState.showSnackbar(resCtx.getString(R.string.tag_mgmt_s_74ac4a))
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認刪除")
+                    Text(stringResource(R.string.common_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteAiRuleCandidate = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -345,8 +348,8 @@ fun TagManagementScreen(onBack: () -> Unit) {
     deleteUserTagRuleCandidate?.let { rule ->
         AlertDialog(
             onDismissRequest = { deleteUserTagRuleCandidate = null },
-            title = { Text("刪除標籤記憶規則") },
-            text = { Text("確定要刪除這條規則嗎？刪除後新訊息將恢復原本的 AI 判斷。\n「${rule.description}」") },
+            title = { Text(stringResource(R.string.tag_mgmt_s_bdf1ab)) },
+            text = { Text(stringResource(R.string.tag_mgmt_s_9bc5f7, rule.description)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -357,17 +360,17 @@ fun TagManagementScreen(onBack: () -> Unit) {
                             }
                             deleteUserTagRuleCandidate = null
                             reloadAll()
-                            snackbarHostState.showSnackbar("已刪除標籤記憶規則")
+                            snackbarHostState.showSnackbar(resCtx.getString(R.string.tag_mgmt_s_412fe2))
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認刪除")
+                    Text(stringResource(R.string.common_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteUserTagRuleCandidate = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -382,7 +385,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
     }
 
     com.phantom.checker.ui.components.PhantomPageScaffold(
-        title = "標籤與 AI 規則管理",
+        title = stringResource(R.string.tag_mgmt_s_d5cbb6),
         onBack = onBack,
         topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
         containerColor = MaterialTheme.colorScheme.background,
@@ -393,7 +396,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                     showEditor = true
                 }
             ) {
-                Icon(Icons.Default.Add, contentDescription = "新增標籤")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.tag_mgmt_s_a5b7d1))
             }
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
@@ -413,7 +416,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
             ) {
                 item {
                     Text(
-                        text = "標籤清單",
+                        text = stringResource(R.string.tag_mgmt_s_38f6a2),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -428,7 +431,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                             contentPadding = 14.dp
                         ) {
                             Text(
-                                text = "尚無自訂標籤，請點擊右下角「+」新增。",
+                                text = stringResource(R.string.tag_mgmt_s_b49e1e),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -490,7 +493,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                                     color = MaterialTheme.colorScheme.secondaryContainer
                                                 ) {
                                                     Text(
-                                                        text = "App分類",
+                                                        text = stringResource(R.string.tag_mgmt_s_7183f3),
                                                         style = MaterialTheme.typography.labelSmall,
                                                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
@@ -524,7 +527,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                             }
                                         }
                                     ) {
-                                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = "上移")
+                                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = stringResource(R.string.tag_mgmt_s_8a0c83))
                                     }
                                     IconButton(
                                         enabled = idx < tags.lastIndex,
@@ -540,18 +543,18 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                             }
                                         }
                                     ) {
-                                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "下移")
+                                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = stringResource(R.string.tag_mgmt_s_05c46f))
                                     }
                                     IconButton(onClick = {
                                         editingTag = tag
                                         showEditor = true
                                     }) {
-                                        Icon(Icons.Default.Edit, contentDescription = "編輯")
+                                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.common_edit))
                                     }
                                     IconButton(onClick = { deleteCandidate = tag }) {
                                         Icon(
                                             Icons.Default.Delete,
-                                            contentDescription = "刪除",
+                                            contentDescription = stringResource(R.string.common_delete),
                                             tint = MaterialTheme.colorScheme.error
                                         )
                                     }
@@ -571,12 +574,12 @@ fun TagManagementScreen(onBack: () -> Unit) {
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "App 分類規則（零 token）",
+                                text = stringResource(R.string.tag_mgmt_s_46cd20),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "收到指定 App 通知時直接自動貼上分類標籤，不消耗 AI 額度。",
+                                text = stringResource(R.string.tag_mgmt_s_374659),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -585,7 +588,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                             onClick = { showAddAppCatDialog = true },
                             enabled = tags.isNotEmpty()
                         ) {
-                            Text("新增規則")
+                            Text(stringResource(R.string.tag_mgmt_s_606c09))
                         }
                     }
                 }
@@ -599,7 +602,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                             contentPadding = 12.dp
                         ) {
                             Text(
-                                text = "尚無 App 分類規則。",
+                                text = stringResource(R.string.tag_mgmt_s_d1759a),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -647,7 +650,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            text = "→ ${assignedTag?.name ?: "未知標籤"}",
+                                            text = stringResource(R.string.tag_mgmt_s_e036fd, assignedTag?.name ?: resCtx.getString(R.string.tag_mgmt_s_1a24b4)),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.primary
                                         )
@@ -669,7 +672,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                     IconButton(onClick = { deleteAppCatCandidate = rule }) {
                                         Icon(
                                             Icons.Default.Delete,
-                                            contentDescription = "刪除規則",
+                                            contentDescription = stringResource(R.string.notes_s_a287b5),
                                             tint = MaterialTheme.colorScheme.error
                                         )
                                     }
@@ -689,18 +692,18 @@ fun TagManagementScreen(onBack: () -> Unit) {
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "自然語言 AI 規則",
+                                text = stringResource(R.string.tag_mgmt_s_1b4963),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "用自然語言教 AI 辨識白名單或自動貼標（僅套用於新收到的訊息）。",
+                                text = stringResource(R.string.tag_mgmt_s_caddc0),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         OutlinedButton(onClick = { showAddAiRuleDialog = true }) {
-                            Text("新增規則")
+                            Text(stringResource(R.string.tag_mgmt_s_606c09))
                         }
                     }
                 }
@@ -714,7 +717,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                             contentPadding = 12.dp
                         ) {
                             Text(
-                                text = "目前已啟用超過 20 條 AI 規則，分析時僅會帶入前 20 條，建議精簡規則以節省 token。",
+                                text = stringResource(R.string.tag_mgmt_s_1e07ca),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
                             )
@@ -731,7 +734,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                             contentPadding = 12.dp
                         ) {
                             Text(
-                                text = "尚無自然語言 AI 規則。",
+                                text = stringResource(R.string.tag_mgmt_s_1f7412),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -741,9 +744,9 @@ fun TagManagementScreen(onBack: () -> Unit) {
                     items(aiRules, key = { "airule_${it.id}" }) { rule ->
                         val targetTag = rule.targetTagId?.let { tagById[it] }
                         val kindLabel = if (rule.kind == AiRuleEntity.KIND_WHITELIST) {
-                            "非詐騙白名單"
+                            stringResource(R.string.tag_mgmt_s_9bac9f)
                         } else {
-                            "套用標籤：${targetTag?.name ?: "自動"}"
+                            stringResource(R.string.tag_mgmt_s_ee0f66, targetTag?.name ?: resCtx.getString(R.string.common_auto))
                         }
                         PhantomGlassCard(
                             glassState = glassState,
@@ -778,7 +781,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                     )
                                     if (!rule.sender.isNullOrBlank() || !rule.packageName.isNullOrBlank()) {
                                         val meta = listOfNotNull(
-                                            rule.sender?.takeIf { it.isNotBlank() }?.let { "寄件者：$it" },
+                                            rule.sender?.takeIf { it.isNotBlank() }?.let { resCtx.getString(R.string.common_s_c9cc80, it) },
                                             rule.packageName?.takeIf { it.isNotBlank() }?.let { "App：$it" }
                                         ).joinToString(" · ")
                                         Text(
@@ -805,7 +808,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                     IconButton(onClick = { deleteAiRuleCandidate = rule }) {
                                         Icon(
                                             Icons.Default.Delete,
-                                            contentDescription = "刪除 AI 規則",
+                                            contentDescription = stringResource(R.string.tag_mgmt_s_1a5c2f),
                                             tint = MaterialTheme.colorScheme.error
                                         )
                                     }
@@ -824,18 +827,18 @@ fun TagManagementScreen(onBack: () -> Unit) {
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "使用者標籤記憶規則（確定性・零 Token）",
+                                text = stringResource(R.string.tag_mgmt_s_2f137b),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "優先序高於 AI 自動標籤，可在 AI 助手對話教學建立（如「手機管家歸類為系統通知」）。",
+                                text = stringResource(R.string.tag_mgmt_s_1bbe95),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         OutlinedButton(onClick = { showTestTagRulesDialog = true }) {
-                            Text("測試命中")
+                            Text(stringResource(R.string.tag_mgmt_s_9a0c6d))
                         }
                     }
                 }
@@ -849,7 +852,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                             contentPadding = 12.dp
                         ) {
                             Text(
-                                text = "尚無使用者標籤記憶規則。可至「AI 助手」用自然語言教學建立。",
+                                text = stringResource(R.string.tag_mgmt_s_66e18a),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -858,7 +861,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                 } else {
                     items(userTagRules, key = { "utagrule_${it.id}" }) { rule ->
                         val targetTag = tagById[rule.targetTagId]
-                        val sourceLabel = if (rule.source == "chat") "對話教學" else "手動建立"
+                        val sourceLabel = if (rule.source == "chat") stringResource(R.string.tag_mgmt_s_033df7) else stringResource(R.string.tag_mgmt_s_816d67)
                         val condSummary = TagRuleEngine.formatRuleConditions(rule)
                         PhantomGlassCard(
                             glassState = glassState,
@@ -891,7 +894,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                             color = MaterialTheme.colorScheme.primaryContainer
                                         ) {
                                             Text(
-                                                text = "標籤：${targetTag?.name ?: "未知(#${rule.targetTagId})"}",
+                                                text = stringResource(R.string.tag_mgmt_s_8d5a4e, targetTag?.name ?: resCtx.getString(R.string.tag_mgmt_s_7359b3, rule.targetTagId)),
                                                 style = MaterialTheme.typography.labelSmall,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                             )
@@ -904,7 +907,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                         fontWeight = FontWeight.Medium
                                     )
                                     Text(
-                                        text = "條件：$condSummary",
+                                        text = stringResource(R.string.tag_mgmt_s_2c4da9, condSummary),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -926,7 +929,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                     IconButton(onClick = { deleteUserTagRuleCandidate = rule }) {
                                         Icon(
                                             Icons.Default.Delete,
-                                            contentDescription = "刪除標籤記憶規則",
+                                            contentDescription = stringResource(R.string.tag_mgmt_s_bdf1ab),
                                             tint = MaterialTheme.colorScheme.error
                                         )
                                     }
@@ -957,7 +960,7 @@ private fun TagEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "新增標籤" else "編輯標籤") },
+        title = { Text(if (initial == null) stringResource(R.string.tag_mgmt_s_a5b7d1) else stringResource(R.string.tag_mgmt_s_f71e52)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -965,16 +968,16 @@ private fun TagEditorDialog(
                     onValueChange = { name = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    label = { Text("標籤名稱") },
-                    placeholder = { Text("例如：工作、帳單、物流") }
+                    label = { Text(stringResource(R.string.tag_mgmt_s_640e5f)) },
+                    placeholder = { Text(stringResource(R.string.tag_mgmt_s_08abb9)) }
                 )
                 OutlinedTextField(
                     value = aiHint,
                     onValueChange = { aiHint = it },
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = 3,
-                    label = { Text("AI 判斷依據（選填）") },
-                    placeholder = { Text("例如：銀行扣款、信用卡消費通知") }
+                    label = { Text(stringResource(R.string.tag_mgmt_s_644824)) },
+                    placeholder = { Text(stringResource(R.string.tag_mgmt_s_3be582)) }
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -982,7 +985,7 @@ private fun TagEditorDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "允許 AI 自動指派此標籤",
+                        text = stringResource(R.string.tag_mgmt_s_19dc94),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f)
                     )
@@ -997,7 +1000,7 @@ private fun TagEditorDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "作為 App 分類標籤",
+                        text = stringResource(R.string.tag_mgmt_s_0c7cc2),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f)
                     )
@@ -1006,7 +1009,7 @@ private fun TagEditorDialog(
                         onCheckedChange = { isAppCategory = it }
                     )
                 }
-                Text("選擇顏色", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.tag_mgmt_s_24f7c7), style = MaterialTheme.typography.labelMedium)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -1040,12 +1043,12 @@ private fun TagEditorDialog(
                 onClick = { onSave(name.trim(), selectedColor, aiHint.trim(), isAiManaged, isAppCategory) },
                 enabled = name.isNotBlank()
             ) {
-                Text("儲存")
+                Text(stringResource(R.string.common_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.common_cancel))
             }
         }
     )
@@ -1090,10 +1093,10 @@ private fun AddAppCategoryRuleDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("新增 App 分類規則") },
+        title = { Text(stringResource(R.string.tag_mgmt_s_44ac50)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("1. 選擇分類標籤", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.tag_mgmt_s_7a1193), style = MaterialTheme.typography.labelMedium)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -1106,13 +1109,13 @@ private fun AddAppCategoryRuleDialog(
                         )
                     }
                 }
-                Text("2. 選擇 App", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.tag_mgmt_s_0ff951), style = MaterialTheme.typography.labelMedium)
                 OutlinedTextField(
                     value = search,
                     onValueChange = { search = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    placeholder = { Text("搜尋 App 名稱…") }
+                    placeholder = { Text(stringResource(R.string.tag_mgmt_s_670721)) }
                 )
                 LazyColumn(
                     modifier = Modifier
@@ -1160,12 +1163,12 @@ private fun AddAppCategoryRuleDialog(
                 },
                 enabled = selectedPkg != null && selectedTagId != null
             ) {
-                Text("儲存")
+                Text(stringResource(R.string.common_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.common_cancel))
             }
         }
     )
@@ -1184,19 +1187,19 @@ private fun AddAiRuleDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("新增自然語言 AI 規則") },
+        title = { Text(stringResource(R.string.tag_mgmt_s_399ccd)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = kind == AiRuleEntity.KIND_WHITELIST,
                         onClick = { kind = AiRuleEntity.KIND_WHITELIST },
-                        label = { Text("非詐騙白名單") }
+                        label = { Text(stringResource(R.string.tag_mgmt_s_9bac9f)) }
                     )
                     FilterChip(
                         selected = kind == AiRuleEntity.KIND_TAG,
                         onClick = { kind = AiRuleEntity.KIND_TAG },
-                        label = { Text("套用標籤") }
+                        label = { Text(stringResource(R.string.tag_mgmt_s_089bf9)) }
                     )
                 }
                 OutlinedTextField(
@@ -1204,19 +1207,19 @@ private fun AddAiRuleDialog(
                     onValueChange = { ruleText = it },
                     modifier = Modifier.fillMaxWidth(),
                     maxLines = 4,
-                    label = { Text("規則描述") },
+                    label = { Text(stringResource(R.string.tag_mgmt_s_b76d64)) },
                     placeholder = {
                         Text(
                             if (kind == AiRuleEntity.KIND_WHITELIST) {
-                                "例如：電信公司官方短連結的代收通知不是詐騙"
+                                stringResource(R.string.tag_mgmt_s_82c27d)
                             } else {
-                                "例如：購物網站含折扣碼的訊息標記必看"
+                                stringResource(R.string.tag_mgmt_s_8c75f6)
                             }
                         )
                     }
                 )
                 if (kind == AiRuleEntity.KIND_TAG && tags.isNotEmpty()) {
-                    Text("指定標籤", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.tag_mgmt_s_b62d5d), style = MaterialTheme.typography.labelMedium)
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -1240,12 +1243,12 @@ private fun AddAiRuleDialog(
                 },
                 enabled = ruleText.isNotBlank() && (kind == AiRuleEntity.KIND_WHITELIST || targetTagId != null)
             ) {
-                Text("新增")
+                Text(stringResource(R.string.common_add))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.common_cancel))
             }
         }
     )
@@ -1257,7 +1260,8 @@ private fun TestUserTagRulesDialog(
     tagById: Map<Long, TagEntity>,
     onDismiss: () -> Unit
 ) {
-    var sampleAppLabel by remember { mutableStateOf("手機管家") }
+    val resCtx = LocalContext.current
+    var sampleAppLabel by remember { mutableStateOf(resCtx.getString(R.string.tag_mgmt_s_b2a7d8)) }
     var samplePackage by remember { mutableStateOf("") }
     var sampleSender by remember { mutableStateOf("") }
     var sampleContent by remember { mutableStateOf("") }
@@ -1274,59 +1278,59 @@ private fun TestUserTagRulesDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("測試標籤記憶規則命中") },
+        title = { Text(stringResource(R.string.tag_mgmt_s_b2c72d)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = sampleAppLabel,
                     onValueChange = { sampleAppLabel = it },
-                    label = { Text("App 名稱（例：手機管家）") },
+                    label = { Text(stringResource(R.string.tag_mgmt_s_b120d8)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = samplePackage,
                     onValueChange = { samplePackage = it },
-                    label = { Text("套件名稱（選填，例：com.miui.securitycenter）") },
+                    label = { Text(stringResource(R.string.tag_mgmt_s_b9ab43)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = sampleSender,
                     onValueChange = { sampleSender = it },
-                    label = { Text("寄件者（選填）") },
+                    label = { Text(stringResource(R.string.tag_mgmt_s_f12817)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = sampleContent,
                     onValueChange = { sampleContent = it },
-                    label = { Text("訊息內容（選填，例：您的驗證碼為 123456）") },
+                    label = { Text(stringResource(R.string.tag_mgmt_s_e47aa1)) },
                     maxLines = 3,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(Modifier.height(4.dp))
                 if (rules.none { it.isEnabled }) {
                     Text(
-                        text = "目前沒有已啟用的標籤記憶規則。",
+                        text = stringResource(R.string.tag_mgmt_s_a4aa2c),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else if (matched.isEmpty()) {
                     Text(
-                        text = "未命中任何標籤記憶規則（將交由 AI／App 分類處理）。",
+                        text = stringResource(R.string.tag_mgmt_s_17bec2),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
                     Text(
-                        text = "命中 ${matched.size} 條規則：",
+                        text = stringResource(R.string.tag_mgmt_s_a9d5c1, matched.size),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     matched.forEach { r ->
-                        val tName = tagById[r.targetTagId]?.name ?: "未知(#${r.targetTagId})"
+                        val tName = tagById[r.targetTagId]?.name ?: resCtx.getString(R.string.tag_mgmt_s_7359b3, r.targetTagId)
                         Text(
                             text = "• ${r.description} → [$tName]",
                             style = MaterialTheme.typography.bodySmall
@@ -1337,7 +1341,7 @@ private fun TestUserTagRulesDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("關閉")
+                Text(stringResource(R.string.common_close))
             }
         }
     )

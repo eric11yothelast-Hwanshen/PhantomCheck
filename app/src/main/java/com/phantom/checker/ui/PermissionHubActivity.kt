@@ -65,6 +65,8 @@ import com.phantom.checker.util.ContactBridge
 import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * #340 權限授予中心（集中管理全部權限，Shizuku 除外）：
@@ -100,7 +102,7 @@ private fun launchIntentWithAppDetailsFallback(ctx: Context, intent: Intent) {
         return
     } catch (_: Exception) {
     }
-    Toast.makeText(ctx, "無法開啟系統設定頁，請手動前往系統設定", Toast.LENGTH_SHORT).show()
+    Toast.makeText(ctx, com.phantom.checker.PhantomApplication.str(R.string.perm_hub_open_settings_failed), Toast.LENGTH_SHORT).show()
 }
 
 private fun checkExactAlarmGranted(ctx: Context): Boolean {
@@ -127,6 +129,7 @@ private fun checkBatteryUnrestricted(ctx: Context): Boolean {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PermissionHubScreen(onBack: () -> Unit) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val glassState = remember { HazeState() }
@@ -185,7 +188,7 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
         modifier = Modifier.fillMaxSize()
     ) {
         com.phantom.checker.ui.components.PhantomPageScaffold(
-            title = "權限授予中心",
+            title = stringResource(R.string.search_s_1579f9),
             onBack = onBack,
             topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
             containerColor = Color.Transparent
@@ -223,7 +226,7 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = if (pendingPermCount > 0) "$pendingPermCount 項待處理" else "全部核心權限已就緒",
+                                text = if (pendingPermCount > 0) stringResource(R.string.perm_hub_s_1d8146, pendingPermCount) else stringResource(R.string.perm_hub_s_0654c2),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = if (pendingPermCount > 0) {
@@ -234,9 +237,9 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                             )
                             Text(
                                 text = if (pendingPermCount > 0) {
-                                    "請依下方狀態列逐項檢視與授權，以確保通知監聽與背景排程穩定運作。"
+                                    stringResource(R.string.perm_hub_s_d50874)
                                 } else {
-                                    "通知存取、背景保活與選用權限均運作正常。"
+                                    stringResource(R.string.perm_hub_s_c3b64d)
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -248,12 +251,12 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                 phantomItem(0, key = "perm_notifications") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("🔔 通知權限與監聽存取", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(stringResource(R.string.perm_hub_s_472f0e), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             PermissionRow(
-                                name = "顯示通知（POST_NOTIFICATIONS）",
+                                name = stringResource(R.string.perm_hub_s_554943),
                                 granted = postNotifGranted,
-                                desc = "發送詐騙警示、待辦提醒、早晚簡報與常駐統計通知",
-                                actionLabel = if (postNotifGranted) "系統通知設定" else "立即授予"
+                                desc = stringResource(R.string.perm_hub_s_0269fa),
+                                actionLabel = if (postNotifGranted) stringResource(R.string.perm_hub_s_7a3926) else stringResource(R.string.perm_hub_s_4665c7)
                             ) {
                                 if (!postNotifGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                                     runtimePermLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
@@ -266,10 +269,10 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                             }
                             HorizontalDivider()
                             PermissionRow(
-                                name = "通知存取（NotificationListener）",
+                                name = stringResource(R.string.perm_hub_s_b07a41),
                                 granted = notifListenerGranted,
-                                desc = "攔截各 App 通知以執行風險分析與自動備忘",
-                                actionLabel = if (notifListenerGranted) "前往管理" else "前往開啟"
+                                desc = stringResource(R.string.perm_hub_s_43da2e),
+                                actionLabel = if (notifListenerGranted) stringResource(R.string.perm_hub_s_d96d99) else stringResource(R.string.perm_hub_s_8d2b78)
                             ) {
                                 openNotificationListenerSettings(ctx)
                             }
@@ -288,12 +291,12 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                 phantomItem(1, key = "perm_data") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("📂 簡訊、通訊錄與日曆權限", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(stringResource(R.string.perm_hub_s_179aa2), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             PermissionRow(
-                                name = "簡訊收發（SMS）",
+                                name = stringResource(R.string.perm_hub_s_becc64),
                                 granted = smsGranted,
-                                desc = "自動簡訊防詐分析與自動回覆功能（選配）",
-                                actionLabel = if (smsGranted) "App 權限頁" else "立即授予"
+                                desc = stringResource(R.string.perm_hub_s_30a359),
+                                actionLabel = if (smsGranted) stringResource(R.string.perm_hub_s_50912e) else stringResource(R.string.perm_hub_s_4665c7)
                             ) {
                                 if (!smsGranted) {
                                     runtimePermLauncher.launch(arrayOf(Manifest.permission.RECEIVE_SMS, Manifest.permission.SEND_SMS))
@@ -306,10 +309,10 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                             }
                             HorizontalDivider()
                             PermissionRow(
-                                name = "通訊錄讀取（READ_CONTACTS）",
+                                name = stringResource(R.string.perm_hub_s_535411),
                                 granted = contactsGranted,
-                                desc = "純本機防詐熟人比對、暱稱綁定、關係匯入與 VIP 信任圈（絕不外送 AI）",
-                                actionLabel = if (contactsGranted) "App 權限頁" else "立即授予"
+                                desc = stringResource(R.string.perm_hub_s_b023a2),
+                                actionLabel = if (contactsGranted) stringResource(R.string.perm_hub_s_50912e) else stringResource(R.string.perm_hub_s_4665c7)
                             ) {
                                 if (!contactsGranted) {
                                     runtimePermLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS))
@@ -322,14 +325,14 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                             }
                             HorizontalDivider()
                             PermissionRow(
-                                name = "本機日曆（讀寫）",
+                                name = stringResource(R.string.linked_apps_s_995981),
                                 granted = calendarReadGranted && calendarWriteGranted,
                                 desc = if (calendarReadGranted && !calendarWriteGranted) {
-                                    "已授權讀取；補授寫入後可直接新增行程免跳系統表單"
+                                    stringResource(R.string.perm_hub_s_0c6070)
                                 } else {
-                                    "行程分流建議卡、空檔查詢與撞期偵測（僅存取您勾選的日曆）"
+                                    stringResource(R.string.perm_hub_s_2fbbe7)
                                 },
-                                actionLabel = if (calendarReadGranted && calendarWriteGranted) "App 權限頁" else "立即授予"
+                                actionLabel = if (calendarReadGranted && calendarWriteGranted) stringResource(R.string.perm_hub_s_50912e) else stringResource(R.string.perm_hub_s_4665c7)
                             ) {
                                 if (!calendarReadGranted || !calendarWriteGranted) {
                                     runtimePermLauncher.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
@@ -360,25 +363,25 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                             }
                             val hcGranted = hcPermStatus.allGranted
                             PermissionRow(
-                                name = "Health Connect（睡眠／步數／心率／距離／熱量）",
+                                name = stringResource(R.string.perm_hub_s_efd3d3),
                                 granted = hcPermStatus.anyGranted,
                                 desc = when {
                                     hcAvailability == com.phantom.checker.util.HealthConnectBridge.SdkAvailability.UNAVAILABLE ->
-                                        "此裝置未支援或未安裝 Health Connect（例如部分無 GMS 機型），App 其餘功能不受影響"
+                                        stringResource(R.string.perm_hub_s_5698c6)
                                     hcAvailability == com.phantom.checker.util.HealthConnectBridge.SdkAvailability.PROVIDER_UPDATE_REQUIRED ->
-                                        "需安裝或更新 Health Connect 才可讀取穿戴裝置睡眠、步數、心率、距離與消耗熱量"
+                                        stringResource(R.string.perm_hub_s_d93e7c)
                                     hcPermStatus.allGranted ->
-                                        "已授權全部 5 項本機聚合讀取（睡眠／步數／心率／距離／熱量），原始生理時間序列永不出本機"
+                                        stringResource(R.string.perm_hub_s_57b167)
                                     hcPermStatus.anyGranted ->
-                                        "已授權 ${hcPermStatus.grantedCount}/5 項（可正常運作）；點右側可補授距離／熱量等其餘項目"
+                                        stringResource(R.string.perm_hub_s_8c2be9, hcPermStatus.grantedCount)
                                     else ->
-                                        "選配授權：於統計頁顯示每日健康明細與趨勢，並於晨間簡報與 AI 助手提供零幻覺本機健康查詢"
+                                        stringResource(R.string.perm_hub_s_a4d302)
                                 },
                                 actionLabel = when {
-                                    hcAvailability != com.phantom.checker.util.HealthConnectBridge.SdkAvailability.AVAILABLE -> "安裝／查看"
-                                    hcGranted -> "管理權限"
-                                    hcPermStatus.anyGranted -> "補授權"
-                                    else -> "立即授予"
+                                    hcAvailability != com.phantom.checker.util.HealthConnectBridge.SdkAvailability.AVAILABLE -> stringResource(R.string.perm_hub_s_f5ef17)
+                                    hcGranted -> stringResource(R.string.perm_hub_s_c75ad9)
+                                    hcPermStatus.anyGranted -> stringResource(R.string.perm_hub_s_a1dcba)
+                                    else -> stringResource(R.string.perm_hub_s_4665c7)
                                 }
                             ) {
                                 if (hcAvailability != com.phantom.checker.util.HealthConnectBridge.SdkAvailability.AVAILABLE || hcGranted) {
@@ -404,12 +407,12 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "允許 AI 讀取健康摘要",
+                                        text = stringResource(R.string.catalog_health_ai_query_enabled_title),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Medium
                                     )
                                     Text(
-                                        text = "開啟時，聊天詢問睡眠／步數／心率僅注入近 7 日匯總數值，並啟用查表式主動健康觀察提醒（預設開啟）",
+                                        text = stringResource(R.string.perm_hub_s_ee6fe2),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -431,12 +434,12 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                 phantomItem(2, key = "perm_system") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("⚙️ 排程、電池與使用情況權限", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(stringResource(R.string.perm_hub_s_414efd), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             PermissionRow(
-                                name = "精確鬧鐘（SCHEDULE_EXACT_ALARM）",
+                                name = stringResource(R.string.perm_hub_s_3fdee4),
                                 granted = exactAlarmGranted,
-                                desc = "確保待辦提醒、早晚簡報與 Watchdog 保活準時觸發（變更時自動重排）",
-                                actionLabel = if (exactAlarmGranted) "前往管理" else "前往開啟"
+                                desc = stringResource(R.string.perm_hub_s_174d82),
+                                actionLabel = if (exactAlarmGranted) stringResource(R.string.perm_hub_s_d96d99) else stringResource(R.string.perm_hub_s_8d2b78)
                             ) {
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                                     launchIntentWithAppDetailsFallback(
@@ -444,15 +447,15 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                                         Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:${ctx.packageName}"))
                                     )
                                 } else {
-                                    Toast.makeText(ctx, "此 Android 版本預設允許精確鬧鐘", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(ctx, resCtx.getString(R.string.perm_hub_s_f9724d), Toast.LENGTH_SHORT).show()
                                 }
                             }
                             HorizontalDivider()
                             PermissionRow(
-                                name = "忽略電池優化",
+                                name = stringResource(R.string.perm_hub_s_967952),
                                 granted = batteryIgnored,
-                                desc = "避免系統省電機制中斷背景通知監聽與定時簡報",
-                                actionLabel = if (batteryIgnored) "電池設定" else "加入白名單"
+                                desc = stringResource(R.string.perm_hub_s_79848c),
+                                actionLabel = if (batteryIgnored) stringResource(R.string.perm_hub_s_911344) else stringResource(R.string.common_add_whitelist)
                             ) {
                                 launchIntentWithAppDetailsFallback(
                                     ctx,
@@ -461,10 +464,10 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                             }
                             HorizontalDivider()
                             PermissionRow(
-                                name = "應用使用情況存取",
+                                name = stringResource(R.string.perm_hub_s_767546),
                                 granted = usageGranted,
-                                desc = "供 AI 助手查詢真實 App 使用時間／啟動次數與連結中心使用（選配）",
-                                actionLabel = if (usageGranted) "前往管理" else "前往開啟"
+                                desc = stringResource(R.string.perm_hub_s_5b4737),
+                                actionLabel = if (usageGranted) stringResource(R.string.perm_hub_s_d96d99) else stringResource(R.string.perm_hub_s_8d2b78)
                             ) {
                                 if (!com.phantom.checker.util.UsageStatsBridge.openUsageAccessSettings(ctx)) {
                                     launchIntentWithAppDetailsFallback(ctx, Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
@@ -483,9 +486,9 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Shizuku 進階保活權限", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                Text(stringResource(R.string.perm_hub_s_3af0f6), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                                 Text(
-                                    "Shizuku 授權與看門狗控制維持獨立保留在主設定頁的「Shizuku 強化保活」卡片中。",
+                                    stringResource(R.string.perm_hub_s_114952),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -497,7 +500,7 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                                     }
                                 )
                             }) {
-                                Text("前往 Shizuku")
+                                Text(stringResource(R.string.perm_hub_s_76e7f8))
                             }
                         }
                     }
@@ -517,6 +520,7 @@ private fun PermissionRow(
     actionLabel: String,
     onAction: () -> Unit
 ) {
+    val resCtx = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -524,7 +528,7 @@ private fun PermissionRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "$name · ${if (granted) "✅ 已授予" else "⚠️ 未授予"}",
+                text = stringResource(R.string.chat_s_c1aacd, name, if (granted) resCtx.getString(R.string.perm_hub_s_d95bf2) else resCtx.getString(R.string.linked_apps_s_3df23c)),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )

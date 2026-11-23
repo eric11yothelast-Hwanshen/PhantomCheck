@@ -75,6 +75,8 @@ import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * #339 連結應用程式中心：
@@ -115,12 +117,13 @@ private fun openSystemActionSafely(ctx: Context, intent: Intent, fallbackToAppDe
         } catch (_: Exception) {
         }
     }
-    Toast.makeText(ctx, "此裝置不支援直接開啟該設定頁", Toast.LENGTH_SHORT).show()
+    Toast.makeText(ctx, com.phantom.checker.PhantomApplication.str(R.string.linked_apps_open_settings_unsupported), Toast.LENGTH_SHORT).show()
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun LinkedAppsScreen(onBack: () -> Unit) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -178,7 +181,7 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
         modifier = Modifier.fillMaxSize()
     ) {
         com.phantom.checker.ui.components.PhantomPageScaffold(
-            title = "連結應用程式中心",
+            title = stringResource(R.string.catalog_linked_apps_center_title),
             onBack = onBack,
             topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
             containerColor = Color.Transparent
@@ -196,23 +199,23 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(
-                                "⏰ 鬧鐘與計時器（即用，免特殊權限）",
+                                stringResource(R.string.linked_apps_s_77d570),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                "AI 助手可提出設定鬧鐘／計時器行動卡，一律由您點擊確認後交由系統時鐘 App 執行。",
+                                stringResource(R.string.linked_apps_s_1db47c),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = {
                                     openSystemActionSafely(ctx, Intent(AlarmClock.ACTION_SHOW_ALARMS), fallbackToAppDetails = false)
-                                }) { Text("開啟系統鬧鐘") }
+                                }) { Text(stringResource(R.string.linked_apps_s_d9f78d)) }
                                 OutlinedButton(onClick = {
                                     openSystemActionSafely(ctx, Intent(AlarmClock.ACTION_SHOW_TIMERS), fallbackToAppDetails = false)
-                                }) { Text("開啟計時器") }
+                                }) { Text(stringResource(R.string.linked_apps_s_8cef6b)) }
                             }
                         }
                     }
@@ -222,29 +225,29 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                 phantomItem(1, key = "local_capabilities") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("本機系統能力狀態（返回即自動刷新）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(stringResource(R.string.linked_apps_s_04841f), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
 
-                            CapabilityRow("本機日曆（讀寫）", calGranted, "行程分流、空檔查詢與撞期偵測") {
+                            CapabilityRow(stringResource(R.string.linked_apps_s_995981), calGranted, stringResource(R.string.linked_apps_s_be9bc1)) {
                                 permLauncher.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))
                             }
                             HorizontalDivider()
-                            CapabilityRow("本機通訊錄", contactsGranted, "暱稱綁定、關係匯入與 VIP 信任圈（絕不外送 AI）") {
+                            CapabilityRow(stringResource(R.string.linked_apps_s_b5afaf), contactsGranted, stringResource(R.string.linked_apps_s_2e4f98)) {
                                 permLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS))
                             }
                             HorizontalDivider()
-                            CapabilityRow("通知存取（監聽服務）", notifListenerGranted, "核心通知攔截與風險分析") {
+                            CapabilityRow(stringResource(R.string.linked_apps_s_ca5156), notifListenerGranted, stringResource(R.string.linked_apps_s_248430)) {
                                 openNotificationListenerSettings(ctx)
                             }
                             HorizontalDivider()
-                            CapabilityRow("應用使用情況", usageGranted, "輔助判斷前景使用情境（選配）") {
+                            CapabilityRow(stringResource(R.string.linked_apps_s_c86362), usageGranted, stringResource(R.string.linked_apps_s_f22bed)) {
                                 openSystemActionSafely(ctx, Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                             }
                             HorizontalDivider()
-                            CapabilityRow("粗略位置（選配）", locationGranted, "僅於手動點擊定位城市時一次性反解地名文字") {
+                            CapabilityRow(stringResource(R.string.linked_apps_s_f9c441), locationGranted, stringResource(R.string.linked_apps_s_369920)) {
                                 permLauncher.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION))
                             }
                             HorizontalDivider()
-                            CapabilityRow("電池優化白名單", batteryIgnored, "降低背景排程與早晚簡報遭系統省電休眠") {
+                            CapabilityRow(stringResource(R.string.linked_apps_s_2b77be), batteryIgnored, stringResource(R.string.linked_apps_s_a3b27c)) {
                                 openSystemActionSafely(
                                     ctx,
                                     Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}"))
@@ -264,7 +267,7 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "🐙 GitHub 雲端擴充（BYOK 加密儲存）",
+                                    stringResource(R.string.linked_apps_s_c0adeb),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -279,14 +282,14 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                                 )
                             }
                             Text(
-                                "建議使用 Fine-grained PAT 且僅勾選 Actions(Read) 與 Pull requests(Read) 最小權限；金鑰僅存於本機 EncryptedSharedPreferences。",
+                                stringResource(R.string.linked_apps_s_9062cf),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             OutlinedTextField(
                                 value = githubPat,
                                 onValueChange = { githubPat = it },
-                                label = { Text("GitHub PAT（遮罩顯示）") },
+                                label = { Text(stringResource(R.string.linked_apps_s_9123ca)) },
                                 visualTransformation = PasswordVisualTransformation(),
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
@@ -294,7 +297,7 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                             OutlinedTextField(
                                 value = githubRepos,
                                 onValueChange = { githubRepos = it },
-                                label = { Text("監控倉庫（owner/repo，逗號分隔）") },
+                                label = { Text(stringResource(R.string.linked_apps_s_b9c238)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -307,7 +310,7 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                                             PhantomPrefs.setGitHubPollIntervalMinutes(appCtx, mins)
                                             CloudExtensionsClient.scheduleGitHubPolling(appCtx)
                                         },
-                                        label = { Text("每 ${mins} 分鐘") }
+                                        label = { Text(stringResource(R.string.assistant_hub_s_81c947, mins)) }
                                     )
                                 }
                             }
@@ -316,15 +319,15 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                                     EncryptedByokStore.setGitHubPat(appCtx, githubPat)
                                     EncryptedByokStore.setGitHubRepos(appCtx, githubRepos)
                                     CloudExtensionsClient.scheduleGitHubPolling(appCtx)
-                                    Toast.makeText(ctx, "已安全儲存 GitHub 設定", Toast.LENGTH_SHORT).show()
-                                }) { Text("儲存") }
+                                    Toast.makeText(ctx, resCtx.getString(R.string.linked_apps_s_6b2b56), Toast.LENGTH_SHORT).show()
+                                }) { Text(stringResource(R.string.common_save)) }
                                 OutlinedButton(onClick = {
                                     EncryptedByokStore.setGitHubPat(appCtx, githubPat)
                                     scope.launch {
                                         val (_, msg) = CloudExtensionsClient.testGitHubPat(appCtx)
                                         githubStatus = msg
                                     }
-                                }) { Text("測試連線") }
+                                }) { Text(stringResource(R.string.settings_s_48b807)) }
                             }
                             if (githubStatus.isNotBlank()) {
                                 Text(githubStatus, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -343,7 +346,7 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "💬 Discord Webhook（BYOK 加密儲存）",
+                                    stringResource(R.string.linked_apps_s_449a7f),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -357,14 +360,14 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                                 )
                             }
                             Text(
-                                "啟用後可將早晚簡報轉發至您指定的 Discord 頻道；Webhook URL 僅加密儲存於本機。",
+                                stringResource(R.string.linked_apps_s_67f81c),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             OutlinedTextField(
                                 value = discordWebhook,
                                 onValueChange = { discordWebhook = it },
-                                label = { Text("Discord Webhook URL（遮罩顯示）") },
+                                label = { Text(stringResource(R.string.linked_apps_s_8c33cc)) },
                                 visualTransformation = PasswordVisualTransformation(),
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
@@ -372,15 +375,15 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(onClick = {
                                     EncryptedByokStore.setDiscordWebhookUrl(appCtx, discordWebhook)
-                                    Toast.makeText(ctx, "已安全儲存 Discord Webhook", Toast.LENGTH_SHORT).show()
-                                }) { Text("儲存") }
+                                    Toast.makeText(ctx, resCtx.getString(R.string.linked_apps_s_f6f55b), Toast.LENGTH_SHORT).show()
+                                }) { Text(stringResource(R.string.common_save)) }
                                 OutlinedButton(onClick = {
                                     EncryptedByokStore.setDiscordWebhookUrl(appCtx, discordWebhook)
                                     scope.launch {
-                                        val (_, msg) = CloudExtensionsClient.sendDiscordMessage(appCtx, "幻訊測試推播：Discord Webhook 連線正常！")
+                                        val (_, msg) = CloudExtensionsClient.sendDiscordMessage(appCtx, resCtx.getString(R.string.linked_apps_s_037838))
                                         discordStatus = msg
                                     }
-                                }) { Text("測試推播") }
+                                }) { Text(stringResource(R.string.linked_apps_s_ca1c6d)) }
                             }
                             if (discordStatus.isNotBlank()) {
                                 Text(discordStatus, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -394,13 +397,13 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
-                                "📋 動作登錄檔（Action Registry）",
+                                stringResource(R.string.linked_apps_s_120204),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Text(
-                                "唯讀能力先上、寫入一律必經確認卡；未設 BYOK 顯示灰色待設定，輪詢異常靜默以黃色提示。AI 助手僅會呼叫下列已註冊能力。",
+                                stringResource(R.string.linked_apps_s_864221),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -409,7 +412,7 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                                 val isGray = st.availability == com.phantom.checker.util.LinkedAppActionRegistry.Availability.NEEDS_BYOK ||
                                     st.availability == com.phantom.checker.util.LinkedAppActionRegistry.Availability.NEEDS_PERMISSION
                                 val isWarn = st.availability == com.phantom.checker.util.LinkedAppActionRegistry.Availability.WARNING
-                                val rwBadge = if (act.isReadOnly) "唯讀" else "寫入(必確認)"
+                                val rwBadge = if (act.isReadOnly) resCtx.getString(R.string.linked_apps_s_8351a4) else resCtx.getString(R.string.linked_apps_s_736b95)
                                 HorizontalDivider()
                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(
@@ -461,6 +464,7 @@ private fun CapabilityRow(
     subtitle: String,
     onAction: () -> Unit
 ) {
+    val resCtx = LocalContext.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -468,7 +472,7 @@ private fun CapabilityRow(
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "$title · ${if (granted) "✅ 已授權" else "⚠️ 未授予"}",
+                text = stringResource(R.string.chat_s_c1aacd, title, if (granted) resCtx.getString(R.string.linked_apps_s_7c63f8) else resCtx.getString(R.string.linked_apps_s_3df23c)),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium
             )
@@ -479,7 +483,7 @@ private fun CapabilityRow(
             )
         }
         TextButton(onClick = onAction) {
-            Text(if (granted) "管理" else "前往授權")
+            Text(if (granted) stringResource(R.string.linked_apps_s_4989b5) else stringResource(R.string.settings_s_5df1b3))
         }
     }
 }

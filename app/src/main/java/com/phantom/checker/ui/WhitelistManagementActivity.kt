@@ -75,6 +75,8 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 class WhitelistManagementActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -97,7 +99,7 @@ fun WhitelistManagementScreen(onBack: () -> Unit) {
     val glassState = remember { HazeState() }
 
     com.phantom.checker.ui.components.PhantomPageScaffold(
-        title = "白名單管理",
+        title = stringResource(R.string.catalog_whitelist_management_title),
         onBack = onBack,
         topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
         containerColor = MaterialTheme.colorScheme.background,
@@ -139,6 +141,7 @@ private fun WhitelistManagementSection(
     modifier: Modifier = Modifier,
     onShowMessage: (String) -> Unit
 ) {
+    val resCtx = LocalContext.current
     val scope = rememberCoroutineScope()
     var rules by remember { mutableStateOf<List<AiRuleEntity>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -165,7 +168,7 @@ private fun WhitelistManagementSection(
                 rules = loaded
             } catch (e: Exception) {
                 Log.e("PhantomWhitelist", "reloadRules failed", e)
-                onShowMessage("讀取白名單失敗：${e.message ?: "未知錯誤"}")
+                onShowMessage(resCtx.getString(R.string.whitelist_s_f7b950, e.message ?: resCtx.getString(R.string.common_unknown_error)))
             } finally {
                 isLoading = false
             }
@@ -182,12 +185,12 @@ private fun WhitelistManagementSection(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "白名單管理（${rules.size} 筆）",
+                    text = stringResource(R.string.whitelist_s_55e1b5, rules.size),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "白名單內的寄件者或內容會跳過詐騙警示與情報查詢",
+                    text = stringResource(R.string.whitelist_s_1e4f1a),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -196,9 +199,9 @@ private fun WhitelistManagementSection(
                 onClick = { showAddForm = !showAddForm },
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                Icon(Icons.Default.Add, contentDescription = "新增白名單", modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.whitelist_s_c96b03), modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(if (showAddForm) "收起" else "新增")
+                Text(if (showAddForm) stringResource(R.string.chat_s_5d5815) else stringResource(R.string.common_add))
             }
         }
 
@@ -220,12 +223,12 @@ private fun WhitelistManagementSection(
                         FilterChip(
                             selected = addModeSender,
                             onClick = { addModeSender = true },
-                            label = { Text("寄件者白名單") }
+                            label = { Text(stringResource(R.string.whitelist_s_94ce69)) }
                         )
                         FilterChip(
                             selected = !addModeSender,
                             onClick = { addModeSender = false },
-                            label = { Text("內容規則白名單") }
+                            label = { Text(stringResource(R.string.whitelist_s_b7014a)) }
                         )
                     }
                     OutlinedTextField(
@@ -233,19 +236,19 @@ private fun WhitelistManagementSection(
                         onValueChange = { inputTarget = it },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        label = { Text(if (addModeSender) "寄件者名稱" else "白名單規則描述／關鍵字") },
-                        placeholder = { Text(if (addModeSender) "例如：電信公司、自己的銀行" else "例如：官方帳單通知不是詐騙") }
+                        label = { Text(if (addModeSender) stringResource(R.string.whitelist_s_4eb4b5) else stringResource(R.string.whitelist_s_fed0a9)) },
+                        placeholder = { Text(if (addModeSender) stringResource(R.string.whitelist_s_028582) else stringResource(R.string.whitelist_s_a9728a)) }
                     )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
                             selected = inputAllApps,
                             onClick = { inputAllApps = true },
-                            label = { Text("全部 App（全域）") }
+                            label = { Text(stringResource(R.string.whitelist_s_3d8628)) }
                         )
                         FilterChip(
                             selected = !inputAllApps,
                             onClick = { inputAllApps = false },
-                            label = { Text("指定 App") }
+                            label = { Text(stringResource(R.string.settings_s_cff87d)) }
                         )
                     }
                     if (!inputAllApps) {
@@ -254,8 +257,8 @@ private fun WhitelistManagementSection(
                             onValueChange = { inputPackage = it },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            label = { Text("來源 App Package 名稱") },
-                            placeholder = { Text("例如：jp.naver.line.android") }
+                            label = { Text(stringResource(R.string.settings_s_180245)) },
+                            placeholder = { Text(stringResource(R.string.whitelist_s_0eaddb)) }
                         )
                     }
                     val trimmedTarget = inputTarget.trim()
@@ -271,13 +274,13 @@ private fun WhitelistManagementSection(
                     val isEnabledDuplicate = matchingExisting != null && matchingExisting.isEnabled
                     if (isEnabledDuplicate) {
                         Text(
-                            text = "已存在相同的啟用白名單規則，請勿重複新增。",
+                            text = stringResource(R.string.whitelist_s_1f42ac),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error
                         )
                     } else if (matchingExisting != null && !matchingExisting.isEnabled) {
                         Text(
-                            text = "已存在相同但已停用的規則，確認後將直接重新啟用。",
+                            text = stringResource(R.string.whitelist_s_afb50c),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -316,16 +319,16 @@ private fun WhitelistManagementSection(
                                             reloadRules()
                                             onShowMessage("${upsertRes.message}：$trimmedTarget")
                                         } else {
-                                            onShowMessage("${upsertRes.message}，請重試。")
+                                            onShowMessage(resCtx.getString(R.string.whitelist_s_2c74a0, upsertRes.message))
                                         }
                                     } catch (e: Exception) {
                                         Log.e("PhantomWhitelist", "insert whitelist failed", e)
-                                        onShowMessage("新增白名單失敗：${e.message ?: "未知錯誤"}")
+                                        onShowMessage(resCtx.getString(R.string.whitelist_s_ebd2b5, e.message ?: resCtx.getString(R.string.common_unknown_error)))
                                     }
                                 }
                             }
                         ) {
-                            Text("確認新增")
+                            Text(stringResource(R.string.common_confirm_create))
                         }
                     }
                 }
@@ -351,9 +354,9 @@ private fun WhitelistManagementSection(
                         tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
                         modifier = Modifier.size(28.dp)
                     )
-                    Text("目前尚無白名單規則", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.whitelist_s_0dc7d6), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                     Text(
-                        "可點擊右上角「新增」，或在訊息詳情／AI 助手中將信任的寄件者加入白名單。",
+                        stringResource(R.string.whitelist_s_2eb320),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -371,7 +374,7 @@ private fun WhitelistManagementSection(
                 val isGroupExpanded = pkg in expandedGroups
                 val groupLabel = remember(pkg) {
                     if (pkg.isBlank()) {
-                        "全域規則（全部 App）"
+                        resCtx.getString(R.string.whitelist_s_56370c)
                     } else {
                         runCatching {
                             val pm = appCtx.packageManager
@@ -421,7 +424,7 @@ private fun WhitelistManagementSection(
                             )
                             PhantomChevron(
  expanded = isGroupExpanded,
-                                contentDescription = if (isGroupExpanded) "收合" else "展開"
+                                contentDescription = if (isGroupExpanded) resCtx.getString(R.string.settings_s_52c158) else resCtx.getString(R.string.settings_s_6ce777)
                             )
                         }
                         AnimatedVisibility(
@@ -436,7 +439,7 @@ private fun WhitelistManagementSection(
                                 groupRules.forEach { rule ->
                                     val isSenderMode = !rule.sender.isNullOrBlank()
                                     val displayTitle = rule.sender?.takeIf { it.isNotBlank() } ?: rule.ruleText
-                                    val modeBadge = if (isSenderMode) "寄件者白名單" else "內容規則"
+                                    val modeBadge = if (isSenderMode) resCtx.getString(R.string.whitelist_s_94ce69) else resCtx.getString(R.string.whitelist_s_ab2265)
                                     val timeStr = timeFmt.format(Date(rule.createdAt))
                                     Surface(
                                         shape = RoundedCornerShape(10.dp),
@@ -457,7 +460,7 @@ private fun WhitelistManagementSection(
                                                     overflow = TextOverflow.Ellipsis
                                                 )
                                                 Text(
-                                                    text = "$modeBadge · 建立於 $timeStr",
+                                                    text = resCtx.getString(R.string.whitelist_s_53458a, modeBadge, timeStr),
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -475,7 +478,7 @@ private fun WhitelistManagementSection(
                                                             rules = rules.map { if (it.id == rule.id) updated else it }
                                                         } catch (e: Exception) {
                                                             Log.e("PhantomWhitelist", "toggle whitelist failed id=${rule.id}", e)
-                                                            onShowMessage("更新狀態失敗：${e.message ?: "未知錯誤"}")
+                                                            onShowMessage(resCtx.getString(R.string.whitelist_s_3bcea4, e.message ?: resCtx.getString(R.string.common_unknown_error)))
                                                         }
                                                     }
                                                 }
@@ -483,7 +486,7 @@ private fun WhitelistManagementSection(
                                             IconButton(onClick = { deleteTarget = rule }) {
                                                 Icon(
                                                     imageVector = Icons.Default.Delete,
-                                                    contentDescription = "刪除白名單",
+                                                    contentDescription = resCtx.getString(R.string.whitelist_s_ad3473),
                                                     tint = MaterialTheme.colorScheme.error
                                                 )
                                             }
@@ -502,8 +505,8 @@ private fun WhitelistManagementSection(
         val titleDisp = target.sender?.takeIf { it.isNotBlank() } ?: target.ruleText
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
-            title = { Text("移出白名單") },
-            text = { Text("確定要刪除白名單規則「$titleDisp」嗎？刪除後將恢復正常詐騙風險檢查。") },
+            title = { Text(stringResource(R.string.whitelist_s_e13109)) },
+            text = { Text(stringResource(R.string.whitelist_s_1273d2, titleDisp)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -520,23 +523,23 @@ private fun WhitelistManagementSection(
                                 }
                                 if (deletedOk) {
                                     rules = rules.filterNot { it.id == toDelete.id }
-                                    onShowMessage("已移出白名單：$titleDisp")
+                                    onShowMessage(resCtx.getString(R.string.whitelist_s_e3955c, titleDisp))
                                 } else {
-                                    onShowMessage("刪除失敗，請重試。")
+                                    onShowMessage(resCtx.getString(R.string.whitelist_s_6b3212))
                                 }
                             } catch (e: Exception) {
                                 Log.e("PhantomWhitelist", "delete whitelist failed id=${toDelete.id}", e)
-                                onShowMessage("刪除失敗：${e.message ?: "未知錯誤"}")
+                                onShowMessage(resCtx.getString(R.string.whitelist_s_e635c2, e.message ?: resCtx.getString(R.string.common_unknown_error)))
                             }
                         }
                     }
                 ) {
-                    Text("刪除", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteTarget = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
