@@ -2,6 +2,40 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [3.8.0] - 2026-11-23
+
+- **Tag 對照**：[`v3.7.0...v3.8.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.7.0...v3.8.0)（`versionCode = 47`、`versionName = "3.8.0"`）
+- **發佈資產（雙 APK）**：
+  - `app-release.apk`：正式簽章＋R8 程式碼縮減與資源壓縮（`isMinifyEnabled = true`、`isShrinkResources = true`），供一般使用者安裝與原簽章覆蓋升級。
+  - `app-debug.apk`：除錯建置版本，供開發測試與排錯使用。
+
+### 新增與行為變更
+- **Health Connect 聊天健康匯總查詢注入與背景主動健康觀察提醒（#403 / PR #410，隱私行為變更）**：
+  - **隱私行為變更（聊天健康提問匯總注入）**：當使用者於 AI 助手對話主動詢問睡眠、步數、心率、疲勞或運動狀況，且「允許 AI 讀取健康摘要」開關為開啟時，`LocalDataConnector.buildHealthContext()` 會將近 7 日每日匯總數值（`DailyHealthPoint` 睡眠時數、步數、靜止心率及 7 日均值）與今日晨間快照（`MorningHealthSnapshot`）以 `<health_context>` 注入當次對話提示詞送往使用者自行設定的 AI 服務商；**僅傳送近 7 日匯總數值，原始生理採樣序列（raw samples）絕不出本機**（已同步載明於 `PRIVACY.md` 第二節第 2 點）。未安裝 Health Connect、未授予讀取權限或關閉開關時，AI 誠實告知未授權／未開啟並引導至設定，絕不捏造數據。
+  - **主動健康觀察提醒（`HealthObservationPolicy` 掛載於 `ProactiveMonitorWorker`）**：新增純本地查表規則（零 LLM token 消耗），包含連續 2 晚睡眠 `< 6` 小時（`sleep_2nights_under_6h`）、連續 3 日步數 `< 2000` 步（`steps_3days_under_2000`）、當日靜止心率高於 7 日均值 `>= 12 bpm`（`hr_elevated_12bpm`，需至少 4 日有效基線）；命中時透過 `ProactiveEngine.deliverProactiveMessage`（`NotifIds.HEALTH_PROACTIVE = 1014`）發送溫和關懷提醒，嚴守每條規則每日最多 1 次、每 7 日最多 2 次之頻率上限及勿擾時段與每日主動訊息總上限。
+  - **獨立開關**：「權限授予中心（`PermissionHubActivity`）」Health Connect 卡片與 `SettingsCatalog`（`health_ai_query_enabled`）新增「允許 AI 讀取健康摘要」開關（預設開啟；關閉後即停止聊天健康匯總注入與背景主動健康觀察提醒，不影響統計頁本機 7 日生理趨勢圖）。
+
+### 變更與修正
+- **修復本週 AI 摘要輸出截斷與統計頁全文展開（#402 / PR #410）**：
+  - `AiClient.summarizeWeekly()` 將 `maxTokens` 上限由 `1400`（Groq `1000`）提升至 `2400`（Groq `1600`，遇 HTTP 413 降級重試為 `1400`），強化系統提示詞要求每段與結尾必須以完整句號收尾；改用 `postChatCompletionDetailed` 檢查 `finishReason`（`length`／`max_tokens`）與句尾標點（`endsWithCompleteSentence`），若未完句自動發起一次續寫請求（`maxTokens = 1200`）並經 `mergeContinuationText` 與 `ensureCompleteSentenceEnding` 確保完整句收尾。
+  - 統計頁（`StatsTab`）本週 AI 摘要卡移除收合狀態下的 `.take(70)` 硬截斷，改為 `maxLines = 2`＋`TextOverflow.Ellipsis` 搭配「展開全文」按鈕，展開後完整顯示 Markdown 全文且手動生成完成後自動展開；`AiSummaryEntity.summary` 一律儲存未截斷全文。
+- **主動訊息投遞統一發送系統通知、深層連結直達與通知頻道健檢引導（#404 / PR #410）**：
+  - 盤點全庫 assistant-initiated 主動訊息寫入路徑，將早晚簡報（`ProactiveEngine.deliverBriefing`）統一收斂委派至 `deliverProactiveMessage`（早安簡報 `NotifIds.BRIEFING_MORNING = 1008`、晚安簡報 `NotifIds.BRIEFING_EVENING = 1009`），與主動行程／目標／健康提醒（`1010`／`1014`）、日曆洞察（`1020..1044`）、定時任務模板（`1050..1089`）及主動情報摘要（`1013`）全面共用去重、勿擾、寫入專屬主動訊息聊天室（`SESSION_PROACTIVE_BRIEFING`）、未讀紅點與系統通知發送紀律。
+  - 點擊任何主動提醒或早晚簡報系統通知（攜帶 `EXTRA_BRIEFING_MSG_ID`），`MainActivity` 與 `ChatAssistantTab` 直接切換並打開「AI 助手簡報與主動提醒」主動聊天室且自動清除未讀徽章。
+  - 新增 `ProactiveEngine.isBriefingChannelBlocked()` 檢查 `assistant_briefing` 通知頻道是否被設為 `IMPORTANCE_NONE`；若頻道被停用，於聊天室頂部顯示一次性引導卡（「前往開啟通知頻道」直達系統頻道設定／「知道了」持久化關閉）。
+- **修復設定頁 AI 語意搜尋「回傳格式無法解析」（#405 / PR #410）**：
+  - `AiClient.searchSettings()` 啟用 `response_format: {"type": "json_object"}`（若自架或第三方端點回傳 HTTP 400 則自動移除 `response_format` 無縫退回），強化提示詞明確規定回傳 `{"ids": [...]}`（查無相符時回傳 `{"ids": []}`）。
+  - 新增 `parseSettingsSearchIdsLenient()` 容錯解析鏈：依序剝除 Markdown code fence 與前後雜訊 → 括號平衡擷取首個 `{...}` 或 `[...]` 區段 → 寬鬆 schema 解析（相容 `ids`／`results`／`settings`／`items`、裸陣列與物件陣列 `id`／`key`／`settingId`）→ 已知 catalog ID token 掃描；首次解析失敗時自動以極簡嚴格提示詞重試一次，仍失敗才退回本地搜尋並提示，且明確區分「查無相符設定（`emptyList()`）」與「格式解析失敗（`null`）」，命中結果於搜尋框下方渲染可點擊直達清單並同步過濾設定卡片。
+- **設定頁本地關鍵字搜尋分詞評分、同義詞與口語別名補強（#406 / PR #410）**：
+  - `SettingsCatalog.searchByKeywords()` 新增口語虛詞去除（`STOP_WORDS`）、雙字元滑動切詞與 16 組高頻同義詞擴展（`SYNONYM_GROUPS`，涵蓋字體／字級／字太大、訊息卡／卡片／堆疊／密度／92dp、通知／推播／太吵、常用／最愛／置頂、深色／夜間／護眼、備份／換手機等），依 title（`+12`）、aliases（`+10`）、description（`+6`）加權計分排序，並 100% 保留單一關鍵字直覺子字串匹配行為。
+  - 為 `SettingsCatalog` 全部 136 個設定項目逐一補齊 3–5 個口語化 `aliases`，並於設定頁顯示可點擊的「🔍 找到 N 項相關設定（點選直達）」結果卡。
+- **根治主動訊息、早晚簡報、話題接續列與待辦膠囊半句截斷（#407 / PR #410）**：
+  - `AiClient.generateBriefingText()` 強化完整句收尾要求並檢查 `finishReason`（`length`／`max_tokens`）與 `endsWithCompleteSentence()`；若潤飾輸出被截斷或於句中中斷則回傳 `null`，自動退回完整的原始模板全文。
+  - 移除 `ProactiveEngine`（日曆摘要 `.take(260)`、待辦標題 `.take(20)`、空檔建議 `.take(160)`、`saveLastBriefingMeta` `.take(120)`）、`TaskTemplateEngine.runAggregation`（記事與待辦 `.take(28)`）與 `PhantomPrefs.saveChatContinuityAnchor`（`.take(80)` 放寬至 500 字）之顯示與儲存端硬截斷；聊天室頂部「↪ 接續：上次你提到…」膠囊、未決待辦膠囊與夥伴頁「最新早晚簡報」預覽卡皆支援點擊展開檢視完整全文。
+- **修復更新下載卡「下載中」不彈出安裝頁與安裝未知應用權限引導（#408 / PR #410）**：
+  - `PhantomPrefs` 與 `AppUpdateHelper` 新增 `downloadId`＋`targetVersion` 持久化（版本不符時自動清理舊紀錄與殘留 `.apk` 檔案）；除 `BroadcastReceiver` 外新增 `Dispatchers.IO` 協程每 600ms 輪詢 `DownloadManager.query()` 並綁定 `ON_RESUME` 重查，背景或關閉畫面期間下載完成後返回 App 即自動切換為「安裝更新（vX.Y.Z）」並觸發安裝流程。
+  - 下載失敗（`STATUS_FAILED`）或 APK 檔案損毀（`< 100 KB`）時顯示具體白話原因（網路中斷、空間不足、HTTP 錯誤等）並提供「重新下載」與「改用瀏覽器下載更新」備援按鈕；Android 8+ 若 `canRequestPackageInstalls()` 未授權，`installApk()` 回傳 `NEEDS_UNKNOWN_SOURCES_PERMISSION` 並於卡片內顯示一步引導鈕跳轉 `ACTION_MANAGE_UNKNOWN_APP_SOURCES`，授權返回後 `ON_RESUME` 自動續接彈出系統安裝器（完整保留 `#374` 稍後提醒 snooze 與 `#391` 更新說明捲動預覽）。
+
 ## [3.7.0] - 2026-11-23
 
 - **Tag 對照**：[`v3.6.0...v3.7.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.6.0...v3.7.0)（`versionCode = 46`、`versionName = "3.7.0"`）
