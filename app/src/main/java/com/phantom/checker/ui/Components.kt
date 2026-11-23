@@ -1659,21 +1659,10 @@ fun PhantomFullScreenSearchOverlay(
     filterRow: (@Composable () -> Unit)? = null,
     resultsContent: androidx.compose.foundation.lazy.LazyListScope.() -> Unit
 ) {
-    androidx.activity.compose.BackHandler(enabled = visible) {
-        onDismiss()
-    }
     androidx.compose.animation.AnimatedVisibility(
         visible = visible,
-        enter = androidx.compose.animation.fadeIn(
-            androidx.compose.animation.core.tween(220, easing = com.phantom.checker.ui.components.PhantomMotion.EmphasizedDecelerate)
-        ) + androidx.compose.animation.slideInVertically(
-            androidx.compose.animation.core.tween(240, easing = com.phantom.checker.ui.components.PhantomMotion.EmphasizedDecelerate)
-        ) { -it / 10 },
-        exit = androidx.compose.animation.fadeOut(
-            androidx.compose.animation.core.tween(150, easing = com.phantom.checker.ui.components.PhantomMotion.EmphasizedAccelerate)
-        ) + androidx.compose.animation.slideOutVertically(
-            androidx.compose.animation.core.tween(160, easing = com.phantom.checker.ui.components.PhantomMotion.EmphasizedAccelerate)
-        ) { -it / 10 }
+        enter = com.phantom.checker.ui.components.PhantomMotion.SearchOverlayEnter,
+        exit = com.phantom.checker.ui.components.PhantomMotion.SearchOverlayExit
     ) {
         val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
         LaunchedEffect(visible) {
@@ -1682,6 +1671,10 @@ fun PhantomFullScreenSearchOverlay(
                 runCatching { focusRequester.requestFocus() }
             }
         }
+        com.phantom.checker.ui.components.PhantomPredictiveBackContainer(
+            enabled = visible,
+            onBack = onDismiss
+        ) {
         Surface(
             color = MaterialTheme.colorScheme.background,
             modifier = Modifier.fillMaxSize()
@@ -1765,6 +1758,7 @@ fun PhantomFullScreenSearchOverlay(
                     content = resultsContent
                 )
             }
+        }
         }
     }
 }

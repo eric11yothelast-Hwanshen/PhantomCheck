@@ -2123,14 +2123,47 @@ private fun PhantomCheckApp(
                 SearchRiskFilter.STARRED -> searchResults.filter { it.isStarred }
             }
         }
-        PhantomFullScreenSearchOverlay(
+        val defaultSearchScope = when (selectedTab) {
+            MainTab.MESSAGES -> GlobalSearchScope.ALL
+            MainTab.NOTES -> GlobalSearchScope.NOTES
+            MainTab.MEMORY -> GlobalSearchScope.MEMORY
+            MainTab.INSIGHT -> GlobalSearchScope.ALL
+            MainTab.ASSISTANT -> GlobalSearchScope.ALL
+        }
+        PhantomGlobalSearchOverlay(
             visible = showSearchBar,
             query = searchQuery,
             onQueryChange = { searchQuery = it },
             onDismiss = { showSearchBar = false },
-            placeholder = "搜尋寄件人、App 或訊息內容…",
-            onAiSemanticSearch = {
-                val q = searchQuery.trim()
+            initialScope = defaultSearchScope,
+            glassState = glassState,
+            messageResults = overlayResults,
+            searchRiskFilter = searchRiskFilter,
+            onSearchRiskFilterChange = { searchRiskFilter = it },
+            activeFilterKeywords = activeFilterKeywords,
+            isLoadingMessages = isLoading,
+            onOpenMessageDetail = { messageId ->
+                ctx.startActivity(MessageDetailActivity.createIntent(ctx, messageId))
+            },
+            onOpenSettings = { settingId, legacyCardKey ->
+                ctx.startActivity(
+                    Intent(ctx, SettingsActivity::class.java).apply {
+                        if (!settingId.isNullOrBlank()) putExtra("highlight_setting_id", settingId)
+                        if (!legacyCardKey.isNullOrBlank()) putExtra("highlight_card_key", legacyCardKey)
+                    }
+                )
+            },
+            onOpenPermissionHub = {
+                ctx.startActivity(Intent(ctx, PermissionHubActivity::class.java))
+            },
+            onReplayTour = {
+                PhantomPrefs.setOnboardingCompleted(appCtx, false)
+                onboardingCompleted = false
+                onboardingStep = OnboardingStep.PERMISSION
+            },
+            onOpenMemoryTab = { selectedTab = MainTab.MEMORY },
+            onOpenNotesTab = { selectedTab = MainTab.NOTES },
+            onAiMessageSearch = { q ->
                 showSearchBar = false
                 selectedTab = MainTab.ASSISTANT
                 if (q.isNotEmpty()) {
@@ -2141,56 +2174,8 @@ private fun PhantomCheckApp(
                     }
                 }
             },
-            aiQuotaHint = "AI 語意搜尋（跳轉 AI 助手，消耗 1 次額度）",
-            filterRow = {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(SearchRiskFilter.entries, key = { it.name }) { filter ->
-                        FilterChip(
-                            selected = searchRiskFilter == filter,
-                            onClick = { searchRiskFilter = filter },
-                            label = { Text(filter.label) }
-                        )
-                    }
-                }
-            },
-            resultsContent = {
-                if (searchQuery.trim().isEmpty()) {
-                    item(key = "search_hint") {
-                        Text(
-                            text = "輸入關鍵字即時搜尋訊息，或使用上方 AI 語意搜尋。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(8.dp)
-                        )
-                    }
-                } else if (overlayResults.isEmpty()) {
-                    item(key = "search_empty") {
-                        Text(
-                            text = if (isLoading) "搜尋中…" else "找不到符合「${searchQuery.trim()}」的訊息。",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(8.dp)
-                        )
-                    }
-                } else {
-                    items(overlayResults, key = { it.id }) { msg ->
-                        MessageCard(
-                            message = msg,
-                            glassState = glassState,
-                            highlightAsScam = msg.riskLabel == "scam",
-                            highlightQuery = searchQuery.trim(),
-                            matchedKeywords = activeFilterKeywords.filter { kw ->
-                                msg.content.contains(kw, ignoreCase = true) || msg.sender.contains(kw, ignoreCase = true)
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    showSearchBar = false
-                                    ctx.startActivity(MessageDetailActivity.createIntent(ctx, msg.id))
-                                }
-                        )
-                    }
-                }
+            onShowSnackbar = { msg ->
+                scope.launch { snackbarHostState.showSnackbar(msg) }
             }
         )
 
