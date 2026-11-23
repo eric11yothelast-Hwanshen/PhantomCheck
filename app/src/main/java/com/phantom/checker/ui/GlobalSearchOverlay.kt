@@ -175,7 +175,7 @@ internal fun PhantomGlobalSearchOverlay(
     }
 
     val isAiConfigured = remember(visible, settingsBusVer) {
-        AiClient.getActiveProfile(appCtx) != null
+        AiClient.getProfileForPurpose(appCtx, com.phantom.checker.util.AiPurpose.SETTINGS_SEARCH) != null
     }
 
     fun runAiSettingsSearch() {

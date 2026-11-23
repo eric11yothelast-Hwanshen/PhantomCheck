@@ -147,7 +147,7 @@ object SettingsCatalog {
         SettingSearchItem("goal_tracking_enabled", "hub", "長程目標追蹤", "偵測習慣／目標訊號必經確認卡建立、自動拆解週期子待辦並支援只降不升頻率調整（無 API key 亦可手動建立）", listOf("目標", "長程目標", "習慣", "打卡", "goal", "養成習慣", "週期計畫", "進度追蹤"), page = "AssistantHubActivity"),
         SettingSearchItem("health_briefing_enabled", "hub", "Health Connect 生理節奏整合", "晨間簡報附查表式睡眠／步數／心率規則建議（增強不依賴、原始數值不出本機）", listOf("健康", "睡眠", "步數", "心率", "health connect", "生理", "早報健康建議", "穿戴數據", "睡多久"), page = "PermissionHubActivity"),
         SettingSearchItem("health_soft_invite_enabled", "hub", "Health Connect 軟性邀請", "未授權 Health Connect 時於晨間簡報每週最多一次顯示軟性連接邀請", listOf("穿戴", "手錶", "health", "軟邀請", "智慧手錶提醒", "健康連接邀請", "手環提示"), page = "PermissionHubActivity"),
-        SettingSearchItem("health_ai_query_enabled", "hub", "允許 AI 讀取健康摘要", "開啟時，聊天詢問睡眠／步數／心率僅注入近 7 日匯總數值，並啟用查表式主動健康觀察提醒（預設開啟）", listOf("健康摘要", "允許AI讀取健康", "睡眠", "步數", "心率", "health connect", "健康觀察", "運動", "卡路里", "問AI睡多久"), page = "PermissionHubActivity"),
+        SettingSearchItem("health_ai_query_enabled", "hub", "允許 AI 讀取健康摘要", "開啟時，聊天詢問睡眠／步數／心率／距離／熱量僅注入近 7 日匯總數值，並啟用查表式主動健康觀察提醒（預設開啟）", listOf("健康摘要", "允許AI讀取健康", "睡眠", "步數", "心率", "距離", "熱量", "health connect", "健康觀察", "運動", "卡路里", "問AI睡多久"), page = "PermissionHubActivity"),
         SettingSearchItem("decision_confirm_threshold", "hub", "雙門檻自動決策置信閾值", "調整 AI 自動判定高風險與降級確認卡的分數門檻（預設 60，範圍 40–85）", listOf("雙門檻", "決策", "閾值", "防詐門檻", "確認卡", "decision", "threshold", "幾分算詐騙", "風險分數線"), page = "AssistantHubActivity"),
         SettingSearchItem("ai_model_briefing", "ai", "簡報與畫像卡模型", "為早晚簡報與「我對你的瞭解」畫像卡指定獨立 AI 模型", listOf("簡報模型", "畫像卡模型", "briefing", "模型", "早晚報模型", "個人畫像模型"), page = "ApiKeySettingsActivity"),
         SettingSearchItem("ai_model_diary_annotation", "ai", "AI 回顧註記模型", "為夥伴頁每日回顧的 AI 註記指定模型，未綁定時自動沿用預設 profile", listOf("日記註記", "回顧註記", "diary", "每日回顧模型", "日記模型"), page = "ApiKeySettingsActivity"),
@@ -216,6 +216,8 @@ object SettingsCatalog {
         "health_briefing_enabled",
         "health_soft_invite_enabled",
         "health_ai_query_enabled",
+        "proactive_intel_enabled",
+        "proactive_extract_enabled",
         "update_auto_check"
     )
 
@@ -278,6 +280,8 @@ object SettingsCatalog {
             "health_briefing_enabled" -> PhantomPrefs.isHealthBriefingEnabled(appCtx)
             "health_soft_invite_enabled" -> PhantomPrefs.isHealthSoftInviteEnabled(appCtx)
             "health_ai_query_enabled" -> PhantomPrefs.isHealthAiQueryEnabled(appCtx)
+            "proactive_intel_enabled" -> PhantomPrefs.isProactiveIntelEnabled(appCtx)
+            "proactive_extract_enabled" -> PhantomPrefs.isProactiveExtractEnabled(appCtx)
             "update_auto_check" -> PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)
             else -> null
         }
@@ -377,6 +381,8 @@ object SettingsCatalog {
             "health_briefing_enabled" -> PhantomPrefs.setHealthBriefingEnabled(appCtx, enabled)
             "health_soft_invite_enabled" -> PhantomPrefs.setHealthSoftInviteEnabled(appCtx, enabled)
             "health_ai_query_enabled" -> PhantomPrefs.setHealthAiQueryEnabled(appCtx, enabled)
+            "proactive_intel_enabled" -> PhantomPrefs.setProactiveIntelEnabled(appCtx, enabled)
+            "proactive_extract_enabled" -> PhantomPrefs.setProactiveExtractEnabled(appCtx, enabled)
             "update_auto_check" -> PhantomPrefs.setUpdateAutoCheckEnabled(appCtx, enabled)
             else -> return null
         }
@@ -396,8 +402,9 @@ object SettingsCatalog {
         "控制", "管理", "選項", "相關", "有關", "想要", "一下", "的", "了", "嗎", "呢", "與", "和", "及"
     )
 
-    /** #406 同義詞群組：任一詞命中時自動展開同組別名參與比對 */
+    /** #406 / #423 同義詞群組：任一詞命中時自動展開同組別名參與比對 */
     private val SYNONYM_GROUPS: List<Set<String>> = listOf(
+        setOf("深色", "暗黑", "黑暗", "夜間模式", "深色主題", "淺色", "亮色", "主題", "dark", "light", "theme"),
         setOf("字體", "字級", "字大小", "文字大小", "字太大", "字太小", "縮放", "font"),
         setOf("訊息卡", "卡片", "堆疊", "滾輪", "卡片高度", "卡片太高", "排列", "密度", "間距", "92dp"),
         setOf("通知", "推播", "提醒", "警示", "通知欄", "狀態列"),
@@ -406,7 +413,7 @@ object SettingsCatalog {
         setOf("早上", "早間", "晨間", "早晨", "早報"),
         setOf("簡報", "早晚報", "個人簡報", "briefing"),
         setOf("太吵", "勿擾", "靜音", "半夜", "安靜", "節流"),
-        setOf("健康", "睡眠", "睡多久", "步數", "走路", "心率", "心跳", "運動", "卡路里", "生理", "health"),
+        setOf("健康", "睡眠", "睡多久", "步數", "走路", "心率", "心跳", "運動", "距離", "公里", "卡路里", "熱量", "體能", "健身", "鍛鍊", "生理", "health"),
         setOf("下載", "更新", "升級", "新版本", "安裝", "apk", "下載卡住"),
         setOf("郵件", "信箱", "email", "gmail", "信件"),
         setOf("氣泡", "對話框", "聊天框", "圓角", "寬度", "bubble"),
