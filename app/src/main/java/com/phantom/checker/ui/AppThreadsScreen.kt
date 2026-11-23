@@ -385,7 +385,7 @@ fun AppThreadsScreen(
         topBar = {
             if (isMultiSelectMode) {
                 TopAppBar(
-                    expandedHeight = 52.dp,
+                    expandedHeight = com.phantom.checker.ui.components.AuroraTokens.SmallTopBarHeight,
                     title = {
                         Text(
                             text = "已選 ${selectedConversationKeys.size}/$MAX_BATCH_SELECT 個對話",
@@ -431,7 +431,7 @@ fun AppThreadsScreen(
                 )
             } else {
                 TopAppBar(
-                    expandedHeight = 52.dp,
+                    expandedHeight = com.phantom.checker.ui.components.AuroraTokens.SmallTopBarHeight,
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             AppIconImage(

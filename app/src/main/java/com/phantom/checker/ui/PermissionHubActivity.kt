@@ -184,25 +184,20 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
         glassState = glassState,
         modifier = Modifier.fillMaxSize()
     ) {
-        Scaffold(
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.onBackground,
-            topBar = {
-                TopAppBar(
-                    title = { Text("權限授予中心", fontWeight = FontWeight.Bold) },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        titleContentColor = MaterialTheme.colorScheme.onBackground,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onBackground
-                    )
-                )
-            }
+        com.phantom.checker.ui.components.PhantomPageScaffold(
+            title = "權限授予中心",
+            onBack = onBack,
+            topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
+            containerColor = Color.Transparent
         ) { padding ->
+            val pendingPermCount = listOf(
+                postNotifGranted,
+                notifListenerGranted,
+                batteryIgnored,
+                exactAlarmGranted,
+                contactsGranted,
+                calendarReadGranted
+            ).count { !it }
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -211,6 +206,44 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                item(key = "perm_overview") {
+                    androidx.compose.material3.Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(
+                            com.phantom.checker.ui.components.AuroraTokens.CornerCard
+                        ),
+                        color = if (pendingPermCount > 0) {
+                            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
+                        } else {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                        }
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = if (pendingPermCount > 0) "$pendingPermCount 項待處理" else "全部核心權限已就緒",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (pendingPermCount > 0) {
+                                    MaterialTheme.colorScheme.onErrorContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                }
+                            )
+                            Text(
+                                text = if (pendingPermCount > 0) {
+                                    "請依下方狀態列逐項檢視與授權，以確保通知監聽與背景排程穩定運作。"
+                                } else {
+                                    "通知存取、背景保活與選用權限均運作正常。"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
                 // 1. 通知與通知存取（含 Android 13+ 側載受限設定四廠牌引導）
                 phantomItem(0, key = "perm_notifications") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {

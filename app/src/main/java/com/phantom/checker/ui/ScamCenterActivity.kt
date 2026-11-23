@@ -147,35 +147,18 @@ fun ScamCenterScreen(onBack: () -> Unit) {
         isLoading = false
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                expandedHeight = 52.dp,
-                title = {
-                    Text(
-                        text = "詐騙警示中心",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { refreshTrigger++ }) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "重新整理"
-                        )
-                    }
-                }
-            )
+    com.phantom.checker.ui.components.PhantomPageScaffold(
+        title = "詐騙警示中心",
+        onBack = onBack,
+        topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
+        containerColor = MaterialTheme.colorScheme.background,
+        actions = {
+            IconButton(onClick = { refreshTrigger++ }) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "重新整理"
+                )
+            }
         }
     ) { padding ->
         val glassState = remember { HazeState() }

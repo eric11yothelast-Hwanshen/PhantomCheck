@@ -177,24 +177,11 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
         glassState = glassState,
         modifier = Modifier.fillMaxSize()
     ) {
-        Scaffold(
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.onBackground,
-            topBar = {
-                TopAppBar(
-                    title = { Text("連結應用程式中心", fontWeight = FontWeight.Bold) },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        titleContentColor = MaterialTheme.colorScheme.onBackground,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onBackground
-                    )
-                )
-            }
+        com.phantom.checker.ui.components.PhantomPageScaffold(
+            title = "連結應用程式中心",
+            onBack = onBack,
+            topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
+            containerColor = Color.Transparent
         ) { padding ->
             LazyColumn(
                 modifier = Modifier

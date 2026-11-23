@@ -96,27 +96,11 @@ fun WhitelistManagementScreen(onBack: () -> Unit) {
     val snackbarHostState = remember { SnackbarHostState() }
     val glassState = remember { HazeState() }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                expandedHeight = 52.dp,
-                title = {
-                    Text(
-                        text = "白名單管理",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                }
-            )
-        },
+    com.phantom.checker.ui.components.PhantomPageScaffold(
+        title = "白名單管理",
+        onBack = onBack,
+        topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
+        containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
         PhantomBackgroundBox(

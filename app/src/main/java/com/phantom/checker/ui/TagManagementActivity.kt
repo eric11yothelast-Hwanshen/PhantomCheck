@@ -381,25 +381,11 @@ fun TagManagementScreen(onBack: () -> Unit) {
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                expandedHeight = 52.dp,
-                title = {
-                    Text(
-                        text = "標籤與 AI 規則管理",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                }
-            )
-        },
+    com.phantom.checker.ui.components.PhantomPageScaffold(
+        title = "標籤與 AI 規則管理",
+        onBack = onBack,
+        topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
+        containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {

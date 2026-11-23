@@ -193,33 +193,53 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
         glassState = glassState,
         modifier = Modifier.fillMaxSize()
     ) {
-        Scaffold(
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.onBackground,
-            topBar = {
-                TopAppBar(
-                    title = { Text("AI 夥伴與主動推播", fontWeight = FontWeight.Bold) },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
-                        titleContentColor = MaterialTheme.colorScheme.onBackground,
-                        navigationIconContentColor = MaterialTheme.colorScheme.onBackground
-                    )
-                )
-            }
+        val hubListState = androidx.compose.foundation.lazy.rememberLazyListState()
+        val hubScope = rememberCoroutineScope()
+        com.phantom.checker.ui.components.PhantomPageScaffold(
+            title = "AI 夥伴與主動推播",
+            onBack = onBack,
+            topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
+            containerColor = Color.Transparent
         ) { padding ->
-            LazyColumn(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .hazeSource(glassState),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                val anchors = remember {
+                    listOf(
+                        "簡報" to 0,
+                        "主動" to 1,
+                        "畫像" to 2,
+                        "外部搜尋" to 3,
+                        "通訊錄" to 4,
+                        "連結" to 5,
+                        "模板" to 6
+                    )
+                }
+                androidx.compose.foundation.lazy.LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(anchors.size) { idx ->
+                        val (label, targetIdx) = anchors[idx]
+                        androidx.compose.material3.AssistChip(
+                            onClick = { hubScope.launch { hubListState.animateScrollToItem(targetIdx) } },
+                            label = { Text(label, style = MaterialTheme.typography.labelMedium) }
+                        )
+                    }
+                }
+                LazyColumn(
+                    state = hubListState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .hazeSource(glassState),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                 // 1. 早晚個人簡報排程
                 phantomItem(0, key = "hub_briefing") {
                     PhantomGlassCard(glassState = glassState, cornerRadius = 18.dp, contentPadding = 14.dp) {
@@ -1106,6 +1126,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                 }
 
                 item { Spacer(Modifier.height(24.dp)) }
+            }
             }
         }
     }

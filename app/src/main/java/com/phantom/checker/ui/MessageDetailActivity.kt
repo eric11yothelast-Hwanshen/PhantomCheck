@@ -257,51 +257,37 @@ fun MessageDetailScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                expandedHeight = 52.dp,
-                title = {
-                    Text(
-                        text = "訊息詳情",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1
+    com.phantom.checker.ui.components.PhantomPageScaffold(
+        title = "訊息詳情",
+        onBack = onBack,
+        topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Small,
+        containerColor = MaterialTheme.colorScheme.background,
+        actions = {
+            message?.let { msg ->
+                IconButton(onClick = {
+                    val nextStar = !msg.isStarred
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            AppDatabaseHolder.db(appCtx).messageDao().setStarred(msg.id, nextStar)
+                        }
+                        message = msg.copy(isStarred = nextStar)
+                        snackbarHostState.showSnackbar(if (nextStar) "已加入星標" else "已移除星標")
+                    }
+                }) {
+                    Icon(
+                        imageVector = Icons.Default.Star,
+                        contentDescription = "星標",
+                        tint = if (msg.isStarred) Color(0xFFE6A100) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    message?.let { msg ->
-                        IconButton(onClick = {
-                            val nextStar = !msg.isStarred
-                            scope.launch {
-                                withContext(Dispatchers.IO) {
-                                    AppDatabaseHolder.db(appCtx).messageDao().setStarred(msg.id, nextStar)
-                                }
-                                message = msg.copy(isStarred = nextStar)
-                                snackbarHostState.showSnackbar(if (nextStar) "已加入星標" else "已移除星標")
-                            }
-                        }) {
-                            Icon(
-                                imageVector = Icons.Default.Star,
-                                contentDescription = "星標",
-                                tint = if (msg.isStarred) Color(0xFFE6A100) else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        IconButton(onClick = { showDeleteConfirm = true }) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "刪除",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
                 }
-            )
+                IconButton(onClick = { showDeleteConfirm = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "刪除",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
         },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->

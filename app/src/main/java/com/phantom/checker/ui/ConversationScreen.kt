@@ -634,7 +634,7 @@ fun ConversationScreen(
         topBar = {
             if (isMultiSelectMode) {
                 TopAppBar(
-                    expandedHeight = 52.dp,
+                    expandedHeight = com.phantom.checker.ui.components.AuroraTokens.SmallTopBarHeight,
                     title = {
                         Text(
                             text = "已選 ${selectedMessageIds.size}/$MAX_BATCH_SELECT 則",
@@ -680,7 +680,7 @@ fun ConversationScreen(
                 )
             } else {
                 TopAppBar(
-                    expandedHeight = 52.dp,
+                    expandedHeight = com.phantom.checker.ui.components.AuroraTokens.SmallTopBarHeight,
                     title = {
                         Column {
                             Text(

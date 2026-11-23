@@ -98,28 +98,11 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                expandedHeight = 52.dp,
-                title = {
-                    Text(
-                        text = "自動回覆設定",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回"
-                        )
-                    }
-                }
-            )
-        },
+    com.phantom.checker.ui.components.PhantomPageScaffold(
+        title = "自動回覆設定",
+        onBack = onBack,
+        topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Medium,
+        containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
     ) { padding ->
         val glassState = remember { HazeState() }
