@@ -66,6 +66,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 
 /**
  * Aurora II 設計語言版面常數（§2.1）。
@@ -158,7 +161,7 @@ fun PhantomPageScaffold(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     onBack: (() -> Unit)? = null,
-    backContentDescription: String = "返回",
+    backContentDescription: String = stringResource(R.string.common_back),
     topBarStyle: PhantomTopBarStyle = PhantomTopBarStyle.Medium,
     actions: @Composable RowScope.() -> Unit = {},
     floatingActionButton: @Composable () -> Unit = {},
@@ -326,6 +329,7 @@ fun PhantomSecondaryTabRow(
     modifier: Modifier = Modifier,
     badges: List<Int> = emptyList(),
 ) {
+    val resCtx = LocalContext.current
     if (tabs.isEmpty()) return
     val safeIndex = selectedIndex.coerceIn(0, tabs.lastIndex)
     val animatedIndex = remember { Animatable(safeIndex.toFloat()) }
@@ -374,7 +378,7 @@ fun PhantomSecondaryTabRow(
                         .clip(RoundedCornerShape(16.dp))
                         .semantics {
                             selected = isSelected
-                            contentDescription = if (badge > 0) "$label，$badge 項" else label
+                            contentDescription = if (badge > 0) resCtx.getString(R.string.scaffold_s_22f25f, label, badge) else label
                         }
                         .clickable(role = Role.Tab) { onSelect(index) }
                         .padding(horizontal = 8.dp, vertical = 8.dp),
@@ -487,7 +491,7 @@ fun PhantomInlineBanner(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "關閉提示",
+                        contentDescription = stringResource(R.string.common_dismiss_tip),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
                     )

@@ -108,6 +108,8 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 private const val MAX_BATCH_SELECT = 100
 private val TW_PHONE_REGEX = Regex("^09\\d{8}$")
@@ -161,7 +163,7 @@ class ConversationActivity : ComponentActivity() {
     }
 }
 
-private fun formatDateDivider(ts: Long): String {
+private fun formatDateDivider(context: android.content.Context, ts: Long): String {
     val msgCal = Calendar.getInstance().apply { timeInMillis = ts }
     val todayCal = Calendar.getInstance()
     val yesterdayCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
@@ -169,8 +171,8 @@ private fun formatDateDivider(ts: Long): String {
         a.get(Calendar.YEAR) == b.get(Calendar.YEAR) &&
             a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR)
     return when {
-        sameDay(msgCal, todayCal) -> "今天"
-        sameDay(msgCal, yesterdayCal) -> "昨天"
+        sameDay(msgCal, todayCal) -> context.getString(R.string.common_today_day)
+        sameDay(msgCal, yesterdayCal) -> context.getString(R.string.common_yesterday)
         else -> SimpleDateFormat("MM/dd", Locale.getDefault()).format(Date(ts))
     }
 }
@@ -184,6 +186,7 @@ fun ConversationScreen(
     displayTitle: String = conversationKey,
     onBack: () -> Unit
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -235,7 +238,7 @@ fun ConversationScreen(
             selectedMessageIds = selectedMessageIds - id
         } else if (selectedMessageIds.size >= MAX_BATCH_SELECT) {
             scope.launch {
-                snackbarHostState.showSnackbar("單次最多選取 $MAX_BATCH_SELECT 則訊息")
+                snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_73dad7, MAX_BATCH_SELECT))
             }
         } else {
             selectedMessageIds = selectedMessageIds + id
@@ -339,8 +342,8 @@ fun ConversationScreen(
     if (showClearConfirm) {
         AlertDialog(
             onDismissRequest = { showClearConfirm = false },
-            title = { Text("清除此對話") },
-            text = { Text("確定要永久刪除與「$displayTitle」的所有對話訊息嗎？") },
+            title = { Text(stringResource(R.string.conv_s_570a33)) },
+            text = { Text(stringResource(R.string.conv_s_15f7b4, displayTitle)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -359,12 +362,12 @@ fun ConversationScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認清除")
+                    Text(stringResource(R.string.common_confirm_clear))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearConfirm = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -373,8 +376,8 @@ fun ConversationScreen(
     deleteCandidate?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteCandidate = null },
-            title = { Text("刪除訊息") },
-            text = { Text("確定要永久刪除這則訊息嗎？") },
+            title = { Text(stringResource(R.string.common_delete_message)) },
+            text = { Text(stringResource(R.string.conv_s_ee4417)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -393,12 +396,12 @@ fun ConversationScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認刪除")
+                    Text(stringResource(R.string.common_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteCandidate = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -408,8 +411,8 @@ fun ConversationScreen(
         val count = selectedMessageIds.size
         AlertDialog(
             onDismissRequest = { showBatchDeleteConfirm = false },
-            title = { Text("批次刪除訊息") },
-            text = { Text("確定要永久刪除已選取的 $count 則訊息嗎？詐騙訊息將受保護保留，其餘刪除後無法復原。") },
+            title = { Text(stringResource(R.string.common_batch_delete_messages)) },
+            text = { Text(stringResource(R.string.conv_s_94d5a3, count)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -434,23 +437,23 @@ fun ConversationScreen(
                             refreshTrigger++
                             val msgText = when {
                                 deletedCount > 0 && protectedCount > 0 ->
-                                    "已刪除 $deletedCount 則訊息，另有 $protectedCount 則詐騙訊息受保護保留"
+                                    resCtx.getString(R.string.threads_s_8b7bd6, deletedCount, protectedCount)
                                 deletedCount == 0 && protectedCount > 0 ->
-                                    "所選 $protectedCount 則皆為詐騙訊息，已受保護保留"
+                                    resCtx.getString(R.string.conv_s_6703f2, protectedCount)
                                 else ->
-                                    "已刪除 $deletedCount 則訊息"
+                                    resCtx.getString(R.string.main_s_330b12, deletedCount)
                             }
                             snackbarHostState.showSnackbar(msgText)
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認刪除")
+                    Text(stringResource(R.string.common_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showBatchDeleteConfirm = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -474,7 +477,7 @@ fun ConversationScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "訊息操作",
+                    text = resCtx.getString(R.string.common_message_actions),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -491,12 +494,12 @@ fun ConversationScreen(
                                 }
                                 sheetMessage = null
                                 refreshTrigger++
-                                snackbarHostState.showSnackbar(if (nextStar) "已加入星標" else "已移除星標")
+                                snackbarHostState.showSnackbar(if (nextStar) resCtx.getString(R.string.common_starred_added) else resCtx.getString(R.string.common_starred_removed))
                             }
                         },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text(if (msg.isStarred) "取消星標" else "加入星標")
+                        Text(if (msg.isStarred) resCtx.getString(R.string.common_remove_star) else resCtx.getString(R.string.common_add_star))
                     }
                     OutlinedButton(
                         onClick = {
@@ -522,21 +525,21 @@ fun ConversationScreen(
                                     }
                                     sheetMessage = null
                                     refreshTrigger++
-                                    snackbarHostState.showSnackbar("AI 分析完成：${res.second} (${res.first}分)")
+                                    snackbarHostState.showSnackbar(resCtx.getString(R.string.conv_s_792af0, res.second, res.first))
                                 } else {
-                                    snackbarHostState.showSnackbar("AI 分析失敗，請確認 API 設定")
+                                    snackbarHostState.showSnackbar(resCtx.getString(R.string.common_ai_analyze_failed))
                                 }
                             }
                         },
                         enabled = !isAnalyzing,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text(if (isAnalyzing) "分析中…" else "AI 分析")
+                        Text(if (isAnalyzing) resCtx.getString(R.string.common_analyzing) else resCtx.getString(R.string.common_ai_analyze))
                     }
                 }
 
                 if (allTags.isNotEmpty()) {
-                    Text("標籤", style = MaterialTheme.typography.labelMedium)
+                    Text(resCtx.getString(R.string.common_tags), style = MaterialTheme.typography.labelMedium)
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -579,7 +582,7 @@ fun ConversationScreen(
                         },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("稍後處理")
+                        Text(resCtx.getString(R.string.common_remind_later))
                     }
                     OutlinedButton(
                         onClick = {
@@ -588,7 +591,7 @@ fun ConversationScreen(
                         },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("詳情")
+                        Text(resCtx.getString(R.string.common_detail))
                     }
                     Button(
                         onClick = {
@@ -598,7 +601,7 @@ fun ConversationScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("刪除")
+                        Text(resCtx.getString(R.string.common_delete))
                     }
                 }
                 Spacer(Modifier.height(12.dp))
@@ -619,7 +622,7 @@ fun ConversationScreen(
                     com.phantom.checker.service.ReminderScheduler.schedule(appCtx, target.id, ts)
                     refreshTrigger++
                     val formatted = PhantomPrefs.formatMessageTime(appCtx, ts, includeDate = true)
-                    snackbarHostState.showSnackbar("已排程提醒：$formatted")
+                    snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_ed678a, formatted))
                 }
             }
         )
@@ -637,7 +640,7 @@ fun ConversationScreen(
                     expandedHeight = com.phantom.checker.ui.components.AuroraTokens.SmallTopBarHeight,
                     title = {
                         Text(
-                            text = "已選 ${selectedMessageIds.size}/$MAX_BATCH_SELECT 則",
+                            text = stringResource(R.string.messages_s_9ae592, selectedMessageIds.size, MAX_BATCH_SELECT),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -649,7 +652,7 @@ fun ConversationScreen(
                         }) {
                             Icon(
                                 imageVector = Icons.Default.Close,
-                                contentDescription = "取消選取"
+                                contentDescription = stringResource(R.string.common_deselect)
                             )
                         }
                     },
@@ -666,15 +669,15 @@ fun ConversationScreen(
                                 selectedMessageIds = targetIds
                                 scope.launch {
                                     val msg = if (loadedIds.size > MAX_BATCH_SELECT) {
-                                        "已載入 ${loadedIds.size} 則，單次最多選取 $MAX_BATCH_SELECT 則（已選 ${targetIds.size} 則）"
+                                        resCtx.getString(R.string.conv_s_941ad3, loadedIds.size, MAX_BATCH_SELECT, targetIds.size)
                                     } else {
-                                        "已全選目前載入的 ${targetIds.size} 則訊息"
+                                        resCtx.getString(R.string.conv_s_3b71ce, targetIds.size)
                                     }
                                     snackbarHostState.showSnackbar(msg)
                                 }
                             }
                         ) {
-                            Text("全選")
+                            Text(stringResource(R.string.common_select_all))
                         }
                     }
                 )
@@ -703,7 +706,7 @@ fun ConversationScreen(
                         IconButton(onClick = onBack) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回"
+                                contentDescription = stringResource(R.string.common_back)
                             )
                         }
                     },
@@ -713,12 +716,12 @@ fun ConversationScreen(
                                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                 ctx.startActivity(launchIntent)
                             }) {
-                                Text("開啟原 App")
+                                Text(stringResource(R.string.common_open_original_app))
                             }
                         }
                         Box {
                             IconButton(onClick = { showMenu = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "更多操作")
+                                Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.common_more_actions))
                             }
                             DropdownMenu(
                                 expanded = showMenu,
@@ -726,7 +729,7 @@ fun ConversationScreen(
                             ) {
                                 if (messages.isNotEmpty()) {
                                     DropdownMenuItem(
-                                        text = { Text("批次選取") },
+                                        text = { Text(stringResource(R.string.common_batch_select)) },
                                         onClick = {
                                             showMenu = false
                                             revealedMessageId = null
@@ -736,7 +739,7 @@ fun ConversationScreen(
                                     )
                                 }
                                 DropdownMenuItem(
-                                    text = { Text("清除此對話", color = MaterialTheme.colorScheme.error) },
+                                    text = { Text(stringResource(R.string.conv_s_570a33), color = MaterialTheme.colorScheme.error) },
                                     onClick = {
                                         showMenu = false
                                         showClearConfirm = true
@@ -774,10 +777,10 @@ fun ConversationScreen(
                                     isMultiSelectMode = false
                                     selectedMessageIds = emptySet()
                                     refreshTrigger++
-                                    snackbarHostState.showSnackbar("已標記 ${ids.size} 則為已讀")
+                                    snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_9ebfdd, ids.size))
                                 }
                             }
-                        ) { Text("已讀") }
+                        ) { Text(stringResource(R.string.common_read)) }
                         TextButton(
                             enabled = selectedMessageIds.isNotEmpty(),
                             onClick = {
@@ -789,20 +792,20 @@ fun ConversationScreen(
                                     isMultiSelectMode = false
                                     selectedMessageIds = emptySet()
                                     refreshTrigger++
-                                    snackbarHostState.showSnackbar("已將 ${ids.size} 則加入星標")
+                                    snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_2a496c, ids.size))
                                 }
                             }
-                        ) { Text("星標") }
+                        ) { Text(stringResource(R.string.common_star)) }
                         TextButton(
                             enabled = selectedMessageIds.isNotEmpty(),
                             onClick = { showBatchDeleteConfirm = true }
-                        ) { Text("刪除", color = MaterialTheme.colorScheme.error) }
+                        ) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }
                         TextButton(
                             onClick = {
                                 isMultiSelectMode = false
                                 selectedMessageIds = emptySet()
                             }
-                        ) { Text("取消") }
+                        ) { Text(stringResource(R.string.common_cancel)) }
                     }
                 }
             } else {
@@ -825,7 +828,7 @@ fun ConversationScreen(
                             value = replyText,
                             onValueChange = { replyText = it },
                             modifier = Modifier.weight(1f),
-                            placeholder = { Text("回覆 $displayTitle…") },
+                            placeholder = { Text(stringResource(R.string.conv_s_5c8ecf, displayTitle)) },
                             maxLines = 3,
                             enabled = !isSendingReply,
                             shape = RoundedCornerShape(22.dp)
@@ -882,7 +885,7 @@ fun ConversationScreen(
                                                 scrollToBottomPending = true
                                                 refreshTrigger++
                                                 replyText = ""
-                                                snackbarHostState.showSnackbar("已送出")
+                                                snackbarHostState.showSnackbar(resCtx.getString(R.string.common_sent))
                                             }
                                             is NotificationCollectorService.Companion.ReplySendResult.Unavailable -> {
                                                 val isSmsFallback = packageName == "sms" ||
@@ -938,10 +941,10 @@ fun ConversationScreen(
                                                         scrollToBottomPending = true
                                                         refreshTrigger++
                                                         replyText = ""
-                                                        snackbarHostState.showSnackbar("已透過簡訊送出")
+                                                        snackbarHostState.showSnackbar(resCtx.getString(R.string.conv_s_a2a8fd))
                                                     } catch (e: Exception) {
                                                         Log.e("PhantomReply", "ConversationScreen SMS fallback failed pkg=$packageName phone=$phone", e)
-                                                        snackbarHostState.showSnackbar("無法送出簡訊：${e.message ?: "發送失敗"}，建議開啟原 App 回覆")
+                                                        snackbarHostState.showSnackbar(resCtx.getString(R.string.conv_s_e8fa55, e.message ?: resCtx.getString(R.string.conv_s_0b3b9c)))
                                                     }
                                                 } else {
                                                     Log.w("PhantomReply", "ConversationScreen reply unavailable pkg=$packageName reason=${res.reason}")
@@ -951,7 +954,7 @@ fun ConversationScreen(
                                         }
                                     } catch (e: Exception) {
                                         Log.e("PhantomReply", "ConversationScreen reply failed pkg=$packageName convKey=$conversationKey", e)
-                                        snackbarHostState.showSnackbar("回覆失敗：${e.message ?: "未知錯誤"}，建議開啟原 App 回覆")
+                                        snackbarHostState.showSnackbar(resCtx.getString(R.string.conv_s_9bf0e1, e.message ?: resCtx.getString(R.string.common_unknown_error)))
                                     } finally {
                                         isSendingReply = false
                                     }
@@ -966,7 +969,7 @@ fun ConversationScreen(
                             } else {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "送出回覆"
+                                    contentDescription = stringResource(R.string.conv_s_53fe74)
                                 )
                             }
                         }
@@ -990,7 +993,7 @@ fun ConversationScreen(
             PhantomSearchBarPill(
                 glassState = glassState,
                 query = convSearchQuery,
-                placeholder = "搜尋此對話訊息…",
+                placeholder = stringResource(R.string.conv_s_059685),
                 onClick = { showConvSearch = true }
             )
             Spacer(Modifier.height(8.dp))
@@ -1009,7 +1012,7 @@ fun ConversationScreen(
                     contentPadding = 10.dp
                 ) {
                     Text(
-                        text = "此對話共 ${messages.size} 則・活躍 $activeDays 天・安全 $safeCnt・疑似 $suspCnt・詐騙 $scamCnt",
+                        text = stringResource(R.string.conv_s_3d970b, messages.size, activeDays, safeCnt, suspCnt, scamCnt),
                         style = MaterialTheme.typography.labelMedium,
                         color = if (scamCnt > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1026,15 +1029,15 @@ fun ConversationScreen(
                 messages.isEmpty() -> {
                     EmptyStateView(
                         icon = Icons.Default.Email,
-                        title = "尚無對話訊息",
-                        description = "與 $displayTitle 的通知訊息將顯示於此處。"
+                        title = stringResource(R.string.conv_s_48a893),
+                        description = stringResource(R.string.conv_s_05e678, displayTitle)
                     )
                 }
                 else -> {
                     val dateHeaders = remember(messages) {
                         var lastDay: String? = null
                         messages.map { msg ->
-                            val day = formatDateDivider(msg.timestamp)
+                            val day = formatDateDivider(resCtx, msg.timestamp)
                             val show = day != lastDay
                             lastDay = day
                             if (show) day else null
@@ -1109,7 +1112,7 @@ fun ConversationScreen(
                                             ),
                                             shape = RoundedCornerShape(12.dp)
                                         ) {
-                                            Text("刪除")
+                                            Text(stringResource(R.string.common_delete))
                                         }
                                     }
                                 ) {
@@ -1138,12 +1141,12 @@ fun ConversationScreen(
         query = convSearchQuery,
         onQueryChange = { convSearchQuery = it },
         onDismiss = { showConvSearch = false },
-        placeholder = "搜尋與 $displayTitle 的對話內容…",
+        placeholder = stringResource(R.string.conv_s_8f4a05, displayTitle),
         resultsContent = {
             if (cq.isEmpty()) {
                 item(key = "conv_search_hint") {
                     Text(
-                        text = "輸入關鍵字搜尋此對話中的所有訊息。",
+                        text = stringResource(R.string.conv_s_129dd6),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(8.dp)
@@ -1152,7 +1155,7 @@ fun ConversationScreen(
             } else if (matchedConvMsgs.isEmpty()) {
                 item(key = "conv_search_empty") {
                     Text(
-                        text = "找不到符合「$cq」的訊息。",
+                        text = stringResource(R.string.search_s_3df885, cq),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(8.dp)
@@ -1193,6 +1196,7 @@ private fun ChatBubbleItem(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val isCompact = PhantomPrefs.getCardDensity(ctx) == com.phantom.checker.util.CardDensity.COMPACT
     val is24h = PhantomPrefs.is24HourFormat(ctx)
@@ -1293,12 +1297,12 @@ private fun ChatBubbleItem(
                         } else {
                             val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                             cm.setPrimaryClip(android.content.ClipData.newPlainText("otp_code", otpCode))
-                            android.widget.Toast.makeText(ctx, "已複製驗證碼 $otpCode", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(ctx, resCtx.getString(R.string.common_s_8b8320, otpCode), android.widget.Toast.LENGTH_SHORT).show()
                         }
                     }
                 ) {
                     Text(
-                        text = "複製驗證碼 $otpCode",
+                        text = stringResource(R.string.common_s_f1f3ce, otpCode),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         fontWeight = FontWeight.SemiBold,
@@ -1318,7 +1322,7 @@ private fun ChatBubbleItem(
                 )
                 if (!isOwn && message.remindAt != null && message.remindAt > System.currentTimeMillis()) {
                     Text(
-                        text = "⏰ 待辦",
+                        text = stringResource(R.string.conv_s_a8fc11),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Medium
@@ -1327,7 +1331,7 @@ private fun ChatBubbleItem(
                 if (message.isStarred) {
                     Icon(
                         imageVector = Icons.Default.Star,
-                        contentDescription = "星標",
+                        contentDescription = stringResource(R.string.common_star),
                         tint = Color(0xFFE6A100),
                         modifier = Modifier.size(12.dp)
                     )

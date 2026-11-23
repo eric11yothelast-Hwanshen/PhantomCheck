@@ -40,6 +40,8 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import com.phantom.checker.R
+import androidx.compose.ui.platform.LocalContext
 
 /**
  * 流體切換開關（FluidSwitch，#398 Aurora 版）：
@@ -56,6 +58,7 @@ fun FluidSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
+    val resCtx = LocalContext.current
     val trackWidth = 56.dp
     val trackHeight = 32.dp
     val thumbSize = 24.dp
@@ -141,7 +144,7 @@ fun FluidSwitch(
             .semantics {
                 role = Role.Switch
                 toggleableState = ToggleableState(checked)
-                stateDescription = if (checked) "開啟" else "關閉"
+                stateDescription = if (checked) resCtx.getString(R.string.common_on) else resCtx.getString(R.string.common_close)
             }
             .pointerInput(checked, enabled) {
                 if (!enabled) return@pointerInput

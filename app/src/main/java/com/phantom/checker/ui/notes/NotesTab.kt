@@ -209,6 +209,9 @@ import java.util.Locale
 
 import com.phantom.checker.ui.*
 import com.phantom.checker.ui.todo.*
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
+import androidx.annotation.StringRes
 
 private val TuneIcon: ImageVector by lazy {
     ImageVector.Builder(
@@ -368,7 +371,7 @@ internal fun NoteCardItem(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Star,
-                                    contentDescription = if (note.pinned) "取消置頂" else "置頂",
+                                    contentDescription = if (note.pinned) stringResource(R.string.common_unpin) else stringResource(R.string.common_pin),
                                     tint = if (note.pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -379,7 +382,7 @@ internal fun NoteCardItem(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Edit,
-                                    contentDescription = "編輯",
+                                    contentDescription = stringResource(R.string.common_edit),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -390,7 +393,7 @@ internal fun NoteCardItem(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,
-                                    contentDescription = "刪除",
+                                    contentDescription = stringResource(R.string.common_delete),
                                     tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -416,7 +419,7 @@ internal fun NoteCardItem(
                                 shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
-                                    text = "置頂",
+                                    text = stringResource(R.string.common_pin),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -429,7 +432,7 @@ internal fun NoteCardItem(
                                 shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
-                                    text = "自動",
+                                    text = stringResource(R.string.common_auto),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -452,7 +455,7 @@ internal fun NoteCardItem(
                                 shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
-                                    text = "記事",
+                                    text = stringResource(R.string.common_notes),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -488,7 +491,7 @@ internal fun NoteCardItem(
                                 shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
-                                    text = "置頂",
+                                    text = stringResource(R.string.common_pin),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -501,7 +504,7 @@ internal fun NoteCardItem(
                                 shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
-                                    text = "自動",
+                                    text = stringResource(R.string.common_auto),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -541,14 +544,14 @@ internal fun NoteCardItem(
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     TextButton(onClick = { onTogglePin(note) }) {
-                        Text(if (note.pinned) "取消置頂" else "置頂")
+                        Text(if (note.pinned) stringResource(R.string.common_unpin) else stringResource(R.string.common_pin))
                     }
                     Row {
                         TextButton(onClick = { onEdit(note) }) {
-                            Text("編輯")
+                            Text(stringResource(R.string.common_edit))
                         }
                         TextButton(onClick = { onDelete(note) }) {
-                            Text("刪除", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -567,6 +570,7 @@ internal fun NotesTab(
     onShowMessage: (String) -> Unit,
     onReportBounds: (String, Rect) -> Unit = { _, _ -> }
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -646,7 +650,7 @@ internal fun NotesTab(
                         }
                     }
                     com.phantom.checker.widget.ReminderWidgetProvider.updateAllIfChanged(appCtx)
-                    onShowMessage(if (target == null) "已新增待辦事項" else "已更新待辦事項")
+                    onShowMessage(if (target == null) resCtx.getString(R.string.notes_s_3398e6) else resCtx.getString(R.string.notes_s_81fe81))
                 }
             }
         )
@@ -687,7 +691,7 @@ internal fun NotesTab(
                         }
                         com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx)
                     }
-                    onShowMessage(if (target == null) "已新增記事" else "已更新記事")
+                    onShowMessage(if (target == null) resCtx.getString(R.string.notes_s_61d3ff) else resCtx.getString(R.string.notes_s_e7e844))
                 }
             }
         )
@@ -722,7 +726,7 @@ internal fun NotesTab(
                 db.todoDao().deleteById(t.id)
             }
             com.phantom.checker.widget.ReminderWidgetProvider.updateAllIfChanged(appCtx)
-            onShowMessage("已刪除待辦事項")
+            onShowMessage(resCtx.getString(R.string.notes_s_f2302c))
         }
     }
     val onCompleteTodo: (TodoEntity, Boolean) -> Unit = { t, checked ->
@@ -739,9 +743,9 @@ internal fun NotesTab(
                 false
             }
             if (goalAdvanced) {
-                onShowMessage("已完成目標子待辦，並已自動排程下一期提醒")
+                onShowMessage(resCtx.getString(R.string.notes_s_dd002c))
             } else if (spawned != null) {
-                onShowMessage("已完成並自動建立下一次重複待辦")
+                onShowMessage(resCtx.getString(R.string.notes_s_44a2ba))
             }
         }
     }
@@ -756,7 +760,7 @@ internal fun NotesTab(
                 db.noteDao().deleteById(n.id)
                 com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx)
             }
-            onShowMessage("已刪除記事")
+            onShowMessage(resCtx.getString(R.string.notes_s_2e6982))
         }
     }
     val onTogglePinNote: (NoteEntity) -> Unit = { n ->
@@ -806,7 +810,7 @@ internal fun NotesTab(
                 PhantomSearchBarPill(
                     glassState = glassState,
                     query = notesSearchQuery,
-                    placeholder = "搜尋待辦或備忘錄…",
+                    placeholder = stringResource(R.string.notes_s_93d32e),
                     onClick = { showNotesSearch = true }
                 )
                 Spacer(modifier = Modifier.weight(1f))
@@ -821,7 +825,7 @@ internal fun NotesTab(
                     ) {
                         Icon(
                             imageVector = TuneIcon,
-                            contentDescription = "自動記事規則",
+                            contentDescription = stringResource(R.string.notes_s_d62f26),
                             tint = if (showMemoRulesPanel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -883,13 +887,13 @@ internal fun NotesTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "待辦事項（$pendingCount 未完成" +
-                                (if (overdueCount > 0) " · $overdueCount 逾期" else "") + "）",
+                            text = stringResource(R.string.notes_s_6ba2d9, pendingCount) +
+                                (if (overdueCount > 0) stringResource(R.string.notes_s_93a0a6, overdueCount) else "") + "）",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "與 AI 助手及桌面小工具同步",
+                            text = stringResource(R.string.notes_s_5dead1),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -905,7 +909,7 @@ internal fun NotesTab(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
-                            contentDescription = "新增待辦事項",
+                            contentDescription = stringResource(R.string.notes_s_75ab7d),
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
@@ -917,7 +921,7 @@ internal fun NotesTab(
                     ) {
                         PhantomChevron(
                             expanded = !todoSectionCollapsed.value,
-                            contentDescription = if (todoSectionCollapsed.value) "展開待辦事項" else "收起待辦事項",
+                            contentDescription = if (todoSectionCollapsed.value) stringResource(R.string.notes_s_4e2eaf) else stringResource(R.string.notes_s_7ca4b5),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -960,9 +964,9 @@ internal fun NotesTab(
                             if (filteredTodos.isEmpty()) {
                                 Text(
                                     text = if (todos.isEmpty()) {
-                                        "尚無待辦事項（點右上角 + 手動新增，或在 AI 助手對話中建立）"
+                                        stringResource(R.string.notes_s_648477)
                                     } else {
-                                        "此篩選條件下無待辦事項"
+                                        stringResource(R.string.notes_s_df6772)
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1018,12 +1022,12 @@ internal fun NotesTab(
                             onOpenMessageDetail = onOpenMessageDetail
                         )
                         pendingCount == 0 && todos.isNotEmpty() -> Text(
-                            text = "所有待辦事項皆已完成",
+                            text = stringResource(R.string.notes_s_a3763f),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         else -> Text(
-                            text = "尚無待辦事項（點上方 + 新增）",
+                            text = stringResource(R.string.notes_s_6cb679),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1040,7 +1044,7 @@ internal fun NotesTab(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "記事／備忘錄（${notes.size}）",
+                    text = stringResource(R.string.notes_s_224fb0, notes.size),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -1051,7 +1055,7 @@ internal fun NotesTab(
                     },
                     modifier = Modifier.pressableScale()
                 ) {
-                    Text("新增記事")
+                    Text(stringResource(R.string.notes_s_7dff4f))
                 }
             }
 
@@ -1063,8 +1067,8 @@ internal fun NotesTab(
                 if (notes.isEmpty()) {
                     EmptyStateView(
                         icon = Icons.Default.Edit,
-                        title = "尚無記事",
-                        description = "點擊「新增記事」記錄備忘事項，或至設定頁開啟「自動備忘錄」。"
+                        title = stringResource(R.string.notes_s_b288a3),
+                        description = stringResource(R.string.notes_s_3e12a3)
                     )
                 } else {
                     when (noteLayout) {
@@ -1174,7 +1178,7 @@ internal fun NotesTab(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "自動記事規則 (${memoRules.size})",
+                            text = stringResource(R.string.notes_s_5d095e, memoRules.size),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -1182,17 +1186,17 @@ internal fun NotesTab(
                             onClick = { showManualMemoRuleDialog = true },
                             modifier = Modifier.pressableScale()
                         ) {
-                            Text("手動新增")
+                            Text(stringResource(R.string.common_manual_add))
                         }
                     }
                     Text(
-                        text = "AI 啟用時以語意判斷相似訊息（含關鍵字條件）；AI 未啟用時不產生自動記事",
+                        text = stringResource(R.string.notes_s_81a316),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
-                            text = "自然語言新增規則",
+                            text = stringResource(R.string.notes_s_ffb49f),
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -1204,7 +1208,7 @@ internal fun NotesTab(
                             OutlinedTextField(
                                 value = nlMemoRuleInput,
                                 onValueChange = { nlMemoRuleInput = it },
-                                placeholder = { Text("例如：Gogolook 驗證碼不要加入待辦") },
+                                placeholder = { Text(stringResource(R.string.notes_s_464d7e)) },
                                 singleLine = true,
                                 enabled = !isParsingMemoRule,
                                 modifier = Modifier.weight(1f)
@@ -1222,7 +1226,7 @@ internal fun NotesTab(
                                                 pendingNlMemoRule = parsed
                                             },
                                             onFailure = { err ->
-                                                onShowMessage(err.message ?: "解析規則失敗")
+                                                onShowMessage(err.message ?: resCtx.getString(R.string.notes_s_a71edd))
                                             }
                                         )
                                     }
@@ -1235,14 +1239,14 @@ internal fun NotesTab(
                                         strokeWidth = 2.dp
                                     )
                                 } else {
-                                    Text("送出")
+                                    Text(stringResource(R.string.common_send))
                                 }
                             }
                         }
                     }
                     if (memoRules.isEmpty()) {
                         Text(
-                            text = "尚無自動記事規則。可於上方用自然語言或「手動新增」設定哪些 App、寄件者或關鍵字要一律記事、一律待辦或永不加入。",
+                            text = stringResource(R.string.notes_s_53c20d),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1258,17 +1262,17 @@ internal fun NotesTab(
                                     com.phantom.checker.data.MemoRuleEntity.ACTION_NOTE -> Triple(
                                         MaterialTheme.colorScheme.tertiaryContainer,
                                         MaterialTheme.colorScheme.onTertiaryContainer,
-                                        "一律記事"
+                                        stringResource(R.string.notes_s_341b62)
                                     )
                                     com.phantom.checker.data.MemoRuleEntity.ACTION_TODO -> Triple(
                                         MaterialTheme.colorScheme.primaryContainer,
                                         MaterialTheme.colorScheme.onPrimaryContainer,
-                                        "一律待辦"
+                                        stringResource(R.string.notes_s_b9fb67)
                                     )
                                     else -> Triple(
                                         MaterialTheme.colorScheme.errorContainer,
                                         MaterialTheme.colorScheme.onErrorContainer,
-                                        "永不加入"
+                                        stringResource(R.string.notes_s_b0edc4)
                                     )
                                 }
                                 Surface(
@@ -1325,14 +1329,14 @@ internal fun NotesTab(
                                                         db.memoRuleDao().deleteById(rule.id)
                                                         com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                                                     }
-                                                    onShowMessage("已刪除自動記事規則")
+                                                    onShowMessage(resCtx.getString(R.string.notes_s_d1215f))
                                                 }
                                             },
                                             modifier = Modifier.size(40.dp)
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Delete,
-                                                contentDescription = "刪除規則",
+                                                contentDescription = stringResource(R.string.notes_s_a287b5),
                                                 tint = MaterialTheme.colorScheme.error
                                             )
                                         }
@@ -1366,7 +1370,7 @@ internal fun NotesTab(
                         )
                         com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                     }
-                    onShowMessage("已新增自動記事規則")
+                    onShowMessage(resCtx.getString(R.string.notes_s_99387e))
                 }
             }
         )
@@ -1376,8 +1380,8 @@ internal fun NotesTab(
         val summary = buildString {
             val parts = listOfNotNull(
                 parsed.app?.let { "App $it" },
-                parsed.sender?.let { "寄件者 $it" },
-                parsed.keyword?.let { "含「$it」" }
+                parsed.sender?.let { resCtx.getString(R.string.notes_s_0e15ed, it) },
+                parsed.keyword?.let { resCtx.getString(R.string.notes_s_e450f6, it) }
             )
             append(parts.joinToString("／"))
             append(" → ")
@@ -1385,7 +1389,7 @@ internal fun NotesTab(
         }
         AlertDialog(
             onDismissRequest = { pendingNlMemoRule = null },
-            title = { Text("確認新增自動記事規則") },
+            title = { Text(stringResource(R.string.notes_s_e2bfad)) },
             text = { Text(summary) },
             confirmButton = {
                 Button(onClick = {
@@ -1407,15 +1411,15 @@ internal fun NotesTab(
                             )
                             com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                         }
-                        onShowMessage("已新增自動記事規則")
+                        onShowMessage(resCtx.getString(R.string.notes_s_99387e))
                     }
                 }) {
-                    Text("確認新增")
+                    Text(stringResource(R.string.common_confirm_create))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingNlMemoRule = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -1445,7 +1449,7 @@ internal fun NotesTab(
                         )
                         com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                     }
-                    onShowMessage("已設定不再自動加入記事／待辦")
+                    onShowMessage(resCtx.getString(R.string.notes_s_b617bb))
                 }
             }
         )
@@ -1475,7 +1479,7 @@ internal fun NotesTab(
                         )
                         com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                     }
-                    onShowMessage("已設定不再自動加入記事／待辦")
+                    onShowMessage(resCtx.getString(R.string.notes_s_b617bb))
                 }
             }
         )
@@ -1499,12 +1503,12 @@ internal fun NotesTab(
         query = notesSearchQuery,
         onQueryChange = { notesSearchQuery = it },
         onDismiss = { showNotesSearch = false },
-        placeholder = "搜尋待辦事項或備忘錄…",
+        placeholder = stringResource(R.string.notes_s_6c8ee0),
         resultsContent = {
             if (nq.isEmpty()) {
                 item(key = "notes_search_hint") {
                     Text(
-                        text = "輸入關鍵字即時搜尋待辦事項與備忘錄。",
+                        text = stringResource(R.string.notes_s_78afb8),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(8.dp)
@@ -1513,7 +1517,7 @@ internal fun NotesTab(
             } else if (matchedTodos.isEmpty() && matchedNotes.isEmpty()) {
                 item(key = "notes_search_empty") {
                     Text(
-                        text = "找不到符合「$nq」的待辦或記事。",
+                        text = stringResource(R.string.notes_s_87b3dd, nq),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(8.dp)
@@ -1523,7 +1527,7 @@ internal fun NotesTab(
                 if (matchedTodos.isNotEmpty()) {
                     item(key = "notes_search_todos_hdr") {
                         Text(
-                            text = "待辦事項（${matchedTodos.size}）",
+                            text = stringResource(R.string.notes_s_bc1472, matchedTodos.size),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -1577,7 +1581,7 @@ internal fun NotesTab(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Info,
-                                            contentDescription = "查看來源訊息",
+                                            contentDescription = stringResource(R.string.notes_s_7f4858),
                                             tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(20.dp)
                                         )
@@ -1590,7 +1594,7 @@ internal fun NotesTab(
                 if (matchedNotes.isNotEmpty()) {
                     item(key = "notes_search_notes_hdr") {
                         Text(
-                            text = "備忘錄（${matchedNotes.size}）",
+                            text = stringResource(R.string.notes_s_dc660e, matchedNotes.size),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -1641,29 +1645,29 @@ internal fun NoteEditorDialog(
     var content by remember(initial) { mutableStateOf(initial?.content ?: "") }
     var selectedColor by remember(initial) { mutableStateOf(initial?.colorHex) }
     val colorOptions = listOf<Pair<String?, String>>(
-        null to "預設",
-        "#EF5350" to "紅",
-        "#FFA726" to "橘",
-        "#66BB6A" to "綠",
-        "#42A5F5" to "藍",
-        "#AB47BC" to "紫"
+        null to stringResource(R.string.common_default),
+        "#EF5350" to stringResource(R.string.color_red),
+        "#FFA726" to stringResource(R.string.color_orange),
+        "#66BB6A" to stringResource(R.string.color_green),
+        "#42A5F5" to stringResource(R.string.color_blue),
+        "#AB47BC" to stringResource(R.string.color_purple)
     )
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "新增記事" else "編輯記事") },
+        title = { Text(if (initial == null) stringResource(R.string.notes_s_7dff4f) else stringResource(R.string.notes_s_a5ab2c)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = content,
                     onValueChange = { content = it },
-                    label = { Text("記事內容") },
+                    label = { Text(stringResource(R.string.notes_s_1ad989)) },
                     minLines = 3,
                     maxLines = 6,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    text = "標記顏色（選填）",
+                    text = stringResource(R.string.notes_s_02cd43),
                     style = MaterialTheme.typography.labelMedium
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1682,12 +1686,12 @@ internal fun NoteEditorDialog(
                 enabled = content.trim().isNotEmpty(),
                 onClick = { onSave(content.trim(), selectedColor) }
             ) {
-                Text("儲存")
+                Text(stringResource(R.string.common_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.common_cancel))
             }
         }
     )
@@ -1729,7 +1733,7 @@ internal fun ManualMemoRuleDialog(
 
     PhantomDialog(onDismissRequest = onDismiss) {
         Text(
-            text = "手動新增自動記事規則",
+            text = stringResource(R.string.notes_s_f31f8a),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
@@ -1739,7 +1743,7 @@ internal fun ManualMemoRuleDialog(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
                 Text(
-                    text = "以下三項條件至少填寫一項（同時填寫時須全部符合）：",
+                    text = stringResource(R.string.notes_s_0bb6e1),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1747,14 +1751,14 @@ internal fun ManualMemoRuleDialog(
                     OutlinedTextField(
                         value = pkgText,
                         onValueChange = { pkgText = it },
-                        label = { Text("App 套件名（可選）") },
-                        placeholder = { Text("例如 com.gogolook.whoscall") },
+                        label = { Text(stringResource(R.string.notes_s_c81e40)) },
+                        placeholder = { Text(stringResource(R.string.notes_s_d0af33)) },
                         singleLine = true,
                         trailingIcon = {
                             IconButton(onClick = { showAppDropdown = true }) {
                                 Icon(
                                     imageVector = Icons.Default.KeyboardArrowDown,
-                                    contentDescription = "選擇已安裝 App"
+                                    contentDescription = stringResource(R.string.notes_s_563220)
                                 )
                             }
                         },
@@ -1778,26 +1782,26 @@ internal fun ManualMemoRuleDialog(
                 OutlinedTextField(
                     value = senderText,
                     onValueChange = { senderText = it },
-                    label = { Text("寄件者（可選）") },
+                    label = { Text(stringResource(R.string.notes_s_b4dc31)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = keywordText,
                     onValueChange = { keywordText = it },
-                    label = { Text("關鍵字（可選）") },
+                    label = { Text(stringResource(R.string.notes_s_a471b9)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text(
-                    text = "規則動作：",
+                    text = stringResource(R.string.notes_s_048f23),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold
                 )
                 listOf(
-                    com.phantom.checker.data.MemoRuleEntity.ACTION_NEVER to "永不加入記事／待辦",
-                    com.phantom.checker.data.MemoRuleEntity.ACTION_TODO to "一律加入待辦",
-                    com.phantom.checker.data.MemoRuleEntity.ACTION_NOTE to "一律加入記事"
+                    com.phantom.checker.data.MemoRuleEntity.ACTION_NEVER to stringResource(R.string.notes_s_3740f0),
+                    com.phantom.checker.data.MemoRuleEntity.ACTION_TODO to stringResource(R.string.notes_s_cf23d4),
+                    com.phantom.checker.data.MemoRuleEntity.ACTION_NOTE to stringResource(R.string.notes_s_a94618)
                 ).forEach { (act, label) ->
                     Row(
                         modifier = Modifier
@@ -1819,7 +1823,7 @@ internal fun ManualMemoRuleDialog(
             horizontalArrangement = Arrangement.End
         ) {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.common_cancel))
             }
             Button(
                 onClick = {
@@ -1832,17 +1836,17 @@ internal fun ManualMemoRuleDialog(
                 },
                 enabled = isValid
             ) {
-                Text("儲存")
+                Text(stringResource(R.string.common_save))
             }
         }
     }
 
 }
 
-private enum class CalendarRangeMode(val label: String, val days: Long) {
-    DAY("日檢視", 1L),
-    WEEK("週檢視", 7L),
-    MONTH("月檢視", 31L)
+private enum class CalendarRangeMode(@StringRes val labelRes: Int, val days: Long) {
+    DAY(R.string.notes_calendar_day, 1L),
+    WEEK(R.string.notes_calendar_week, 7L),
+    MONTH(R.string.notes_calendar_month, 31L)
 }
 
 /**
@@ -1855,6 +1859,7 @@ private fun LocalCalendarSectionCard(
     glassState: HazeState,
     settingsVersion: Long
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     var expanded by remember { mutableStateOf(false) }
@@ -1899,9 +1904,9 @@ private fun LocalCalendarSectionCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = if (isReady) {
-                            "📅 本機行事曆（已勾選 ${selectedIds.size} 個日曆）"
+                            stringResource(R.string.notes_s_3366b0, selectedIds.size)
                         } else {
-                            "📅 本機行事曆（尚未勾選日曆）"
+                            stringResource(R.string.notes_s_5c7b7b)
                         },
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
@@ -1912,7 +1917,7 @@ private fun LocalCalendarSectionCard(
                 }
                 PhantomChevron(
  expanded = expanded,
-                    contentDescription = if (expanded) "收合行事曆" else "展開行事曆",
+                    contentDescription = if (expanded) stringResource(R.string.notes_s_84a18c) else stringResource(R.string.notes_s_d46f99),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -1926,9 +1931,9 @@ private fun LocalCalendarSectionCard(
                 ) {
                     Text(
                         text = if (!hasPerm) {
-                            "尚未授予日曆讀取權限，授權並勾選日曆後即可同步顯示手機行程。"
+                            stringResource(R.string.notes_s_ac225c)
                         } else {
-                            "目前尚未勾選任何本機日曆，因此無法顯示行程。"
+                            stringResource(R.string.notes_s_4ecd0e)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1944,24 +1949,24 @@ private fun LocalCalendarSectionCard(
                         },
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                     ) {
-                        Text("前往設定勾選日曆", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.notes_s_f6cda0), style = MaterialTheme.typography.labelMedium)
                     }
                 }
             } else if (expanded) {
                 com.phantom.checker.ui.components.PhantomSecondaryTabRow(
-                    tabs = CalendarRangeMode.entries.map { it.label },
+                    tabs = CalendarRangeMode.entries.map { stringResource(it.labelRes) },
                     selectedIndex = rangeMode.ordinal,
                     onSelect = { idx -> rangeMode = CalendarRangeMode.entries[idx] }
                 )
                 if (loading) {
                     Text(
-                        text = "載入本機行程中…",
+                        text = stringResource(R.string.notes_s_72f354),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else if (events.isEmpty()) {
                     Text(
-                        text = "${rangeMode.label}期間內無已勾選日曆的排定行程。",
+                        text = stringResource(R.string.notes_s_273431, stringResource(rangeMode.labelRes)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1981,7 +1986,7 @@ private fun LocalCalendarSectionCard(
                                 val d = java.time.Instant.ofEpochMilli(ev.beginMs)
                                     .atZone(java.time.ZoneOffset.UTC)
                                     .toLocalDate()
-                                "${d.format(dateFmt)} 全天"
+                                resCtx.getString(R.string.notes_s_d15fdd, d.format(dateFmt))
                             } else {
                                 val s = java.time.Instant.ofEpochMilli(ev.beginMs).atZone(zone)
                                 val e = java.time.Instant.ofEpochMilli(ev.endMs).atZone(zone)

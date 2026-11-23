@@ -25,6 +25,8 @@ import com.phantom.checker.ui.PhantomGlassCard
 import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.launch
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * #337 / #338 共用「我對你的瞭解」個人畫像卡元件：
@@ -38,6 +40,7 @@ fun PortraitCardSection(
     onShowMessage: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -72,7 +75,7 @@ fun PortraitCardSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "✨ 我對你的瞭解",
+                    text = stringResource(R.string.portrait_s_b0f0f9),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -87,28 +90,28 @@ fun PortraitCardSection(
                             if (!next.isNullOrBlank()) {
                                 portraitText = next
                                 updatedAt = PhantomPrefs.getPortraitCardUpdatedAt(appCtx)
-                                onShowMessage("已更新「我對你的瞭解」畫像卡")
+                                onShowMessage(resCtx.getString(R.string.portrait_s_c70059))
                             } else {
-                                onShowMessage("尚無一般記憶可供生成畫像（敏感記憶絕不納入）")
+                                onShowMessage(resCtx.getString(R.string.portrait_s_2625ee))
                             }
                         }
                     }
                 ) {
-                    Text(if (isRefreshing) "生成中…" else "重新生成")
+                    Text(if (isRefreshing) stringResource(R.string.common_generating) else stringResource(R.string.common_regenerate))
                 }
             }
             Text(
                 text = portraitText.ifBlank {
-                    "目前尚未建立畫像摘要。新增幾筆一般記憶後將自動濃縮為精簡畫像，對話時優先注入以節省 token。"
+                    resCtx.getString(R.string.portrait_s_3098a4)
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
             val meta = buildString {
                 if (updatedAt > 0L) {
-                    append("更新於 ${PhantomPrefs.formatMessageTime(appCtx, updatedAt, includeDate = true)} · ")
+                    append(resCtx.getString(R.string.portrait_s_2fafae, PhantomPrefs.formatMessageTime(appCtx, updatedAt, includeDate = true)))
                 }
-                append("🔒 敏感記憶絕不納入畫像 · 對話優先注入")
+                append(resCtx.getString(R.string.portrait_s_1d3246))
             }
             Text(
                 text = meta,

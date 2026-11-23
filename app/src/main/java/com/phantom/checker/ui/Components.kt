@@ -150,6 +150,8 @@ import dev.chrisbanes.haze.HazeState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 @Composable
 fun Modifier.phantomGlassSource(state: HazeState): Modifier {
@@ -854,17 +856,17 @@ fun ExportCsvDialog(
     var showAppMenu by remember { mutableStateOf(false) }
 
     val selectedAppLabel = if (selectedPkg == null) {
-        "全部 App"
+        stringResource(R.string.common_all_apps)
     } else {
         appGroups.firstOrNull { it.packageName == selectedPkg }?.appLabel ?: selectedPkg.orEmpty()
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("匯出訊息 CSV") },
+        title = { Text(stringResource(R.string.common_s_07c286)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("來源 App 範圍", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.common_s_2d2d5a), style = MaterialTheme.typography.labelMedium)
                 Box {
                     OutlinedButton(
                         onClick = { showAppMenu = true },
@@ -877,7 +879,7 @@ fun ExportCsvDialog(
                         onDismissRequest = { showAppMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("全部 App") },
+                            text = { Text(stringResource(R.string.common_all_apps)) },
                             onClick = {
                                 selectedPkg = null
                                 showAppMenu = false
@@ -895,34 +897,34 @@ fun ExportCsvDialog(
                     }
                 }
 
-                Text("時間範圍", style = MaterialTheme.typography.labelMedium)
+                Text(stringResource(R.string.common_s_55f16d), style = MaterialTheme.typography.labelMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = selectedDays == 7,
                         onClick = { selectedDays = 7 },
-                        label = { Text("近 7 天") }
+                        label = { Text(stringResource(R.string.common_last_7_days)) }
                     )
                     FilterChip(
                         selected = selectedDays == 30,
                         onClick = { selectedDays = 30 },
-                        label = { Text("近 30 天") }
+                        label = { Text(stringResource(R.string.common_last_30_days)) }
                     )
                     FilterChip(
                         selected = selectedDays == null,
                         onClick = { selectedDays = null },
-                        label = { Text("全部") }
+                        label = { Text(stringResource(R.string.common_all)) }
                     )
                 }
             }
         },
         confirmButton = {
             Button(onClick = { onConfirm(selectedPkg, selectedDays) }) {
-                Text("匯出")
+                Text(stringResource(R.string.common_export))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.common_cancel))
             }
         }
     )
@@ -969,7 +971,7 @@ fun NotificationListenerGuideCard(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "尚未開啟通知存取權限",
+                    text = stringResource(R.string.common_s_1356e9),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onErrorContainer
@@ -977,7 +979,7 @@ fun NotificationListenerGuideCard(
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "幻訊需要讀取系統通知，才能在不觸發原 App 已讀的情況下備份訊息並進行詐騙風險分析。",
+                text = stringResource(R.string.common_s_493ced),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
@@ -994,7 +996,7 @@ fun NotificationListenerGuideCard(
                         contentColor = MaterialTheme.colorScheme.onError
                     )
                 ) {
-                    Text("前往開啟通知存取權限")
+                    Text(stringResource(R.string.common_s_dc348a))
                 }
             }
             RestrictedSettingsTroubleshootSection(
@@ -1030,14 +1032,14 @@ fun PostNotificationGuideCard(
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "需要通知顯示權限",
+                text = stringResource(R.string.common_s_1a1f54),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold
             )
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "允許顯示通知後，常駐統計與高風險詐騙警示才能正常顯示。",
+            text = stringResource(R.string.common_s_e1b948),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -1046,7 +1048,7 @@ fun PostNotificationGuideCard(
             onClick = onRequestPermission,
             modifier = Modifier.pressableScale()
         ) {
-            Text("允許通知警示")
+            Text(stringResource(R.string.common_s_843dae))
         }
     }
 }
@@ -1062,6 +1064,7 @@ fun MessageCard(
     hasTodo: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val isCompact = PhantomPrefs.getCardDensity(ctx) == com.phantom.checker.util.CardDensity.COMPACT
     val cardPad = if (isCompact) 8.dp else 12.dp
@@ -1095,7 +1098,7 @@ fun MessageCard(
                     Spacer(Modifier.width(4.dp))
                     Icon(
                         imageVector = Icons.Default.Star,
-                        contentDescription = "星標",
+                        contentDescription = stringResource(R.string.common_star),
                         tint = Color(0xFFE6A100),
                         modifier = Modifier.size(14.dp)
                     )
@@ -1104,7 +1107,7 @@ fun MessageCard(
                     Spacer(Modifier.width(4.dp))
                     Icon(
                         imageVector = Icons.Default.Edit,
-                        contentDescription = "已記事",
+                        contentDescription = stringResource(R.string.common_noted),
                         tint = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.size(12.dp)
                     )
@@ -1113,28 +1116,28 @@ fun MessageCard(
                     Spacer(Modifier.width(4.dp))
                     Icon(
                         imageVector = Icons.Default.Check,
-                        contentDescription = "已待辦",
+                        contentDescription = stringResource(R.string.common_todoed),
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(12.dp)
                     )
                 }
                 if (message.riskLabel == "scam") {
                     Text(
-                        text = "  ⚠️ 詐騙 ${message.riskScore}",
+                        text = stringResource(R.string.common_s_0fa4d6, message.riskScore),
                         color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.labelSmall
                     )
                 } else if (message.riskLabel == "suspicious") {
                     Text(
-                        text = "  ❓ 疑似 ${message.riskScore}",
+                        text = stringResource(R.string.common_s_a40ac4, message.riskScore),
                         color = Color(0xFFE6A100),
                         style = MaterialTheme.typography.labelSmall
                     )
                 }
                 if (message.isFiltered) {
                     Text(
-                        text = "  [已過濾]",
+                        text = stringResource(R.string.common_s_5be1f3),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelSmall
                     )
@@ -1165,7 +1168,7 @@ fun MessageCard(
         if (matchedKeywords.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "命中關鍵字：${matchedKeywords.joinToString("、")}",
+                text = stringResource(R.string.common_s_60e783, matchedKeywords.joinToString("、")),
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Medium,
                 style = MaterialTheme.typography.labelSmall
@@ -1188,7 +1191,7 @@ fun MessageCard(
         if (message.remindAt != null && message.remindAt > System.currentTimeMillis()) {
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "⏰ 待辦提醒 · ${PhantomPrefs.formatMessageTime(ctx, message.remindAt, includeDate = true)}",
+                text = stringResource(R.string.common_s_fabd99, PhantomPrefs.formatMessageTime(ctx, message.remindAt, includeDate = true)),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Medium
@@ -1206,11 +1209,11 @@ fun MessageCard(
                 onClick = {
                     val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                     cm.setPrimaryClip(android.content.ClipData.newPlainText("otp_code", otpCode))
-                    android.widget.Toast.makeText(ctx, "已複製驗證碼 $otpCode", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(ctx, resCtx.getString(R.string.common_s_8b8320, otpCode), android.widget.Toast.LENGTH_SHORT).show()
                 }
             ) {
                 Text(
-                    text = "複製驗證碼 $otpCode",
+                    text = stringResource(R.string.common_s_f1f3ce, otpCode),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     fontWeight = FontWeight.SemiBold,
@@ -1320,11 +1323,11 @@ fun ReminderPickerDialog(
     val ctx = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("稍後處理提醒") },
+        title = { Text(stringResource(R.string.common_s_1d7df5)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "選擇提醒時間，屆時將發送通知並可直接開啟訊息詳情：",
+                    text = stringResource(R.string.common_s_039be4),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1334,7 +1337,7 @@ fun ReminderPickerDialog(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("1 小時後")
+                    Text(stringResource(R.string.common_s_dde716))
                 }
                 OutlinedButton(
                     onClick = {
@@ -1351,7 +1354,7 @@ fun ReminderPickerDialog(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("今晚 20:00")
+                    Text(stringResource(R.string.common_s_bee0be))
                 }
                 OutlinedButton(
                     onClick = {
@@ -1366,7 +1369,7 @@ fun ReminderPickerDialog(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("明天早上 09:00")
+                    Text(stringResource(R.string.common_s_e5bf9a))
                 }
                 Button(
                     onClick = {
@@ -1392,14 +1395,14 @@ fun ReminderPickerDialog(
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("自訂時間")
+                    Text(stringResource(R.string.common_s_b22d53))
                 }
             }
         },
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.common_cancel))
             }
         }
     )
@@ -1419,36 +1422,37 @@ fun WhitelistAddDialogFlow(
     onDismiss: () -> Unit,
     onConfirm: (isSenderScope: Boolean) -> Unit
 ) {
+    val resCtx = LocalContext.current
     var selectedScopeIsSender by remember { mutableStateOf<Boolean?>(null) }
 
     if (selectedScopeIsSender == null) {
         AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("加入白名單") },
+            title = { Text(stringResource(R.string.common_add_whitelist)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "請選擇要加入白名單的範圍：",
+                        text = stringResource(R.string.common_s_35de80),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     OutlinedButton(
                         onClick = { selectedScopeIsSender = true },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("此寄件者全部訊息（${sender.ifBlank { "未知寄件者" }}）")
+                        Text(stringResource(R.string.common_s_791ca9, sender.ifBlank { resCtx.getString(R.string.common_s_877f9a) }))
                     }
                     OutlinedButton(
                         onClick = { selectedScopeIsSender = false },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("僅此則訊息")
+                        Text(stringResource(R.string.common_s_b8f568))
                     }
                 }
             },
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = onDismiss) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -1457,33 +1461,33 @@ fun WhitelistAddDialogFlow(
         val excerpt = content.replace("\n", " ").trim().take(80)
         AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("確認加入白名單") },
+            title = { Text(stringResource(R.string.common_s_76dd84)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         text = if (isSender) {
-                            "規則類型：此寄件者全部訊息（後續同 App 同寄件者訊息將視為安全並跳過情報預查與警示）"
+                            stringResource(R.string.common_s_25133c)
                         } else {
-                            "規則類型：僅此則訊息（標記此則為安全並加入內容比對白名單）"
+                            stringResource(R.string.common_s_52eee8)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Text("寄件者：${sender.ifBlank { "未知" }}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                    Text("來源 App：$appLabel ($packageName)", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.common_s_c9cc80, sender.ifBlank { resCtx.getString(R.string.common_unknown) }), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.common_s_4e959b, appLabel, packageName), style = MaterialTheme.typography.bodySmall)
                     if (excerpt.isNotBlank()) {
-                        Text("內容摘錄：$excerpt", style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        Text(stringResource(R.string.common_s_a3bca5, excerpt), style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
                     }
                 }
             },
             confirmButton = {
                 Button(onClick = { onConfirm(isSender) }) {
-                    Text("確認加入")
+                    Text(stringResource(R.string.common_confirm_add))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { selectedScopeIsSender = null }) {
-                    Text("返回")
+                    Text(stringResource(R.string.common_back))
                 }
             }
         )
@@ -1497,13 +1501,14 @@ fun WhitelistAddDialogFlow(
 fun PhantomSearchBarPill(
     glassState: HazeState,
     query: String,
-    placeholder: String = "搜尋",
+    placeholder: String = stringResource(R.string.common_search),
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     trailingActions: (@Composable androidx.compose.foundation.layout.RowScope.() -> Unit)? = null
 ) {
+    val resCtx = LocalContext.current
     val shape = remember { RoundedCornerShape(18.dp) }
-    val labelText = if (query.isNotBlank()) query else "搜尋"
+    val labelText = if (query.isNotBlank()) query else stringResource(R.string.common_search)
     Row(
         modifier = modifier.wrapContentWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -1518,7 +1523,7 @@ fun PhantomSearchBarPill(
                     indication = null,
                     onClick = onClick
                 )
-                .semantics { contentDescription = "開啟搜尋：$placeholder" },
+                .semantics { contentDescription = resCtx.getString(R.string.common_s_330ac3, placeholder) },
             contentAlignment = Alignment.CenterStart
         ) {
             Row(
@@ -1571,6 +1576,7 @@ fun PhantomPullSearchHandle(
     onOpenSearch: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val resCtx = LocalContext.current
     val density = LocalDensity.current
     val decaySpec = rememberSplineBasedDecay<Float>()
     val dragDistancePx = with(density) { 48.dp.toPx() }
@@ -1618,7 +1624,7 @@ fun PhantomPullSearchHandle(
                 onClick = onOpenSearch
             )
             .semantics {
-                contentDescription = "下拉開啟搜尋"
+                contentDescription = resCtx.getString(R.string.common_s_d048d1)
                 role = Role.Button
             },
         contentAlignment = Alignment.Center
@@ -1652,9 +1658,9 @@ fun PhantomFullScreenSearchOverlay(
     query: String,
     onQueryChange: (String) -> Unit,
     onDismiss: () -> Unit,
-    placeholder: String = "搜尋訊息、寄件者或關鍵字…",
+    placeholder: String = stringResource(R.string.common_s_b3a15d),
     onAiSemanticSearch: (() -> Unit)? = null,
-    aiQuotaHint: String = "AI 語意搜尋（消耗 1 次額度）",
+    aiQuotaHint: String = stringResource(R.string.common_s_da5adc),
     isAiSearching: Boolean = false,
     filterRow: (@Composable () -> Unit)? = null,
     resultsContent: androidx.compose.foundation.lazy.LazyListScope.() -> Unit
@@ -1697,7 +1703,7 @@ fun PhantomFullScreenSearchOverlay(
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "關閉搜尋"
+                            contentDescription = stringResource(R.string.common_s_27c39c)
                         )
                     }
                     OutlinedTextField(
@@ -1718,7 +1724,7 @@ fun PhantomFullScreenSearchOverlay(
                                     onClick = { onQueryChange("") },
                                     modifier = Modifier.size(48.dp)
                                 ) {
-                                    Icon(Icons.Default.Clear, contentDescription = "清除搜尋")
+                                    Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.common_s_59b34b))
                                 }
                             }
                         }
@@ -1740,7 +1746,7 @@ fun PhantomFullScreenSearchOverlay(
                         if (isAiSearching) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                             Spacer(Modifier.width(8.dp))
-                            Text("AI 語意搜尋中…")
+                            Text(stringResource(R.string.common_s_272973))
                         } else {
                             Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
@@ -1791,11 +1797,11 @@ fun NeverAutoMemoConfirmDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("不再自動記事／待辦") },
+        title = { Text(stringResource(R.string.common_s_5ad72e)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "選擇不再自動加入記事或待辦的套用範圍：",
+                    text = stringResource(R.string.common_s_f1eae5),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1811,7 +1817,7 @@ fun NeverAutoMemoConfirmDialog(
                             onClick = { selectedScope = 0 }
                         )
                         Text(
-                            text = "僅此寄件者（$sender）",
+                            text = stringResource(R.string.common_s_ee4332, sender),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -1828,7 +1834,7 @@ fun NeverAutoMemoConfirmDialog(
                             onClick = { selectedScope = 1 }
                         )
                         Text(
-                            text = "僅此 App（${appLabel.ifBlank { packageName!! }}）",
+                            text = stringResource(R.string.common_s_5457d7, appLabel.ifBlank { packageName!! }),
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
@@ -1844,7 +1850,7 @@ fun NeverAutoMemoConfirmDialog(
                         onClick = { selectedScope = 2 }
                     )
                     Text(
-                        text = "含此關鍵字（AI 語意比對相似訊息）",
+                        text = stringResource(R.string.common_s_77d695),
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -1852,7 +1858,7 @@ fun NeverAutoMemoConfirmDialog(
                     OutlinedTextField(
                         value = keywordText,
                         onValueChange = { keywordText = it },
-                        label = { Text("關鍵字") },
+                        label = { Text(stringResource(R.string.common_keyword)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1870,12 +1876,12 @@ fun NeverAutoMemoConfirmDialog(
                 },
                 enabled = canConfirm
             ) {
-                Text("確定不再加入")
+                Text(stringResource(R.string.common_s_4c077c))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.common_cancel))
             }
         }
     )
@@ -1891,6 +1897,7 @@ fun DecisionFeedbackDialog(
     onDismiss: () -> Unit,
     onFeedbackApplied: (updatedMessage: com.phantom.checker.data.MessageEntity?, toastMsg: String) -> Unit
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -1916,19 +1923,19 @@ fun DecisionFeedbackDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("此判斷有誤（回饋寫回規則庫）") },
+        title = { Text(stringResource(R.string.common_s_c930fe)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "選擇誤判類型，系統將依可逆／不可逆矩陣建立本地確定性規則，同類訊息不再走錯誤路徑（零 AI token）。",
+                    text = stringResource(R.string.common_s_1213ce),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 listOf(
-                    0 to "誤判詐騙（假陽性）→ 加入寄件者白名單",
-                    1 to "漏判詐騙（假陰性）→ 建立詐騙關鍵字規則",
-                    2 to "自動記事／待辦錯誤 → 建立「永不自動記事」規則",
-                    3 to "自動標籤分類錯誤 → 建立標籤修正規則"
+                    0 to stringResource(R.string.common_s_8cbad8),
+                    1 to stringResource(R.string.common_s_351980),
+                    2 to stringResource(R.string.common_s_8eaddb),
+                    3 to stringResource(R.string.common_s_f6d066)
                 ).forEach { (idx, label) ->
                     Row(
                         modifier = Modifier
@@ -1951,20 +1958,20 @@ fun DecisionFeedbackDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Checkbox(checked = alsoAddMemoNever, onCheckedChange = { alsoAddMemoNever = it })
-                        Text("同時將此寄件者設為「永不自動記事／待辦」", style = MaterialTheme.typography.labelSmall)
+                        Text(stringResource(R.string.common_s_214f76), style = MaterialTheme.typography.labelSmall)
                     }
                 }
                 if (selectedType == 1 || selectedType == 2) {
                     OutlinedTextField(
                         value = keywordInput,
                         onValueChange = { keywordInput = it },
-                        label = { Text(if (selectedType == 1) "詐騙特徵關鍵字" else "排除關鍵字（可留空僅比對寄件者）") },
+                        label = { Text(if (selectedType == 1) stringResource(R.string.common_s_083c6a) else stringResource(R.string.common_s_2b854d)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
                 if (selectedType == 3 && availableTags.isNotEmpty()) {
-                    Text("選擇正確目標標籤：", style = MaterialTheme.typography.labelSmall)
+                    Text(stringResource(R.string.common_s_bf7a21), style = MaterialTheme.typography.labelSmall)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -2030,7 +2037,7 @@ fun DecisionFeedbackDialog(
                                             com.phantom.checker.util.EncryptedByokStore.addBenignUrlHost(appCtx, host)
                                         }
                                     }
-                                    safeMsg to "已回饋假陽性：${wlRes.message}"
+                                    safeMsg to resCtx.getString(R.string.common_s_1fbf7a, wlRes.message)
                                 }
                                 1 -> {
                                     val kw = keywordInput.trim().ifEmpty { senderTrim }
@@ -2051,7 +2058,7 @@ fun DecisionFeedbackDialog(
                                     )
                                     db.messageDao().update(scamMsg)
                                     com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "false_negative")
-                                    scamMsg to "已建立詐騙過濾規則：「$kw」"
+                                    scamMsg to resCtx.getString(R.string.common_s_4c29f8, kw)
                                 }
                                 2 -> {
                                     val kw = keywordInput.trim().takeIf { it.isNotEmpty() }
@@ -2066,7 +2073,7 @@ fun DecisionFeedbackDialog(
                                     )
                                     com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                                     com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "memo_wrong")
-                                    null to "已建立「永不自動記事／待辦」規則"
+                                    null to resCtx.getString(R.string.common_s_0d1404)
                                 }
                                 else -> {
                                     val tid = selectedTagId
@@ -2084,9 +2091,9 @@ fun DecisionFeedbackDialog(
                                         )
                                         com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                                         com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "tag_wrong")
-                                        null to "已建立標籤修正規則 → $tName"
+                                        null to resCtx.getString(R.string.common_s_ef7c47, tName)
                                     } else {
-                                        null to "請先選擇目標標籤"
+                                        null to resCtx.getString(R.string.common_s_690930)
                                     }
                                 }
                             }
@@ -2095,12 +2102,12 @@ fun DecisionFeedbackDialog(
                     }
                 }
             ) {
-                Text("確認寫入規則庫")
+                Text(stringResource(R.string.common_s_210791))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.common_cancel))
             }
         }
     )

@@ -223,6 +223,9 @@ import com.phantom.checker.ui.memory.*
 import com.phantom.checker.ui.notes.*
 import com.phantom.checker.ui.stats.*
 import com.phantom.checker.ui.todo.*
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
+import androidx.annotation.StringRes
 private const val PAGE_SIZE = 100
 private const val MAX_BATCH_SELECT = 100
 
@@ -398,17 +401,17 @@ private fun isPostNotificationsGranted(context: Context): Boolean {
 }
 
 /** D1：底部導覽 6 → 5（統計併入夥伴，改名「洞察」） */
-private enum class MainTab(val title: String) {
-    MESSAGES("訊息"),
-    ASSISTANT("助手"),
-    NOTES("記事"),
-    MEMORY("記憶"),
-    INSIGHT("洞察")
+private enum class MainTab(@StringRes val titleRes: Int) {
+    MESSAGES(R.string.common_messages),
+    ASSISTANT(R.string.common_assistant),
+    NOTES(R.string.common_notes),
+    MEMORY(R.string.common_memory),
+    INSIGHT(R.string.common_insight)
 }
 
-private enum class InsightSubTab(val title: String) {
-    PARTNER("夥伴"),
-    STATS("統計")
+private enum class InsightSubTab(@StringRes val titleRes: Int) {
+    PARTNER(R.string.common_partner),
+    STATS(R.string.common_stats)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -422,6 +425,7 @@ private fun PhantomCheckApp(
     requestedBriefingMsgId: Long? = null,
     onConsumedBriefingMsgId: () -> Unit = {}
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -889,20 +893,20 @@ private fun PhantomCheckApp(
     pendingUpdateDialog?.let { update ->
         AlertDialog(
             onDismissRequest = { pendingUpdateDialog = null },
-            title = { Text("發現新版本") },
+            title = { Text(stringResource(R.string.main_s_0712f5)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "已推出新版本 v${update.latestVersion}（發佈於 ${update.publishedDate}）",
+                        stringResource(R.string.main_s_8e723c, update.latestVersion, update.publishedDate),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                     ReleaseNotesPreviewBox(
-                        title = "最新版本更新內容（v${update.latestVersion}／${update.publishedDate}）",
+                        title = stringResource(R.string.main_s_0d3826, update.latestVersion, update.publishedDate),
                         releaseNotes = update.releaseNotes
                     )
                     Text(
-                        "不想再收到更新提醒？可至 設定 → 關於 關閉自動檢查更新。",
+                        stringResource(R.string.main_s_650b91),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -918,7 +922,7 @@ private fun PhantomCheckApp(
                         )
                     }
                 ) {
-                    Text("前往下載")
+                    Text(stringResource(R.string.main_s_b9af4a))
                 }
             },
             dismissButton = {
@@ -931,7 +935,7 @@ private fun PhantomCheckApp(
                         pendingUpdateDialog = null
                     }
                 ) {
-                    Text("稍後更新")
+                    Text(stringResource(R.string.main_s_7172a7))
                 }
             }
         )
@@ -946,7 +950,7 @@ private fun PhantomCheckApp(
             title = { Text(target.appLabel) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("選擇要對「${target.appLabel}」執行的操作：")
+                    Text(stringResource(R.string.main_s_47bfac, target.appLabel))
                     OutlinedButton(
                         onClick = {
                             deleteAppConfirm = target
@@ -954,7 +958,7 @@ private fun PhantomCheckApp(
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("刪除此 App 的所有訊息", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.main_s_7a2223), color = MaterialTheme.colorScheme.error)
                     }
                 }
             },
@@ -965,11 +969,11 @@ private fun PhantomCheckApp(
                     actionTargetApp = null
                     scope.launch {
                         snackbarHostState.showSnackbar(
-                            if (pinned) "已釘選「${target.appLabel}」至我的最愛" else "已取消釘選「${target.appLabel}」"
+                            if (pinned) resCtx.getString(R.string.main_s_3baee6, target.appLabel) else resCtx.getString(R.string.main_s_12ce1c, target.appLabel)
                         )
                     }
                 }) {
-                    Text(if (isFav) "取消最愛釘選" else "釘選至我的最愛")
+                    Text(if (isFav) stringResource(R.string.main_s_8e10e2) else stringResource(R.string.main_s_aec3bf))
                 }
             },
             dismissButton = {
@@ -979,7 +983,7 @@ private fun PhantomCheckApp(
                         mutedPackages = PhantomPrefs.getMutedApps(appCtx)
                         actionTargetApp = null
                         scope.launch {
-                            snackbarHostState.showSnackbar("已解除靜音「${target.appLabel}」")
+                            snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_f7690c, target.appLabel))
                         }
                     } else {
                         PhantomPrefs.setAppMuted(
@@ -991,12 +995,12 @@ private fun PhantomCheckApp(
                         mutedPackages = PhantomPrefs.getMutedApps(appCtx)
                         actionTargetApp = null
                         scope.launch {
-                            snackbarHostState.showSnackbar("已靜音「${target.appLabel}」（不再記錄新通知）")
+                            snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_d95152, target.appLabel))
                         }
                     }
                 }) {
                     Text(
-                        text = if (isMuted) "解除靜音" else "靜音此 App",
+                        text = if (isMuted) stringResource(R.string.main_s_fd9e9a) else stringResource(R.string.main_s_ab2d5c),
                         color = if (isMuted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                     )
                 }
@@ -1007,8 +1011,8 @@ private fun PhantomCheckApp(
     deleteAppConfirm?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteAppConfirm = null },
-            title = { Text("刪除此 App 的所有訊息") },
-            text = { Text("確定要永久刪除「${target.appLabel}」的所有訊息嗎？此操作無法復原。") },
+            title = { Text(stringResource(R.string.main_s_7a2223)) },
+            text = { Text(stringResource(R.string.main_s_13d218, target.appLabel)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -1023,17 +1027,17 @@ private fun PhantomCheckApp(
                             StatsForegroundService.startOrRefresh(appCtx)
                             deleteAppConfirm = null
                             refreshTrigger++
-                            snackbarHostState.showSnackbar("已刪除「${target.appLabel}」的所有訊息")
+                            snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_af39ba, target.appLabel))
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認刪除")
+                    Text(stringResource(R.string.common_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteAppConfirm = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -1042,8 +1046,8 @@ private fun PhantomCheckApp(
     deleteMessageConfirm?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteMessageConfirm = null },
-            title = { Text("刪除訊息") },
-            text = { Text("確定要永久刪除這則來自「${target.sender}」的訊息嗎？") },
+            title = { Text(stringResource(R.string.common_delete_message)) },
+            text = { Text(stringResource(R.string.main_s_a21edd, target.sender)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -1058,17 +1062,17 @@ private fun PhantomCheckApp(
                             StatsForegroundService.startOrRefresh(appCtx)
                             deleteMessageConfirm = null
                             refreshTrigger++
-                            snackbarHostState.showSnackbar("已刪除訊息")
+                            snackbarHostState.showSnackbar(resCtx.getString(R.string.common_message_deleted))
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認刪除")
+                    Text(stringResource(R.string.common_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteMessageConfirm = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -1078,8 +1082,8 @@ private fun PhantomCheckApp(
         val count = selectedMessageIds.size
         AlertDialog(
             onDismissRequest = { showBatchDeleteConfirm = false },
-            title = { Text("批次刪除訊息") },
-            text = { Text("確定要永久刪除已選取的 $count 則訊息嗎？此操作無法復原。") },
+            title = { Text(stringResource(R.string.common_batch_delete_messages)) },
+            text = { Text(stringResource(R.string.main_s_02bcec, count)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -1097,17 +1101,17 @@ private fun PhantomCheckApp(
                             isMultiSelectMode = false
                             selectedMessageIds = emptySet()
                             refreshTrigger++
-                            snackbarHostState.showSnackbar("已刪除 $count 則訊息")
+                            snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_330b12, count))
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認刪除")
+                    Text(stringResource(R.string.common_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showBatchDeleteConfirm = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -1135,7 +1139,7 @@ private fun PhantomCheckApp(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "訊息操作",
+                    text = resCtx.getString(R.string.common_message_actions),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -1152,12 +1156,12 @@ private fun PhantomCheckApp(
                                 }
                                 messageSheetTarget = null
                                 refreshTrigger++
-                                snackbarHostState.showSnackbar(if (nextStar) "已加入星標" else "已移除星標")
+                                snackbarHostState.showSnackbar(if (nextStar) resCtx.getString(R.string.common_starred_added) else resCtx.getString(R.string.common_starred_removed))
                             }
                         },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text(if (msg.isStarred) "取消星標" else "加入星標")
+                        Text(if (msg.isStarred) resCtx.getString(R.string.common_remove_star) else resCtx.getString(R.string.common_add_star))
                     }
                     OutlinedButton(
                         onClick = {
@@ -1208,21 +1212,21 @@ private fun PhantomCheckApp(
                                     }
                                     messageSheetTarget = null
                                     refreshTrigger++
-                                    snackbarHostState.showSnackbar("AI 分析完成：${res.riskLabel} (${res.riskScore}分)")
+                                    snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_b57b71, res.riskLabel, res.riskScore))
                                 } else {
-                                    snackbarHostState.showSnackbar("AI 分析失敗，請確認 API 設定")
+                                    snackbarHostState.showSnackbar(resCtx.getString(R.string.common_ai_analyze_failed))
                                 }
                             }
                         },
                         enabled = !isAnalyzingSheetMsg,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text(if (isAnalyzingSheetMsg) "分析中…" else "AI 分析")
+                        Text(if (isAnalyzingSheetMsg) resCtx.getString(R.string.common_analyzing) else resCtx.getString(R.string.common_ai_analyze))
                     }
                 }
 
                 if (availableTags.isNotEmpty()) {
-                    Text("標籤", style = MaterialTheme.typography.labelMedium)
+                    Text(resCtx.getString(R.string.common_tags), style = MaterialTheme.typography.labelMedium)
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -1268,7 +1272,7 @@ private fun PhantomCheckApp(
                         },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("稍後處理")
+                        Text(resCtx.getString(R.string.common_remind_later))
                     }
                     OutlinedButton(
                         onClick = {
@@ -1277,7 +1281,7 @@ private fun PhantomCheckApp(
                         },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("詳細")
+                        Text(resCtx.getString(R.string.common_details))
                     }
                     Button(
                         onClick = {
@@ -1287,7 +1291,7 @@ private fun PhantomCheckApp(
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("刪除")
+                        Text(resCtx.getString(R.string.common_delete))
                     }
                 }
                 Spacer(Modifier.height(12.dp))
@@ -1308,7 +1312,7 @@ private fun PhantomCheckApp(
                     com.phantom.checker.service.ReminderScheduler.schedule(appCtx, target.id, ts)
                     refreshTrigger++
                     val formatted = PhantomPrefs.formatMessageTime(appCtx, ts, includeDate = true)
-                    snackbarHostState.showSnackbar("已排程提醒：$formatted")
+                    snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_ed678a, formatted))
                 }
             }
         )
@@ -1342,7 +1346,7 @@ private fun PhantomCheckApp(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "依標籤篩選",
+                        text = stringResource(R.string.main_s_f92e2a),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -1351,20 +1355,20 @@ private fun PhantomCheckApp(
                             activeFilter = MessageFilter.All
                             showTagPickerSheet = false
                         }) {
-                            Text("清除標籤篩選")
+                            Text(stringResource(R.string.main_s_2628cd))
                         }
                     }
                 }
                 OutlinedTextField(
                     value = tagPickerQuery,
                     onValueChange = { tagPickerQuery = it },
-                    placeholder = { Text("搜尋標籤名稱…") },
+                    placeholder = { Text(stringResource(R.string.main_s_e7dc9e)) },
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     trailingIcon = {
                         if (tagPickerQuery.isNotEmpty()) {
                             IconButton(onClick = { tagPickerQuery = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "清除")
+                                Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.common_clear))
                             }
                         }
                     },
@@ -1372,7 +1376,7 @@ private fun PhantomCheckApp(
                 )
                 if (filteredTagRows.isEmpty()) {
                     Text(
-                        text = if (tagCounts.isEmpty()) "尚未建立任何標籤" else "找不到符合「$tagPickerQuery」的標籤",
+                        text = if (tagCounts.isEmpty()) stringResource(R.string.main_s_09327a) else stringResource(R.string.main_s_db2846, tagPickerQuery),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 16.dp)
@@ -1439,14 +1443,14 @@ private fun PhantomCheckApp(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Text(
-                                            text = "${row.cnt} 則",
+                                            text = stringResource(R.string.main_s_ddadbf, row.cnt),
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                         if (isSelected) {
                                             Icon(
                                                 imageVector = Icons.Default.Check,
-                                                contentDescription = "已選取",
+                                                contentDescription = stringResource(R.string.common_selected),
                                                 tint = tagColor,
                                                 modifier = Modifier.size(18.dp)
                                             )
@@ -1494,10 +1498,10 @@ private fun PhantomCheckApp(
                                         isMultiSelectMode = false
                                         selectedMessageIds = emptySet()
                                         refreshTrigger++
-                                        snackbarHostState.showSnackbar("已標記 ${ids.size} 則為已讀")
+                                        snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_9ebfdd, ids.size))
                                     }
                                 }
-                            ) { Text("已讀") }
+                            ) { Text(stringResource(R.string.common_read)) }
                             TextButton(
                                 enabled = selectedMessageIds.isNotEmpty(),
                                 onClick = {
@@ -1509,20 +1513,20 @@ private fun PhantomCheckApp(
                                         isMultiSelectMode = false
                                         selectedMessageIds = emptySet()
                                         refreshTrigger++
-                                        snackbarHostState.showSnackbar("已將 ${ids.size} 則加入星標")
+                                        snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_2a496c, ids.size))
                                     }
                                 }
-                            ) { Text("星標") }
+                            ) { Text(stringResource(R.string.common_star)) }
                             TextButton(
                                 enabled = selectedMessageIds.isNotEmpty(),
                                 onClick = { showBatchDeleteConfirm = true }
-                            ) { Text("刪除", color = MaterialTheme.colorScheme.error) }
+                            ) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }
                             TextButton(
                                 onClick = {
                                     isMultiSelectMode = false
                                     selectedMessageIds = emptySet()
                                 }
-                            ) { Text("取消") }
+                            ) { Text(stringResource(R.string.common_cancel)) }
                         }
                     }
                 } else if (LocalConfiguration.current.screenWidthDp < 600) {
@@ -1550,7 +1554,7 @@ private fun PhantomCheckApp(
                                         MainTab.MEMORY -> MemoryIcon
                                         MainTab.INSIGHT -> Icons.Default.Person
                                     }
-                                    val tabLabel = tab.title
+                                    val tabLabel = stringResource(tab.titleRes)
                                     val itemModifier = Modifier
                                         .weight(1f)
                                         .onGloballyPositioned { coords ->
@@ -1655,10 +1659,10 @@ private fun PhantomCheckApp(
                                 haptic(HapticFeedbackType.TextHandleMove)
                                 selectedTab = tab
                             },
-                            icon = { Icon(icon, contentDescription = tab.title) },
+                            icon = { Icon(icon, contentDescription = stringResource(tab.titleRes)) },
                             label = {
                                 Text(
-                                    text = tab.title,
+                                    text = stringResource(tab.titleRes),
                                     style = MaterialTheme.typography.labelSmall,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -1687,7 +1691,7 @@ private fun PhantomCheckApp(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = selectedTab.title,
+                        text = stringResource(selectedTab.titleRes),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -1717,12 +1721,12 @@ private fun PhantomCheckApp(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Search,
-                                    contentDescription = "開啟全域搜尋",
+                                    contentDescription = stringResource(R.string.common_open_global_search),
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Text(
-                                    text = if (searchQuery.isNotBlank()) searchQuery else "搜尋訊息、設定…",
+                                    text = if (searchQuery.isNotBlank()) searchQuery else stringResource(R.string.main_s_b11f3c),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = if (searchQuery.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,
@@ -1740,7 +1744,7 @@ private fun PhantomCheckApp(
                                     targetBounds = targetBounds + (OnboardingTargets.SEARCH_PILL to coords.boundsInRoot())
                                 }
                         ) {
-                            Icon(Icons.Default.Search, contentDescription = "開啟全域搜尋")
+                            Icon(Icons.Default.Search, contentDescription = stringResource(R.string.common_open_global_search))
                         }
                     }
                     IconButton(
@@ -1751,21 +1755,21 @@ private fun PhantomCheckApp(
                                 targetBounds = targetBounds + (OnboardingTargets.SETTINGS_GEAR to coords.boundsInRoot())
                             }
                     ) {
-                        Icon(Icons.Default.Settings, contentDescription = "設定")
+                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.common_settings))
                     }
                     Box {
                         IconButton(
                             onClick = { showTopOverflow = true },
                             modifier = Modifier.size(AuroraTokens.MinTouchTarget)
                         ) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "更多選項")
+                            Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.common_more_options))
                         }
                         DropdownMenu(
                             expanded = showTopOverflow,
                             onDismissRequest = { showTopOverflow = false }
                         ) {
                             DropdownMenuItem(
-                                text = { Text("重新整理") },
+                                text = { Text(stringResource(R.string.common_refresh)) },
                                 leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
                                 onClick = {
                                     showTopOverflow = false
@@ -1773,7 +1777,7 @@ private fun PhantomCheckApp(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("設定中心") },
+                                text = { Text(stringResource(R.string.common_settings_center)) },
                                 leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
                                 onClick = {
                                     showTopOverflow = false
@@ -1802,9 +1806,9 @@ private fun PhantomCheckApp(
                             val ok = ShizukuManager.grantNotificationListener(appCtx)
                             if (ok) {
                                 isListenerEnabled = true
-                                snackbarHostState.showSnackbar("已透過 Shizuku 開啟通知存取權限")
+                                snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_10fa92))
                             } else {
-                                snackbarHostState.showSnackbar("Shizuku 授權失敗，請手動開啟")
+                                snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_9190d2))
                             }
                         }
                     },
@@ -1831,7 +1835,7 @@ private fun PhantomCheckApp(
                     selectedMessageIds = selectedMessageIds - id
                 } else if (selectedMessageIds.size >= MAX_BATCH_SELECT) {
                     scope.launch {
-                        snackbarHostState.showSnackbar("單次最多選取 $MAX_BATCH_SELECT 則訊息")
+                        snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_73dad7, MAX_BATCH_SELECT))
                     }
                 } else {
                     selectedMessageIds = selectedMessageIds + id
@@ -1896,7 +1900,7 @@ private fun PhantomCheckApp(
                                 }
                                 StatsForegroundService.startOrRefresh(appCtx)
                                 refreshTrigger++
-                                snackbarHostState.showSnackbar("已將全部訊息標記為已讀")
+                                snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_b23686))
                             }
                         },
                         onRefresh = { refreshTrigger++ },
@@ -1936,7 +1940,7 @@ private fun PhantomCheckApp(
                             PhantomPrefs.toggleFavoriteApp(appCtx, pkg)
                             favoritePackages = PhantomPrefs.getFavoriteApps(appCtx)
                             scope.launch {
-                                snackbarHostState.showSnackbar("已取消最愛釘選")
+                                snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_0f6b4a))
                             }
                         },
                         onOpenMessageDetail = { msg ->
@@ -2040,7 +2044,7 @@ private fun PhantomCheckApp(
                     )
                     MainTab.INSIGHT -> Column(modifier = Modifier.fillMaxSize()) {
                         PhantomSecondaryTabRow(
-                            tabs = InsightSubTab.entries.map { it.title },
+                            tabs = InsightSubTab.entries.map { stringResource(it.titleRes) },
                             selectedIndex = insightSubTab.ordinal,
                             onSelect = { idx ->
                                 haptic(HapticFeedbackType.TextHandleMove)
@@ -2154,7 +2158,7 @@ private fun PhantomCheckApp(
                     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                     cm.setPrimaryClip(android.content.ClipData.newPlainText("ai_search_query", q))
                     scope.launch {
-                        snackbarHostState.showSnackbar("已切換至 AI 助手並複製「$q」，可直接貼上進行語意搜尋（消耗 1 次額度）")
+                        snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_c0d952, q))
                     }
                 }
             },
@@ -2193,9 +2197,9 @@ private fun PhantomCheckApp(
                         val ok = ShizukuManager.grantNotificationListener(appCtx)
                         if (ok) {
                             isListenerEnabled = true
-                            snackbarHostState.showSnackbar("已透過 Shizuku 開啟通知存取權限")
+                            snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_10fa92))
                         } else {
-                            snackbarHostState.showSnackbar("Shizuku 授權失敗，請手動開啟")
+                            snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_9190d2))
                         }
                     }
                 },

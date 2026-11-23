@@ -37,6 +37,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 
 /**
  * Aurora II 分段式設定列系列（§2.1 / §2.3 / §4.6 / §4.7）。
@@ -86,6 +89,7 @@ fun SettingsSwitchRow(
     highlighted: Boolean = false,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val resCtx = LocalContext.current
     val containerColor = if (highlighted) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
     } else {
@@ -104,7 +108,7 @@ fun SettingsSwitchRow(
             .semantics {
                 contentDescription = buildString {
                     append(title)
-                    append(if (checked) "，已開啟" else "，已關閉")
+                    append(if (checked) resCtx.getString(R.string.settings_row_s_b10e75) else resCtx.getString(R.string.settings_row_s_229ff7))
                     if (!subtitle.isNullOrBlank()) append("，$subtitle")
                 }
             },
@@ -262,6 +266,7 @@ fun SettingsOptionRow(
     highlighted: Boolean = false,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val resCtx = LocalContext.current
     val containerColor = if (highlighted) {
         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
     } else {
@@ -277,7 +282,7 @@ fun SettingsOptionRow(
                 onLongClick = onLongClick,
             )
             .semantics {
-                contentDescription = "$title，目前值：$valueText"
+                contentDescription = resCtx.getString(R.string.settings_row_s_9fb7b9, title, valueText)
             },
         shape = shape,
         color = containerColor,
@@ -429,8 +434,9 @@ fun SettingsAdvancedSection(
     count: Int = 0,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val resCtx = LocalContext.current
     Column(modifier = modifier.fillMaxWidth()) {
-        val label = if (count > 0) "進階設定（$count 項）" else "進階設定"
+        val label = if (count > 0) stringResource(R.string.settings_row_s_efb76e, count) else stringResource(R.string.settings_row_s_026ba3)
         Surface(
             onClick = onToggle,
             shape = RoundedCornerShape(AuroraTokens.CornerCard),
@@ -438,7 +444,7 @@ fun SettingsAdvancedSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics {
-                    contentDescription = if (expanded) "收合$label" else "展開$label"
+                    contentDescription = if (expanded) resCtx.getString(R.string.settings_row_s_e0372a, label) else resCtx.getString(R.string.settings_row_s_4287ac, label)
                 },
         ) {
             Row(
@@ -450,14 +456,14 @@ fun SettingsAdvancedSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    text = if (expanded) "隱藏$label" else "顯示$label",
+                    text = if (expanded) stringResource(R.string.settings_row_s_2b97be, label) else stringResource(R.string.settings_row_s_01f0a8, label),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary,
                 )
                 PhantomChevron(
                     expanded = expanded,
-                    contentDescription = if (expanded) "收合進階設定" else "展開進階設定",
+                    contentDescription = if (expanded) stringResource(R.string.settings_row_s_0316a5) else stringResource(R.string.settings_row_s_e9554c),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }

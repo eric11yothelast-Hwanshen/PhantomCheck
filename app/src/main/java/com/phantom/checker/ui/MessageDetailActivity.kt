@@ -97,6 +97,8 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 class MessageDetailActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -130,6 +132,7 @@ fun MessageDetailScreen(
     messageId: Long,
     onBack: () -> Unit
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -215,8 +218,8 @@ fun MessageDetailScreen(
     if (showDeleteConfirm && message != null) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("刪除訊息") },
-            text = { Text("確定要永久刪除這則訊息嗎？") },
+            title = { Text(stringResource(R.string.common_delete_message)) },
+            text = { Text(stringResource(R.string.conv_s_ee4417)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -235,12 +238,12 @@ fun MessageDetailScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認刪除")
+                    Text(stringResource(R.string.common_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -259,14 +262,14 @@ fun MessageDetailScreen(
                     ReminderScheduler.schedule(appCtx, target.id, ts)
                     message = target.copy(remindAt = ts)
                     val formatted = PhantomPrefs.formatMessageTime(appCtx, ts, includeDate = true)
-                    snackbarHostState.showSnackbar("已排程提醒：$formatted")
+                    snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_ed678a, formatted))
                 }
             }
         )
     }
 
     com.phantom.checker.ui.components.PhantomPageScaffold(
-        title = "訊息詳情",
+        title = stringResource(R.string.detail_s_0c5f2b),
         onBack = onBack,
         topBarStyle = com.phantom.checker.ui.components.PhantomTopBarStyle.Small,
         containerColor = MaterialTheme.colorScheme.background,
@@ -279,19 +282,19 @@ fun MessageDetailScreen(
                             AppDatabaseHolder.db(appCtx).messageDao().setStarred(msg.id, nextStar)
                         }
                         message = msg.copy(isStarred = nextStar)
-                        snackbarHostState.showSnackbar(if (nextStar) "已加入星標" else "已移除星標")
+                        snackbarHostState.showSnackbar(if (nextStar) resCtx.getString(R.string.common_starred_added) else resCtx.getString(R.string.common_starred_removed))
                     }
                 }) {
                     Icon(
                         imageVector = Icons.Default.Star,
-                        contentDescription = "星標",
+                        contentDescription = resCtx.getString(R.string.common_star),
                         tint = if (msg.isStarred) Color(0xFFE6A100) else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 IconButton(onClick = { showDeleteConfirm = true }) {
                     Icon(
                         imageVector = Icons.Default.Delete,
-                        contentDescription = "刪除",
+                        contentDescription = resCtx.getString(R.string.common_delete),
                         tint = MaterialTheme.colorScheme.error
                     )
                 }
@@ -316,7 +319,7 @@ fun MessageDetailScreen(
                 }
                 message == null -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("找不到此訊息（可能已被刪除）", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.detail_s_46946d), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 else -> {
@@ -376,10 +379,10 @@ fun MessageDetailScreen(
                                     onClick = {
                                         val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         clipboard.setPrimaryClip(ClipData.newPlainText("phantom_otp", otpCode))
-                                        Toast.makeText(ctx, "已複製驗證碼 $otpCode", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(ctx, resCtx.getString(R.string.common_s_8b8320, otpCode), Toast.LENGTH_SHORT).show()
                                     }
                                 ) {
-                                    Text("複製驗證碼 $otpCode")
+                                    Text(stringResource(R.string.common_s_f1f3ce, otpCode))
                                 }
                             }
                             if (msg.remindAt != null && msg.remindAt > System.currentTimeMillis()) {
@@ -388,7 +391,7 @@ fun MessageDetailScreen(
                                 }
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    text = "⏰ 已排程待辦提醒：$remindStr",
+                                    text = stringResource(R.string.detail_s_9526b4, remindStr),
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -418,14 +421,14 @@ fun MessageDetailScreen(
                                 contentPadding = 14.dp
                             ) {
                                 Text(
-                                    text = "📅 偵測到行程通知，建議加入本機日曆",
+                                    text = resCtx.getString(R.string.detail_s_d46585),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(Modifier.height(6.dp))
                                 Text(
-                                    text = "時間：$startStr – $endStr",
+                                    text = resCtx.getString(R.string.detail_s_a99e2d, startStr, endStr),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -433,7 +436,7 @@ fun MessageDetailScreen(
                                 OutlinedTextField(
                                     value = editCalTitle,
                                     onValueChange = { editCalTitle = it },
-                                    label = { Text("行程標題") },
+                                    label = { Text(stringResource(R.string.detail_s_f205ec)) },
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth()
                                 )
@@ -441,7 +444,7 @@ fun MessageDetailScreen(
                                 OutlinedTextField(
                                     value = editCalNotes,
                                     onValueChange = { editCalNotes = it },
-                                    label = { Text("備註") },
+                                    label = { Text(stringResource(R.string.common_remark)) },
                                     minLines = 1,
                                     maxLines = 3,
                                     modifier = Modifier.fillMaxWidth()
@@ -449,7 +452,7 @@ fun MessageDetailScreen(
                                 if (calendarWritableCals.isNotEmpty()) {
                                     Spacer(Modifier.height(6.dp))
                                     Text(
-                                        text = "寫入日曆：",
+                                        text = resCtx.getString(R.string.detail_s_7de6b6),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -474,7 +477,7 @@ fun MessageDetailScreen(
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
-                                            text = "⚠ 與既有行程撞期：${com.phantom.checker.util.CalendarBridge.formatConflictSummary(calendarConflicts)}（仍可選擇照寫）",
+                                            text = resCtx.getString(R.string.detail_s_93ec95, com.phantom.checker.util.CalendarBridge.formatConflictSummary(calendarConflicts)),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onErrorContainer,
                                             modifier = Modifier.padding(8.dp)
@@ -508,7 +511,7 @@ fun MessageDetailScreen(
                                             calendarSuggestion = null
                                         }
                                     ) {
-                                        Text("略過")
+                                        Text(resCtx.getString(R.string.common_skip))
                                     }
                                     Button(
                                         enabled = editCalTitle.isNotBlank(),
@@ -529,10 +532,10 @@ fun MessageDetailScreen(
                                                     calendarSuggestion = null
                                                     res.fold(
                                                         onSuccess = {
-                                                            snackbarHostState.showSnackbar("📅 已加入本機日曆：${editCalTitle.trim()}")
+                                                            snackbarHostState.showSnackbar(resCtx.getString(R.string.detail_s_48a1d7, editCalTitle.trim()))
                                                         },
                                                         onFailure = { err ->
-                                                            snackbarHostState.showSnackbar("寫入失敗：${err.localizedMessage ?: "未知錯誤"}")
+                                                            snackbarHostState.showSnackbar(resCtx.getString(R.string.detail_s_0db8f4, err.localizedMessage ?: resCtx.getString(R.string.common_unknown_error)))
                                                         }
                                                     )
                                                 }
@@ -549,16 +552,16 @@ fun MessageDetailScreen(
                                                     com.phantom.checker.util.CalendarBridge.dismissSuggestion(sug.messageId)
                                                     calendarSuggestion = null
                                                 }.onFailure {
-                                                    Toast.makeText(ctx, "裝置找不到可用的日曆 App", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(ctx, resCtx.getString(R.string.detail_s_670c4a), Toast.LENGTH_SHORT).show()
                                                 }
                                             }
                                         }
                                     ) {
                                         Text(
                                             if (hasWritePerm && selectedCalId != null) {
-                                                if (calendarConflicts.isNotEmpty()) "仍要加入日曆" else "📅 加入日曆"
+                                                if (calendarConflicts.isNotEmpty()) resCtx.getString(R.string.detail_s_edb2ff) else resCtx.getString(R.string.detail_s_7d0c50)
                                             } else {
-                                                "於日曆 App 預填"
+                                                resCtx.getString(R.string.detail_s_f12b81)
                                             }
                                         )
                                     }
@@ -579,13 +582,13 @@ fun MessageDetailScreen(
                                 else -> MaterialTheme.colorScheme.primary
                             }
                             val riskText = when (msg.riskLabel) {
-                                "scam" -> "高風險詐騙 (${msg.riskScore}/100)"
-                                "suspicious" -> "疑似風險 (${msg.riskScore}/100)"
-                                "safe" -> "安全 (${msg.riskScore}/100)"
-                                else -> "尚未分析"
+                                "scam" -> stringResource(R.string.detail_s_526177, msg.riskScore)
+                                "suspicious" -> stringResource(R.string.detail_s_5ed046, msg.riskScore)
+                                "safe" -> stringResource(R.string.detail_s_ec55a0, msg.riskScore)
+                                else -> stringResource(R.string.detail_s_c767ca)
                             }
                             Text(
-                                text = "AI 風險評估：$riskText",
+                                text = stringResource(R.string.detail_s_e36c7f, riskText),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = riskColor
@@ -612,9 +615,9 @@ fun MessageDetailScreen(
                                 Spacer(Modifier.height(6.dp))
                                 Text(
                                     text = if (intel.isHit) {
-                                        "防詐情報命中：${intel.sourceLabel}（查詢時間：$intelTimeStr）"
+                                        resCtx.getString(R.string.detail_s_de193c, intel.sourceLabel, intelTimeStr)
                                     } else {
-                                        "防詐情報：已查證，無命中紀錄（查詢時間：$intelTimeStr）"
+                                        resCtx.getString(R.string.detail_s_d3956d, intelTimeStr)
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = if (intel.isHit) {
@@ -637,13 +640,13 @@ fun MessageDetailScreen(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Warning,
-                                            contentDescription = "可疑連結警告",
+                                            contentDescription = stringResource(R.string.detail_s_9de2c3),
                                             tint = MaterialTheme.colorScheme.error,
                                             modifier = Modifier.size(18.dp)
                                         )
                                         Spacer(Modifier.width(8.dp))
                                         Text(
-                                            text = "偵測到可疑連結，請勿輕易點擊或輸入個人資料",
+                                            text = stringResource(R.string.detail_s_3f1d02),
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.error
@@ -714,9 +717,9 @@ fun MessageDetailScreen(
                                         message = updated
                                         selectedTagIds = refreshedRefs.map { it.tagId }.toSet()
                                         tagSourceByTagId = refreshedRefs.associate { it.tagId to it.source }
-                                        snackbarHostState.showSnackbar("AI 分析完成：${res.riskLabel} (${res.riskScore}分)")
+                                        snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_b57b71, res.riskLabel, res.riskScore))
                                     } else {
-                                        snackbarHostState.showSnackbar("AI 分析失敗，請確認 API 設定或網路")
+                                        snackbarHostState.showSnackbar(resCtx.getString(R.string.detail_s_b5b956))
                                     }
                                 }
                             }
@@ -724,10 +727,10 @@ fun MessageDetailScreen(
                             if (showWhitelistedAnalyzeConfirm) {
                                 AlertDialog(
                                     onDismissRequest = { showWhitelistedAnalyzeConfirm = false },
-                                    title = { Text("此寄件者已於白名單") },
+                                    title = { Text(stringResource(R.string.detail_s_ad2b97)) },
                                     text = {
                                         Text(
-                                            "「${msg.sender.ifBlank { msg.appLabel }}」已加入信任白名單，系統正常會直接略過風險分析。確定要手動執行深度分析嗎？"
+                                            stringResource(R.string.detail_s_846c64, msg.sender.ifBlank { msg.appLabel })
                                         )
                                     },
                                     confirmButton = {
@@ -735,12 +738,12 @@ fun MessageDetailScreen(
                                             showWhitelistedAnalyzeConfirm = false
                                             runDeepAnalysis(wasWhitelisted = true)
                                         }) {
-                                            Text("仍要深度分析")
+                                            Text(stringResource(R.string.detail_s_aaed09))
                                         }
                                     },
                                     dismissButton = {
                                         TextButton(onClick = { showWhitelistedAnalyzeConfirm = false }) {
-                                            Text("取消")
+                                            Text(stringResource(R.string.common_cancel))
                                         }
                                     }
                                 )
@@ -782,9 +785,9 @@ fun MessageDetailScreen(
                                         color = MaterialTheme.colorScheme.onPrimary
                                     )
                                     Spacer(Modifier.width(8.dp))
-                                    Text("分析中…")
+                                    Text(stringResource(R.string.common_analyzing))
                                 } else {
-                                    Text("AI 分析此則")
+                                    Text(stringResource(R.string.detail_s_6e2adf))
                                 }
                             }
                         }
@@ -797,12 +800,12 @@ fun MessageDetailScreen(
                             contentPadding = 14.dp
                         ) {
                             Text(
-                                text = "AI 深度分析",
+                                text = stringResource(R.string.detail_s_936432),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "產生段落式風險解說（詐騙類型、可疑點、建議處理動作），計入每日 AI 額度。",
+                                text = stringResource(R.string.detail_s_67d2f1),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -810,13 +813,13 @@ fun MessageDetailScreen(
                             AiProviderSwitcherChip(
                                 profiles = profiles,
                                 activeProfile = activeProfile,
-                                label = "深度分析模型：",
+                                label = stringResource(R.string.detail_s_1bb186),
                                 onSelectProfile = { selected ->
                                     PhantomPrefs.setPurposeProfileId(appCtx, AiPurpose.DEEP_ANALYSIS.id, selected.id)
                                     PhantomSettingsBus.notifyChanged()
                                     activeProfile = selected
                                     scope.launch {
-                                        snackbarHostState.showSnackbar("已切換深度分析模型：${selected.name}・${selected.model}")
+                                        snackbarHostState.showSnackbar(resCtx.getString(R.string.detail_s_924807, selected.name, selected.model))
                                     }
                                 }
                             )
@@ -829,12 +832,12 @@ fun MessageDetailScreen(
                                     onClick = {
                                         if (isDeepAnalyzing) return@OutlinedButton
                                         if (AiClient.getProfileForPurpose(appCtx, AiPurpose.DEEP_ANALYSIS) == null) {
-                                            deepAnalysisError = "尚未設定 AI Provider API Key，請至設定頁配置"
+                                            deepAnalysisError = resCtx.getString(R.string.detail_s_c36500)
                                             return@OutlinedButton
                                         }
                                         if (!PhantomPrefs.canUseAiTodayAndIncrement(appCtx)) {
                                             val limit = PhantomPrefs.getDailyAiLimit(appCtx)
-                                            val msgLimit = "今日 AI 額度已達上限（$limit 次），請明日再試或於設定調整"
+                                            val msgLimit = resCtx.getString(R.string.detail_s_26c1d9, limit)
                                             deepAnalysisError = msgLimit
                                             scope.launch { snackbarHostState.showSnackbar(msgLimit) }
                                             return@OutlinedButton
@@ -887,10 +890,10 @@ fun MessageDetailScreen(
                                                     if (err.message?.contains("HTTP 413") == true) {
                                                         PhantomPrefs.refundTodayAiUsage(appCtx)
                                                     }
-                                                    deepAnalysisError = err.message ?: "深度分析失敗"
+                                                    deepAnalysisError = err.message ?: resCtx.getString(R.string.detail_s_130dda)
                                                 }
                                             } catch (_: CancellationException) {
-                                                deepAnalysisError = "已取消深度分析"
+                                                deepAnalysisError = resCtx.getString(R.string.detail_s_706914)
                                             } finally {
                                                 isDeepAnalyzing = false
                                                 deepAnalyzeJob = null
@@ -908,9 +911,9 @@ fun MessageDetailScreen(
                                             strokeWidth = 2.dp
                                         )
                                         Spacer(Modifier.width(8.dp))
-                                        Text("深度分析中…")
+                                        Text(stringResource(R.string.detail_s_8ad2a6))
                                     } else {
-                                        Text("一鍵 AI 深度分析")
+                                        Text(stringResource(R.string.detail_s_9d4fa9))
                                     }
                                 }
                                 if (isDeepAnalyzing) {
@@ -919,7 +922,7 @@ fun MessageDetailScreen(
                                             deepAnalyzeJob?.cancel()
                                         }
                                     ) {
-                                        Text("取消")
+                                        Text(stringResource(R.string.common_cancel))
                                     }
                                 }
                             }
@@ -946,9 +949,9 @@ fun MessageDetailScreen(
                                         val plain = stripMarkdown(deepAnalysisMarkdown!!)
                                         val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         cm.setPrimaryClip(ClipData.newPlainText("deep_ai_analysis", plain))
-                                        scope.launch { snackbarHostState.showSnackbar("已複製深度分析結果") }
+                                        scope.launch { snackbarHostState.showSnackbar(resCtx.getString(R.string.detail_s_46b0ca)) }
                                     }) {
-                                        Text("複製解說")
+                                        Text(stringResource(R.string.detail_s_8accd1))
                                     }
                                 }
                             }
@@ -967,19 +970,19 @@ fun MessageDetailScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "自訂標籤",
+                                    text = stringResource(R.string.detail_s_f65f7e),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold
                                 )
                                 TextButton(onClick = {
                                     ctx.startActivity(Intent(ctx, TagManagementActivity::class.java))
                                 }) {
-                                    Text("管理標籤")
+                                    Text(stringResource(R.string.common_manage_tags))
                                 }
                             }
                             if (allTags.isEmpty()) {
                                 Text(
-                                    text = "尚未建立任何標籤，點擊右上角「管理標籤」新增。",
+                                    text = stringResource(R.string.detail_s_4d490f),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1038,13 +1041,13 @@ fun MessageDetailScreen(
                                 onClick = {
                                     val clipboard = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                     clipboard.setPrimaryClip(ClipData.newPlainText("phantom_message", msg.content))
-                                    Toast.makeText(ctx, "已複製訊息內容", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(ctx, resCtx.getString(R.string.detail_s_00399e), Toast.LENGTH_SHORT).show()
                                 },
                                 modifier = Modifier
                                     .weight(1f)
                                     .pressableScale()
                             ) {
-                                Text("複製內容")
+                                Text(stringResource(R.string.common_copy_content))
                             }
                             if (launchIntent != null) {
                                 OutlinedButton(
@@ -1056,7 +1059,7 @@ fun MessageDetailScreen(
                                         .weight(1f)
                                         .pressableScale()
                                 ) {
-                                    Text("開啟原 App")
+                                    Text(stringResource(R.string.common_open_original_app))
                                 }
                             }
                         }
@@ -1132,7 +1135,7 @@ fun MessageDetailScreen(
                                     .weight(1f)
                                     .pressableScale()
                             ) {
-                                Text("加入白名單")
+                                Text(stringResource(R.string.common_add_whitelist))
                             }
                             OutlinedButton(
                                 onClick = { showDecisionFeedback = true },
@@ -1140,7 +1143,7 @@ fun MessageDetailScreen(
                                     .weight(1f)
                                     .pressableScale()
                             ) {
-                                Text("此判斷有誤")
+                                Text(stringResource(R.string.common_report_misjudgment))
                             }
                             OutlinedButton(
                                 onClick = { showReminderPicker = true },
@@ -1148,7 +1151,7 @@ fun MessageDetailScreen(
                                     .weight(1f)
                                     .pressableScale()
                             ) {
-                                Text(if (msg.remindAt != null) "修改提醒時間" else "稍後處理")
+                                Text(if (msg.remindAt != null) stringResource(R.string.common_edit_reminder_time) else stringResource(R.string.common_remind_later))
                             }
                             if (msg.remindAt != null) {
                                 OutlinedButton(
@@ -1159,14 +1162,14 @@ fun MessageDetailScreen(
                                             }
                                             ReminderScheduler.cancel(appCtx, msg.id)
                                             message = msg.copy(remindAt = null)
-                                            snackbarHostState.showSnackbar("已取消待辦提醒")
+                                            snackbarHostState.showSnackbar(resCtx.getString(R.string.detail_s_f677a6))
                                         }
                                     },
                                     modifier = Modifier
                                         .weight(1f)
                                         .pressableScale()
                                 ) {
-                                    Text("取消提醒")
+                                    Text(stringResource(R.string.common_cancel_reminder))
                                 }
                             }
                         }
@@ -1190,7 +1193,7 @@ fun MessageDetailScreen(
                                 .fillMaxWidth()
                                 .pressableScale()
                         ) {
-                            Text(if (hasNeverMemoRule) "已設定不再自動記事／待辦" else "不再自動記事／待辦")
+                            Text(if (hasNeverMemoRule) stringResource(R.string.detail_s_b2b0dd) else stringResource(R.string.common_s_5ad72e))
                         }
 
                         if (showNeverMemoDialog) {
@@ -1218,7 +1221,7 @@ fun MessageDetailScreen(
                                             com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                                         }
                                         hasNeverMemoRule = true
-                                        snackbarHostState.showSnackbar("已設定不再自動加入記事／待辦")
+                                        snackbarHostState.showSnackbar(resCtx.getString(R.string.notes_s_b617bb))
                                     }
                                 }
                             )
@@ -1233,24 +1236,24 @@ fun MessageDetailScreen(
                         if (showSuspendConfirm) {
                             AlertDialog(
                                 onDismissRequest = { showSuspendConfirm = false },
-                                title = { Text("確認凍結來源 App") },
-                                text = { Text("確定要透過 Shizuku 凍結「${msg.appLabel} (${msg.packageName})」嗎？凍結後可至「設定 → Shizuku 進階」解除凍結。") },
+                                title = { Text(stringResource(R.string.detail_s_d95488)) },
+                                text = { Text(stringResource(R.string.detail_s_e4bc66, msg.appLabel, msg.packageName)) },
                                 confirmButton = {
                                     Button(onClick = {
                                         scope.launch {
                                             val res = ShizukuKeepAlive.suspendTargetApp(appCtx, msg.packageName)
                                             showSuspendConfirm = false
                                             snackbarHostState.showSnackbar(
-                                                if (res.isSuccess) "已凍結 ${msg.appLabel}" else "凍結失敗：${res.output}"
+                                                if (res.isSuccess) resCtx.getString(R.string.detail_s_5b13aa, msg.appLabel) else resCtx.getString(R.string.detail_s_ec28fb, res.output)
                                             )
                                         }
                                     }) {
-                                        Text("確認凍結")
+                                        Text(stringResource(R.string.common_confirm_freeze))
                                     }
                                 },
                                 dismissButton = {
                                     TextButton(onClick = { showSuspendConfirm = false }) {
-                                        Text("取消")
+                                        Text(stringResource(R.string.common_cancel))
                                     }
                                 }
                             )
@@ -1266,19 +1269,19 @@ fun MessageDetailScreen(
                                         scope.launch {
                                             val res = ShizukuKeepAlive.forceStopTargetApp(appCtx, msg.packageName)
                                             snackbarHostState.showSnackbar(
-                                                if (res.isSuccess) "已強行停止 ${msg.appLabel}" else "操作失敗：${res.output}"
+                                                if (res.isSuccess) resCtx.getString(R.string.detail_s_59632d, msg.appLabel) else resCtx.getString(R.string.detail_s_d45d8d, res.output)
                                             )
                                         }
                                     },
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("Shizuku 強行停止")
+                                    Text(stringResource(R.string.detail_s_e491cf))
                                 }
                                 OutlinedButton(
                                     onClick = { showSuspendConfirm = true },
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("凍結來源 App", color = MaterialTheme.colorScheme.error)
+                                    Text(stringResource(R.string.detail_s_d8f9ce), color = MaterialTheme.colorScheme.error)
                                 }
                             }
                         }

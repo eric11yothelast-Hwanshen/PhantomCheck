@@ -60,14 +60,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
+import androidx.annotation.StringRes
 
 /** §6.2 全域搜尋範圍 */
-enum class GlobalSearchScope(val label: String) {
-    ALL("全部"),
-    MESSAGES("訊息"),
-    SETTINGS("設定"),
-    MEMORY("記憶"),
-    NOTES("記事"),
+enum class GlobalSearchScope(@StringRes val labelRes: Int) {
+    ALL(R.string.common_all),
+    MESSAGES(R.string.common_messages),
+    SETTINGS(R.string.common_settings),
+    MEMORY(R.string.common_memory),
+    NOTES(R.string.common_notes),
 }
 
 /**
@@ -100,6 +103,7 @@ internal fun PhantomGlobalSearchOverlay(
     onAiMessageSearch: (String) -> Unit,
     onShowSnackbar: (String) -> Unit,
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -197,13 +201,13 @@ internal fun PhantomGlobalSearchOverlay(
                 val valid = ids.filter { SettingsCatalog.findById(it) != null }
                 aiSettingsMatchedIds = valid
                 if (valid.isEmpty()) {
-                    aiSettingsNote = "查無相符的設定項目"
-                    onShowSnackbar("查無相符的設定項目")
+                    aiSettingsNote = resCtx.getString(R.string.search_s_4de5af)
+                    onShowSnackbar(resCtx.getString(R.string.search_s_4de5af))
                 } else {
-                    aiSettingsNote = "✨ AI 語意命中 ${valid.size} 項設定"
+                    aiSettingsNote = resCtx.getString(R.string.search_s_9e3e7b, valid.size)
                 }
             }.onFailure { err ->
-                aiSettingsNote = err.message ?: "AI 語意搜尋失敗，請使用下方本地結果"
+                aiSettingsNote = err.message ?: resCtx.getString(R.string.search_s_8b9a4e)
             }
         }
     }
@@ -228,14 +232,14 @@ internal fun PhantomGlobalSearchOverlay(
         query = query,
         onQueryChange = onQueryChange,
         onDismiss = onDismiss,
-        placeholder = "搜尋訊息、設定、記憶或記事…",
+        placeholder = stringResource(R.string.search_s_c3aa57),
         onAiSemanticSearch = if (selectedScope == GlobalSearchScope.MESSAGES && trimmedQuery.isNotEmpty()) {
             {
                 UiLayoutPrefs.recordRecentSearch(appCtx, trimmedQuery)
                 onAiMessageSearch(trimmedQuery)
             }
         } else null,
-        aiQuotaHint = "AI 語意搜尋（跳轉 AI 助手，消耗 1 次額度）",
+        aiQuotaHint = stringResource(R.string.search_s_306bf8),
         filterRow = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -243,7 +247,7 @@ internal fun PhantomGlobalSearchOverlay(
                         FilterChip(
                             selected = selectedScope == scopeItem,
                             onClick = { selectedScope = scopeItem },
-                            label = { Text(scopeItem.label) },
+                            label = { Text(stringResource(scopeItem.labelRes)) },
                         )
                     }
                 }
@@ -253,7 +257,7 @@ internal fun PhantomGlobalSearchOverlay(
                             FilterChip(
                                 selected = searchRiskFilter == filter,
                                 onClick = { onSearchRiskFilterChange(filter) },
-                                label = { Text(filter.label) },
+                                label = { Text(stringResource(filter.labelRes)) },
                             )
                         }
                     }
@@ -271,13 +275,13 @@ internal fun PhantomGlobalSearchOverlay(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = "最近搜尋",
+                                text = stringResource(R.string.search_s_38d63d),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
                             )
                             TextButton(onClick = { UiLayoutPrefs.clearRecentSearches(appCtx) }) {
-                                Text("全部清除")
+                                Text(stringResource(R.string.common_clear_all))
                             }
                         }
                     }
@@ -309,7 +313,7 @@ internal fun PhantomGlobalSearchOverlay(
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Close,
-                                                contentDescription = "移除最近搜尋 $term",
+                                                contentDescription = resCtx.getString(R.string.search_s_0b142a, term),
                                                 modifier = Modifier.size(14.dp),
                                             )
                                         }
@@ -322,7 +326,7 @@ internal fun PhantomGlobalSearchOverlay(
 
                 item(key = "quick_actions_header") {
                     Text(
-                        text = "常用動作",
+                        text = stringResource(R.string.search_s_36940d),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,
@@ -340,7 +344,7 @@ internal fun PhantomGlobalSearchOverlay(
                                 onDismiss()
                                 onOpenSettings(null, null)
                             },
-                            label = { Text("開啟設定中心") },
+                            label = { Text(stringResource(R.string.search_s_40b5c0)) },
                             leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp)) },
                         )
                         AssistChip(
@@ -348,14 +352,14 @@ internal fun PhantomGlobalSearchOverlay(
                                 onDismiss()
                                 onOpenPermissionHub()
                             },
-                            label = { Text("權限授予中心") },
+                            label = { Text(stringResource(R.string.search_s_1579f9)) },
                         )
                         AssistChip(
                             onClick = {
                                 onDismiss()
                                 onReplayTour()
                             },
-                            label = { Text("重播新手導覽") },
+                            label = { Text(stringResource(R.string.search_s_1314ad)) },
                         )
                     }
                 }
@@ -363,7 +367,7 @@ internal fun PhantomGlobalSearchOverlay(
                 if (pinnedItems.isNotEmpty()) {
                     item(key = "pinned_settings_header") {
                         Text(
-                            text = "釘選設定",
+                            text = stringResource(R.string.search_s_71bbd8),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary,
@@ -391,14 +395,14 @@ internal fun PhantomGlobalSearchOverlay(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = "設定（${combinedSettingResults.size}）",
+                                text = stringResource(R.string.search_s_e0d0b8, combinedSettingResults.size),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
                             )
                             if (combinedSettingResults.size > 5 && !expandAllSettings) {
                                 TextButton(onClick = { expandAllSettings = true }) {
-                                    Text("查看全部")
+                                    Text(stringResource(R.string.common_view_all))
                                 }
                             }
                         }
@@ -418,9 +422,9 @@ internal fun PhantomGlobalSearchOverlay(
                                 Spacer(Modifier.width(6.dp))
                                 Text(
                                     text = when {
-                                        isAiSearchingSettings -> "AI 語意搜尋設定中…"
-                                        !isAiConfigured -> "✨ 用 AI 找設定（未設定 API Key，本地搜尋仍可用）"
-                                        else -> "✨ 用 AI 找設定"
+                                        isAiSearchingSettings -> stringResource(R.string.search_s_fef37a)
+                                        !isAiConfigured -> stringResource(R.string.search_s_c9acff)
+                                        else -> stringResource(R.string.search_s_4877e2)
                                     },
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -441,7 +445,7 @@ internal fun PhantomGlobalSearchOverlay(
                     if (displayedSettings.isEmpty() && selectedScope == GlobalSearchScope.SETTINGS) {
                         item(key = "settings_empty") {
                             Text(
-                                text = "查無相符的設定項目",
+                                text = stringResource(R.string.search_s_4de5af),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(8.dp),
@@ -471,14 +475,14 @@ internal fun PhantomGlobalSearchOverlay(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = "訊息（${messageResults.size}）",
+                                text = stringResource(R.string.search_s_55cc00, messageResults.size),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
                             )
                             if (messageResults.size > 5 && !expandAllMessages) {
                                 TextButton(onClick = { expandAllMessages = true }) {
-                                    Text("查看全部")
+                                    Text(stringResource(R.string.common_view_all))
                                 }
                             }
                         }
@@ -487,7 +491,7 @@ internal fun PhantomGlobalSearchOverlay(
                     if (displayedMessages.isEmpty() && selectedScope == GlobalSearchScope.MESSAGES) {
                         item(key = "messages_empty") {
                             Text(
-                                text = if (isLoadingMessages) "搜尋中…" else "找不到符合「$trimmedQuery」的訊息。",
+                                text = if (isLoadingMessages) stringResource(R.string.common_searching) else stringResource(R.string.search_s_3df885, trimmedQuery),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(8.dp),
@@ -523,14 +527,14 @@ internal fun PhantomGlobalSearchOverlay(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = "記憶（${memoryMatches.size}）",
+                                text = stringResource(R.string.search_s_ad3196, memoryMatches.size),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
                             )
                             if (memoryMatches.size > 5 && !expandAllMemories) {
                                 TextButton(onClick = { expandAllMemories = true }) {
-                                    Text("查看全部")
+                                    Text(stringResource(R.string.common_view_all))
                                 }
                             }
                         }
@@ -539,7 +543,7 @@ internal fun PhantomGlobalSearchOverlay(
                     if (displayedMemories.isEmpty()) {
                         item(key = "memory_empty") {
                             Text(
-                                text = "找不到符合「$trimmedQuery」的記憶。",
+                                text = stringResource(R.string.search_s_e39b37, trimmedQuery),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(8.dp),
@@ -566,7 +570,7 @@ internal fun PhantomGlobalSearchOverlay(
                                     )
                                     Spacer(Modifier.height(2.dp))
                                     Text(
-                                        text = if (isSensitive) "敏感記憶（僅於記憶頁檢視）" else mem.content,
+                                        text = if (isSensitive) stringResource(R.string.search_s_edbd60) else mem.content,
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 2,
@@ -586,14 +590,14 @@ internal fun PhantomGlobalSearchOverlay(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = "記事（${noteMatches.size}）",
+                                text = stringResource(R.string.search_s_e4dd0f, noteMatches.size),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
                             )
                             if (noteMatches.size > 5 && !expandAllNotes) {
                                 TextButton(onClick = { expandAllNotes = true }) {
-                                    Text("查看全部")
+                                    Text(stringResource(R.string.common_view_all))
                                 }
                             }
                         }
@@ -602,7 +606,7 @@ internal fun PhantomGlobalSearchOverlay(
                     if (displayedNotes.isEmpty()) {
                         item(key = "notes_empty") {
                             Text(
-                                text = "找不到符合「$trimmedQuery」的記事。",
+                                text = stringResource(R.string.search_s_1ace63, trimmedQuery),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(8.dp),
@@ -650,10 +654,11 @@ private fun GlobalSearchSettingRow(
     settingsBusVer: Long,
     onClick: () -> Unit,
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val categoryTitle = remember(item.id) {
-        SettingsCategoryRegistry.categoryFor(item.id)?.title ?: "設定"
+        SettingsCategoryRegistry.categoryFor(item.id)?.title ?: resCtx.getString(R.string.common_settings)
     }
     val isToggle = remember(item.id) { SettingsCatalog.isToggleable(item.id) }
     var checked by remember(item.id, settingsBusVer) {
@@ -667,7 +672,7 @@ private fun GlobalSearchSettingRow(
         modifier = Modifier
             .fillMaxWidth()
             .semantics {
-                contentDescription = "${item.title}，分類：$categoryTitle"
+                contentDescription = resCtx.getString(R.string.search_s_e60c1c, item.title, categoryTitle)
             },
     ) {
         Row(
@@ -685,7 +690,7 @@ private fun GlobalSearchSettingRow(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = categoryTitle + if (SettingsCategoryRegistry.isFoldedByDefault(item.id)) " · 進階" else "",
+                    text = categoryTitle + if (SettingsCategoryRegistry.isFoldedByDefault(item.id)) stringResource(R.string.search_s_7e015d) else "",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary,
                 )

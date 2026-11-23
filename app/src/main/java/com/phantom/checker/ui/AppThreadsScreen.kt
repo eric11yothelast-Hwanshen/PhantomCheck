@@ -82,6 +82,8 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 private const val MAX_BATCH_SELECT = 100
 
@@ -132,6 +134,7 @@ fun AppThreadsScreen(
     appLabel: String,
     onBack: () -> Unit
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -155,7 +158,7 @@ fun AppThreadsScreen(
             selectedConversationKeys = selectedConversationKeys - convKey
         } else if (selectedConversationKeys.size >= MAX_BATCH_SELECT) {
             scope.launch {
-                snackbarHostState.showSnackbar("單次最多選取 $MAX_BATCH_SELECT 個對話")
+                snackbarHostState.showSnackbar(resCtx.getString(R.string.threads_s_1add49, MAX_BATCH_SELECT))
             }
         } else {
             selectedConversationKeys = selectedConversationKeys + convKey
@@ -238,7 +241,7 @@ fun AppThreadsScreen(
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(if (target.isPinned) "取消頂部釘選" else "釘選至頂部")
+                        Text(if (target.isPinned) stringResource(R.string.threads_s_6c1483) else stringResource(R.string.threads_s_ed02fb))
                     }
                     OutlinedButton(
                         onClick = {
@@ -247,13 +250,13 @@ fun AppThreadsScreen(
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("刪除此對話", color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.threads_s_475252), color = MaterialTheme.colorScheme.error)
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = { actionThread = null }) {
-                    Text("關閉")
+                    Text(stringResource(R.string.common_close))
                 }
             }
         )
@@ -262,8 +265,8 @@ fun AppThreadsScreen(
     deleteThreadConfirm?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteThreadConfirm = null },
-            title = { Text("刪除此對話") },
-            text = { Text("確定要永久刪除與「${target.displayTitle}」的所有對話訊息嗎？此操作無法復原。") },
+            title = { Text(stringResource(R.string.threads_s_475252)) },
+            text = { Text(stringResource(R.string.threads_s_a5821f, target.displayTitle)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -282,12 +285,12 @@ fun AppThreadsScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認刪除")
+                    Text(stringResource(R.string.common_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteThreadConfirm = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -296,8 +299,8 @@ fun AppThreadsScreen(
     if (showDeleteConfirm) {
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
-            title = { Text("清除此 App 所有訊息") },
-            text = { Text("確定要永久刪除「$appLabel」的所有攔截訊息嗎？此操作無法復原。") },
+            title = { Text(stringResource(R.string.threads_s_3d8da0)) },
+            text = { Text(stringResource(R.string.threads_s_94bb7c, appLabel)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -316,12 +319,12 @@ fun AppThreadsScreen(
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認清除")
+                    Text(stringResource(R.string.common_confirm_clear))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -331,8 +334,8 @@ fun AppThreadsScreen(
         val count = selectedConversationKeys.size
         AlertDialog(
             onDismissRequest = { showBatchDeleteConfirm = false },
-            title = { Text("批次刪除對話") },
-            text = { Text("確定要永久刪除已選取的 $count 個對話嗎？詐騙訊息將受保護保留，其餘刪除後無法復原。") },
+            title = { Text(stringResource(R.string.threads_s_cdc200)) },
+            text = { Text(stringResource(R.string.threads_s_ba30a9, count)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -354,23 +357,23 @@ fun AppThreadsScreen(
                             refreshTrigger++
                             val msgText = when {
                                 deletedCount > 0 && protectedCount > 0 ->
-                                    "已刪除 $deletedCount 則訊息，另有 $protectedCount 則詐騙訊息受保護保留"
+                                    resCtx.getString(R.string.threads_s_8b7bd6, deletedCount, protectedCount)
                                 deletedCount == 0 && protectedCount > 0 ->
-                                    "所選對話中的 $protectedCount 則皆為詐騙訊息，已受保護保留"
+                                    resCtx.getString(R.string.threads_s_17d2b5, protectedCount)
                                 else ->
-                                    "已刪除所選對話共 $deletedCount 則訊息"
+                                    resCtx.getString(R.string.threads_s_908dd9, deletedCount)
                             }
                             snackbarHostState.showSnackbar(msgText)
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認刪除")
+                    Text(stringResource(R.string.common_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showBatchDeleteConfirm = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -388,7 +391,7 @@ fun AppThreadsScreen(
                     expandedHeight = com.phantom.checker.ui.components.AuroraTokens.SmallTopBarHeight,
                     title = {
                         Text(
-                            text = "已選 ${selectedConversationKeys.size}/$MAX_BATCH_SELECT 個對話",
+                            text = stringResource(R.string.threads_s_38eeab, selectedConversationKeys.size, MAX_BATCH_SELECT),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -400,7 +403,7 @@ fun AppThreadsScreen(
                         }) {
                             Icon(
                                 imageVector = Icons.Default.Close,
-                                contentDescription = "取消選取"
+                                contentDescription = stringResource(R.string.common_deselect)
                             )
                         }
                     },
@@ -417,15 +420,15 @@ fun AppThreadsScreen(
                                 selectedConversationKeys = targetKeys
                                 scope.launch {
                                     val msg = if (keys.size > MAX_BATCH_SELECT) {
-                                        "單次最多選取 $MAX_BATCH_SELECT 個對話（已選 ${targetKeys.size} 個）"
+                                        resCtx.getString(R.string.threads_s_0d6447, MAX_BATCH_SELECT, targetKeys.size)
                                     } else {
-                                        "已全選 ${targetKeys.size} 個對話"
+                                        resCtx.getString(R.string.threads_s_acf7af, targetKeys.size)
                                     }
                                     snackbarHostState.showSnackbar(msg)
                                 }
                             }
                         ) {
-                            Text("全選")
+                            Text(stringResource(R.string.common_select_all))
                         }
                     }
                 )
@@ -453,14 +456,14 @@ fun AppThreadsScreen(
                         IconButton(onClick = onBack) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "返回"
+                                contentDescription = stringResource(R.string.common_back)
                             )
                         }
                     },
                     actions = {
                         Box {
                             IconButton(onClick = { showMenu = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "更多操作")
+                                Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.common_more_actions))
                             }
                             DropdownMenu(
                                 expanded = showMenu,
@@ -468,7 +471,7 @@ fun AppThreadsScreen(
                             ) {
                                 if (threads.isNotEmpty()) {
                                     DropdownMenuItem(
-                                        text = { Text("批次選取") },
+                                        text = { Text(stringResource(R.string.common_batch_select)) },
                                         onClick = {
                                             showMenu = false
                                             isMultiSelectMode = true
@@ -479,7 +482,7 @@ fun AppThreadsScreen(
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            "清除此 App 所有訊息",
+                                            stringResource(R.string.threads_s_3d8da0),
                                             color = MaterialTheme.colorScheme.error
                                         )
                                     },
@@ -520,20 +523,20 @@ fun AppThreadsScreen(
                                     isMultiSelectMode = false
                                     selectedConversationKeys = emptySet()
                                     refreshTrigger++
-                                    snackbarHostState.showSnackbar("已將 ${keys.size} 個對話標記為已讀")
+                                    snackbarHostState.showSnackbar(resCtx.getString(R.string.threads_s_41658f, keys.size))
                                 }
                             }
-                        ) { Text("標已讀") }
+                        ) { Text(stringResource(R.string.common_mark_read)) }
                         TextButton(
                             enabled = selectedConversationKeys.isNotEmpty(),
                             onClick = { showBatchDeleteConfirm = true }
-                        ) { Text("刪除", color = MaterialTheme.colorScheme.error) }
+                        ) { Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error) }
                         TextButton(
                             onClick = {
                                 isMultiSelectMode = false
                                 selectedConversationKeys = emptySet()
                             }
-                        ) { Text("取消") }
+                        ) { Text(stringResource(R.string.common_cancel)) }
                     }
                 }
             }
@@ -556,8 +559,8 @@ fun AppThreadsScreen(
                 threads.isEmpty() -> {
                     EmptyStateView(
                         icon = Icons.Default.Email,
-                        title = "此 App 尚無對話紀錄",
-                        description = "當收到來自 $appLabel 的通知時，將會自動依寄件者分組顯示。"
+                        title = stringResource(R.string.threads_s_b220e9),
+                        description = stringResource(R.string.threads_s_39025f, appLabel)
                     )
                 }
                 else -> {
@@ -569,7 +572,7 @@ fun AppThreadsScreen(
                             PhantomSearchBarPill(
                                 glassState = glassState,
                                 query = threadSearchQuery,
-                                placeholder = "搜尋 $appLabel 對話或寄件者…",
+                                placeholder = stringResource(R.string.threads_s_94f32c, appLabel),
                                 onClick = { showThreadSearch = true }
                             )
                         }
@@ -623,12 +626,12 @@ fun AppThreadsScreen(
         query = threadSearchQuery,
         onQueryChange = { threadSearchQuery = it },
         onDismiss = { showThreadSearch = false },
-        placeholder = "搜尋 $appLabel 寄件者或最新訊息…",
+        placeholder = stringResource(R.string.threads_s_1ef71e, appLabel),
         resultsContent = {
             if (tq.isEmpty()) {
                 item(key = "thread_search_hint") {
                     Text(
-                        text = "輸入寄件者或內容關鍵字搜尋此 App 對話。",
+                        text = stringResource(R.string.threads_s_7a24ca),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(8.dp)
@@ -637,7 +640,7 @@ fun AppThreadsScreen(
             } else if (matchedThreads.isEmpty()) {
                 item(key = "thread_search_empty") {
                     Text(
-                        text = "找不到符合「$tq」的對話。",
+                        text = stringResource(R.string.threads_s_aa5e0f, tq),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(8.dp)
@@ -750,7 +753,7 @@ private fun SenderThreadCard(
                                     color = MaterialTheme.colorScheme.tertiaryContainer
                                 ) {
                                     Text(
-                                        text = "置頂",
+                                        text = stringResource(R.string.common_pin),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onTertiaryContainer,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -772,7 +775,7 @@ private fun SenderThreadCard(
                                 color = MaterialTheme.colorScheme.secondaryContainer
                             ) {
                                 Text(
-                                    text = "${thread.count} 則",
+                                    text = stringResource(R.string.main_s_ddadbf, thread.count),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -785,7 +788,7 @@ private fun SenderThreadCard(
                                     color = MaterialTheme.colorScheme.primary
                                 ) {
                                     Text(
-                                        text = "未讀 ${thread.unreadCount}",
+                                        text = stringResource(R.string.messages_s_b7a0c3, thread.unreadCount),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onPrimary,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -806,7 +809,7 @@ private fun SenderThreadCard(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "對話選項",
+                                    contentDescription = stringResource(R.string.threads_s_f1c594),
                                     modifier = Modifier.size(16.dp)
                                 )
                             }

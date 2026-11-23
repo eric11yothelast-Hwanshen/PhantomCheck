@@ -210,6 +210,9 @@ import java.util.Date
 import java.util.Locale
 
 import com.phantom.checker.ui.*
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
+import androidx.annotation.StringRes
 
 private const val PAGE_SIZE = 100
 private const val MAX_BATCH_SELECT = 100
@@ -225,11 +228,11 @@ internal sealed interface MessageFilter {
     data class Tag(val tag: TagEntity) : MessageFilter
 }
 
-internal enum class SearchRiskFilter(val label: String) {
-    ALL("全部風險"),
-    SCAM("僅詐騙"),
-    SUSPICIOUS("僅疑似"),
-    STARRED("僅星標")
+internal enum class SearchRiskFilter(@StringRes val labelRes: Int) {
+    ALL(R.string.messages_risk_filter_all),
+    SCAM(R.string.messages_risk_filter_scam),
+    SUSPICIOUS(R.string.messages_risk_filter_suspicious),
+    STARRED(R.string.messages_risk_filter_starred)
 }
 
 internal data class AppGroupUi(
@@ -273,8 +276,8 @@ internal fun SearchResultsSection(
         results.isEmpty() -> {
             EmptyStateView(
                 icon = Icons.Default.Search,
-                title = "找不到符合的訊息",
-                description = "沒有符合「$query」或所選風險條件的訊息紀錄。"
+                title = stringResource(R.string.messages_s_82c6f3),
+                description = stringResource(R.string.messages_s_26c779, query)
             )
         }
         else -> {
@@ -286,15 +289,15 @@ internal fun SearchResultsSection(
                 ) {
                     Text(
                         text = if (isMultiSelectMode) {
-                            "已選 ${selectedIds.size}/$MAX_BATCH_SELECT 則"
+                            stringResource(R.string.messages_s_9ae592, selectedIds.size, MAX_BATCH_SELECT)
                         } else {
-                            "搜尋結果 (${results.size})"
+                            stringResource(R.string.messages_s_1a256e, results.size)
                         },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     TextButton(onClick = onToggleMultiSelect) {
-                        Text(if (isMultiSelectMode) "完成" else "選取")
+                        Text(if (isMultiSelectMode) stringResource(R.string.common_done) else stringResource(R.string.common_select))
                     }
                 }
                 LazyColumn(
@@ -393,6 +396,7 @@ internal fun MessagesHomeTab(
     onOpenNotificationAccess: () -> Unit,
     onReportBounds: (String, Rect) -> Unit
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val groupMap = remember(appGroups) { appGroups.associateBy { it.packageName } }
     val listState = rememberLazyListState()
@@ -455,18 +459,18 @@ internal fun MessagesHomeTab(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = if (isRetryPaused) {
-                                "已暫停補分析（待處理 $pendingRetryCount 則）"
+                                stringResource(R.string.messages_s_937ff4, pendingRetryCount)
                             } else {
-                                "$pendingRetryCount 則訊息待 AI 補分析"
+                                stringResource(R.string.messages_s_d3b2d2, pendingRetryCount)
                             },
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
                             text = if (isRetryPaused) {
-                                "點擊「繼續」於網路恢復後自動補分析"
+                                stringResource(R.string.messages_s_a0dd17)
                             } else {
-                                "網路恢復後將自動排程補齊風險分析"
+                                stringResource(R.string.messages_s_95abea)
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -484,7 +488,7 @@ internal fun MessagesHomeTab(
                                 }
                             }
                         ) {
-                            Text(if (isRetryPaused) "繼續" else "暫停")
+                            Text(if (isRetryPaused) stringResource(R.string.common_resume) else stringResource(R.string.common_pause))
                         }
                         TextButton(
                             onClick = {
@@ -492,7 +496,7 @@ internal fun MessagesHomeTab(
                                 isRetryPaused = false
                             }
                         ) {
-                            Text("立即重試")
+                            Text(stringResource(R.string.common_retry_now))
                         }
                     }
                 }
@@ -527,7 +531,7 @@ internal fun MessagesHomeTab(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "今日",
+                        text = stringResource(R.string.common_today),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -551,7 +555,7 @@ internal fun MessagesHomeTab(
                         color = if (unreadCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "未讀",
+                        text = stringResource(R.string.common_unread),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -575,7 +579,7 @@ internal fun MessagesHomeTab(
                         color = if (todayScamCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "詐騙",
+                        text = stringResource(R.string.common_scam),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -588,7 +592,7 @@ internal fun MessagesHomeTab(
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                     ) {
                         Text(
-                            text = "全部標已讀",
+                            text = stringResource(R.string.common_mark_all_read),
                             style = MaterialTheme.typography.labelMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -627,7 +631,7 @@ internal fun MessagesHomeTab(
                         selected = activeFilter == MessageFilter.All,
                         onClick = { onSelectFilter(MessageFilter.All) },
                         shape = chipShape,
-                        label = { Text("全部", style = MaterialTheme.typography.labelMedium) }
+                        label = { Text(stringResource(R.string.common_all), style = MaterialTheme.typography.labelMedium) }
                     )
                 }
                 item(key = "fc_unread") {
@@ -635,7 +639,7 @@ internal fun MessagesHomeTab(
                         selected = activeFilter == MessageFilter.Unread,
                         onClick = { onSelectFilter(MessageFilter.Unread) },
                         shape = chipShape,
-                        label = { Text("未讀", style = MaterialTheme.typography.labelMedium) }
+                        label = { Text(stringResource(R.string.common_unread), style = MaterialTheme.typography.labelMedium) }
                     )
                 }
                 item(key = "fc_scams") {
@@ -643,16 +647,16 @@ internal fun MessagesHomeTab(
                         selected = activeFilter == MessageFilter.Scams,
                         onClick = { onSelectFilter(MessageFilter.Scams) },
                         shape = chipShape,
-                        label = { Text("高風險", style = MaterialTheme.typography.labelMedium) }
+                        label = { Text(stringResource(R.string.common_high_risk), style = MaterialTheme.typography.labelMedium) }
                     )
                 }
                 if (hasExtraActiveFilter) {
                     item(key = "fc_active_extra") {
                         val extraLabel = when (activeFilter) {
-                            MessageFilter.Starred -> "⭐ 星標"
-                            MessageFilter.Filtered -> "已過濾"
-                            MessageFilter.Noted -> "已記事"
-                            MessageFilter.Todoed -> "已待辦"
+                            MessageFilter.Starred -> stringResource(R.string.messages_s_e051e8)
+                            MessageFilter.Filtered -> stringResource(R.string.common_filtered)
+                            MessageFilter.Noted -> stringResource(R.string.common_noted)
+                            MessageFilter.Todoed -> stringResource(R.string.common_todoed)
                             is MessageFilter.Tag -> "🏷 ${activeFilter.tag.name}"
                             else -> ""
                         }
@@ -671,7 +675,7 @@ internal fun MessagesHomeTab(
                                 selected = false,
                                 onClick = { onSelectFilter(MessageFilter.Starred) },
                                 shape = chipShape,
-                                label = { Text("星標", style = MaterialTheme.typography.labelMedium) }
+                                label = { Text(stringResource(R.string.common_star), style = MaterialTheme.typography.labelMedium) }
                             )
                         }
                     }
@@ -681,7 +685,7 @@ internal fun MessagesHomeTab(
                                 selected = false,
                                 onClick = { onSelectFilter(MessageFilter.Filtered) },
                                 shape = chipShape,
-                                label = { Text("已過濾", style = MaterialTheme.typography.labelMedium) }
+                                label = { Text(stringResource(R.string.common_filtered), style = MaterialTheme.typography.labelMedium) }
                             )
                         }
                     }
@@ -690,7 +694,7 @@ internal fun MessagesHomeTab(
                     AssistChip(
                         onClick = { showMoreFiltersSheet = true },
                         shape = chipShape,
-                        label = { Text("更多", style = MaterialTheme.typography.labelMedium) }
+                        label = { Text(stringResource(R.string.common_more), style = MaterialTheme.typography.labelMedium) }
                     )
                 }
             }
@@ -706,7 +710,7 @@ internal fun MessagesHomeTab(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "更多篩選條件",
+                        text = stringResource(R.string.messages_s_4f346f),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -720,7 +724,7 @@ internal fun MessagesHomeTab(
                                 onSelectFilter(MessageFilter.Starred)
                                 showMoreFiltersSheet = false
                             },
-                            label = { Text("⭐ 星標訊息") }
+                            label = { Text(stringResource(R.string.messages_s_046721)) }
                         )
                         FilterChip(
                             selected = activeFilter == MessageFilter.Filtered,
@@ -728,7 +732,7 @@ internal fun MessagesHomeTab(
                                 onSelectFilter(MessageFilter.Filtered)
                                 showMoreFiltersSheet = false
                             },
-                            label = { Text("已過濾訊息") }
+                            label = { Text(stringResource(R.string.messages_s_aff09c)) }
                         )
                         FilterChip(
                             selected = activeFilter == MessageFilter.Noted,
@@ -736,7 +740,7 @@ internal fun MessagesHomeTab(
                                 onSelectFilter(MessageFilter.Noted)
                                 showMoreFiltersSheet = false
                             },
-                            label = { Text("📝 已記事") }
+                            label = { Text(stringResource(R.string.messages_s_c474a3)) }
                         )
                         FilterChip(
                             selected = activeFilter == MessageFilter.Todoed,
@@ -744,7 +748,7 @@ internal fun MessagesHomeTab(
                                 onSelectFilter(MessageFilter.Todoed)
                                 showMoreFiltersSheet = false
                             },
-                            label = { Text("✓ 已待辦") }
+                            label = { Text(stringResource(R.string.messages_s_1a1ad5)) }
                         )
                         FilterChip(
                             selected = activeTag != null,
@@ -752,7 +756,7 @@ internal fun MessagesHomeTab(
                                 showMoreFiltersSheet = false
                                 onOpenTagPicker()
                             },
-                            label = { Text(if (activeTag != null) "🏷 ${activeTag.name} ▾" else "🏷 依標籤篩選 ▾") }
+                            label = { Text(if (activeTag != null) "🏷 ${activeTag.name} ▾" else stringResource(R.string.messages_s_42a0b8)) }
                         )
                     }
                     Row(
@@ -761,7 +765,7 @@ internal fun MessagesHomeTab(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "預設單排收合篩選列",
+                            text = stringResource(R.string.messages_s_48b057),
                             style = MaterialTheme.typography.bodyMedium
                         )
                         com.phantom.checker.ui.components.FluidSwitch(
@@ -779,13 +783,13 @@ internal fun MessagesHomeTab(
             // 我的最愛 App 橫向列（固定）
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "我的最愛 App",
+                    text = stringResource(R.string.messages_s_ba2585),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
                 if (favoritePackages.isEmpty()) {
                     Text(
-                        text = "尚未釘選最愛 App（長按下方任一 App 即可釘選）",
+                        text = stringResource(R.string.messages_s_a1b7c0),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -904,13 +908,13 @@ internal fun MessagesHomeTab(
                         ) {
                             EmptyStateView(
                                 icon = Icons.Default.Notifications,
-                                title = "目前尚無攔截到的訊息",
+                                title = stringResource(R.string.messages_s_d0ea34),
                                 description = if (isListenerEnabled) {
-                                    "當支援的通訊 App 收到新通知時，將自動備份並顯示於此。"
+                                    stringResource(R.string.messages_s_e5e8cd)
                                 } else {
-                                    "請先開啟通知存取權限，幻訊才能即時備份通知並分析詐騙風險。"
+                                    stringResource(R.string.messages_s_777115)
                                 },
-                                actionLabel = if (!isListenerEnabled) "前往開啟通知存取" else null,
+                                actionLabel = if (!isListenerEnabled) stringResource(R.string.messages_s_d04019) else null,
                                 onAction = if (!isListenerEnabled) onOpenNotificationAccess else null
                             )
                         }
@@ -1007,7 +1011,7 @@ internal fun MessagesHomeTab(
                                                         color = MaterialTheme.colorScheme.surfaceVariant
                                                     ) {
                                                         Text(
-                                                            text = "靜音",
+                                                            text = stringResource(R.string.common_muted),
                                                             style = MaterialTheme.typography.labelSmall,
                                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -1020,7 +1024,7 @@ internal fun MessagesHomeTab(
                                                         color = MaterialTheme.colorScheme.errorContainer
                                                     ) {
                                                         Text(
-                                                            text = "未讀 ${app.unreadTodayCount}",
+                                                            text = stringResource(R.string.messages_s_b7a0c3, app.unreadTodayCount),
                                                             style = MaterialTheme.typography.labelSmall,
                                                             color = MaterialTheme.colorScheme.onErrorContainer,
                                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -1033,7 +1037,7 @@ internal fun MessagesHomeTab(
                                                         color = MaterialTheme.colorScheme.primaryContainer
                                                     ) {
                                                         Text(
-                                                            text = "今日 ${app.todayCount}",
+                                                            text = stringResource(R.string.messages_s_1e18b2, app.todayCount),
                                                             style = MaterialTheme.typography.labelSmall,
                                                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                                                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -1050,7 +1054,7 @@ internal fun MessagesHomeTab(
                                         }
                                         // 第二段：單行訊息預覽
                                         Text(
-                                            text = app.lastPreview.ifBlank { "共 ${app.totalCount} 則訊息" },
+                                            text = app.lastPreview.ifBlank { resCtx.getString(R.string.messages_s_2d62bd, app.totalCount) },
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1,
@@ -1066,10 +1070,10 @@ internal fun MessagesHomeTab(
                                                 text = buildString {
                                                     append(app.appLabel)
                                                     when {
-                                                        isMuted -> append(" · 靜音")
-                                                        app.unreadTodayCount > 0 -> append(" · 未讀 ${app.unreadTodayCount}")
-                                                        app.todayCount > 0 -> append(" · 今日 ${app.todayCount}")
-                                                        else -> append(" · ${app.totalCount} 則")
+                                                        isMuted -> append(resCtx.getString(R.string.messages_s_8199d4))
+                                                        app.unreadTodayCount > 0 -> append(resCtx.getString(R.string.messages_s_b81fb6, app.unreadTodayCount))
+                                                        app.todayCount > 0 -> append(resCtx.getString(R.string.messages_s_74f22c, app.todayCount))
+                                                        else -> append(resCtx.getString(R.string.messages_s_11bd16, app.totalCount))
                                                     }
                                                 },
                                                 style = MaterialTheme.typography.labelSmall,
@@ -1172,7 +1176,7 @@ internal fun MessagesHomeTab(
                                                     color = MaterialTheme.colorScheme.surfaceVariant
                                                 ) {
                                                     Text(
-                                                        text = "靜音",
+                                                        text = stringResource(R.string.common_muted),
                                                         style = MaterialTheme.typography.labelSmall,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -1185,7 +1189,7 @@ internal fun MessagesHomeTab(
                                                     color = MaterialTheme.colorScheme.errorContainer
                                                 ) {
                                                     Text(
-                                                        text = "未讀 ${app.unreadTodayCount}",
+                                                        text = stringResource(R.string.messages_s_b7a0c3, app.unreadTodayCount),
                                                         style = MaterialTheme.typography.labelSmall,
                                                         color = MaterialTheme.colorScheme.onErrorContainer,
                                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -1198,7 +1202,7 @@ internal fun MessagesHomeTab(
                                                     color = MaterialTheme.colorScheme.primaryContainer
                                                 ) {
                                                     Text(
-                                                        text = "今日 ${app.todayCount}",
+                                                        text = stringResource(R.string.messages_s_1e18b2, app.todayCount),
                                                         style = MaterialTheme.typography.labelSmall,
                                                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -1215,7 +1219,7 @@ internal fun MessagesHomeTab(
                                     }
                                     Spacer(Modifier.height(4.dp))
                                     Text(
-                                        text = app.lastPreview.ifBlank { "共 ${app.totalCount} 則訊息" },
+                                        text = app.lastPreview.ifBlank { resCtx.getString(R.string.messages_s_2d62bd, app.totalCount) },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
@@ -1256,9 +1260,9 @@ internal fun MessagesHomeTab(
                         ) {
                             EmptyStateView(
                                 icon = Icons.Default.Email,
-                                title = "此篩選條件下無訊息",
-                                description = "目前沒有符合條件的訊息紀錄。",
-                                actionLabel = "返回全部訊息",
+                                title = stringResource(R.string.messages_s_dc276c),
+                                description = stringResource(R.string.messages_s_89b5c3),
+                                actionLabel = stringResource(R.string.messages_s_cdee4b),
                                 onAction = { onSelectFilter(MessageFilter.All) }
                             )
                         }
@@ -1273,9 +1277,9 @@ internal fun MessagesHomeTab(
                         ) {
                             Text(
                                 text = if (isMultiSelectMode) {
-                                    "已選 ${selectedIds.size}/$MAX_BATCH_SELECT 則"
+                                    stringResource(R.string.messages_s_9ae592, selectedIds.size, MAX_BATCH_SELECT)
                                 } else {
-                                    "共 ${filteredMessages.size} 則"
+                                    stringResource(R.string.messages_s_f0a3ca, filteredMessages.size)
                                 },
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1286,7 +1290,7 @@ internal fun MessagesHomeTab(
                                     onReportBounds(OnboardingTargets.SELECT_BUTTON, coords.boundsInRoot())
                                 }
                             ) {
-                                Text(if (isMultiSelectMode) "完成" else "選取")
+                                Text(if (isMultiSelectMode) stringResource(R.string.common_done) else stringResource(R.string.common_select))
                             }
                         }
                     }
