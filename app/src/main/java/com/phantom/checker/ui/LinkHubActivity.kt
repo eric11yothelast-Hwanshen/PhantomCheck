@@ -69,7 +69,6 @@ import com.phantom.checker.R
 import com.phantom.checker.service.DesktopLinkServer
 import com.phantom.checker.shared.LinkProtocol
 import com.phantom.checker.shared.QrPairingPayload
-import com.phantom.checker.ui.theme.PhantomCheckTheme
 import com.phantom.checker.util.AppLocaleHelper
 import com.phantom.checker.util.DesktopLinkStore
 import kotlinx.coroutines.delay

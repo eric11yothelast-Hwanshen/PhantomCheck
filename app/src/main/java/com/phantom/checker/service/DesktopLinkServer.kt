@@ -6,7 +6,6 @@ import android.net.nsd.NsdServiceInfo
 import android.os.Build
 import com.google.gson.Gson
 import com.phantom.checker.data.AiRuleEntity
-import com.phantom.checker.data.AppDatabaseHolder
 import com.phantom.checker.data.ChatMessageEntity
 import com.phantom.checker.data.ChatSessionEntity
 import com.phantom.checker.data.TagEntity

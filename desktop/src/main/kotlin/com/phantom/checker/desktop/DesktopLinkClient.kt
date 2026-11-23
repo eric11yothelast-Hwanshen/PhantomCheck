@@ -367,7 +367,7 @@ class DesktopLinkClient {
     private fun buildPinningClient(): HttpClient {
         return HttpClient(CIO) {
             install(WebSockets) {
-                pingInterval = 15.seconds
+                pingIntervalMillis = 15_000L
             }
             engine {
                 https {
