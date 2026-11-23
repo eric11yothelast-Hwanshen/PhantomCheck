@@ -42,11 +42,28 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 - 📝 **自動記事／待辦規則引擎**：支援右上角懸浮視窗管理手動、自然語言（AI 解析＋確認卡）與「不再自動記事／待辦」三範圍規則，採 `never > todo > note` 優先序與 AI 語意關鍵字比對控制自動備忘錄寫入，並支援待辦一鍵回溯來源訊息。
 - 📈 **自訂統計儀表板、Health Connect 7 日生理趨勢與每日 App 排行榜**：統計頁支援頂部純本機「本週重點」自然語言摘要條、早晚簡報卡、**Health Connect 7 日睡眠／步數迷你條趨勢圖**（純本機聚合零 AI）、今日 App 訊息量排行榜 Top 5、7 日風險趨勢折線、未讀／已讀比例環形、各 App 佔比橫條與待辦完成率環形，每週 AI 摘要支援錯過補跑、未完句自動續寫、全文展開與失敗重試，並可於設定中心「資料與備份」自訂統計卡顯示與否。
 
+- 🌐 **中英雙語介面與多語系 AI／防詐功能層（i18n）**：內建繁體中文（`values-zh-rTW`）與英文預設（`values/`，fallback = `en`）雙語資源桶（2,898 條 UI 與 XML `@string` 資源）；裝置語言非繁中時，App 介面與 AI 自然語言輸出（風險分析、自動備忘錄、每週摘要、深度分析、早晚簡報、回顧註記、主動情報）自動切換為英文，且規則層防詐引擎（`IndicatorExtractor`／`MemoryEngine`／`ContactContext`）同步支援中英文常見詐騙話術離線偵測。
+
 ---
 
 ## 版本紀錄
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
+
+### v4.2.0 更新重點 / Release Highlights（versionCode 50，2026-11-23）
+
+- **行為變更：預設介面與 AI 輸出改為英文（Behavior Change: Default English UI & AI Output for Non-`zh-TW` Devices）**：
+  - 僅提供雙語資源桶（預設 `values/` 為英文 `en`、`values-zh-rTW/` 為繁體中文）；**當裝置語言非繁體中文時，UI 介面與 AI 輸出（分析、備忘錄、週報、深度分析、簡報、日記註記、主動情報）一律改為英文**，繁體中文（`zh-TW`）裝置顯示與輸出維持逐 byte 不變。
+  - Dual resource buckets (`values/` default English fallback and `values-zh-rTW/` Traditional Chinese): **When the device locale is not Traditional Chinese (`zh-TW`), both UI strings and AI natural-language outputs switch to English**; `zh-TW` devices remain byte-for-byte unchanged.
+- **#429 全庫 UI 字串抽離與 XML 全 `@string` 化（PR #432） / Full UI String Extraction & XML `@string` Externalization**：
+  - 全庫 Compose、Activity、Dialog、Onboarding、桌面小工具、通知渠道、`SettingsCatalog`（138 項）與 `AndroidManifest.xml`／`res/layout/*.xml` 全數抽離為 2,898 條 `@string` 資源，並於 `AGENTS.md` 確立 UI 字串抽離紀律（零行為變更）。
+  - Extracted 2,898 user-visible strings across Compose, Activities, Manifest, widgets, notifications, and `SettingsCatalog` into `strings.xml` with `@string` references (zero behavior change).
+- **#430 預設介面改英文（`values/` 為英文、`values-zh-rTW` 為繁中）（PR #433） / Default English UI (`values/`) & Traditional Chinese (`values-zh-rTW/`)**：
+  - 原 2,898 條繁中字串原封不動遷入 `values-zh-rTW/strings.xml`；預設 `values/strings.xml` 全面英文化，對齊核心術語（`PhantomCheck`、`AI Assistant`、`Memo`、`To-do`、`Whitelist`、`Scam Protection`、`Memory Bank`）與格式化佔位符。
+  - Moved all 2,898 Traditional Chinese strings byte-for-byte into `values-zh-rTW/strings.xml` and translated the default `values/strings.xml` bucket into concise Android UI English.
+- **#431 功能層 AI 輸出與詐騙詞庫多語系支援（PR #434） / Locale-Aware AI Output & Bilingual Scam Lexicon**：
+  - AI 風險分析、自動備忘錄、每週摘要、深度分析、早晚簡報、日記回顧註記、主動情報與聊天助手全面跟隨系統語系切換繁中／英文輸出；`IndicatorExtractor`、`MemoryEngine` 與 `ContactContext` 擴充英文詐騙話術詞庫（unpaid toll、parcel redelivery、bank ATO / safe account、Hi Mum impersonation、crypto pig-butchering、OTP harvesting），離線規則層同步支援中英雙語偵測。
+  - AI prompts across analysis, auto-memo, weekly summary, deep analysis, briefings, diary annotations, proactive intel, and chat automatically follow the system locale (`zh-TW` vs. English), while rule-based scam detection adds English scam lexicons based on 2025–2026 FTC/IC3/FCC advisories.
 
 ### v4.1.0 更新重點（versionCode 49，2026-11-23）
 

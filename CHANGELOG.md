@@ -2,6 +2,30 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [4.2.0] - 2026-11-23
+
+- **Tag 對照**：[`v4.1.0...v4.2.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.1.0...v4.2.0)（`versionCode = 50`、`versionName = "4.2.0"`）
+- **發佈資產（雙 APK）**：
+  - `app-release.apk`：正式簽章＋R8 程式碼縮減與資源壓縮（`isMinifyEnabled = true`、`isShrinkResources = true`），供一般使用者安裝與原簽章覆蓋升級。
+  - `app-debug.apk`：除錯建置版本，供開發測試與排錯使用。
+
+### 行為變更（Breaking / Behavior Changes）
+- **預設介面與 AI 輸出語言改為英文（非繁中裝置）**：
+  - 本版本僅提供雙語資源桶：預設資源桶 `res/values/strings.xml`（English，fallback = `en`）與繁體中文資源桶 `res/values-zh-rTW/strings.xml`。
+  - **裝置系統語言非繁體中文（`zh-TW`）時，App 介面（UI）與 AI 自然語言輸出（風險分析、自動備忘錄、每週摘要、深度分析、早晚簡報、回顧註記、主動情報等）一律改為英文（English）**；其他未單獨建桶之語言亦 fallback 至英文。
+  - **繁體中文（`zh-TW`）裝置使用者介面顯示逐 byte 不變**，AI 輸出維持繁體中文與既有 40 字備忘錄密度。
+
+### 新增、變更與修正
+- **#429 i18n 第一輪：全庫 UI 中文字串抽離與 XML 全 `@string` 化（PR #432）**：
+  - 將全庫使用者可見 UI 字串（Compose 介面、Activity／Dialog／Toast／Snackbar、Onboarding 教學、桌面小工具、Shizuku 狀態、Service 通知渠道與推播文案、`SettingsCatalog` 標題／描述／別名、`PhantomPrefs` 顯示枚舉）全數抽離至 `res/values/strings.xml`（共 2,898 條資源 key）。
+  - `AndroidManifest.xml`（9 處 `android:label`）與 `res/layout/*.xml`（常駐統計通知與 7 個桌面小工具版面）全面改為 `@string/*` 資源引用；`AGENTS.md` 新增第 6 條「UI 字串抽離紀律」（純工程重構，零行為變更）。
+- **#430 i18n 第二輪：預設介面改英文（`values/` 為英文、`values-zh-rTW/` 為繁中）（PR #433，行為變更）**：
+  - 原繁體中文 `strings.xml`（2,898 條）原封不動遷入 `app/src/main/res/values-zh-rTW/strings.xml`（與遷移前逐 byte 一致，`zh-TW` 使用者介面零變動）。
+  - 預設資源桶 `app/src/main/res/values/strings.xml` 全面翻譯為精簡 Android UI 英文（fallback = `en`），統一核心術語（`PhantomCheck`、`AI Assistant`、`Memo`、`To-do`、`Whitelist`、`Scam Protection`、`Memory Bank`），並確保所有插值參數（`%1$s`、`%2$d` 等）與 `formatted="false"` 屬性 100% 對齊。
+- **#431 i18n 第三輪：功能層 AI 輸出語言跟隨與詐騙詞庫多語系支援（PR #434，行為變更）**：
+  - **AI Prompt 輸出語言自動跟隨系統語系**：`AiClient`（訊息風險分析、自動備忘錄 `memo`、每週摘要 `summarizeWeekly`、深度分析 `deepAnalyzeMessage`、簡報潤飾 `generateBriefingText`、RAG 情境摘要 `summarizeRagContext`）、`DiaryPolicy`（回顧註記）、`ProactiveEngine`、`ProactiveIntelWorker`、`CalendarInsightWorker`、`TaskTemplateEngine`、`MemoryEngine` 與 `ChatScreenParts` 全面依系統 Locale 自動切換繁中／英文輸出指令；JSON 結構鍵與枚舉值（`risk_label`、`memo_type` 等）維持不變，英文備忘錄採等量密度上限（60 words／360 chars）並支援英文句尾標點續寫判定。
+  - **詐騙規則層新增英文話術偵測**：`IndicatorExtractor`、`MemoryEngine` 與 `ContactContext` 依據 2025–2026 FTC、FBI IC3、FCC、UK Report Fraud、APWG 與 FinCEN 公開通報意譯擴充英文詐騙特徵詞庫（涵蓋 unpaid toll 未繳過路費、package redelivery 假包裹補費、bank ATO／fraud department／safe account 假銀行警示、Hi Mum 換號急用冒充、crypto platform／guaranteed return／seed phrase 殺豬盤與驗證碼索取），無 AI 或省 token 模式下規則層同樣具備中英文雙語攔截能力。
+
 ## [4.1.0] - 2026-11-23
 
 - **Tag 對照**：[`v4.0.0...v4.1.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.0.0...v4.1.0)（`versionCode = 49`、`versionName = "4.1.0"`）
