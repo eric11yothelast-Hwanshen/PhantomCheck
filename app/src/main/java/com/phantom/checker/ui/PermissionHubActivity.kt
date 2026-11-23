@@ -62,6 +62,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.phantom.checker.util.CalendarBridge
 import com.phantom.checker.util.ContactBridge
+import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 
@@ -309,6 +310,7 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                             HorizontalDivider()
                             val hcAvailability = remember { com.phantom.checker.util.HealthConnectBridge.checkAvailability(appCtx) }
                             var hcGranted by remember { mutableStateOf(false) }
+                            var healthAiQueryEnabled by remember { mutableStateOf(PhantomPrefs.isHealthAiQueryEnabled(appCtx)) }
                             androidx.compose.runtime.LaunchedEffect(Unit) {
                                 hcGranted = com.phantom.checker.util.HealthConnectBridge.hasAllReadPermissions(appCtx)
                             }
@@ -326,9 +328,9 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                                     hcAvailability == com.phantom.checker.util.HealthConnectBridge.SdkAvailability.PROVIDER_UPDATE_REQUIRED ->
                                         "需安裝或更新 Health Connect 才可讀取穿戴裝置睡眠、步數與心率"
                                     hcGranted ->
-                                        "已授權本機聚合讀取，原始生理數值永不出本機，僅用於統計 7 日趨勢與晨間規則建議"
+                                        "已授權本機聚合讀取，原始生理時間序列永不出本機，僅用於統計 7 日趨勢、晨間規則建議與健康匯總提問"
                                     else ->
-                                        "選配授權：於 Stats 顯示 7 日睡眠／步數趨勢，並於晨間簡報提供查表式節奏建議"
+                                        "選配授權：於 Stats 顯示 7 日睡眠／步數趨勢，並於晨間簡報與 AI 助手提供查表式節奏建議"
                                 },
                                 actionLabel = when {
                                     hcAvailability != com.phantom.checker.util.HealthConnectBridge.SdkAvailability.AVAILABLE -> "安裝／查看"
@@ -349,6 +351,34 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                                         }
                                     }
                                 }
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "允許 AI 讀取健康摘要",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "開啟時，聊天詢問睡眠／步數／心率僅注入近 7 日匯總數值，並啟用查表式主動健康觀察提醒（預設開啟）",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                com.phantom.checker.ui.components.FluidSwitch(
+                                    checked = healthAiQueryEnabled,
+                                    onCheckedChange = { enabled ->
+                                        healthAiQueryEnabled = enabled
+                                        PhantomPrefs.setHealthAiQueryEnabled(appCtx, enabled)
+                                        com.phantom.checker.util.PhantomSettingsBus.notifyChanged()
+                                    }
+                                )
                             }
                         }
                     }

@@ -668,6 +668,7 @@ class ProactiveMonitorWorker(
                 )
             }
             com.phantom.checker.util.GoalEngine.evaluateMissedGoalPushes(applicationContext)
+            HealthObservationPolicy.evaluateAndDeliverIfNeeded(applicationContext)
             Result.success()
         } catch (e: Exception) {
             android.util.Log.w("PhantomProactive", "Monitor worker failed: ${e.javaClass.simpleName}")

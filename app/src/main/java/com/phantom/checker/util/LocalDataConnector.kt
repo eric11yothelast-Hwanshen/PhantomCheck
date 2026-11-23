@@ -20,6 +20,7 @@ object LocalDataConnector {
     data class LocalContextInjection(
         val calendarContext: String? = null,
         val usageContext: String? = null,
+        val healthContext: String? = null,
         val needsUsagePermissionPrompt: Boolean = false
     )
 
@@ -53,6 +54,15 @@ object LocalDataConnector {
         "app使用", "app 使用", "usage", "screen time"
     )
 
+    /** #403 健康／生理關鍵字（命中時依設定與授權狀態注入近 7 日聚合匯總數值或誠實拒答） */
+    internal val HEALTH_KEYWORDS = listOf(
+        "睡眠", "睡多久", "睡了多久", "睡幾小時", "睡幾個小時", "幾點睡", "晚睡", "熬夜",
+        "步數", "走幾步", "走了幾步", "走路", "萬步",
+        "心率", "心跳", "靜止心率", "bpm",
+        "健康", "生理", "運動", "活動量", "卡路里", "熱量",
+        "health connect", "healthconnect"
+    )
+
     /** #387 判斷提問是否涉及日曆／課表／排程（直接關鍵字 OR 排程語意＋問句） */
     internal fun isCalendarQuery(query: String): Boolean {
         val lower = query.lowercase(Locale.ROOT)
@@ -62,11 +72,17 @@ object LocalDataConnector {
         return hasScheduleSemantic && hasQuestion
     }
 
+    internal fun isHealthQuery(query: String): Boolean {
+        val lower = query.lowercase(Locale.ROOT)
+        return HEALTH_KEYWORDS.any { lower.contains(it) }
+    }
+
     suspend fun resolveLocalContext(ctx: Context, query: String): LocalContextInjection =
         withContext(Dispatchers.IO) {
             val lower = query.lowercase(Locale.ROOT)
             val hitsCalendar = isCalendarQuery(query)
             val hitsUsage = USAGE_KEYWORDS.any { lower.contains(it) }
+            val hitsHealth = isHealthQuery(query)
 
             val calendarCtx = if (hitsCalendar) buildCalendarContext(ctx, lower) else null
             var needsUsagePerm = false
@@ -86,13 +102,52 @@ object LocalDataConnector {
             } else {
                 null
             }
+            val healthCtx = if (hitsHealth && PhantomPrefs.isHealthAiQueryEnabled(ctx)) {
+                buildHealthContext(ctx)
+            } else {
+                null
+            }
 
             LocalContextInjection(
                 calendarContext = calendarCtx,
                 usageContext = usageCtx,
+                healthContext = healthCtx,
                 needsUsagePermissionPrompt = needsUsagePerm
             )
         }
+
+    private suspend fun buildHealthContext(ctx: Context): String {
+        val availability = HealthConnectBridge.checkAvailability(ctx)
+        if (availability == HealthConnectBridge.SdkAvailability.UNAVAILABLE) {
+            return "此裝置未安裝或未支援 Health Connect，無法讀取睡眠、步數與心率數據。請誠實告知使用者「裝置未安裝或未支援 Health Connect，無法查詢健康數據」，並建議至「權限中心」查看說明，嚴禁估算或編造任何數值。"
+        }
+        if (availability == HealthConnectBridge.SdkAvailability.PROVIDER_UPDATE_REQUIRED) {
+            return "Health Connect 服務需要更新或安裝才可讀取睡眠、步數與心率數據。請誠實告知使用者「Health Connect 需要安裝或更新，無法查詢」，並建議至「權限中心」點擊安裝／更新，嚴禁估算或編造任何數值。"
+        }
+        if (!HealthConnectBridge.hasAllReadPermissions(ctx)) {
+            return "Health Connect（睡眠／步數／心率）讀取權限尚未授權，無法查詢真實生理與健康數據。請誠實告知使用者「尚未授權 Health Connect，無法查詢」，並建議前往「權限中心」開啟「Health Connect（睡眠／步數／心率）」授權，嚴禁估算或編造任何數值。"
+        }
+        val trend = HealthConnectBridge.readLast7DaysTrend(ctx)
+        val snapshot = HealthConnectBridge.readMorningSnapshot(ctx)
+        val hasAnyData = trend.any { it.sleepHours > 0f || it.steps > 0L || it.avgHeartRateBpm > 0L }
+        if (trend.isEmpty() || !hasAnyData) {
+            return "Health Connect 已授權，但近 7 日查無任何睡眠、步數或心率紀錄。請誠實告知使用者「Health Connect 近 7 日尚無同步紀錄」，嚴禁估算或編造任何數值。"
+        }
+        return buildString {
+            appendLine("Health Connect 近 7 日真實聚合匯總數值（僅可引用以下數據回答，嚴禁估算或編造未列出的數值與原始時間序列）：")
+            if (snapshot != null) {
+                val sleepStr = String.format(Locale.US, "%.1f 小時", snapshot.lastNightSleepHours)
+                val hrStr = if (snapshot.yesterdayAvgHeartRate > 0L) "${snapshot.yesterdayAvgHeartRate} bpm" else "無紀錄"
+                val baseHrStr = if (snapshot.baseline7dAvgHeartRate > 0L) "${snapshot.baseline7dAvgHeartRate} bpm" else "樣本不足"
+                appendLine("- 今晨快照：昨晚睡眠 $sleepStr、昨日步數 ${snapshot.yesterdaySteps} 步、昨日平均心率 $hrStr（7 日基準心率 $baseHrStr）")
+            }
+            trend.forEach { pt ->
+                val s = String.format(Locale.US, "%.1f 小時", pt.sleepHours)
+                val hr = if (pt.avgHeartRateBpm > 0L) "${pt.avgHeartRateBpm} bpm" else "無紀錄"
+                appendLine("- ${pt.dayLabel}：睡眠 $s、步數 ${pt.steps} 步、平均心率 $hr")
+            }
+        }.trim()
+    }
 
     private suspend fun buildCalendarContext(ctx: Context, lowerQuery: String): String {
         if (!CalendarBridge.isCalendarEnabledForAi(ctx)) {

@@ -24,6 +24,7 @@ object NotifIds {
     const val GITHUB_ALERT = 1011
     const val CALENDAR_INSIGHT = 1012
     const val PROACTIVE_INTEL = 1013
+    const val HEALTH_PROACTIVE = 1014
     const val TASK_TEMPLATE_BASE = 1050
 
     private const val CALENDAR_INSIGHT_BASE = 1020

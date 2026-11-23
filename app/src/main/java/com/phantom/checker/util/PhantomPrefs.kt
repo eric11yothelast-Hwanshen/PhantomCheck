@@ -2708,6 +2708,55 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putBoolean("health_soft_invite_enabled", enabled).apply()
     }
 
+    /** #403 允許 AI 讀取健康摘要（預設開啟；關閉時不注入聊天 <health_context>，亦不執行主動健康觀察） */
+    fun isHealthAiQueryEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("health_ai_query_enabled", true)
+
+    fun setHealthAiQueryEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("health_ai_query_enabled", enabled).apply()
+    }
+
+    /** #403 記錄與檢查每條主動健康觀察規則近 7 日已投遞次數（每規則每週至多 2 次） */
+    fun getHealthRuleWeeklyCount(ctx: Context, ruleId: String, nowMs: Long = System.currentTimeMillis()): Int {
+        val p = prefs(ctx)
+        val raw = p.getString("health_proactive_weekly_history", "").orEmpty()
+        if (raw.isBlank()) return 0
+        val cutoff = nowMs - 7L * 24L * 60L * 60L * 1000L
+        var count = 0
+        val kept = mutableListOf<String>()
+        raw.lineSequence().forEach { line ->
+            val parts = line.split('|')
+            if (parts.size < 2) return@forEach
+            val rId = parts[0]
+            val ts = parts[1].toLongOrNull() ?: return@forEach
+            if (ts >= cutoff) {
+                kept.add(line)
+                if (rId == ruleId) count++
+            }
+        }
+        val normalized = kept.joinToString("\n")
+        if (normalized != raw) {
+            p.edit().putString("health_proactive_weekly_history", normalized).apply()
+        }
+        return count
+    }
+
+    fun recordHealthRuleDelivered(ctx: Context, ruleId: String, nowMs: Long = System.currentTimeMillis()) {
+        val p = prefs(ctx)
+        val raw = p.getString("health_proactive_weekly_history", "").orEmpty()
+        val cutoff = nowMs - 7L * 24L * 60L * 60L * 1000L
+        val kept = raw.lineSequence()
+            .filter { line ->
+                val parts = line.split('|')
+                val ts = parts.getOrNull(1)?.toLongOrNull() ?: return@filter false
+                ts >= cutoff
+            }
+            .toMutableList()
+        kept.add("$ruleId|$nowMs")
+        val trimmed = if (kept.size > 60) kept.takeLast(60) else kept
+        p.edit().putString("health_proactive_weekly_history", trimmed.joinToString("\n")).apply()
+    }
+
     /** 未授權 Health Connect 時每 7 天最多一次軟性邀請 */
     fun shouldShowHealthSoftInvite(ctx: Context, nowMs: Long = System.currentTimeMillis()): Boolean {
         if (!isHealthBriefingEnabled(ctx) || !isHealthSoftInviteEnabled(ctx)) return false
@@ -2719,5 +2768,6 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putLong("health_last_soft_invite_ms", nowMs).apply()
     }
 }
+
 
 

@@ -271,6 +271,7 @@ object SettingsCatalog {
             "goal_tracking_enabled" -> PhantomPrefs.isGoalTrackingEnabled(appCtx)
             "health_briefing_enabled" -> PhantomPrefs.isHealthBriefingEnabled(appCtx)
             "health_soft_invite_enabled" -> PhantomPrefs.isHealthSoftInviteEnabled(appCtx)
+            "health_ai_query_enabled" -> PhantomPrefs.isHealthAiQueryEnabled(appCtx)
             "update_auto_check" -> PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)
             else -> null
         }
@@ -368,6 +369,7 @@ object SettingsCatalog {
             "goal_tracking_enabled" -> PhantomPrefs.setGoalTrackingEnabled(appCtx, enabled)
             "health_briefing_enabled" -> PhantomPrefs.setHealthBriefingEnabled(appCtx, enabled)
             "health_soft_invite_enabled" -> PhantomPrefs.setHealthSoftInviteEnabled(appCtx, enabled)
+            "health_ai_query_enabled" -> PhantomPrefs.setHealthAiQueryEnabled(appCtx, enabled)
             "update_auto_check" -> PhantomPrefs.setUpdateAutoCheckEnabled(appCtx, enabled)
             else -> return null
         }

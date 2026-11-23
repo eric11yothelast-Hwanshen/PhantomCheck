@@ -391,6 +391,8 @@ internal suspend fun buildRagSystemPrompt(
     val localCtx = com.phantom.checker.util.LocalDataConnector.resolveLocalContext(ctx, query)
     val calEnabledForAi = com.phantom.checker.util.CalendarBridge.isCalendarEnabledForAi(ctx)
     val usagePermGranted = com.phantom.checker.util.UsageStatsBridge.hasUsageStatsPermission(ctx)
+    val healthAiEnabled = PhantomPrefs.isHealthAiQueryEnabled(ctx)
+    val healthPermGranted = healthAiEnabled && com.phantom.checker.util.HealthConnectBridge.hasAllReadPermissions(ctx)
     val externalSearchReady = com.phantom.checker.util.EncryptedByokStore.getExternalSearchBaseUrl(ctx).isNotBlank() &&
         com.phantom.checker.util.EncryptedByokStore.getExternalSearchApiKey(ctx).isNotBlank()
 
@@ -403,17 +405,19 @@ internal suspend fun buildRagSystemPrompt(
         appendLine("- 可用：訊息記錄庫、待辦事項、自動記事、長期/短期記憶庫" +
             (if (calEnabledForAi) "、本機日曆（已授權且已勾選）" else "") +
             (if (usagePermGranted) "、App 使用情況（已授權系統使用情況存取）" else "") +
+            (if (healthPermGranted) "、Health Connect 健康摘要（已授權近 7 日睡眠／步數／心率匯總）" else "") +
             (if (externalSearchReady) "、外部情報搜尋（已設定 BYOK 端點）" else "")
         )
         val unavailableSources = buildList {
             add("其他 App 內部未透過通知送達的聊天／檔案內容")
             if (!calEnabledForAi) add("本機日曆（尚未授權或未勾選日曆）")
             if (!usagePermGranted) add("App 使用情況／螢幕時間／啟動次數（尚未授權 PACKAGE_USAGE_STATS）")
+            if (!healthPermGranted) add("Health Connect 睡眠／步數／心率數據（尚未授權或已關閉允許 AI 讀取健康摘要）")
             if (!externalSearchReady) add("即時上網搜尋（未設定外部搜尋 BYOK 端點）")
             add("任何未注入本提示詞中的統計或外部資料")
         }
         appendLine("- 不可用：${unavailableSources.joinToString("、")}")
-        appendLine("- 鐵律：不在可用清單上或未注入的資料一律回答查不到並說明需要什麼授權，禁止估算、推測或編造任何數字、啟動次數與行程。回答中出現的每一個行程、課名、時間、地點都必須逐字來自 <calendar_context> 或本機查詢結果；未注入或查詢為空時只能回答「查不到本機日曆中相關資料」並引導至權限中心勾選日曆，嚴禁列出任何具體行程。")
+        appendLine("- 鐵律：不在可用清單上或未注入的資料一律回答查不到並說明需要什麼授權，禁止估算、推測或編造任何數字、啟動次數、健康數值與行程。回答中出現的每一個行程、課名、時間、地點都必須逐字來自 <calendar_context> 或本機查詢結果；未注入或查詢為空時只能回答「查不到本機日曆中相關資料」並引導至權限中心勾選日曆，嚴禁列出任何具體行程。")
         appendLine("- 行程拒答正反例：✅ 正確：「查不到本機日曆中相關資料，請至權限中心勾選您的日曆後再試。」｜❌ 錯誤：「15:10–16:00 數位邏輯設計…」（凡未逐字出現於 <calendar_context> 或本機查詢結果的任何課名、時段、地點皆屬違規編造）。")
         if (!localCtx.calendarContext.isNullOrBlank()) {
             appendLine("<calendar_context>")
@@ -426,6 +430,12 @@ internal suspend fun buildRagSystemPrompt(
             appendLine(localCtx.usageContext)
             appendLine("</usage_context>")
             appendLine("（已由系統使用情況存取直接查詢如上；請完全依據 <usage_context> 如實回覆，嚴禁編造任何 App 次數或分鐘數。）")
+        }
+        if (!localCtx.healthContext.isNullOrBlank()) {
+            appendLine("<health_context>")
+            appendLine(localCtx.healthContext)
+            appendLine("</health_context>")
+            appendLine("（已由本機 Health Connect 直接查詢如上；請完全依據 <health_context> 如實回覆，僅可引用上述匯總數值，嚴禁估算或編造任何睡眠、步數與心率數據。）")
         }
         appendLine(PhantomPrefs.buildAssistantPersonaPromptBlock(ctx))
         appendLine("動作指令格式：多筆動作請各自獨立放在 ```json ... ``` 區塊，勿合併。")
