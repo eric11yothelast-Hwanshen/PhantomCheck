@@ -17,7 +17,7 @@
             android:layout_width="14dp"
             android:layout_height="14dp"
             android:layout_marginEnd="6dp"
-            android:contentDescription="記事"
+            android:contentDescription="@string/common_notes"
             android:src="@drawable/ic_stat_phantom"
             android:tint="@color/widget_accent" />
 
@@ -27,7 +27,7 @@
             android:layout_weight="1"
             android:ellipsize="end"
             android:maxLines="1"
-            android:text="記事"
+            android:text="@string/common_notes"
             android:textColor="@color/widget_accent"
             android:textSize="12sp"
             android:textStyle="bold" />
@@ -48,7 +48,7 @@
         android:layout_marginTop="8dp"
         android:layout_weight="1"
         android:gravity="center_vertical"
-        android:text="尚無記事，點擊新增"
+        android:text="@string/widget_notes_s_1af503"
         android:textColor="@color/widget_text_secondary"
         android:textSize="11sp"
         android:visibility="gone" />

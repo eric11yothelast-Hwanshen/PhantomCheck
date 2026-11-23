@@ -27,7 +27,7 @@
             <ImageView
                 android:layout_width="18dp"
                 android:layout_height="18dp"
-                android:contentDescription="幻訊"
+                android:contentDescription="@string/chat_s_8dd976"
                 android:src="@drawable/ic_stat_phantom"
                 android:tint="@color/widget_accent" />
 
@@ -35,7 +35,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="4dp"
-                android:text="幻訊"
+                android:text="@string/chat_s_8dd976"
                 android:textColor="@color/widget_text_primary"
                 android:textSize="12sp"
                 android:textStyle="bold" />
@@ -61,7 +61,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="3dp"
-                android:text="今日"
+                android:text="@string/common_today"
                 android:textColor="@color/widget_text_secondary"
                 android:textSize="10sp" />
         </LinearLayout>
@@ -86,7 +86,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="3dp"
-                android:text="未讀"
+                android:text="@string/common_unread"
                 android:textColor="@color/widget_text_secondary"
                 android:textSize="10sp" />
         </LinearLayout>
@@ -111,7 +111,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="3dp"
-                android:text="警示"
+                android:text="@string/widget_stats_detail_s_de67c7"
                 android:textColor="@color/widget_text_secondary"
                 android:textSize="10sp" />
         </LinearLayout>
@@ -129,7 +129,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="近 7 日訊息趨勢"
+            android:text="@string/widget_stats_detail_s_2e1d6e"
             android:textColor="@color/widget_text_secondary"
             android:textSize="10sp" />
 
@@ -138,7 +138,7 @@
             android:layout_width="16dp"
             android:layout_height="16dp"
             android:layout_marginStart="4dp"
-            android:contentDescription="來源 App 1"
+            android:contentDescription="@string/widget_stats_detail_s_803ed4"
             android:visibility="gone" />
 
         <ImageView
@@ -146,7 +146,7 @@
             android:layout_width="16dp"
             android:layout_height="16dp"
             android:layout_marginStart="4dp"
-            android:contentDescription="來源 App 2"
+            android:contentDescription="@string/widget_stats_detail_s_099d09"
             android:visibility="gone" />
 
         <ImageView
@@ -154,7 +154,7 @@
             android:layout_width="16dp"
             android:layout_height="16dp"
             android:layout_marginStart="4dp"
-            android:contentDescription="來源 App 3"
+            android:contentDescription="@string/widget_stats_detail_s_04538d"
             android:visibility="gone" />
     </LinearLayout>
 
@@ -186,7 +186,7 @@
                     android:id="@+id/widget_bar_0"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:contentDescription="第1天"
+                    android:contentDescription="@string/widget_stats_detail_s_db00ed"
                     android:scaleType="fitXY"
                     android:src="@drawable/widget_bar_fill" />
             </LinearLayout>
@@ -220,7 +220,7 @@
                     android:id="@+id/widget_bar_1"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:contentDescription="第2天"
+                    android:contentDescription="@string/widget_stats_detail_s_62234f"
                     android:scaleType="fitXY"
                     android:src="@drawable/widget_bar_fill" />
             </LinearLayout>
@@ -254,7 +254,7 @@
                     android:id="@+id/widget_bar_2"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:contentDescription="第3天"
+                    android:contentDescription="@string/widget_stats_detail_s_65bf98"
                     android:scaleType="fitXY"
                     android:src="@drawable/widget_bar_fill" />
             </LinearLayout>
@@ -288,7 +288,7 @@
                     android:id="@+id/widget_bar_3"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:contentDescription="第4天"
+                    android:contentDescription="@string/widget_stats_detail_s_f5dcc6"
                     android:scaleType="fitXY"
                     android:src="@drawable/widget_bar_fill" />
             </LinearLayout>
@@ -322,7 +322,7 @@
                     android:id="@+id/widget_bar_4"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:contentDescription="第5天"
+                    android:contentDescription="@string/widget_stats_detail_s_1113fd"
                     android:scaleType="fitXY"
                     android:src="@drawable/widget_bar_fill" />
             </LinearLayout>
@@ -356,7 +356,7 @@
                     android:id="@+id/widget_bar_5"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:contentDescription="第6天"
+                    android:contentDescription="@string/widget_stats_detail_s_0a52f5"
                     android:scaleType="fitXY"
                     android:src="@drawable/widget_bar_fill" />
             </LinearLayout>
@@ -390,7 +390,7 @@
                     android:id="@+id/widget_bar_6"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
-                    android:contentDescription="今日"
+                    android:contentDescription="@string/common_today"
                     android:scaleType="fitXY"
                     android:src="@drawable/widget_bar_fill" />
             </LinearLayout>
@@ -400,7 +400,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
-                android:text="今"
+                android:text="@string/widget_stats_s_d2130d"
                 android:textColor="@color/widget_accent"
                 android:textSize="9sp"
                 android:textStyle="bold" />

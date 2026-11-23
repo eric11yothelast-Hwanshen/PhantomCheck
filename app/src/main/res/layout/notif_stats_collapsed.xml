@@ -41,7 +41,7 @@
         android:layout_width="wrap_content"
         android:layout_height="30dp"
         android:adjustViewBounds="true"
-        android:contentDescription="最近通知 App"
+        android:contentDescription="@string/notif_stats_collapsed_s_da264a"
         android:scaleType="fitCenter"
         android:visibility="gone" />
 

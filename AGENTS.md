@@ -18,6 +18,7 @@
 3. **所有變更走 PR**：PR 標題格式 [feature|fix|docs] 簡述，填寫 PR template。
 4. **開工前先看 issue**：每個任務先在 GitHub issue 建立/認領，branch 名對應 issue 編號，如 feature/12-scam-alert。
 5. **不留未完成合併**：PR 描述必須註明「完成」或「WIP（缺什麼）」，交接資訊寫在 PR 或 issue。
+6. **UI 字串抽離紀律**：新 UI 字串一律寫進 res/values/strings.xml，不得在 .kt／res XML／Manifest 硬寫自然語言字面；資源 key 用 snake_case、相同字面共用 key。
 
 ## 工作流程
 

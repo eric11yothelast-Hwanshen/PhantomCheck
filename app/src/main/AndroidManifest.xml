@@ -37,7 +37,7 @@
 
     <application
         android:name=".PhantomApplication"
-        android:label="幻訊"
+        android:label="@string/chat_s_8dd976"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.PhantomCheck">
@@ -124,7 +124,7 @@
 
         <service
             android:name=".service.NotificationCollectorService"
-            android:label="幻訊通知攔截"
+            android:label="@string/notif_listener_label"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
             android:exported="false">
             <intent-filter>
@@ -155,7 +155,7 @@
 
         <receiver
             android:name=".widget.StatsWidgetProvider"
-            android:label="幻訊今日統計 (4x1)"
+            android:label="@string/widget_label_stats"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -167,7 +167,7 @@
 
         <receiver
             android:name=".widget.StatsMiniWidgetProvider"
-            android:label="幻訊迷你統計 (2x1)"
+            android:label="@string/widget_label_stats_mini"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -179,7 +179,7 @@
 
         <receiver
             android:name=".widget.StatsDetailWidgetProvider"
-            android:label="幻訊趨勢詳情 (4x2)"
+            android:label="@string/widget_label_stats_detail"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -191,7 +191,7 @@
 
         <receiver
             android:name=".widget.AiSummaryWidgetProvider"
-            android:label="幻訊最新 AI 摘要 (2x2)"
+            android:label="@string/widget_label_ai_summary"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -203,7 +203,7 @@
 
         <receiver
             android:name=".widget.RiskActionWidgetProvider"
-            android:label="幻訊高風險處置 (2x2)"
+            android:label="@string/widget_label_risk_action"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -215,7 +215,7 @@
 
         <receiver
             android:name=".widget.ReminderWidgetProvider"
-            android:label="幻訊待辦提醒 (2x1)"
+            android:label="@string/widget_label_reminder"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -229,7 +229,7 @@
 
         <receiver
             android:name=".widget.NotesWidgetProvider"
-            android:label="幻訊記事"
+            android:label="@string/widget_label_notes"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

@@ -21,7 +21,7 @@
         <ImageView
             android:layout_width="22dp"
             android:layout_height="22dp"
-            android:contentDescription="幻訊"
+            android:contentDescription="@string/chat_s_8dd976"
             android:src="@drawable/ic_stat_phantom"
             android:tint="@color/widget_accent" />
 
@@ -29,7 +29,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:text="幻訊"
+            android:text="@string/chat_s_8dd976"
             android:textColor="@color/widget_text_secondary"
             android:textSize="11sp"
             android:textStyle="bold" />
@@ -54,7 +54,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="今日訊息"
+            android:text="@string/stats_s_f042c8"
             android:textColor="@color/widget_text_secondary"
             android:textSize="11sp" />
     </LinearLayout>
@@ -78,7 +78,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="未讀"
+            android:text="@string/common_unread"
             android:textColor="@color/widget_text_secondary"
             android:textSize="11sp" />
     </LinearLayout>
@@ -102,7 +102,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="詐騙警示"
+            android:text="@string/notif_collector_s_d01582"
             android:textColor="@color/widget_text_secondary"
             android:textSize="11sp" />
     </LinearLayout>

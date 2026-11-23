@@ -15,7 +15,7 @@
         android:layout_width="20dp"
         android:layout_height="20dp"
         android:layout_marginEnd="8dp"
-        android:contentDescription="幻訊"
+        android:contentDescription="@string/chat_s_8dd976"
         android:src="@drawable/ic_stat_phantom"
         android:tint="@color/widget_accent" />
 
@@ -38,7 +38,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="今日"
+            android:text="@string/common_today"
             android:textColor="@color/widget_text_secondary"
             android:textSize="10sp" />
     </LinearLayout>
@@ -62,7 +62,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="警示"
+            android:text="@string/widget_stats_detail_s_de67c7"
             android:textColor="@color/widget_text_secondary"
             android:textSize="10sp" />
     </LinearLayout>
