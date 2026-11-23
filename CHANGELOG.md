@@ -2,6 +2,38 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [4.0.0] - 2026-11-23
+
+- **Tag 對照**：[`v3.8.0...v4.0.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.8.0...v4.0.0)（`versionCode = 48`、`versionName = "4.0.0"`）
+- **發佈資產（雙 APK）**：
+  - `app-release.apk`：正式簽章＋R8 程式碼縮減與資源壓縮（`isMinifyEnabled = true`、`isShrinkResources = true`），供一般使用者安裝與原簽章覆蓋升級。
+  - `app-debug.apk`：除錯建置版本，供開發測試與排錯使用。
+
+### 新增與資訊架構重構
+- **v4.0.0 全域資訊架構（IA）大改版與設定中心重構（#409 / PR #413）**：
+  - **D1 導覽架構 6 Tab → 5 Tab（「洞察」整併「夥伴｜統計」）**：底部 `LiquidGlassTabBar` 收斂為「訊息、AI 助手、記事、記憶、洞察」5 個主分頁（高度 `64.dp`、選中指示器套用 `N5_TAB_INDICATOR_SPRING` 寬度與位移彈簧、圖示＋`labelSmall` 雙顯示與完整 `contentDescription`）；原「統計」併入「夥伴」改名「洞察（`MainTab.INSIGHT`）」，於頁面頂部以 `PhantomSecondaryTabRow`（「夥伴｜統計」二級膠囊切換）無縫切換；`MainActivity.mapLegacyTabExtra()` 將既有系統通知、桌面小工具、快捷方式與教學深連結（`"stats"`／`"STATS"`／`"partner"`／`"PARTNER"`／舊索引 `5`）全數無縫映射至「洞察」對應子分頁。
+  - **D2 設定中心重構（搜尋優先＋釘選常用＋最近使用＋8 大分類頁）**：新增 `SettingsHomeScreen` 與 `SettingsCategoryRegistry`，將原單頁 13 張長捲動折疊卡改為同 Activity 兩層架構（以 `SettingsCategoryId?` 狀態搭配 N1／N2 共享 X 軸轉場切換總覽與分類頁，完整相容既有 `highlight_card_key` 深連結直達對應分類與設定項）：
+    - **頂部雙模搜尋框**：`56.dp` 高度、`28.dp` 全圓角搜尋列，整合本地關鍵字分詞／同義詞即時檢索與「✨ AI 語意搜尋」按鈕，直接跨全分類（含預設折疊之進階設定）檢索 `SettingsCatalog` 全部 136 項設定。
+    - **釘選常用設定（預設 6 項、可編輯）與最近使用**：提供雙欄釘選磁貼（預設 6 項高頻設定，長按磁貼或點擊「編輯釘選」可自訂至多 6 項；布林開關類支援於磁貼內直接切換 `FluidSwitch`）及「最近調整」橫向膠囊列（至多 5 項）。
+    - **8 大分類頁（合併「個人化」與「外觀」）**：收斂為「AI 與模型」、「防詐與安全」、「通知與攔截」、「AI 夥伴與主動」、「權限與背景」、「外觀與個人化」（整併原個人化與外觀設定）、「資料與備份」、「關於與更新」8 大分類，每列動態顯示 1 行即時狀態摘要；分類子頁內亦提供頁內過濾搜尋框。
+  - **D3 訊息首頁減法、分段群組清單與中央堆疊保留（`MessagesTab`）**：
+    - `CenterFocusCardStack` 中央聚焦垂直滾輪堆疊完整保留為可選卡片排列模式（幾何與捲動物理 **0 diff**）。
+    - 頂部統計列重構為 `surfaceContainer` 圓角三欄卡（今日訊息／未讀／高風險，點擊高風險直達詐騙警示中心）；篩選列收斂為「全部｜未讀｜高風險（含數量徽章）」3 顆智慧膠囊＋「篩選 ▾」ModalBottomSheet（收納星標、已記事、已待辦、分類標籤與排序）；一般條列模式重做為圓角分段群組清單（Segmented Grouped List，同群組內 `0.5.dp` 內縮分隔線與頂／中／底／單卡動態圓角）。
+  - **D4 進階設定預設折疊與搜尋自動展開（`SettingsAdvancedSection`）**：將 24 項低頻／專家級設定 ID 與 Shizuku 跨行程看門狗區塊收納於各分類頁底部的「進階設定（N 項）」折疊區（預設收合）；所有折疊項目 100% 保留於 `SettingsCatalog`，透過設定搜尋（本地關鍵字或 AI 語意搜尋）或頁內搜尋命中時自動展開進階區塊、捲動定位並執行 `N7_HIGHLIGHT_PULSE_MS` 高亮脈衝。
+  - **D5 移除常駐 22dp 下拉把手視覺，保留下拉搜尋手勢**：移除 `MainActivity` 頂部常駐 22dp `PhantomPullSearchHandle` 視覺橫條；於訊息、記事與記憶分頁完整保留清單頂端 `NestedScrollConnection` 下拉超界手勢（下拉超過 `56.dp` 搭配 `HapticFeedbackType.LongPress` 觸覺回饋即開啟搜尋），並於 `56.dp` 緊湊頂部列右側提供常駐全域搜尋膠囊鈕（「🔍 搜尋」）。
+  - **D6 視覺化教學精簡（主頁 20→8 步、設定 9→5 步）**：`Onboarding.kt` 主頁新手教學由 20 步精簡為 8 步核心導覽、設定中心教學由 9 步精簡為 5 步導覽（完整保留 `spring` 挖洞框平滑過渡、四廠牌受限設定疑難排解與 Shizuku 一鍵授權）；既有 `onboarding_done` 與 `settings_tour_done` 完成旗標絕不重置，舊使用者升級後不強制重跑，僅於設定總覽頂部顯示一次性 `PhantomInlineBanner`（「✨ v4.0 介面已更新：瀏覽 5 步快速導覽」）。
+  - **D7 大螢幕（`>= 600.dp`）`NavigationRail` 導覽軌**：於平板、摺疊機展開態與橫向大螢幕（可用寬度 `>= 600.dp`）自動切換為左側 `NavigationRail` 導覽軌＋右側置中主內容容器（最大寬度 `840.dp`），並隱藏底部導覽列。
+  - **新共用元件與五大分頁／11 子頁骨架統一**：
+    - `PhantomPageScaffold.kt`（新檔）：集中定義 `AuroraTokens`、`PhantomPageScaffold`（支援 Small／Medium／Large 頂部列）、`PhantomPredictiveBackContainer`、`PhantomSecondaryTabRow`（N6 二級膠囊滑動指示器）與 `PhantomInlineBanner`。
+    - `GlobalSearchOverlay.kt`（新檔）：全域搜尋覆蓋層，支援「全部／訊息／設定／記憶／記事」5 範圍篩選 chips、最近搜尋紀錄（至多 8 筆，支援單筆移除與清空）、常用動作快捷列、釘選設定磁貼、分區結果清單與離線安全之設定 AI 語意搜尋。
+    - `SettingsRow.kt`（新檔）：統一分段式設定列元件家族（`SettingsGroupCard`、`SettingsSwitchRow`、`SettingsNavigationRow`、`SettingsOptionRow`、`SettingsSliderRow`、`SettingsInfoRow`、`SettingsAdvancedSection`），確保 `>= 56.dp` 最小觸控高度與無障礙語意。
+    - `UiLayoutPrefs.kt`（新檔）：獨立 `phantom_ui_v400` SharedPreferences，**僅儲存設定 catalog ID（釘選與最近調整）、最近搜尋短字串與 v4 導覽提示旗標**，零訊息內文與零敏感資料。
+    - 分頁與子頁視覺對齊：`ChatScreen`（緊湊頂部列含省 token 狀態徽章與 `⋮` 選單、輸入框上方單行 `LazyRow` 整合模型切換與「🔍 聯網」膠囊，完整保留左側邊緣滑出歷史抽屜手勢）、`NotesTab`（N6 `PhantomSecondaryTabRow` 切換本機日曆「日｜週｜月」）、`MemoryTab`（頂部四格統計整合為單張 `surfaceContainer` 卡＋N6「記憶｜規則｜防詐免疫」二級切換）、`StatsTab`（頂部新增純本機零 LLM「本週重點」自然語言摘要條，既有 13 張統計卡零刪減）、`SettingsActivity` 關於頁版本狀態卡，以及 11 個子頁面（`ApiKeySettingsActivity`、`AssistantHubActivity` 含頂部 7 區錨點 chip 列、`PermissionHubActivity` 含頂部未就緒權限總覽卡、`LinkedAppsActivity`、`AutoReplySettingsActivity`、`ScamCenterActivity`、`TagManagementActivity`、`WhitelistManagementActivity`、`MessageDetailActivity`、`AppThreadsScreen`、`ConversationScreen`）全面套用統一骨架。
+  - **動效擴充（`PhantomMotion` 追加 N1–N7 與 `PredictiveBackHandler`）**：
+    - `PhantomMotion.kt` 僅追加 N1–N7 常數（`N1_SHARED_AXIS_ENTER_MS = 260`／`EXIT_MS = 180`、`N2_SHARED_AXIS_SLIDE_DP = 24`、`N3_SEARCH_SCRIM_ENTER_MS = 220`／`EXIT_MS = 160`、`N4_PREDICTIVE_BACK_MIN_SCALE = 0.92f`、`N5_TAB_INDICATOR_SPRING`、`N6_SECONDARY_TAB_SPRING`、`N7_HIGHLIGHT_PULSE_MS = 900`），v3.7.0 既有動效常數零修改；所有動畫均於 `graphicsLayer` draw-phase 執行，系統動畫縮放＝0（`rememberMotionEnabled() == false`）時自動退場為瞬時切換。
+    - 採用 `activity-compose:1.13.0` 原生 `PredictiveBackHandler` 實作設定分類子頁與全域搜尋覆蓋層之預測式返回手勢縮放預覽（`1f → 0.92f`）。
+  - **純 UI 層改版與零回歸聲明**：本版本 `service/`、`data/`、`network/`、`util/` 四大目錄 **0 diff**，Room 資料庫 schema、背景服務、AI 請求與防詐決策邏輯零修改，純屬 UI 層資訊架構與互動升級，無任何資料或背景行為變更，並 100% 保留 `#402–#408` 修復行為與無障礙 `contentDescription`。
+
 ## [3.8.0] - 2026-11-23
 
 - **Tag 對照**：[`v3.7.0...v3.8.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.7.0...v3.8.0)（`versionCode = 47`、`versionName = "3.8.0"`）
