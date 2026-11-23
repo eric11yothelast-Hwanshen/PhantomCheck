@@ -189,6 +189,8 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 import com.phantom.checker.ui.chat.*
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 /** 自製 Sparkle 圖示（無需額外 material-icons-extended 依賴） */
 val AutoAwesomeIcon: ImageVector by lazy {
     ImageVector.Builder(
@@ -247,6 +249,7 @@ fun ChatAssistantTab(
     requestedBriefingMsgId: Long? = null,
     onConsumedBriefingMsgId: () -> Unit = {}
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -358,7 +361,7 @@ fun ChatAssistantTab(
             // #424 狀態驅動動態建議 chips（純本機條件、零 AI、零 token，最多 4 顆，不足以既有靜態 chips 補齊）
             val dynamicChips = LinkedHashSet<String>()
             if (stats.unread > 50) {
-                dynamicChips.add("精選今日必讀")
+                dynamicChips.add(resCtx.getString(R.string.chat_s_bb7042))
             }
             val hasTodayConflict = if (com.phantom.checker.util.CalendarBridge.isCalendarEnabledForAi(appCtx)) {
                 runCatching {
@@ -370,7 +373,7 @@ fun ChatAssistantTab(
                 }.getOrDefault(false)
             } else false
             if (hasTodayConflict) {
-                dynamicChips.add("查看今日行程衝突")
+                dynamicChips.add(resCtx.getString(R.string.chat_s_c586bf))
             }
             val hasHcData = runCatching {
                 com.phantom.checker.util.HealthConnectBridge.hasAnyReadPermission(appCtx) &&
@@ -379,29 +382,29 @@ fun ChatAssistantTab(
                     }
             }.getOrDefault(false)
             if (hasHcData) {
-                dynamicChips.add("看健康摘要")
+                dynamicChips.add(resCtx.getString(R.string.chat_s_dffb5b))
             }
             val hasOverdueTodo = runCatching {
                 db.todoDao().pendingTodos().any { it.dueAt < nowMs }
             }.getOrDefault(false)
             if (hasOverdueTodo) {
-                dynamicChips.add("檢查逾期事項")
+                dynamicChips.add(resCtx.getString(R.string.chat_s_69faf1))
             }
 
             // Fallback 沿用現行靜態 chips 補齊至最多 4 顆
             val fallbackChips = buildList {
-                add("昨日簡報")
+                add(resCtx.getString(R.string.chat_s_4d0373))
                 if (stats.today > 0) {
-                    add("今天有哪些必看訊息？")
+                    add(resCtx.getString(R.string.chat_s_bb2e25))
                 } else {
-                    add("近 7 天有哪些重要訊息？")
+                    add(resCtx.getString(R.string.chat_s_407a71))
                 }
                 if (stats.scam > 0) {
-                    add("最可疑的訊息是哪則？")
+                    add(resCtx.getString(R.string.chat_s_15831d))
                 } else if (topApps.isNotEmpty()) {
-                    add("本週哪個 App 最吵？")
+                    add(resCtx.getString(R.string.chat_s_0a9c05))
                 } else {
-                    add("幫我檢查最近的訊息風險")
+                    add(resCtx.getString(R.string.chat_s_c8de07))
                 }
             }
             for (c in fallbackChips) {
@@ -497,9 +500,9 @@ fun ChatAssistantTab(
         val rawTrimmed = rawQuery.trim()
         val attachedImage = if (!isRetry) pendingImageAttachment else null
         if ((rawTrimmed.isEmpty() && attachedImage == null) || isSending) return
-        val query = rawTrimmed.ifBlank { "請檢視這張圖片的內容，並評估是否有任何詐騙或安全風險疑點。" }
+        val query = rawTrimmed.ifBlank { resCtx.getString(R.string.chat_s_47f861) }
         val displayUserText = if (attachedImage != null) {
-            if (rawTrimmed.isNotEmpty()) "$rawTrimmed\n[已附加圖片]" else "[已附加圖片]"
+            if (rawTrimmed.isNotEmpty()) stringResource(R.string.chat_s_19907c, rawTrimmed) else stringResource(R.string.chat_s_08e22d)
         } else {
             query
         }
@@ -518,7 +521,7 @@ fun ChatAssistantTab(
                 if (existingId != null) {
                     existingId
                 } else {
-                    val title = displayUserText.take(20).ifBlank { "新對話" }
+                    val title = displayUserText.take(20).ifBlank { resCtx.getString(R.string.chat_s_a7975c) }
                     val newId = db.chatDao().insertSession(
                         ChatSessionEntity(title = title, createdAt = System.currentTimeMillis())
                     )
@@ -538,7 +541,7 @@ fun ChatAssistantTab(
                     db.chatDao().insertMessage(userEntity)
                     // 若為首則訊息，更新標題
                     val session = db.chatDao().sessionById(sessionId)
-                    if (session != null && session.title == "新對話") {
+                    if (session != null && session.title == resCtx.getString(R.string.chat_s_a7975c)) {
                         db.chatDao().updateSessionTitle(sessionId, displayUserText.take(20))
                     }
                 }
@@ -552,8 +555,8 @@ fun ChatAssistantTab(
             // #389 聊天頁「🔍 聯網」開關：走 runGroundedQuery（Gemini 3+ tools=[google_search] 或 BYOK），查無／失敗誠實回報
             if (webSearchEnabled && attachedImage == null) {
                 val groundedPrompt =
-                    "你是 PhantomCheck 聯網查證助手，請一律使用繁體中文回答。" +
-                        "規則：1) 僅依據搜尋工具回傳的真實最新資料作答 2) 若搜尋無結果或查無相關資訊，直接回答「查無相關最新資料」，嚴禁以模型既有知識頂替或編造 3) 重要事實請保留來源連結。"
+                    resCtx.getString(R.string.chat_s_e42fdf) +
+                        resCtx.getString(R.string.chat_s_621925)
                 val groundedRes = AiClient.runGroundedQuery(
                     context = appCtx,
                     systemPrompt = groundedPrompt,
@@ -564,16 +567,16 @@ fun ChatAssistantTab(
                 val finalContent = groundedRes.fold(
                     onSuccess = { gr ->
                         buildString {
-                            append("🔍 **聯網查證結果**\n\n")
+                            append(resCtx.getString(R.string.chat_s_240512))
                             append(gr.text.trim())
                             if (gr.sources.isNotEmpty()) {
-                                append("\n\n**參考來源**\n")
+                                append(resCtx.getString(R.string.chat_s_8d4936))
                                 gr.sources.forEach { url -> appendLine("- $url") }
                             }
                         }.trim()
                     },
                     onFailure = { err ->
-                        "🔍 聯網查詢未完成：${err.message ?: "請稍後再試"}（查無或失敗時絕不以模型既有知識頂替）。"
+                        resCtx.getString(R.string.chat_s_9c7a09, err.message ?: resCtx.getString(R.string.chat_s_1e9720))
                     }
                 )
                 withContext(Dispatchers.IO) {
@@ -682,14 +685,14 @@ fun ChatAssistantTab(
                             }
                             val distinctMsgs = msgsFound.distinctBy { it.id }
                             if (distinctMsgs.isEmpty()) {
-                                val targetHint = mp.messageRef ?: mp.messageIds.joinToString(", ").ifBlank { "未指定" }
-                                resolutionErrors.add("找不到「$targetHint」對應的訊息紀錄，無法執行 ${mp.action}。")
+                                val targetHint = mp.messageRef ?: mp.messageIds.joinToString(", ").ifBlank { resCtx.getString(R.string.chat_s_8c577d) }
+                                resolutionErrors.add(resCtx.getString(R.string.chat_s_4d5429, targetHint, mp.action))
                             } else if (mp.action == "tag_message") {
                                 val tName = mp.tagName?.trim().orEmpty()
                                 val matchedTag = allTags.firstOrNull { it.name.equals(tName, ignoreCase = true) }
                                 if (matchedTag == null) {
-                                    val avail = allTags.joinToString("、") { it.name }.ifBlank { "無" }
-                                    resolutionErrors.add("找不到標籤「$tName」（目前可用標籤：$avail）。")
+                                    val avail = allTags.joinToString("、") { it.name }.ifBlank { resCtx.getString(R.string.chat_s_9ecc4e) }
+                                    resolutionErrors.add(resCtx.getString(R.string.chat_s_a33681, tName, avail))
                                 } else {
                                     resolvedMsgActions.add(
                                         PendingMessageActionState(
@@ -779,16 +782,16 @@ fun ChatAssistantTab(
                                 null
                             }
                             if (resolved == null) {
-                                val label = ref.ifBlank { "未指定" }
+                                val label = ref.ifBlank { resCtx.getString(R.string.chat_s_8c577d) }
                                 failedWhitelistRefs.add(label)
-                                resolutionErrors.add("找不到：$label")
+                                resolutionErrors.add(resCtx.getString(R.string.chat_s_ee0a4f, label))
                             } else {
                                 resolvedWhitelistItems.add(WhitelistTargetItem(kind = wp.kind, message = resolved))
                             }
                         }
                     }
                     if (failedWhitelistRefs.size > 1 && resolvedWhitelistItems.isEmpty()) {
-                        resolutionErrors.add("白名單動作全部失敗（共 ${failedWhitelistRefs.size} 筆找不到對應訊息），請確認寄件者或訊息 ID。")
+                        resolutionErrors.add(resCtx.getString(R.string.chat_s_6d1e23, failedWhitelistRefs.size))
                     }
                 }
                 val dedupedWhitelistItems = resolvedWhitelistItems.distinctBy { item ->
@@ -831,7 +834,7 @@ fun ChatAssistantTab(
                         if (matchedSettingCandidates.isNotEmpty()) {
                             fallbackCandidates.addAll(matchedSettingCandidates)
                         } else {
-                            resolutionErrors.add("找不到名為「${tp.settingId}」的設定項目，請換個說法或至設定頁搜尋。")
+                            resolutionErrors.add(resCtx.getString(R.string.chat_s_a4caa6, tp.settingId))
                         }
                     }
                 }
@@ -855,7 +858,7 @@ fun ChatAssistantTab(
                         if (matchedSettingCandidates.isNotEmpty()) {
                             fallbackCandidates.addAll(matchedSettingCandidates)
                         } else {
-                            resolutionErrors.add("找不到名為「${op.settingId}」的設定項目，請換個說法或至設定頁搜尋。")
+                            resolutionErrors.add(resCtx.getString(R.string.chat_s_a4caa6, op.settingId))
                         }
                     }
                 }
@@ -896,7 +899,7 @@ fun ChatAssistantTab(
                             )
                         )
                     } else {
-                        resolutionErrors.add("找不到名為「${ap.settingId}」的可調整數值設定。")
+                        resolutionErrors.add(resCtx.getString(R.string.chat_s_06a03c, ap.settingId))
                     }
                 }
                 var usedNumericFallback = false
@@ -932,7 +935,7 @@ fun ChatAssistantTab(
                             ?: tags.firstOrNull { it.name.contains(targetName, ignoreCase = true) }
                         if (matchedTag == null) {
                             android.util.Log.w("ChatScreen", "tag_rule skipped: target tag '$targetName' not found")
-                            resolutionErrors.add("找不到目標標籤「$targetName」，已略過建立標籤規則。")
+                            resolutionErrors.add(resCtx.getString(R.string.chat_s_71832d, targetName))
                             null
                         } else {
                             PendingTagRuleInsertion(
@@ -956,7 +959,7 @@ fun ChatAssistantTab(
                             detectRepeatRuleFromText(rp.time.orEmpty()).ifBlank { detectRepeatRuleFromText(query) }
                         }
                         if (resolvedRepeat.isBlank() && (isUnsupportedRecurringExpression(rp.time.orEmpty()) || isUnsupportedRecurringExpression(query))) {
-                            resolutionErrors.add("重複提醒目前僅支援「每日」與「每週」，暫不支援每月或每年。")
+                            resolutionErrors.add(resCtx.getString(R.string.chat_s_827006))
                         } else {
                             when (val timeRes = ClientTimeParser.parseNaturalReminderTime(rp.time, query, nowMs)) {
                                 is NaturalTimeParseResult.Success -> {
@@ -973,10 +976,10 @@ fun ChatAssistantTab(
                                 }
                                 is NaturalTimeParseResult.PastTime -> {
                                     val pastFmt = PhantomPrefs.formatMessageTime(appCtx, timeRes.epochMillis, includeDate = true)
-                                    resolutionErrors.add("待辦提醒時間「$pastFmt」已過去，請重新指定未來的時間。")
+                                    resolutionErrors.add(resCtx.getString(R.string.chat_s_7c8148, pastFmt))
                                 }
                                 is NaturalTimeParseResult.Unparseable -> {
-                                    resolutionErrors.add("無法辨識「$title」的提醒時間，請明確指定時間（例如「明天下午 3 點」或「2 小時後」）。")
+                                    resolutionErrors.add(resCtx.getString(R.string.chat_s_1499ac, title))
                                 }
                             }
                         }
@@ -984,7 +987,7 @@ fun ChatAssistantTab(
                 } else if (isNaturalReminderIntent(query) && resolvedAdjustStates.isEmpty() && newAppliedSettings.isEmpty()) {
                     val resolvedRepeat = detectRepeatRuleFromText(query)
                     if (resolvedRepeat.isBlank() && isUnsupportedRecurringExpression(query)) {
-                        resolutionErrors.add("重複提醒目前僅支援「每日」與「每週」，暫不支援每月或每年。")
+                        resolutionErrors.add(resCtx.getString(R.string.chat_s_827006))
                     } else {
                         val title = extractTodoTitleFromQuery(query)
                         when (val timeRes = ClientTimeParser.parseNaturalReminderTime(null, query, nowMs)) {
@@ -1000,10 +1003,10 @@ fun ChatAssistantTab(
                             }
                             is NaturalTimeParseResult.PastTime -> {
                                 val pastFmt = PhantomPrefs.formatMessageTime(appCtx, timeRes.epochMillis, includeDate = true)
-                                resolutionErrors.add("待辦提醒時間「$pastFmt」已過去，請重新指定未來的時間。")
+                                resolutionErrors.add(resCtx.getString(R.string.chat_s_7c8148, pastFmt))
                             }
                             is NaturalTimeParseResult.Unparseable -> {
-                                resolutionErrors.add("請明確指定提醒時間（例如「明天下午 3 點」或「2 小時後」）。")
+                                resolutionErrors.add(resCtx.getString(R.string.chat_s_a30290))
                             }
                         }
                     }
@@ -1025,9 +1028,9 @@ fun ChatAssistantTab(
 
                 val storedReply = parsed.cleanReply.ifBlank {
                     when {
-                        hasValidAction -> "已準備好以下操作，請確認後執行："
-                        allActionErrors.isNotEmpty() -> "部分動作指令無法執行，請參考下方說明："
-                        else -> "AI 未回傳可顯示的內容，請換個方式提問。"
+                        hasValidAction -> resCtx.getString(R.string.chat_s_680d68)
+                        allActionErrors.isNotEmpty() -> resCtx.getString(R.string.chat_s_a0c7aa)
+                        else -> resCtx.getString(R.string.chat_s_d2fad1)
                     }
                 }
 
@@ -1148,19 +1151,19 @@ fun ChatAssistantTab(
                                 limit = 5
                             )
                             if (hits.isEmpty()) {
-                                immediateExtraReplies.add("查無符合條件的訊息（搜尋範圍：近 ${days} 天）。")
+                                immediateExtraReplies.add(resCtx.getString(R.string.chat_s_dcceb9, days))
                             } else {
                                 val summaryParts = listOfNotNull(
-                                    sp.query?.let { "關鍵字「$it」" },
-                                    sp.sender?.let { "寄件者「$it」" },
+                                    sp.query?.let { resCtx.getString(R.string.chat_s_a2fa1c, it) },
+                                    sp.sender?.let { resCtx.getString(R.string.chat_s_52f82a, it) },
                                     sp.packageName?.let { "App「$it」" }
-                                ).joinToString("、").ifBlank { "近 ${days} 天" }
+                                ).joinToString("、").ifBlank { resCtx.getString(R.string.chat_s_a4ec06, days) }
                                 resolvedSearchCard = SearchResultCardState(
                                     sessionId = sessionId,
                                     querySummary = summaryParts,
                                     results = hits
                                 )
-                                immediateExtraReplies.add("已找到 ${hits.size} 筆符合「$summaryParts」的訊息，請點擊下方結果卡查看詳情。")
+                                immediateExtraReplies.add(resCtx.getString(R.string.chat_s_ce8327, hits.size, summaryParts))
                             }
                         }
 
@@ -1172,24 +1175,24 @@ fun ChatAssistantTab(
                                 when (tp.action) {
                                     "todo_list" -> {
                                         if (allTodos.isEmpty()) {
-                                            immediateExtraReplies.add("目前沒有任何待辦事項。")
+                                            immediateExtraReplies.add(resCtx.getString(R.string.chat_s_2fe85a))
                                         } else {
                                             val rows = allTodos.take(20).joinToString("\n") { t ->
-                                                val status = if (t.isDone) "已完成" else "待辦"
+                                                val status = if (t.isDone) resCtx.getString(R.string.chat_s_e99b48) else resCtx.getString(R.string.chat_s_f2083e)
                                                 val timeStr = PhantomPrefs.formatMessageTime(appCtx, t.dueAt, includeDate = true)
                                                 val safeTitle = t.title.replace("|", "｜").replace("\n", " ")
                                                 "| $status | $safeTitle | $timeStr |"
                                             }
-                                            immediateExtraReplies.add("### 待辦事項清單\n| 狀態 | 事項 | 提醒時間 |\n|---|---|---|\n$rows")
+                                            immediateExtraReplies.add(resCtx.getString(R.string.chat_s_a7d6ba, rows))
                                         }
                                     }
                                     "todo_done" -> {
                                         val needle = tp.title.orEmpty()
                                         val matches = pendingTodos.filter { it.title.contains(needle, ignoreCase = true) }
                                         when {
-                                            matches.isEmpty() -> resolutionErrors.add("找不到包含「$needle」的未完成待辦事項。")
+                                            matches.isEmpty() -> resolutionErrors.add(resCtx.getString(R.string.chat_s_13c1e1, needle))
                                             matches.size > 1 -> resolutionErrors.add(
-                                                "找到多筆符合「$needle」的待辦，請指定更精確的名稱：\n" +
+                                                resCtx.getString(R.string.chat_s_1e11d0, needle) +
                                                     matches.take(5).joinToString("\n") { "• ${it.title}" }
                                             )
                                             else -> resolvedExtendedActions.add(PendingExtendedAction.TodoDone(sessionId, matches.first()))
@@ -1200,9 +1203,9 @@ fun ChatAssistantTab(
                                         val matches = (pendingTodos.filter { it.title.contains(needle, ignoreCase = true) })
                                             .ifEmpty { allTodos.filter { it.title.contains(needle, ignoreCase = true) } }
                                         when {
-                                            matches.isEmpty() -> resolutionErrors.add("找不到包含「$needle」的待辦事項。")
+                                            matches.isEmpty() -> resolutionErrors.add(resCtx.getString(R.string.chat_s_185d7b, needle))
                                             matches.size > 1 -> resolutionErrors.add(
-                                                "找到多筆符合「$needle」的待辦，請指定更精確的名稱：\n" +
+                                                resCtx.getString(R.string.chat_s_1e11d0, needle) +
                                                     matches.take(5).joinToString("\n") { "• ${it.title}" }
                                             )
                                             else -> resolvedExtendedActions.add(PendingExtendedAction.TodoDelete(sessionId, matches.first()))
@@ -1213,9 +1216,9 @@ fun ChatAssistantTab(
                                         val matches = (pendingTodos.filter { it.title.contains(needle, ignoreCase = true) })
                                             .ifEmpty { allTodos.filter { it.title.contains(needle, ignoreCase = true) } }
                                         when {
-                                            matches.isEmpty() -> resolutionErrors.add("找不到包含「$needle」的待辦事項。")
+                                            matches.isEmpty() -> resolutionErrors.add(resCtx.getString(R.string.chat_s_185d7b, needle))
                                             matches.size > 1 -> resolutionErrors.add(
-                                                "找到多筆符合「$needle」的待辦，請指定更精確的名稱：\n" +
+                                                resCtx.getString(R.string.chat_s_1e11d0, needle) +
                                                     matches.take(5).joinToString("\n") { "• ${it.title}" }
                                             )
                                             else -> {
@@ -1225,18 +1228,18 @@ fun ChatAssistantTab(
                                                     when (val tr = ClientTimeParser.parseNaturalReminderTime(tp.time, query, System.currentTimeMillis())) {
                                                         is NaturalTimeParseResult.Success -> tr.epochMillis
                                                         is NaturalTimeParseResult.PastTime -> {
-                                                            resolutionErrors.add("修改後的提醒時間已過期，請指定未來的時間。")
+                                                            resolutionErrors.add(resCtx.getString(R.string.chat_s_4bb888))
                                                             null
                                                         }
                                                         NaturalTimeParseResult.Unparseable -> {
-                                                            resolutionErrors.add("無法解析修改後的提醒時間「${tp.time}」。")
+                                                            resolutionErrors.add(resCtx.getString(R.string.chat_s_32c4c7, tp.time))
                                                             null
                                                         }
                                                     }
                                                 } else target.dueAt
                                                 if (updatedDueAt != null) {
                                                     if (updatedTitle == target.title && updatedDueAt == target.dueAt) {
-                                                        resolutionErrors.add("請提供要修改的新標題或新提醒時間。")
+                                                        resolutionErrors.add(resCtx.getString(R.string.chat_s_7f3c79))
                                                     } else {
                                                         resolvedExtendedActions.add(
                                                             PendingExtendedAction.TodoEdit(
@@ -1267,7 +1270,7 @@ fun ChatAssistantTab(
                                     senderHit && pkgHit
                                 }
                                 if (matchedMsg == null) {
-                                    resolutionErrors.add("近期訊息中找不到寄件者「${vp.sender}」，無法設定 VIP 釘選。")
+                                    resolutionErrors.add(resCtx.getString(R.string.chat_s_674b65, vp.sender))
                                 } else {
                                     resolvedExtendedActions.add(
                                         PendingExtendedAction.VipPin(
@@ -1288,8 +1291,8 @@ fun ChatAssistantTab(
                             if (resolved == null) {
                                 val candidatesText = appGroups.take(8).joinToString("、") { it.appLabel.ifBlank { it.packageName } }
                                 resolutionErrors.add(
-                                    if (candidatesText.isBlank()) "目前無任何 App 訊息紀錄，無法設定靜音。"
-                                    else "找不到名為「${mp.appLabel}」的 App，目前可選 App：$candidatesText"
+                                    if (candidatesText.isBlank()) resCtx.getString(R.string.chat_s_9d6a80)
+                                    else resCtx.getString(R.string.chat_s_d90aaf, mp.appLabel, candidatesText)
                                 )
                             } else {
                                 resolvedExtendedActions.add(
@@ -1307,28 +1310,28 @@ fun ChatAssistantTab(
                         parsed.markReadProposals.forEach { mr ->
                             when (mr.scope) {
                                 "today" -> resolvedExtendedActions.add(
-                                    PendingExtendedAction.MarkRead(sessionId, "today", null, "今日未讀訊息（不含詐騙紀錄）")
+                                    PendingExtendedAction.MarkRead(sessionId, "today", null, resCtx.getString(R.string.chat_s_05ffe3))
                                 )
                                 "all" -> resolvedExtendedActions.add(
-                                    PendingExtendedAction.MarkRead(sessionId, "all", null, "全部未讀訊息（不含詐騙紀錄）")
+                                    PendingExtendedAction.MarkRead(sessionId, "all", null, resCtx.getString(R.string.chat_s_6645ce))
                                 )
                                 "app" -> {
                                     val resolved = resolveAppPackage(mr.packageName)
                                     if (resolved == null) {
                                         val candidatesText = appGroups.take(8).joinToString("、") { it.appLabel.ifBlank { it.packageName } }
-                                        resolutionErrors.add("請指定有效的 App 名稱（可選：$candidatesText）。")
+                                        resolutionErrors.add(resCtx.getString(R.string.chat_s_108773, candidatesText))
                                     } else {
                                         resolvedExtendedActions.add(
                                             PendingExtendedAction.MarkRead(
                                                 sessionId,
                                                 "app",
                                                 resolved.first,
-                                                "${resolved.second} 的未讀訊息（不含詐騙紀錄）"
+                                                resCtx.getString(R.string.chat_s_276120, resolved.second)
                                             )
                                         )
                                     }
                                 }
-                                else -> resolutionErrors.add("不支援的標記已讀範圍「${mr.scope}」，請使用 today、app 或 all。")
+                                else -> resolutionErrors.add(resCtx.getString(R.string.chat_s_54566b, mr.scope))
                             }
                         }
 
@@ -1337,10 +1340,10 @@ fun ChatAssistantTab(
                             val resolvedApp = if (ep.packageName != null) resolveAppPackage(ep.packageName) else null
                             if (ep.packageName != null && resolvedApp == null) {
                                 val candidatesText = appGroups.take(8).joinToString("、") { it.appLabel.ifBlank { it.packageName } }
-                                resolutionErrors.add("找不到要匯出的 App「${ep.packageName}」（可選：$candidatesText）。")
+                                resolutionErrors.add(resCtx.getString(R.string.chat_s_5f9489, ep.packageName, candidatesText))
                             } else {
-                                val appDesc = resolvedApp?.second ?: "全部 App"
-                                val daysDesc = ep.days?.let { "近 $it 天" } ?: "全部時間"
+                                val appDesc = resolvedApp?.second ?: resCtx.getString(R.string.common_all_apps)
+                                val daysDesc = ep.days?.let { resCtx.getString(R.string.chat_s_0cfebf, it) } ?: resCtx.getString(R.string.chat_s_9a11ba)
                                 resolvedExtendedActions.add(
                                     PendingExtendedAction.ExportMessages(
                                         sessionId = sessionId,
@@ -1368,20 +1371,20 @@ fun ChatAssistantTab(
                                             r.packageName?.contains(q, ignoreCase = true) == true
                                     }
                                     if (hits.isEmpty()) {
-                                        resolutionErrors.add("找不到符合「$q」的白名單規則，請先確認白名單清單。")
+                                        resolutionErrors.add(resCtx.getString(R.string.chat_s_b569a7, q))
                                     } else {
                                         matchedRules.addAll(hits)
                                     }
                                 } else {
-                                    resolutionErrors.add("移出白名單缺少規則 ID 或查詢條件。")
+                                    resolutionErrors.add(resCtx.getString(R.string.chat_s_f684bc))
                                 }
                             }
                             val distinctMatched = matchedRules.distinctBy { it.id }
                             if (distinctMatched.isNotEmpty()) {
                                 val summaryText = distinctMatched.joinToString("\n") { r ->
                                     val target = r.sender?.takeIf { it.isNotBlank() } ?: r.ruleText.take(40)
-                                    val mode = if (!r.sender.isNullOrBlank()) "全寄件者" else "僅內容"
-                                    val pkg = r.packageName?.takeIf { it.isNotBlank() } ?: "全域"
+                                    val mode = if (!r.sender.isNullOrBlank()) resCtx.getString(R.string.chat_s_b6365c) else resCtx.getString(R.string.chat_s_e8f3df)
+                                    val pkg = r.packageName?.takeIf { it.isNotBlank() } ?: resCtx.getString(R.string.chat_s_d22581)
                                     "• #${r.id} $target（$pkg，$mode，${formatChatTime(r.createdAt)}）"
                                 }
                                 resolvedExtendedActions.add(
@@ -1410,7 +1413,7 @@ fun ChatAssistantTab(
                                     layerOk && statusOk && queryOk
                                 }
                                 if (filtered.isEmpty()) {
-                                    immediateExtraReplies.add("記憶庫中目前沒有符合條件的記憶紀錄。")
+                                    immediateExtraReplies.add(resCtx.getString(R.string.chat_s_225f65))
                                 } else {
                                     val rows = filtered.take(25).joinToString("\n") { m ->
                                         val catLbl = com.phantom.checker.data.MemoryEngine.categoryLabel(m.category)
@@ -1418,18 +1421,18 @@ fun ChatAssistantTab(
                                         val statusLbl = com.phantom.checker.data.MemoryEngine.statusLabel(m.status)
                                         val confLbl = com.phantom.checker.data.MemoryEngine.confidenceLabel(m.confidence)
                                         val isSensitive = m.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE
-                                        val privTag = if (isSensitive) "🔒敏感" else "一般"
+                                        val privTag = if (isSensitive) resCtx.getString(R.string.chat_s_d5f48d) else resCtx.getString(R.string.chat_s_f0aacc)
                                         val safeSubj = m.subject.replace("|", "｜").replace("\n", " ").take(20)
                                         val safeContent = if (isSensitive) {
-                                            "內容已隱藏（僅本機可見，請至記憶頁查看）"
+                                            resCtx.getString(R.string.chat_s_e2bf8a)
                                         } else {
                                             m.content.replace("|", "｜").replace("\n", " ").take(45)
                                         }
                                         "| #${m.id} | $catLbl | $layerLbl | $statusLbl/$confLbl ($privTag) | $safeSubj：$safeContent |"
                                     }
                                     immediateExtraReplies.add(
-                                        "### 記憶庫清單（共 ${filtered.size} 筆）\n" +
-                                            "| ID | 分類 | 層級 | 狀態/可信度 | 內容 |\n|---|---|---|---|---|\n$rows"
+                                        resCtx.getString(R.string.chat_s_e87d61, filtered.size) +
+                                            resCtx.getString(R.string.chat_s_dd28d3, rows)
                                     )
                                 }
                             }
@@ -1476,7 +1479,7 @@ fun ChatAssistantTab(
                                             if (allowDirectAuto) {
                                                 autoExtractedCount++
                                             } else {
-                                                val report = "✓ 已記住 #${outcome.memory.id} [$catLbl/$layerLbl] ${outcome.memory.subject}：${outcome.memory.content}"
+                                                val report = resCtx.getString(R.string.chat_s_22468b, outcome.memory.id, catLbl, layerLbl, outcome.memory.subject, outcome.memory.content)
                                                 db.chatDao().insertMessage(
                                                     ChatMessageEntity(
                                                         sessionId = sessionId,
@@ -1491,7 +1494,7 @@ fun ChatAssistantTab(
                                             if (allowDirectAuto) {
                                                 autoExtractedCount++
                                             } else {
-                                                val report = "✓ 記憶庫已有相同內容 #${outcome.memory.id} [$catLbl/$layerLbl] ${outcome.memory.subject}，已更新時間。"
+                                                val report = resCtx.getString(R.string.chat_s_10541d, outcome.memory.id, catLbl, layerLbl, outcome.memory.subject)
                                                 db.chatDao().insertMessage(
                                                     ChatMessageEntity(
                                                         sessionId = sessionId,
@@ -1614,11 +1617,11 @@ fun ChatAssistantTab(
                                 val distinctTargets = matched.distinctBy { it.id }
                                 val labelDesc = listOfNotNull(
                                     mdp.memoryId?.let { "#$it" },
-                                    mdp.subject?.let { "人物/主題「$it」" },
-                                    mdp.query?.let { "關鍵字「$it」" }
-                                ).joinToString("、").ifBlank { "指定條件" }
+                                    mdp.subject?.let { resCtx.getString(R.string.chat_s_8ce871, it) },
+                                    mdp.query?.let { resCtx.getString(R.string.chat_s_a2fa1c, it) }
+                                ).joinToString("、").ifBlank { resCtx.getString(R.string.chat_s_89f1d1) }
                                 if (distinctTargets.isEmpty()) {
-                                    immediateExtraReplies.add("找不到符合「$labelDesc」的記憶，無法執行刪除。")
+                                    immediateExtraReplies.add(resCtx.getString(R.string.chat_s_e3cbdd, labelDesc))
                                 } else {
                                     resolvedMemoryDeletes.add(
                                         PendingMemoryDeleteState(
@@ -1686,7 +1689,7 @@ fun ChatAssistantTab(
                         // #364 單意圖單卡降級提示（不靜默遺漏任何次要查詢意圖）
                         if (parsed.demotedQueryHints.isNotEmpty()) {
                             immediateExtraReplies.add(
-                                "ℹ️ 本次回覆亦偵測到其他查詢建議（${parsed.demotedQueryHints.joinToString("、")}），已優先呈現主查詢結果；如需查看可直接追問。"
+                                resCtx.getString(R.string.chat_s_7b45f1, parsed.demotedQueryHints.joinToString("、"))
                             )
                         }
 
@@ -1699,7 +1702,7 @@ fun ChatAssistantTab(
                                 val parsedStart = com.phantom.checker.util.ClientTimeParser.parseStructuredDueAt(cap.startRaw)
                                     ?: (com.phantom.checker.util.ClientTimeParser.parseNaturalReminderTime(null, cap.startRaw) as? com.phantom.checker.util.NaturalTimeParseResult.Success)?.epochMillis
                                 if (parsedStart == null) {
-                                    immediateExtraReplies.add("無法解析日曆行程「${cap.title}」的開始時間（${cap.startRaw}），請提供明確日期時間（如 2026-11-21 14:00）。")
+                                    immediateExtraReplies.add(resCtx.getString(R.string.chat_s_b462d7, cap.title, cap.startRaw))
                                 } else {
                                     val parsedEnd = cap.endRaw?.let { rawEnd ->
                                         com.phantom.checker.util.ClientTimeParser.parseStructuredDueAt(rawEnd)
@@ -1733,10 +1736,10 @@ fun ChatAssistantTab(
                                         res.fold(
                                             onSuccess = {
                                                 val allDaySuffix = com.phantom.checker.util.CalendarBridge.formatAllDayInfoNote(allDayEvents)?.let { "\n$it" } ?: ""
-                                                immediateExtraReplies.add("📅 已直接寫入本機日曆（${targetCal.displayName}）：「${cap.title}」（$startFormatted）。$allDaySuffix")
+                                                immediateExtraReplies.add(resCtx.getString(R.string.chat_s_243400, targetCal.displayName, cap.title, startFormatted, allDaySuffix))
                                             },
                                             onFailure = { err ->
-                                                immediateExtraReplies.add("寫入日曆失敗：${err.localizedMessage ?: "未知錯誤"}。")
+                                                immediateExtraReplies.add(resCtx.getString(R.string.chat_s_f33c16, err.localizedMessage ?: resCtx.getString(R.string.common_unknown_error)))
                                             }
                                         )
                                     } else {
@@ -1842,7 +1845,7 @@ fun ChatAssistantTab(
                     ctx.startActivity(targetIntent)
                 }
             }.onFailure { err ->
-                lastError = err.message ?: "AI 回覆失敗"
+                lastError = err.message ?: resCtx.getString(R.string.chat_s_360c9b)
                 lastFailedQuery = query
             }
         }
@@ -1851,8 +1854,8 @@ fun ChatAssistantTab(
     deleteSessionConfirm?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteSessionConfirm = null },
-            title = { Text("刪除對話紀錄") },
-            text = { Text("確定要刪除「${target.title}」的對話紀錄嗎？") },
+            title = { Text(stringResource(R.string.chat_s_dc4a8a)) },
+            text = { Text(stringResource(R.string.chat_s_1df552, target.title)) },
             confirmButton = {
                 Button(
                     onClick = {
@@ -1866,17 +1869,17 @@ fun ChatAssistantTab(
                             }
                             deleteSessionConfirm = null
                             loadSessionsAndSuggestions()
-                            onShowMessage("已刪除對話")
+                            onShowMessage(resCtx.getString(R.string.chat_s_87a1ab))
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認刪除")
+                    Text(stringResource(R.string.common_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { deleteSessionConfirm = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -1885,14 +1888,14 @@ fun ChatAssistantTab(
     if (showClearAllSessionsConfirm) {
         AlertDialog(
             onDismissRequest = { showClearAllSessionsConfirm = false },
-            title = { Text("清除全部一般對話") },
-            text = { Text("確定要永久刪除所有一般歷史對話嗎？（專屬「主動訊息」聊天室紀錄將予以保留，不受影響）") },
+            title = { Text(stringResource(R.string.chat_s_a2f68b)) },
+            text = { Text(stringResource(R.string.chat_s_73403e)) },
             confirmButton = {
                 Button(
                     onClick = {
                         if (isSending) {
                             showClearAllSessionsConfirm = false
-                            onShowMessage("AI 正在回覆中，請稍候再清除對話")
+                            onShowMessage(resCtx.getString(R.string.chat_s_fae667))
                             return@Button
                         }
                         scope.launch {
@@ -1910,17 +1913,17 @@ fun ChatAssistantTab(
                             showClearAllSessionsConfirm = false
                             showSessionDrawer = false
                             loadSessionsAndSuggestions()
-                            onShowMessage("已清除全部一般對話（主動訊息已保留）")
+                            onShowMessage(resCtx.getString(R.string.chat_s_f519c9))
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("確認清除")
+                    Text(stringResource(R.string.common_confirm_clear))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearAllSessionsConfirm = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -1936,13 +1939,13 @@ fun ChatAssistantTab(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "🧠 本則回覆自動擷取的記憶（${memList.size} 筆）",
+                    text = resCtx.getString(R.string.chat_s_d5f658, memList.size),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 if (memList.isEmpty()) {
                     Text(
-                        text = "此則回覆的自動記憶皆已移除。",
+                        text = resCtx.getString(R.string.chat_s_2a2311),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1971,7 +1974,7 @@ fun ChatAssistantTab(
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                     Text(
-                                        text = "來源：${mem.sourceRef ?: "對話自動擷取"}",
+                                        text = resCtx.getString(R.string.chat_s_c7cde7, mem.sourceRef ?: resCtx.getString(R.string.chat_s_c6af2a)),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1985,12 +1988,12 @@ fun ChatAssistantTab(
                                                 withContext(Dispatchers.IO) {
                                                     AppDatabaseHolder.db(appCtx).memoryDao().deleteById(mem.id)
                                                 }
-                                                onShowMessage("已刪除自動記憶：${mem.subject}")
+                                                onShowMessage(resCtx.getString(R.string.chat_s_e16a59, mem.subject))
                                             }
                                         }
                                     }
                                 ) {
-                                    Text("刪除", color = MaterialTheme.colorScheme.error)
+                                    Text(resCtx.getString(R.string.common_delete), color = MaterialTheme.colorScheme.error)
                                 }
                             }
                         }
@@ -2004,8 +2007,8 @@ fun ChatAssistantTab(
     sensitiveAutoMemDeleteTarget?.let { targetMem ->
         AlertDialog(
             onDismissRequest = { sensitiveAutoMemDeleteTarget = null },
-            title = { Text("確認刪除敏感記憶") },
-            text = { Text("確定要刪除敏感記憶「${targetMem.subject}：${targetMem.content}」嗎？") },
+            title = { Text(stringResource(R.string.chat_s_cc810d)) },
+            text = { Text(stringResource(R.string.chat_s_762a1d, targetMem.subject, targetMem.content)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -2015,16 +2018,16 @@ fun ChatAssistantTab(
                             withContext(Dispatchers.IO) {
                                 AppDatabaseHolder.db(appCtx).memoryDao().deleteById(toDel.id)
                             }
-                            onShowMessage("已刪除敏感記憶：${toDel.subject}")
+                            onShowMessage(resCtx.getString(R.string.chat_s_1fc6e9, toDel.subject))
                         }
                     }
                 ) {
-                    Text("確認刪除", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.common_confirm_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { sensitiveAutoMemDeleteTarget = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -2034,32 +2037,32 @@ fun ChatAssistantTab(
         val proposal = pending.proposal
         val remainingCount = pendingRuleQueue.size
         val kindLabel = when (proposal.kind) {
-            AiRuleEntity.KIND_WHITELIST -> "白名單規則（跳過詐騙警示／情報）"
-            "memo" -> "自動記事/待辦規則"
-            else -> "AI 標籤規則"
+            AiRuleEntity.KIND_WHITELIST -> resCtx.getString(R.string.chat_s_eedcf6)
+            "memo" -> resCtx.getString(R.string.chat_s_987cbd)
+            else -> resCtx.getString(R.string.chat_s_63084e)
         }
         AlertDialog(
             onDismissRequest = { pendingRuleQueue = pendingRuleQueue.drop(1) },
             title = {
-                Text(if (remainingCount > 1) "確認新增規則（尚有 $remainingCount 筆）" else "確認新增規則")
+                Text(if (remainingCount > 1) stringResource(R.string.chat_s_ff3a24, remainingCount) else stringResource(R.string.chat_s_c888ee))
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = "類型：$kindLabel",
+                        text = stringResource(R.string.chat_s_050095, kindLabel),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     if (!proposal.tagName.isNullOrBlank() && proposal.kind == AiRuleEntity.KIND_TAG) {
                         Text(
-                            text = "目標標籤：${proposal.tagName}",
+                            text = stringResource(R.string.chat_s_a4337a, proposal.tagName),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Text(
-                        text = "規則內容：${proposal.ruleText}",
+                        text = stringResource(R.string.chat_s_766651, proposal.ruleText),
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -2104,11 +2107,11 @@ fun ChatAssistantTab(
                                         sessionId = sid,
                                         role = ChatMessageEntity.ROLE_ASSISTANT,
                                         content = if (existing) {
-                                            "✓ 已有相同自動記事規則：${proposal.ruleText}"
+                                            resCtx.getString(R.string.chat_s_f4ae38, proposal.ruleText)
                                         } else if (ok) {
-                                            "✓ 已新增自動記事規則：${proposal.ruleText}"
+                                            resCtx.getString(R.string.chat_s_cd6ece, proposal.ruleText)
                                         } else {
-                                            "✗ 新增自動記事規則失敗：${proposal.ruleText}"
+                                            resCtx.getString(R.string.chat_s_8468fb, proposal.ruleText)
                                         },
                                         createdAt = System.currentTimeMillis()
                                     )
@@ -2129,13 +2132,13 @@ fun ChatAssistantTab(
                                         role = ChatMessageEntity.ROLE_ASSISTANT,
                                         content = when (upsertRes.status) {
                                             WhitelistRuleHelper.Status.INSERTED ->
-                                                "✓ 已新增白名單規則 #${upsertRes.rule?.id}：${proposal.ruleText}（已寫入並驗證）"
+                                                resCtx.getString(R.string.chat_s_02901b, upsertRes.rule?.id, proposal.ruleText)
                                             WhitelistRuleHelper.Status.REACTIVATED ->
                                                 "✓ ${upsertRes.message} #${upsertRes.rule?.id}：${proposal.ruleText}"
                                             WhitelistRuleHelper.Status.DUPLICATE ->
                                                 "ℹ️ ${upsertRes.message}（#${upsertRes.rule?.id}）：${proposal.ruleText}"
                                             WhitelistRuleHelper.Status.FAILED ->
-                                                "✗ 新增白名單規則失敗：${proposal.ruleText}（DB 寫入驗證失敗）"
+                                                resCtx.getString(R.string.chat_s_6f8db5, proposal.ruleText)
                                         },
                                         createdAt = System.currentTimeMillis()
                                     )
@@ -2164,9 +2167,9 @@ fun ChatAssistantTab(
                                         sessionId = sid,
                                         role = ChatMessageEntity.ROLE_ASSISTANT,
                                         content = if (ok) {
-                                            "✓ 已新增規則 #${verified!!.id}：${proposal.ruleText}（已寫入並驗證）"
+                                            resCtx.getString(R.string.chat_s_cf567e, verified!!.id, proposal.ruleText)
                                         } else {
-                                            "✗ 新增規則失敗：${proposal.ruleText}（DB 寫入驗證失敗）"
+                                            resCtx.getString(R.string.chat_s_c11b0a, proposal.ruleText)
                                         },
                                         createdAt = System.currentTimeMillis()
                                     )
@@ -2175,15 +2178,15 @@ fun ChatAssistantTab(
                             }
                         }
                         loadMessages(sid)
-                        onShowMessage(if (verifiedOk) "已新增規則" else "新增規則失敗")
+                        onShowMessage(if (verifiedOk) resCtx.getString(R.string.chat_s_b22612) else resCtx.getString(R.string.chat_s_e51036))
                     }
                 }) {
-                    Text("確認新增")
+                    Text(stringResource(R.string.common_confirm_create))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingRuleQueue = pendingRuleQueue.drop(1) }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -2195,36 +2198,36 @@ fun ChatAssistantTab(
         var selectedTagId by remember(pending) { mutableStateOf(pending.resolvedTagId) }
         val previewConditions = buildList {
             p.appLabel?.let { add("App：$it") }
-            p.appPackage?.let { add("套件：$it") }
-            p.senderPattern?.let { add("寄件者含「$it」") }
-            p.contentKeyword?.let { add("關鍵字「$it」") }
-            p.contentRegex?.let { add("正則 /$it/") }
-            com.phantom.checker.util.TagRuleEngine.semanticLabel(p.semanticCategory)?.let { add("語意：$it") }
+            p.appPackage?.let { add(resCtx.getString(R.string.chat_s_f2a0e4, it)) }
+            p.senderPattern?.let { add(resCtx.getString(R.string.chat_s_db4eb4, it)) }
+            p.contentKeyword?.let { add(resCtx.getString(R.string.chat_s_a2fa1c, it)) }
+            p.contentRegex?.let { add(resCtx.getString(R.string.chat_s_3af783, it)) }
+            com.phantom.checker.util.TagRuleEngine.semanticLabel(p.semanticCategory)?.let { add(resCtx.getString(R.string.chat_s_7a9b5b, it)) }
         }.joinToString(" ＋ ").ifBlank { p.description }
         AlertDialog(
             onDismissRequest = { pendingTagRuleQueue = pendingTagRuleQueue.drop(1) },
             title = {
-                Text(if (remaining > 1) "確認建立標籤記憶規則（尚有 $remaining 筆）" else "確認建立標籤記憶規則")
+                Text(if (remaining > 1) stringResource(R.string.chat_s_aac697, remaining) else stringResource(R.string.chat_s_ed2da5))
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "此規則將採確定性比對（零 token），優先於 App 分類與 AI 自動標籤。",
+                        text = stringResource(R.string.chat_s_30aee0),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "規則說明：${p.description}",
+                        text = stringResource(R.string.chat_s_c30ddb, p.description),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = "比對條件：$previewConditions",
+                        text = stringResource(R.string.chat_s_fb1e70, previewConditions),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "目標標籤：",
+                        text = stringResource(R.string.chat_s_2f04e0),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -2278,9 +2281,9 @@ fun ChatAssistantTab(
                                         sessionId = sid,
                                         role = ChatMessageEntity.ROLE_ASSISTANT,
                                         content = if (ok) {
-                                            "✓ 已記住標籤規則 #$insertedId：「${p.description}」→ 標記為「$tagName」（已寫入並驗證）。"
+                                            resCtx.getString(R.string.chat_s_a97467, insertedId, p.description, tagName)
                                         } else {
-                                            "✗ 標籤規則寫入驗證失敗：「${p.description}」。"
+                                            resCtx.getString(R.string.chat_s_c18e8f, p.description)
                                         },
                                         createdAt = System.currentTimeMillis()
                                     )
@@ -2288,16 +2291,16 @@ fun ChatAssistantTab(
                                 ok
                             }
                             loadMessages(sid)
-                            onShowMessage(if (verifiedOk) "已建立標籤記憶規則（$tagName）" else "標籤記憶規則寫入失敗")
+                            onShowMessage(if (verifiedOk) resCtx.getString(R.string.chat_s_e72b10, tagName) else resCtx.getString(R.string.chat_s_2dbeb3))
                         }
                     }
                 ) {
-                    Text("確認記住")
+                    Text(stringResource(R.string.chat_s_598492))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingTagRuleQueue = pendingTagRuleQueue.drop(1) }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -2337,19 +2340,19 @@ fun ChatAssistantTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "待辦提醒清單",
+                        text = stringResource(R.string.chat_s_e53dad),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "${todoListItems.count { !it.isDone }} 項待辦",
+                        text = stringResource(R.string.chat_s_4daa9c, todoListItems.count { !it.isDone }),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 if (todoListItems.isEmpty()) {
                     Text(
-                        text = "目前沒有待辦提醒。你可以對 AI 說「提醒我明天下午 3 點繳報告」來建立。",
+                        text = stringResource(R.string.chat_s_a745ea),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 12.dp)
@@ -2402,7 +2405,7 @@ fun ChatAssistantTab(
                                             overflow = TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            text = if (todo.isDone) "已完成 · $dueStr" else "⏰ $dueStr",
+                                            text = if (todo.isDone) stringResource(R.string.chat_s_213354, dueStr) else "⏰ $dueStr",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -2420,7 +2423,7 @@ fun ChatAssistantTab(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Delete,
-                                            contentDescription = "刪除待辦",
+                                            contentDescription = stringResource(R.string.chat_s_ae9e5f),
                                             tint = MaterialTheme.colorScheme.error
                                         )
                                     }
@@ -2579,7 +2582,7 @@ fun ChatAssistantTab(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = if (assistantName == PhantomPrefs.DEFAULT_ASSISTANT_NAME) {
-                            "幻訊"
+                            stringResource(R.string.chat_s_8dd976)
                         } else {
                             assistantName
                         },
@@ -2593,7 +2596,7 @@ fun ChatAssistantTab(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = activeProfile?.model?.takeIf { it.isNotBlank() } ?: "未設定模型",
+                            text = activeProfile?.model?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_s_288570),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -2606,7 +2609,7 @@ fun ChatAssistantTab(
                                 color = MaterialTheme.colorScheme.primaryContainer
                             ) {
                                 Text(
-                                    text = "省 token",
+                                    text = stringResource(R.string.chat_s_3dcfdd),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
@@ -2626,13 +2629,13 @@ fun ChatAssistantTab(
                     },
                     modifier = Modifier.size(48.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "新對話")
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.chat_s_a7975c))
                 }
                 IconButton(
                     onClick = { showSessionDrawer = true },
                     modifier = Modifier.size(48.dp)
                 ) {
-                    Icon(Icons.Default.Menu, contentDescription = "歷史對話")
+                    Icon(Icons.Default.Menu, contentDescription = stringResource(R.string.chat_s_4e6af9))
                 }
                 Box {
                     IconButton(
@@ -2641,7 +2644,7 @@ fun ChatAssistantTab(
                     ) {
                         Icon(
                             imageVector = androidx.compose.material.icons.Icons.Default.MoreVert,
-                            contentDescription = "更多選項"
+                            contentDescription = stringResource(R.string.common_more_options)
                         )
                     }
                     DropdownMenu(
@@ -2649,17 +2652,17 @@ fun ChatAssistantTab(
                         onDismissRequest = { showChatOverflow = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text(if (tokenSaverEnabled) "✓ 省 token 模式（已開啟）" else "省 token 模式（未開啟）") },
+                            text = { Text(if (tokenSaverEnabled) stringResource(R.string.chat_s_ee0e3d) else stringResource(R.string.chat_s_654d89)) },
                             onClick = {
                                 showChatOverflow = false
                                 val next = !tokenSaverEnabled
                                 tokenSaverEnabled = next
                                 SettingsCatalog.applyBooleanSetting(appCtx, "quick_token_saver", next)
-                                onShowMessage(if (next) "已開啟省 token 模式" else "已關閉省 token 模式（已還原設定預算）")
+                                onShowMessage(if (next) resCtx.getString(R.string.chat_s_c934ec) else resCtx.getString(R.string.chat_s_5d174b))
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("省 token 模式影響清單") },
+                            text = { Text(stringResource(R.string.chat_s_7c0637)) },
                             leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
                             onClick = {
                                 showChatOverflow = false
@@ -2667,14 +2670,14 @@ fun ChatAssistantTab(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(if (pendingTodoCount > 0) "待辦 ($pendingTodoCount)" else "待辦事項") },
+                            text = { Text(if (pendingTodoCount > 0) stringResource(R.string.chat_s_e384f5, pendingTodoCount) else stringResource(R.string.chat_s_3cbab4)) },
                             onClick = {
                                 showChatOverflow = false
                                 showTodoListSheet = true
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(if (isSearchActive) "關閉搜尋" else "搜尋對話") },
+                            text = { Text(if (isSearchActive) stringResource(R.string.common_s_27c39c) else stringResource(R.string.chat_s_b71873)) },
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                             onClick = {
                                 showChatOverflow = false
@@ -2682,7 +2685,7 @@ fun ChatAssistantTab(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("重新整理") },
+                            text = { Text(stringResource(R.string.common_refresh)) },
                             leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
                             onClick = {
                                 showChatOverflow = false
@@ -2690,7 +2693,7 @@ fun ChatAssistantTab(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("設定") },
+                            text = { Text(stringResource(R.string.common_settings)) },
                             leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
                             onClick = {
                                 showChatOverflow = false
@@ -2710,7 +2713,7 @@ fun ChatAssistantTab(
                 onDismissRequest = { showTokenSaverInfoDialog = false },
                 title = {
                     Text(
-                        text = "省 token 模式影響清單",
+                        text = stringResource(R.string.chat_s_7c0637),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -2718,29 +2721,29 @@ fun ChatAssistantTab(
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            text = "目前狀態：${if (tokenSaverEnabled) "已開啟（生效中）" else "已關閉"}。開啟時以 Override 層運作，絕不覆寫您原本的設定值，關閉後立即還原：",
+                            text = stringResource(R.string.chat_s_a73dd4, if (tokenSaverEnabled) resCtx.getString(R.string.chat_s_df42b3) else resCtx.getString(R.string.chat_s_e8a92f)),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.SemiBold
                         )
                         Text(
-                            text = "1. 每則訊息 AI 風險掃描：暫停一般訊息逐則 AI 掃描，僅在訊息命中可疑特徵（如可疑網址、短連結或過濾規則）時才觸發 AI 分析。",
+                            text = stringResource(R.string.chat_s_b9cf01),
                             style = MaterialTheme.typography.bodySmall
                         )
                         Text(
-                            text = "2. AI 智慧標籤與自動備忘錄：暫停每則訊息的 AI 自動標籤分發（isEffectiveAiAutoTagEnabled = false）與隨附的自動備忘錄擷取；確定性使用者標籤規則與 App 分類仍正常運作。",
+                            text = stringResource(R.string.chat_s_8d6ebb),
                             style = MaterialTheme.typography.bodySmall
                         )
                         Text(
-                            text = "3. AI 助手單次閱讀訊息上限（RAG）：由原設定值（目前設定 $normalRag 則）暫時降載為 100 則（getEffectiveChatRagMessageLimit = 100），不覆寫原設定值。",
+                            text = stringResource(R.string.chat_s_40ff00, normalRag),
                             style = MaterialTheme.typography.bodySmall
                         )
                         Text(
-                            text = "4. 記憶庫對話注入預算：由正常模式（設定 $normalMemTopK 筆／每筆約 50 tokens／總預算 ≤250 tokens）切換為省 token 預算（設定 $saverMemTopK 筆／每筆約 25 tokens／總預算 ≤120 tokens），兩組設定獨立保存。",
+                            text = stringResource(R.string.chat_s_c6bf69, normalMemTopK, saverMemTopK),
                             style = MaterialTheme.typography.bodySmall
                         )
                         Text(
-                            text = "5. 聊天附加圖片壓縮：上傳圖片邊長上限由 768px 降至 512px、JPEG 品質由 72 降至 65，減少視覺模型圖片 token 消耗。",
+                            text = stringResource(R.string.chat_s_f1b189),
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -2752,15 +2755,15 @@ fun ChatAssistantTab(
                             tokenSaverEnabled = next
                             SettingsCatalog.applyBooleanSetting(appCtx, "quick_token_saver", next)
                             showTokenSaverInfoDialog = false
-                            onShowMessage(if (next) "已開啟省 token 模式" else "已關閉省 token 模式")
+                            onShowMessage(if (next) resCtx.getString(R.string.chat_s_c934ec) else resCtx.getString(R.string.chat_s_fe4663))
                         }
                     ) {
-                        Text(if (tokenSaverEnabled) "關閉省 token" else "立即開啟省 token")
+                        Text(if (tokenSaverEnabled) stringResource(R.string.chat_s_adf1c7) else stringResource(R.string.chat_s_fdd725))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showTokenSaverInfoDialog = false }) {
-                        Text("關閉說明")
+                        Text(stringResource(R.string.chat_s_16779d))
                     }
                 }
             )
@@ -2774,13 +2777,13 @@ fun ChatAssistantTab(
                 contentPadding = 14.dp
             ) {
                 Text(
-                    text = "尚未設定 AI API Key",
+                    text = stringResource(R.string.chat_s_fb05e0),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "請先前往設定多 Provider API Key，即可啟用 AI 訊息助手查詢與昨日簡報功能。",
+                    text = stringResource(R.string.chat_s_29a268),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -2788,7 +2791,7 @@ fun ChatAssistantTab(
                 Button(onClick = { ctx.startActivity(Intent(ctx, ApiKeySettingsActivity::class.java)) }) {
                     Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("前往設定")
+                    Text(stringResource(R.string.chat_s_bfb145))
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -2804,13 +2807,13 @@ fun ChatAssistantTab(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = "🔕 「AI 助手早晚簡報與主動提醒」通知頻道已停用",
+                        text = stringResource(R.string.chat_s_a1aa92),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.error
                     )
                     Text(
-                        text = "系統偵測到此通知類別已被關閉，早晚簡報與主動提醒仍會寫入下方「主動訊息」聊天室，但不會在手機通知欄彈出。",
+                        text = stringResource(R.string.chat_s_5d28a0),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2823,13 +2826,13 @@ fun ChatAssistantTab(
                             briefingChannelGuideDismissed = true
                             PhantomPrefs.setBriefingChannelGuideDismissed(appCtx, true)
                         }) {
-                            Text("知道了")
+                            Text(stringResource(R.string.chat_s_cb63c6))
                         }
                         Spacer(Modifier.width(6.dp))
                         Button(onClick = {
                             com.phantom.checker.service.ProactiveEngine.openBriefingChannelSettings(ctx)
                         }) {
-                            Text("前往開啟通知頻道")
+                            Text(stringResource(R.string.chat_s_1d8949))
                         }
                     }
                 }
@@ -2898,7 +2901,7 @@ fun ChatAssistantTab(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = if (isViewingProactiveRoom) "🔔 主動訊息聊天室（點此收起）" else "🔔 主動訊息",
+                        text = if (isViewingProactiveRoom) stringResource(R.string.chat_s_c79e39) else stringResource(R.string.chat_s_9fb6b7),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = if (isViewingProactiveRoom) {
@@ -2951,7 +2954,7 @@ fun ChatAssistantTab(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Text(
-                                text = "↪ 接續：上次你提到「$anchor」尚未完成",
+                                text = resCtx.getString(R.string.chat_s_b5598c, anchor),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 maxLines = if (anchorExpanded) Int.MAX_VALUE else 2,
@@ -2959,14 +2962,14 @@ fun ChatAssistantTab(
                                 modifier = Modifier.weight(1f)
                             )
                             Text(
-                                text = "追問",
+                                text = resCtx.getString(R.string.chat_s_504b4b),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier
                                     .padding(start = 8.dp)
                                     .clickable {
-                                        inputText = "接續上次提到的「$anchor」，目前進度如何？"
+                                        inputText = resCtx.getString(R.string.chat_s_154143, anchor)
                                     }
                             )
                             Text(
@@ -3007,7 +3010,7 @@ fun ChatAssistantTab(
                                     if (todo.title.length > 24 && !capsuleExpanded) {
                                         capsuleExpanded = true
                                     } else {
-                                        inputText = "幫我確認未決事項「${todo.title}」的相關訊息與安排"
+                                        inputText = resCtx.getString(R.string.chat_s_58eb88, todo.title)
                                     }
                                 }
                         ) {
@@ -3057,8 +3060,8 @@ fun ChatAssistantTab(
             if (messages.isEmpty() && !isSending) {
                 EmptyStateView(
                     icon = AutoAwesomeIcon,
-                    title = "有什麼訊息想查嗎？",
-                    description = "你可以問「今天 LINE 的訊息」、「昨日簡報」或「最近有可疑詐騙嗎」，${assistantName}會根據你的本地備份唯讀查詢並引用來源。"
+                    title = stringResource(R.string.chat_s_8c4bdf),
+                    description = stringResource(R.string.chat_s_c39ab1, assistantName)
                 )
             } else {
                 val showBubbleTimestamp = remember(chatLayoutVer) {
@@ -3095,7 +3098,7 @@ fun ChatAssistantTab(
                                             onLongClick = {
                                                 val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                                 cm.setPrimaryClip(ClipData.newPlainText("chat_message", msg.content))
-                                                onShowMessage("已複製訊息內容")
+                                                onShowMessage(resCtx.getString(R.string.detail_s_00399e))
                                             }
                                         )
                                 ) {
@@ -3130,7 +3133,7 @@ fun ChatAssistantTab(
                                 val isBriefingMsg = msg.id > 0L && (
                                     msg.id == PhantomPrefs.getLastBriefingMessageId(appCtx) ||
                                         ((msg.content.startsWith("**☀️ ") || msg.content.startsWith("**🌙 ")) &&
-                                            msg.content.contains("簡報"))
+                                            msg.content.contains(stringResource(R.string.chat_s_8aa9b3)))
                                 )
                                 if (isBriefingMsg) {
                                     LaunchedEffect(msg.id) {
@@ -3171,7 +3174,7 @@ fun ChatAssistantTab(
                                                     cm.setPrimaryClip(
                                                         ClipData.newPlainText("assistant_reply", stripMarkdown(msg.content))
                                                     )
-                                                    onShowMessage("已複製助手回覆")
+                                                    onShowMessage(resCtx.getString(R.string.chat_s_ee4465))
                                                 }
                                             ),
                                         cornerRadius = bubbleCornerDp.dp,
@@ -3201,7 +3204,7 @@ fun ChatAssistantTab(
                                                         horizontalArrangement = Arrangement.SpaceBetween
                                                     ) {
                                                         Text(
-                                                            text = if (thinkingExpanded) "💭 推演思路（點擊收合）" else "💭 推演思路（點擊展開）",
+                                                            text = if (thinkingExpanded) stringResource(R.string.chat_s_faaf22) else stringResource(R.string.chat_s_90507f),
                                                             style = MaterialTheme.typography.labelMedium,
                                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                                             maxLines = 1,
@@ -3210,7 +3213,7 @@ fun ChatAssistantTab(
                                                         )
                                                         PhantomChevron(
  expanded = thinkingExpanded,
-                                                            contentDescription = if (thinkingExpanded) "收合推演思路" else "展開推演思路",
+                                                            contentDescription = if (thinkingExpanded) stringResource(R.string.chat_s_fa38cb) else stringResource(R.string.chat_s_c44ad5),
                                                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                                             modifier = Modifier.size(18.dp)
                                                         )
@@ -3287,7 +3290,7 @@ fun ChatAssistantTab(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
-                                                text = if (feedbackChoice == "up") "👍 已有幫助" else "👍 有幫助",
+                                                text = if (feedbackChoice == "up") stringResource(R.string.chat_s_90dd08) else stringResource(R.string.chat_s_c279e3),
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = if (feedbackChoice == "up") {
                                                     MaterialTheme.colorScheme.primary
@@ -3299,12 +3302,12 @@ fun ChatAssistantTab(
                                                     .clickable {
                                                         PhantomPrefs.recordProactiveMessageFeedback(appCtx, msg.id, helpful = true)
                                                         feedbackChoice = "up"
-                                                        onShowMessage("已記錄回饋：有幫助")
+                                                        onShowMessage(resCtx.getString(R.string.chat_s_460322))
                                                     }
                                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                                             )
                                             Text(
-                                                text = if (feedbackChoice == "down") "👎 已標記打擾" else "👎 打擾",
+                                                text = if (feedbackChoice == "down") stringResource(R.string.chat_s_b6b88e) else stringResource(R.string.chat_s_7b1b5e),
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = if (feedbackChoice == "down") {
                                                     MaterialTheme.colorScheme.error
@@ -3316,16 +3319,16 @@ fun ChatAssistantTab(
                                                     .clickable {
                                                         PhantomPrefs.recordProactiveMessageFeedback(appCtx, msg.id, helpful = false)
                                                         feedbackChoice = "down"
-                                                        onShowMessage("已記錄回饋：打擾（將作為日後主動頻率調權依據）")
+                                                        onShowMessage(resCtx.getString(R.string.chat_s_005a42))
                                                     }
                                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                                             )
                                         }
                                     }
-                                    if (msg.content.startsWith("📡 **關注情報：")) {
+                                    if (msg.content.startsWith(stringResource(R.string.chat_s_7c9f5f))) {
                                         val topicHeader = remember(msg.content) {
                                             msg.content.lineSequence().firstOrNull()
-                                                ?.removePrefix("📡 **關注情報：")
+                                                ?.removePrefix(resCtx.getString(R.string.chat_s_7c9f5f))
                                                 ?.removeSuffix("**")
                                                 ?.trim()
                                                 .orEmpty()
@@ -3333,18 +3336,18 @@ fun ChatAssistantTab(
                                         TextButton(
                                             onClick = {
                                                 inputText = if (topicHeader.isNotBlank()) {
-                                                    "請針對「$topicHeader」的最新情報深入說明重點與影響："
+                                                    resCtx.getString(R.string.chat_s_732759, topicHeader)
                                                 } else {
-                                                    "請針對上述關注情報深入說明重點與影響："
+                                                    resCtx.getString(R.string.chat_s_2954c1)
                                                 }
                                                 if (webSearchSupported) {
                                                     webSearchEnabled = true
                                                 }
-                                                onShowMessage("已預填深入追問內容，可直接編輯送出")
+                                                onShowMessage(resCtx.getString(R.string.chat_s_8059a4))
                                             },
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                                         ) {
-                                            Text("💬 深入追問", style = MaterialTheme.typography.labelSmall)
+                                            Text(stringResource(R.string.chat_s_d9dd89), style = MaterialTheme.typography.labelSmall)
                                         }
                                     }
                                     val autoMems = remember(allMemoriesLive, msg.id) {
@@ -3352,7 +3355,7 @@ fun ChatAssistantTab(
                                     }
                                     if (autoMems.isNotEmpty()) {
                                         Text(
-                                            text = "🧠 已自動記住 ${autoMems.size} 筆記憶 · 點擊查看",
+                                            text = stringResource(R.string.chat_s_80ff6f, autoMems.size),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier
@@ -3378,25 +3381,25 @@ fun ChatAssistantTab(
                             ) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(
-                                        text = "🎯 偵測到長程目標（置信 ${candidate.confidence}%）",
+                                        text = stringResource(R.string.chat_s_f6220d, candidate.confidence),
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                     Text(
-                                        text = "為你建立目標並自動排程週期子待辦，同意嗎？（確認前絕不自動建立）",
+                                        text = stringResource(R.string.chat_s_26720d),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     OutlinedTextField(
                                         value = editTitle,
                                         onValueChange = { editTitle = it },
-                                        label = { Text("目標標題（可編輯）") },
+                                        label = { Text(stringResource(R.string.chat_s_76f1c6)) },
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        listOf(1 to "每天", 7 to "每週", 14 to "雙週", 30 to "每月").forEach { (days, label) ->
+                                        listOf(1 to stringResource(R.string.chat_s_5e4715), 7 to stringResource(R.string.chat_s_d6847a), 14 to stringResource(R.string.chat_s_7d6acc), 30 to stringResource(R.string.chat_s_24aedc)).forEach { (days, label) ->
                                             FilterChip(
                                                 selected = editCadence == days,
                                                 onClick = { editCadence = days },
@@ -3418,14 +3421,14 @@ fun ChatAssistantTab(
                                                             finalTitle,
                                                             editCadence
                                                         )
-                                                        onShowMessage("已建立目標「$finalTitle」並排程下一期提醒")
+                                                        onShowMessage(resCtx.getString(R.string.chat_s_2a17b5, finalTitle))
                                                     }
                                                     pendingGoalCandidate = null
                                                 }
                                             },
                                             enabled = editTitle.trim().isNotEmpty()
                                         ) {
-                                            Text("同意建立", style = MaterialTheme.typography.labelMedium)
+                                            Text(stringResource(R.string.chat_s_0769fa), style = MaterialTheme.typography.labelMedium)
                                         }
                                         TextButton(
                                             onClick = {
@@ -3433,17 +3436,17 @@ fun ChatAssistantTab(
                                                 pendingGoalCandidate = null
                                             }
                                         ) {
-                                            Text("不感興趣", style = MaterialTheme.typography.labelSmall)
+                                            Text(stringResource(R.string.chat_s_ee4503), style = MaterialTheme.typography.labelSmall)
                                         }
                                         TextButton(
                                             onClick = {
                                                 PhantomPrefs.markGoalCandidateDismissed(appCtx, candidate.messageHash)
                                                 PhantomPrefs.recordDecisionFeedback(appCtx, "goal_wrong")
                                                 pendingGoalCandidate = null
-                                                onShowMessage("已記錄誤判回饋")
+                                                onShowMessage(resCtx.getString(R.string.chat_s_0abe42))
                                             }
                                         ) {
-                                            Text("判斷有誤", style = MaterialTheme.typography.labelSmall)
+                                            Text(stringResource(R.string.chat_s_3f00c8), style = MaterialTheme.typography.labelSmall)
                                         }
                                     }
                                 }
@@ -3465,10 +3468,10 @@ fun ChatAssistantTab(
                             ) {
                                 Text(
                                     text = if (pending.items.size > 1) {
-                                        "加入白名單（共 ${pending.items.size} 筆，可勾選確認）"
+                                        stringResource(R.string.chat_s_1f8b3e, pending.items.size)
                                     } else {
                                         val only = pending.items.first()
-                                        if (only.kind == "sender") "加入白名單（此寄件者全部訊息）" else "加入白名單（僅此則訊息）"
+                                        if (only.kind == "sender") stringResource(R.string.chat_s_9dc19e) else stringResource(R.string.chat_s_2eb1a2)
                                     },
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
@@ -3517,7 +3520,7 @@ fun ChatAssistantTab(
                                                         overflow = TextOverflow.Ellipsis
                                                     )
                                                     Text(
-                                                        text = if (isSenderMode) "範圍：此寄件者全部訊息" else "範圍：僅此則訊息",
+                                                        text = if (isSenderMode) resCtx.getString(R.string.chat_s_80cb14) else resCtx.getString(R.string.chat_s_a7be2b),
                                                         style = MaterialTheme.typography.labelSmall,
                                                         color = MaterialTheme.colorScheme.primary
                                                     )
@@ -3547,7 +3550,7 @@ fun ChatAssistantTab(
                                                         ChatMessageEntity(
                                                             sessionId = sid,
                                                             role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                            content = "已取消加入白名單。",
+                                                            content = resCtx.getString(R.string.chat_s_3f4c06),
                                                             createdAt = System.currentTimeMillis()
                                                         )
                                                     )
@@ -3557,7 +3560,7 @@ fun ChatAssistantTab(
                                         },
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("取消")
+                                        Text(stringResource(R.string.common_cancel))
                                     }
                                     Button(
                                         enabled = selectedCount > 0,
@@ -3586,7 +3589,7 @@ fun ChatAssistantTab(
                                                                 onCacheInvalidate = { NotificationCollectorService.invalidateRuleCaches() }
                                                             )
                                                             val label = targetMsg.sender.ifBlank { targetMsg.appLabel }
-                                                            val modeDesc = if (isSenderMode) "此寄件者全部訊息" else "單則訊息"
+                                                            val modeDesc = if (isSenderMode) resCtx.getString(R.string.chat_s_ccde9b) else resCtx.getString(R.string.chat_s_beb8cb)
                                                             if (upsertRes.isSuccess) {
                                                                 db.messageDao().update(
                                                                     targetMsg.copy(
@@ -3596,7 +3599,7 @@ fun ChatAssistantTab(
                                                                     )
                                                                 )
                                                                 val statusNote = when (upsertRes.status) {
-                                                                    WhitelistRuleHelper.Status.INSERTED -> "已寫入並驗證"
+                                                                    WhitelistRuleHelper.Status.INSERTED -> resCtx.getString(R.string.chat_s_56f3b2)
                                                                     WhitelistRuleHelper.Status.REACTIVATED -> upsertRes.message
                                                                     WhitelistRuleHelper.Status.DUPLICATE -> upsertRes.message
                                                                     WhitelistRuleHelper.Status.FAILED -> upsertRes.message
@@ -3606,11 +3609,11 @@ fun ChatAssistantTab(
                                                                 lines.add("✗ $label（${targetMsg.appLabel}，$modeDesc）：${upsertRes.message}")
                                                             }
                                                         } catch (e: Exception) {
-                                                            lines.add("✗ ${targetMsg.sender.ifBlank { targetMsg.appLabel }}：${e.message ?: "寫入失敗"}")
+                                                            lines.add(resCtx.getString(R.string.chat_s_8be643, targetMsg.sender.ifBlank { targetMsg.appLabel }, e.message ?: resCtx.getString(R.string.chat_s_424bfd)))
                                                         }
                                                     }
                                                     val summary = buildString {
-                                                        appendLine("白名單處理結果（共 ${chosen.size} 筆）：")
+                                                        appendLine(resCtx.getString(R.string.chat_s_cc1169, chosen.size))
                                                         lines.forEach { appendLine(it) }
                                                     }.trim()
                                                     db.chatDao().insertMessage(
@@ -3624,12 +3627,12 @@ fun ChatAssistantTab(
                                                     lines
                                                 }
                                                 loadMessages(sid)
-                                                onShowMessage("已處理 ${reportLines.size} 筆白名單")
+                                                onShowMessage(resCtx.getString(R.string.chat_s_e3bc5f, reportLines.size))
                                             }
                                         },
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text(if (pending.items.size > 1) "確認加入（$selectedCount）" else "確認加入")
+                                        Text(if (pending.items.size > 1) stringResource(R.string.chat_s_944383, selectedCount) else stringResource(R.string.common_confirm_add))
                                     }
                                 }
                             }
@@ -3649,7 +3652,7 @@ fun ChatAssistantTab(
                             contentPadding = 12.dp
                         ) {
                             Text(
-                                text = if (isApplied) "設定已更新" else "需至設定頁調整",
+                                text = if (isApplied) stringResource(R.string.chat_s_9a4447) else stringResource(R.string.chat_s_f59370),
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
@@ -3667,10 +3670,10 @@ fun ChatAssistantTab(
                             )
                             if (card.beforeEnabled != null && card.afterEnabled != null) {
                                 Spacer(Modifier.height(6.dp))
-                                val beforeStr = if (card.beforeEnabled) "開啟" else "關閉"
-                                val afterStr = if (card.afterEnabled) "開啟" else "關閉"
+                                val beforeStr = if (card.beforeEnabled) stringResource(R.string.common_on) else stringResource(R.string.common_close)
+                                val afterStr = if (card.afterEnabled) stringResource(R.string.common_on) else stringResource(R.string.common_close)
                                 Text(
-                                    text = "狀態變更：$beforeStr → $afterStr",
+                                    text = stringResource(R.string.chat_s_002d30, beforeStr, afterStr),
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.primary
@@ -3678,7 +3681,7 @@ fun ChatAssistantTab(
                             } else if (card.beforeText != null && card.afterText != null) {
                                 Spacer(Modifier.height(6.dp))
                                 Text(
-                                    text = "數值變更：${card.beforeText} → ${card.afterText}",
+                                    text = stringResource(R.string.chat_s_05b863, card.beforeText, card.afterText),
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.primary
@@ -3693,7 +3696,7 @@ fun ChatAssistantTab(
                                     onClick = { appliedSettingCards = appliedSettingCards.filterNot { it === card } },
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("收起")
+                                    Text(stringResource(R.string.chat_s_5d5815))
                                 }
                                 Button(
                                     onClick = {
@@ -3704,7 +3707,7 @@ fun ChatAssistantTab(
                                     },
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("前往設定頁")
+                                    Text(stringResource(R.string.chat_s_a5ea79))
                                 }
                             }
                         }
@@ -3722,21 +3725,21 @@ fun ChatAssistantTab(
                                 contentPadding = 12.dp
                             ) {
                                 Text(
-                                    text = "調整數值設定：${adjState.item.title}",
+                                    text = stringResource(R.string.chat_s_d1774e, adjState.item.title),
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    text = "目前值：${spec.formatValue(adjState.currentValue)}　→　目標值：${spec.formatValue(draftValue)}",
+                                    text = stringResource(R.string.chat_s_beae5f, spec.formatValue(adjState.currentValue), spec.formatValue(draftValue)),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 if (adjState.wasClamped) {
                                     Spacer(Modifier.height(2.dp))
                                     Text(
-                                        text = "⚠ 原建議值超出範圍（${spec.min}–${spec.max}），已自動調整為 ${spec.formatValue(adjState.proposedValue)}。",
+                                        text = stringResource(R.string.chat_s_5348df, spec.min, spec.max, spec.formatValue(adjState.proposedValue)),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.error
                                     )
@@ -3766,7 +3769,7 @@ fun ChatAssistantTab(
                                         Text("-${spec.step}")
                                     }
                                     Text(
-                                        text = "範圍 ${spec.min}–${spec.max}（步進 ${spec.step}）",
+                                        text = stringResource(R.string.chat_s_69239a, spec.min, spec.max, spec.step),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -3795,7 +3798,7 @@ fun ChatAssistantTab(
                                                         ChatMessageEntity(
                                                             sessionId = sid,
                                                             role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                            content = "已取消調整「${adjState.item.title}」。",
+                                                            content = resCtx.getString(R.string.chat_s_3e1177, adjState.item.title),
                                                             createdAt = System.currentTimeMillis()
                                                         )
                                                     )
@@ -3805,7 +3808,7 @@ fun ChatAssistantTab(
                                         },
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("取消")
+                                        Text(stringResource(R.string.common_cancel))
                                     }
                                     Button(
                                         onClick = {
@@ -3823,26 +3826,26 @@ fun ChatAssistantTab(
                                                     beforeText = spec.formatValue(beforeVal),
                                                     afterText = spec.formatValue(afterVal)
                                                 )
-                                                val note = if (clamped || adjState.wasClamped) "（已自動對齊至允許範圍）" else ""
+                                                val note = if (clamped || adjState.wasClamped) resCtx.getString(R.string.chat_s_54b7d7) else ""
                                                 scope.launch {
                                                     withContext(Dispatchers.IO) {
                                                         AppDatabaseHolder.db(appCtx).chatDao().insertMessage(
                                                             ChatMessageEntity(
                                                                 sessionId = sid,
                                                                 role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                                content = "已將「${adjState.item.title}」調整為 ${spec.formatValue(afterVal)}$note。",
+                                                                content = resCtx.getString(R.string.chat_s_57f8be, adjState.item.title, spec.formatValue(afterVal), note),
                                                                 createdAt = System.currentTimeMillis()
                                                             )
                                                         )
                                                     }
                                                     loadMessages(sid)
                                                 }
-                                                onShowMessage("${adjState.item.title}已調整為 ${spec.formatValue(afterVal)}")
+                                                onShowMessage(resCtx.getString(R.string.chat_s_578d3d, adjState.item.title, spec.formatValue(afterVal)))
                                             }
                                         },
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("確認調整")
+                                        Text(stringResource(R.string.chat_s_9ff907))
                                     }
                                 }
                             }
@@ -3858,7 +3861,7 @@ fun ChatAssistantTab(
                                 contentPadding = 12.dp
                             ) {
                                 Text(
-                                    text = "請選擇要調整的設定項目",
+                                    text = stringResource(R.string.chat_s_fc6628),
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -3883,7 +3886,7 @@ fun ChatAssistantTab(
                                                 Column(modifier = Modifier.weight(1f)) {
                                                     Text(
                                                         text = if (toggleable) {
-                                                            "${item.title}（目前：${if (currentOn) "開啟" else "關閉"}）"
+                                                            resCtx.getString(R.string.chat_s_ed93d8, item.title, if (currentOn) resCtx.getString(R.string.common_on) else resCtx.getString(R.string.common_close))
                                                         } else {
                                                             item.title
                                                         },
@@ -3912,11 +3915,11 @@ fun ChatAssistantTab(
                                                                     beforeEnabled = applied.first,
                                                                     afterEnabled = applied.second
                                                                 )
-                                                                onShowMessage("${item.title}已${if (target) "開啟" else "關閉"}")
+                                                                onShowMessage(resCtx.getString(R.string.chat_s_f9cee0, item.title, if (target) resCtx.getString(R.string.common_on) else resCtx.getString(R.string.common_close)))
                                                             }
                                                         }
                                                     ) {
-                                                        Text(if (currentOn) "關閉" else "開啟")
+                                                        Text(if (currentOn) resCtx.getString(R.string.common_close) else resCtx.getString(R.string.common_on))
                                                     }
                                                 } else {
                                                     Button(
@@ -3929,7 +3932,7 @@ fun ChatAssistantTab(
                                                             )
                                                         }
                                                     ) {
-                                                        Text("前往")
+                                                        Text(resCtx.getString(R.string.chat_s_23926d))
                                                     }
                                                 }
                                             }
@@ -3941,7 +3944,7 @@ fun ChatAssistantTab(
                                     onClick = { pendingSettingCandidates = null },
                                     modifier = Modifier.align(Alignment.End)
                                 ) {
-                                    Text("取消")
+                                    Text(stringResource(R.string.common_cancel))
                                 }
                             }
                         }
@@ -3956,15 +3959,15 @@ fun ChatAssistantTab(
                             val scamMsgs = actState.messages.filter { it.riskLabel == "scam" }
                             val safeDeleteMsgs = actState.messages.filter { it.riskLabel != "scam" }
                             val titleLabel = when (actState.action) {
-                                "reply_message" -> "確認傳送回覆"
-                                "open_app" -> "確認開啟原 App"
-                                "delete_message" -> "確認刪除訊息（${actState.messages.size} 則）"
+                                "reply_message" -> stringResource(R.string.chat_s_f92569)
+                                "open_app" -> stringResource(R.string.chat_s_ec1f14)
+                                "delete_message" -> stringResource(R.string.chat_s_932343, actState.messages.size)
                                 "tag_message" -> if (actState.tagOperation == "remove") {
-                                    "確認移除標籤「${actState.tagName}」"
+                                    stringResource(R.string.chat_s_3914e0, actState.tagName)
                                 } else {
-                                    "確認加上標籤「${actState.tagName}」"
+                                    stringResource(R.string.chat_s_d71346, actState.tagName)
                                 }
-                                else -> "確認操作"
+                                else -> stringResource(R.string.chat_s_e6d941)
                             }
 
                             PhantomGlassCard(
@@ -3983,7 +3986,7 @@ fun ChatAssistantTab(
 
                                 if (isSingleTarget && actState.messages.size > 1) {
                                     Text(
-                                        text = "找到多筆符合訊息，請點選目標：",
+                                        text = stringResource(R.string.chat_s_d1c6a5),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -4044,7 +4047,7 @@ fun ChatAssistantTab(
                                     }
                                     if (!isSingleTarget && actState.messages.size > 5) {
                                         Text(
-                                            text = "另有 ${actState.messages.size - 5} 則訊息…",
+                                            text = stringResource(R.string.chat_s_9faca6, actState.messages.size - 5),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -4055,7 +4058,7 @@ fun ChatAssistantTab(
                                     Spacer(Modifier.height(8.dp))
                                     if (OtpDetector.extractOtp(primaryMsg.content) != null) {
                                         Text(
-                                            text = "⚠ 此訊息含驗證碼/OTP，請確認對象安全再回覆。",
+                                            text = stringResource(R.string.chat_s_267c1b),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.error
                                         )
@@ -4065,7 +4068,7 @@ fun ChatAssistantTab(
                                         value = draftReply,
                                         onValueChange = { draftReply = it },
                                         modifier = Modifier.fillMaxWidth(),
-                                        label = { Text("回覆內容（可編輯）") },
+                                        label = { Text(stringResource(R.string.chat_s_107884)) },
                                         maxLines = 4
                                     )
                                 }
@@ -4073,7 +4076,7 @@ fun ChatAssistantTab(
                                 if (actState.action == "delete_message" && scamMsgs.isNotEmpty()) {
                                     Spacer(Modifier.height(6.dp))
                                     Text(
-                                        text = "⚠ 偵測到 ${scamMsgs.size} 則詐騙紀錄受保護，系統將自動略過不予刪除。",
+                                        text = stringResource(R.string.chat_s_1ce96d, scamMsgs.size),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.error
                                     )
@@ -4095,7 +4098,7 @@ fun ChatAssistantTab(
                                                             ChatMessageEntity(
                                                                 sessionId = sid,
                                                                 role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                                content = "已取消操作。",
+                                                                content = resCtx.getString(R.string.chat_s_9fce43),
                                                                 createdAt = System.currentTimeMillis()
                                                             )
                                                         )
@@ -4108,7 +4111,7 @@ fun ChatAssistantTab(
                                         },
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("取消")
+                                        Text(stringResource(R.string.common_cancel))
                                     }
                                     val canConfirm = when (actState.action) {
                                         "reply_message" -> primaryMsg != null && draftReply.isNotBlank()
@@ -4126,7 +4129,7 @@ fun ChatAssistantTab(
                                                     when (actState.action) {
                                                         "reply_message" -> {
                                                             if (primaryMsg == null) {
-                                                                "找不到可回覆的目標訊息。"
+                                                                resCtx.getString(R.string.chat_s_8cd4d0)
                                                             } else {
                                                                 when (val res = NotificationCollectorService.sendReplyToNotification(
                                                                     context = appCtx,
@@ -4143,7 +4146,7 @@ fun ChatAssistantTab(
                                                                                 MessageEntity(
                                                                                     packageName = primaryMsg.packageName,
                                                                                     appLabel = primaryMsg.appLabel,
-                                                                                    sender = "我",
+                                                                                    sender = resCtx.getString(R.string.chat_s_34f201),
                                                                                     content = draftReply,
                                                                                     timestamp = System.currentTimeMillis(),
                                                                                     riskScore = 0,
@@ -4164,7 +4167,7 @@ fun ChatAssistantTab(
                                                                             originalSnippet = primaryMsg.content,
                                                                             initialReplyText = draftReply
                                                                         )
-                                                                        "已透過通知快速回覆送出給「${primaryMsg.sender.ifBlank { primaryMsg.appLabel }}」：$draftReply"
+                                                                        resCtx.getString(R.string.chat_s_ec2456, primaryMsg.sender.ifBlank { primaryMsg.appLabel }, draftReply)
                                                                     }
                                                                     is NotificationCollectorService.Companion.ReplySendResult.Unavailable ->
                                                                         res.reason
@@ -4173,17 +4176,17 @@ fun ChatAssistantTab(
                                                         }
                                                         "open_app" -> {
                                                             if (primaryMsg == null) {
-                                                                "找不到目標 App 訊息。"
+                                                                resCtx.getString(R.string.chat_s_ab510d)
                                                             } else {
                                                                 val launch = ctx.packageManager.getLaunchIntentForPackage(primaryMsg.packageName)
                                                                 if (launch != null) {
                                                                     try {
                                                                         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                                                         ctx.startActivity(launch)
-                                                                        "已開啟「${primaryMsg.appLabel}」。"
+                                                                        resCtx.getString(R.string.chat_s_25dfa8, primaryMsg.appLabel)
                                                                     } catch (e: Exception) {
                                                                         Log.e("PhantomChatAction", "open_app launch failed pkg=${primaryMsg.packageName}", e)
-                                                                        "無法開啟「${primaryMsg.appLabel}」（${e.message ?: "啟動失敗"}）。"
+                                                                        resCtx.getString(R.string.chat_s_33c2e7, primaryMsg.appLabel, e.message ?: resCtx.getString(R.string.chat_s_94c54a))
                                                                     }
                                                                 } else {
                                                                     val detailsIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
@@ -4192,10 +4195,10 @@ fun ChatAssistantTab(
                                                                     }
                                                                     try {
                                                                         ctx.startActivity(detailsIntent)
-                                                                        "「${primaryMsg.appLabel}」無可開啟的桌面入口，已改為開啟應用程式資訊頁。"
+                                                                        resCtx.getString(R.string.chat_s_be7b2d, primaryMsg.appLabel)
                                                                     } catch (e: Exception) {
                                                                         Log.e("PhantomChatAction", "open_app details failed pkg=${primaryMsg.packageName}", e)
-                                                                        "裝置上未安裝「${primaryMsg.appLabel}（${primaryMsg.packageName}）」，無法開啟。"
+                                                                        resCtx.getString(R.string.chat_s_6dd457, primaryMsg.appLabel, primaryMsg.packageName)
                                                                     }
                                                                 }
                                                             }
@@ -4207,16 +4210,16 @@ fun ChatAssistantTab(
                                                             }
                                                             StatsForegroundService.startOrRefresh(appCtx, force = true)
                                                             if (scamMsgs.isNotEmpty()) {
-                                                                "已刪除 ${safeDeleteMsgs.size} 則訊息（另有 ${scamMsgs.size} 則詐騙紀錄受保護未刪除）。"
+                                                                resCtx.getString(R.string.chat_s_d3abf6, safeDeleteMsgs.size, scamMsgs.size)
                                                             } else {
-                                                                "已刪除 ${safeDeleteMsgs.size} 則訊息。"
+                                                                resCtx.getString(R.string.chat_s_2def7c, safeDeleteMsgs.size)
                                                             }
                                                         }
                                                         "tag_message" -> {
                                                             val tid = actState.tagId
                                                             val tName = actState.tagName.orEmpty()
                                                             if (tid == null) {
-                                                                "找不到目標標籤「$tName」。"
+                                                                resCtx.getString(R.string.chat_s_8299ef, tName)
                                                             } else {
                                                                 withContext(Dispatchers.IO) {
                                                                     val tDao = AppDatabaseHolder.db(appCtx).tagDao()
@@ -4236,15 +4239,15 @@ fun ChatAssistantTab(
                                                                         }
                                                                     }
                                                                 }
-                                                                val verb = if (actState.tagOperation == "remove") "移除" else "加上"
-                                                                "已為 ${actState.messages.size} 則訊息${verb}標籤「$tName」。"
+                                                                val verb = if (actState.tagOperation == "remove") resCtx.getString(R.string.chat_s_2f752c) else resCtx.getString(R.string.chat_s_411539)
+                                                                resCtx.getString(R.string.chat_s_10e4d8, actState.messages.size, verb, tName)
                                                             }
                                                         }
-                                                        else -> "未知操作。"
+                                                        else -> resCtx.getString(R.string.chat_s_564a88)
                                                     }
                                                 } catch (e: Exception) {
                                                     Log.e("PhantomChatAction", "Action ${actState.action} failed sid=$sid", e)
-                                                    "⚠️ 執行失敗（${e.message ?: "未知錯誤"}），請重試或開啟原 App 操作。"
+                                                    resCtx.getString(R.string.chat_s_b69832, e.message ?: resCtx.getString(R.string.common_unknown_error))
                                                 }
                                                 try {
                                                     withContext(Dispatchers.IO) {
@@ -4267,10 +4270,10 @@ fun ChatAssistantTab(
                                     ) {
                                         Text(
                                             when (actState.action) {
-                                                "reply_message" -> "確認送出"
-                                                "open_app" -> "開啟 App"
-                                                "delete_message" -> "確認刪除"
-                                                else -> "確認執行"
+                                                "reply_message" -> stringResource(R.string.chat_s_ba15ed)
+                                                "open_app" -> stringResource(R.string.chat_s_15d6cb)
+                                                "delete_message" -> stringResource(R.string.common_confirm_delete)
+                                                else -> stringResource(R.string.chat_s_eba931)
                                             }
                                         )
                                     }
@@ -4289,19 +4292,19 @@ fun ChatAssistantTab(
                                 contentPadding = 12.dp
                             ) {
                                 Text(
-                                    text = "新增常用指令",
+                                    text = stringResource(R.string.chat_s_1408b1),
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    text = "名稱：${pending.proposal.label}",
+                                    text = stringResource(R.string.chat_s_61e47e, pending.proposal.label),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
-                                    text = "內容：${pending.proposal.prompt}",
+                                    text = stringResource(R.string.chat_s_e51be0, pending.proposal.prompt),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -4310,12 +4313,12 @@ fun ChatAssistantTab(
                                     FilterChip(
                                         selected = selectedMode == PhantomPrefs.QuickChatCommand.MODE_DIRECT,
                                         onClick = { selectedMode = PhantomPrefs.QuickChatCommand.MODE_DIRECT },
-                                        label = { Text("直接執行") }
+                                        label = { Text(stringResource(R.string.chat_s_aa0b15)) }
                                     )
                                     FilterChip(
                                         selected = selectedMode == PhantomPrefs.QuickChatCommand.MODE_PREFILL,
                                         onClick = { selectedMode = PhantomPrefs.QuickChatCommand.MODE_PREFILL },
-                                        label = { Text("預輸入") }
+                                        label = { Text(stringResource(R.string.chat_s_5af577)) }
                                     )
                                 }
                                 Spacer(Modifier.height(8.dp))
@@ -4329,15 +4332,15 @@ fun ChatAssistantTab(
                                                 selectedMode
                                             )
                                             pendingQuickCommandQueue = pendingQuickCommandQueue.drop(1)
-                                            onShowMessage("已加入常用指令「${pending.proposal.label}」")
+                                            onShowMessage(resCtx.getString(R.string.chat_s_964319, pending.proposal.label))
                                         }
                                     ) {
-                                        Text("確認加入")
+                                        Text(stringResource(R.string.common_confirm_add))
                                     }
                                     OutlinedButton(
                                         onClick = { pendingQuickCommandQueue = pendingQuickCommandQueue.drop(1) }
                                     ) {
-                                        Text("取消")
+                                        Text(stringResource(R.string.common_cancel))
                                     }
                                 }
                             }
@@ -4367,9 +4370,9 @@ fun ChatAssistantTab(
                             ) {
                                 Text(
                                     text = if (sessionPendingCalendars.size > 1) {
-                                        "📅 新增本機日曆行程（尚有 ${sessionPendingCalendars.size} 筆）"
+                                        stringResource(R.string.chat_s_3e400c, sessionPendingCalendars.size)
                                     } else {
-                                        "📅 新增本機日曆行程"
+                                        stringResource(R.string.chat_s_88c7a6)
                                     },
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
@@ -4377,15 +4380,15 @@ fun ChatAssistantTab(
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    text = "行程：${pendingCal.title}",
+                                    text = stringResource(R.string.chat_s_4d5339, pendingCal.title),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
                                     text = if (pendingCal.allDay) {
-                                        "時間：$startFormatted（全天）"
+                                        stringResource(R.string.chat_s_37233d, startFormatted)
                                     } else {
-                                        "時間：$startFormatted – $endFormatted"
+                                        stringResource(R.string.detail_s_a99e2d, startFormatted, endFormatted)
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -4418,12 +4421,12 @@ fun ChatAssistantTab(
                                         },
                                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                                     ) {
-                                        Text("前往權限授予中心", style = MaterialTheme.typography.labelSmall)
+                                        Text(stringResource(R.string.chat_s_523cfe), style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
                                 if (!pendingCal.location.isNullOrBlank()) {
                                     Text(
-                                        text = "地點：${pendingCal.location}",
+                                        text = stringResource(R.string.chat_s_85a7f1, pendingCal.location),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -4431,7 +4434,7 @@ fun ChatAssistantTab(
                                 if (pendingCal.writableCalendars.isNotEmpty()) {
                                     Spacer(Modifier.height(6.dp))
                                     Text(
-                                        text = "目標日曆：",
+                                        text = stringResource(R.string.chat_s_156bd1),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -4456,7 +4459,7 @@ fun ChatAssistantTab(
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
-                                            text = "⚠ 與既有行程撞期：${com.phantom.checker.util.CalendarBridge.formatConflictSummary(pendingCal.conflicts)}（仍可選擇照寫）",
+                                            text = stringResource(R.string.detail_s_93ec95, com.phantom.checker.util.CalendarBridge.formatConflictSummary(pendingCal.conflicts)),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onErrorContainer,
                                             modifier = Modifier.padding(8.dp)
@@ -4494,7 +4497,7 @@ fun ChatAssistantTab(
                                                         ChatMessageEntity(
                                                             sessionId = sid,
                                                             role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                            content = "已取消新增日曆行程「${pendingCal.title}」。",
+                                                            content = resCtx.getString(R.string.chat_s_cfbd11, pendingCal.title),
                                                             createdAt = System.currentTimeMillis()
                                                         )
                                                     )
@@ -4503,7 +4506,7 @@ fun ChatAssistantTab(
                                             }
                                         }
                                     ) {
-                                        Text("取消")
+                                        Text(stringResource(R.string.common_cancel))
                                     }
                                     Button(
                                         onClick = {
@@ -4524,10 +4527,10 @@ fun ChatAssistantTab(
                                                     )
                                                     val replyText = res.fold(
                                                         onSuccess = {
-                                                            "📅 已寫入本機日曆：「${pendingCal.title}」（$startFormatted）。"
+                                                            resCtx.getString(R.string.chat_s_9d1596, pendingCal.title, startFormatted)
                                                         },
                                                         onFailure = { err ->
-                                                            "寫入日曆失敗：${err.localizedMessage ?: "未知錯誤"}。"
+                                                            resCtx.getString(R.string.chat_s_f33c16, err.localizedMessage ?: resCtx.getString(R.string.common_unknown_error))
                                                         }
                                                     )
                                                     withContext(Dispatchers.IO) {
@@ -4554,18 +4557,18 @@ fun ChatAssistantTab(
                                                         description = pendingCal.notes
                                                     )
                                                     ctx.startActivity(intent)
-                                                    onShowMessage("已預填行程並開啟日曆 App")
+                                                    onShowMessage(resCtx.getString(R.string.chat_s_0011b0))
                                                 }.onFailure {
-                                                    onShowMessage("裝置找不到可用的日曆 App")
+                                                    onShowMessage(resCtx.getString(R.string.detail_s_670c4a))
                                                 }
                                             }
                                         }
                                     ) {
                                         Text(
                                             if (hasWritePerm && selectedCalId != null) {
-                                                if (pendingCal.conflicts.isNotEmpty()) "仍要寫入日曆" else "確認寫入日曆"
+                                                if (pendingCal.conflicts.isNotEmpty()) stringResource(R.string.chat_s_9b4489) else stringResource(R.string.chat_s_6f20e5)
                                             } else {
-                                                "於日曆 App 預填"
+                                                stringResource(R.string.detail_s_f12b81)
                                             }
                                         )
                                     }
@@ -4588,9 +4591,9 @@ fun ChatAssistantTab(
                             ) {
                                 Text(
                                     text = if (sessionPendingTodos.size > 1) {
-                                        "新增待辦提醒（尚有 ${sessionPendingTodos.size} 筆）"
+                                        stringResource(R.string.chat_s_06c6fe, sessionPendingTodos.size)
                                     } else {
-                                        "新增待辦提醒"
+                                        stringResource(R.string.chat_s_cfb6c0)
                                     },
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
@@ -4598,12 +4601,12 @@ fun ChatAssistantTab(
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    text = "事項：${pendingTodo.title}",
+                                    text = stringResource(R.string.chat_s_9264f8, pendingTodo.title),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
-                                    text = "提醒時間：$dueFormatted",
+                                    text = stringResource(R.string.chat_s_584831, dueFormatted),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -4634,7 +4637,7 @@ fun ChatAssistantTab(
                                         },
                                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                                     ) {
-                                        Text("前往權限授予中心", style = MaterialTheme.typography.labelSmall)
+                                        Text(stringResource(R.string.chat_s_523cfe), style = MaterialTheme.typography.labelSmall)
                                     }
                                 }
                                 Spacer(Modifier.height(8.dp))
@@ -4645,7 +4648,7 @@ fun ChatAssistantTab(
                                     OutlinedButton(
                                         onClick = { editingTodoTimeTarget = pendingTodo }
                                     ) {
-                                        Text("修改時間")
+                                        Text(stringResource(R.string.chat_s_8e34a1))
                                     }
                                     OutlinedButton(
                                         onClick = {
@@ -4657,7 +4660,7 @@ fun ChatAssistantTab(
                                                         ChatMessageEntity(
                                                             sessionId = sid,
                                                             role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                            content = "已取消新增待辦「${pendingTodo.title}」。",
+                                                            content = resCtx.getString(R.string.chat_s_3250dd, pendingTodo.title),
                                                             createdAt = System.currentTimeMillis()
                                                         )
                                                     )
@@ -4666,7 +4669,7 @@ fun ChatAssistantTab(
                                             }
                                         }
                                     ) {
-                                        Text("取消")
+                                        Text(stringResource(R.string.common_cancel))
                                     }
                                     Button(
                                         onClick = {
@@ -4696,9 +4699,9 @@ fun ChatAssistantTab(
                                                             sessionId = sid,
                                                             role = ChatMessageEntity.ROLE_ASSISTANT,
                                                             content = if (ok) {
-                                                                "✓ 已建立待辦提醒 #$todoId：「${pendingTodo.title}」（$dueFormatted，已寫入並驗證）。"
+                                                                resCtx.getString(R.string.chat_s_6eff80, todoId, pendingTodo.title, dueFormatted)
                                                             } else {
-                                                                "✗ 建立待辦提醒失敗：「${pendingTodo.title}」（DB 寫入驗證失敗）。"
+                                                                resCtx.getString(R.string.chat_s_04c6dd, pendingTodo.title)
                                                             },
                                                             createdAt = System.currentTimeMillis()
                                                         )
@@ -4706,11 +4709,11 @@ fun ChatAssistantTab(
                                                     ok
                                                 }
                                                 loadMessages(sid)
-                                                onShowMessage(if (verifiedOk) "已排程待辦提醒：$dueFormatted" else "待辦寫入失敗")
+                                                onShowMessage(if (verifiedOk) resCtx.getString(R.string.chat_s_6d610a, dueFormatted) else resCtx.getString(R.string.chat_s_3b05b7))
                                             }
                                         }
                                     ) {
-                                        Text("確認新增")
+                                        Text(stringResource(R.string.common_confirm_create))
                                     }
                                 }
                             }
@@ -4727,13 +4730,13 @@ fun ChatAssistantTab(
                             ) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(
-                                        text = "📊 需要「應用使用情況存取」權限",
+                                        text = stringResource(R.string.chat_s_abd19d),
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                     Text(
-                                        text = "目前尚未授權使用情況存取（PACKAGE_USAGE_STATS），AI 助手無法查詢真實的 App 使用時間或啟動次數。開啟後再提問即可讀取系統真實數據。",
+                                        text = stringResource(R.string.chat_s_a66196),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -4747,7 +4750,7 @@ fun ChatAssistantTab(
                                             },
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Text("前往系統授權", maxLines = 1)
+                                            Text(stringResource(R.string.chat_s_6c301d), maxLines = 1)
                                         }
                                         OutlinedButton(
                                             onClick = {
@@ -4755,7 +4758,7 @@ fun ChatAssistantTab(
                                             },
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Text("權限中心", maxLines = 1)
+                                            Text(stringResource(R.string.chat_s_37a4b3), maxLines = 1)
                                         }
                                     }
                                     Row(
@@ -4763,7 +4766,7 @@ fun ChatAssistantTab(
                                         horizontalArrangement = Arrangement.End
                                     ) {
                                         TextButton(onClick = { showUsagePermissionGuideCard = false }) {
-                                            Text("關閉提示")
+                                            Text(stringResource(R.string.common_dismiss_tip))
                                         }
                                     }
                                 }
@@ -4785,13 +4788,13 @@ fun ChatAssistantTab(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "搜尋結果（${srCard.results.size} 筆 · ${srCard.querySummary}）",
+                                        text = stringResource(R.string.chat_s_30ee2c, srCard.results.size, srCard.querySummary),
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                     TextButton(onClick = { searchResultCard = null }) {
-                                        Text("關閉")
+                                        Text(stringResource(R.string.common_close))
                                     }
                                 }
                                 Spacer(Modifier.height(4.dp))
@@ -4814,7 +4817,7 @@ fun ChatAssistantTab(
                                                     horizontalArrangement = Arrangement.SpaceBetween
                                                 ) {
                                                     Text(
-                                                        text = "${msg.appLabel.ifBlank { msg.packageName }} · ${msg.sender.ifBlank { "未知寄件者" }}",
+                                                        text = resCtx.getString(R.string.chat_s_c1aacd, msg.appLabel.ifBlank { msg.packageName }, msg.sender.ifBlank { resCtx.getString(R.string.common_s_877f9a) }),
                                                         style = MaterialTheme.typography.labelMedium,
                                                         fontWeight = FontWeight.SemiBold,
                                                         maxLines = 1,
@@ -4847,28 +4850,28 @@ fun ChatAssistantTab(
                     sessionExtActions.firstOrNull()?.let { ext ->
                         item(key = "pending_extended_action_card") {
                             val titleText = when (ext) {
-                                is PendingExtendedAction.TodoDone -> "確認標記待辦完成"
-                                is PendingExtendedAction.TodoDelete -> "確認刪除待辦"
-                                is PendingExtendedAction.TodoEdit -> "確認修改待辦"
-                                is PendingExtendedAction.VipPin -> if (ext.pin) "確認釘選 VIP 寄件者" else "確認取消 VIP 釘選"
-                                is PendingExtendedAction.MuteApp -> if (ext.mute) "確認靜音 App" else "確認取消靜音 App"
-                                is PendingExtendedAction.MarkRead -> "確認標記已讀"
-                                is PendingExtendedAction.ExportMessages -> "確認匯出訊息 CSV"
-                                is PendingExtendedAction.WhitelistDelete -> "確認移出白名單（共 ${ext.rules.size} 筆）"
+                                is PendingExtendedAction.TodoDone -> stringResource(R.string.chat_s_b7459e)
+                                is PendingExtendedAction.TodoDelete -> stringResource(R.string.chat_s_e19a41)
+                                is PendingExtendedAction.TodoEdit -> stringResource(R.string.chat_s_acf16c)
+                                is PendingExtendedAction.VipPin -> if (ext.pin) stringResource(R.string.chat_s_9020aa) else stringResource(R.string.chat_s_5f7879)
+                                is PendingExtendedAction.MuteApp -> if (ext.mute) stringResource(R.string.chat_s_61827e) else stringResource(R.string.chat_s_947626)
+                                is PendingExtendedAction.MarkRead -> stringResource(R.string.chat_s_01796b)
+                                is PendingExtendedAction.ExportMessages -> stringResource(R.string.chat_s_a87253)
+                                is PendingExtendedAction.WhitelistDelete -> stringResource(R.string.chat_s_246d18, ext.rules.size)
                             }
                             val bodyText = when (ext) {
-                                is PendingExtendedAction.TodoDone -> "將「${ext.todo.title}」標記為已完成並取消提醒排程。"
-                                is PendingExtendedAction.TodoDelete -> "確定要刪除待辦「${ext.todo.title}」嗎？"
+                                is PendingExtendedAction.TodoDone -> stringResource(R.string.chat_s_00fa86, ext.todo.title)
+                                is PendingExtendedAction.TodoDelete -> stringResource(R.string.chat_s_10363b, ext.todo.title)
                                 is PendingExtendedAction.TodoEdit -> {
                                     val oldTime = PhantomPrefs.formatMessageTime(appCtx, ext.original.dueAt, includeDate = true)
                                     val newTime = PhantomPrefs.formatMessageTime(appCtx, ext.newDueAt, includeDate = true)
-                                    "事項：${ext.original.title} → ${ext.newTitle}\n時間：$oldTime → $newTime"
+                                    stringResource(R.string.chat_s_266bc5, ext.original.title, ext.newTitle, oldTime, newTime)
                                 }
                                 is PendingExtendedAction.VipPin -> "${ext.appLabel} · ${ext.sender}"
                                 is PendingExtendedAction.MuteApp -> "${ext.appLabel}（${ext.packageName}）"
-                                is PendingExtendedAction.MarkRead -> "範圍：${ext.scopeLabel}"
-                                is PendingExtendedAction.ExportMessages -> "範圍：${ext.scopeLabel}\n將匯出至 Downloads 資料夾（含公式注入防護）。"
-                                is PendingExtendedAction.WhitelistDelete -> "確定要將以下規則移出白名單嗎？\n${ext.summaryText}"
+                                is PendingExtendedAction.MarkRead -> stringResource(R.string.chat_s_02aa0f, ext.scopeLabel)
+                                is PendingExtendedAction.ExportMessages -> stringResource(R.string.chat_s_20ec96, ext.scopeLabel)
+                                is PendingExtendedAction.WhitelistDelete -> stringResource(R.string.chat_s_a2cf52, ext.summaryText)
                             }
                             PhantomGlassCard(
                                 glassState = glassState,
@@ -4877,7 +4880,7 @@ fun ChatAssistantTab(
                                 contentPadding = 12.dp
                             ) {
                                 Text(
-                                    text = if (sessionExtActions.size > 1) "$titleText（尚有 ${sessionExtActions.size} 項）" else titleText,
+                                    text = if (sessionExtActions.size > 1) stringResource(R.string.chat_s_19262e, titleText, sessionExtActions.size) else titleText,
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -4902,7 +4905,7 @@ fun ChatAssistantTab(
                                                         ChatMessageEntity(
                                                             sessionId = sid,
                                                             role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                            content = "已取消操作（$titleText）。",
+                                                            content = resCtx.getString(R.string.chat_s_1f7127, titleText),
                                                             createdAt = System.currentTimeMillis()
                                                         )
                                                     )
@@ -4911,7 +4914,7 @@ fun ChatAssistantTab(
                                             }
                                         }
                                     ) {
-                                        Text("取消")
+                                        Text(stringResource(R.string.common_cancel))
                                     }
                                     Button(
                                         onClick = {
@@ -4925,11 +4928,11 @@ fun ChatAssistantTab(
                                                             val spawned = ReminderScheduler.completeTodoWithRecurrence(appCtx, ext.todo, true)
                                                             val verified = db.todoDao().byId(ext.todo.id)
                                                             if (verified?.isDone != true) {
-                                                                "✗ 標記待辦完成失敗：「${ext.todo.title}」（DB 狀態未更新）。"
+                                                                resCtx.getString(R.string.chat_s_8986db, ext.todo.title)
                                                             } else if (spawned != null) {
-                                                                "✓ 已完成待辦「${ext.todo.title}」（已驗證），並已自動排程下一次重複待辦。"
+                                                                resCtx.getString(R.string.chat_s_8a3167, ext.todo.title)
                                                             } else {
-                                                                "✓ 已完成待辦「${ext.todo.title}」（已驗證）。"
+                                                                resCtx.getString(R.string.chat_s_795d78, ext.todo.title)
                                                             }
                                                         }
                                                         is PendingExtendedAction.TodoDelete -> {
@@ -4938,9 +4941,9 @@ fun ChatAssistantTab(
                                                             if (!stillExists) {
                                                                 ReminderScheduler.cancelTodo(appCtx, ext.todo.id)
                                                                 ReminderWidgetProvider.updateAllIfChanged(appCtx)
-                                                                "✓ 已刪除待辦「${ext.todo.title}」（已驗證刪除）。"
+                                                                resCtx.getString(R.string.chat_s_24bc12, ext.todo.title)
                                                             } else {
-                                                                "✗ 刪除待辦失敗：「${ext.todo.title}」（DB 仍存在）。"
+                                                                resCtx.getString(R.string.chat_s_6fd8e5, ext.todo.title)
                                                             }
                                                         }
                                                         is PendingExtendedAction.TodoEdit -> {
@@ -4957,9 +4960,9 @@ fun ChatAssistantTab(
                                                                 }
                                                                 ReminderWidgetProvider.updateAllIfChanged(appCtx)
                                                                 val newTimeStr = PhantomPrefs.formatMessageTime(appCtx, updated.dueAt, includeDate = true)
-                                                                "✓ 已更新待辦：「${updated.title}」（$newTimeStr，已驗證）。"
+                                                                resCtx.getString(R.string.chat_s_a5b305, updated.title, newTimeStr)
                                                             } else {
-                                                                "✗ 更新待辦失敗：「${ext.original.title}」（DB 驗證不符）。"
+                                                                resCtx.getString(R.string.chat_s_fbafcb, ext.original.title)
                                                             }
                                                         }
                                                         is PendingExtendedAction.VipPin -> {
@@ -4967,13 +4970,13 @@ fun ChatAssistantTab(
                                                             if (isCurrentlyVip != ext.pin) {
                                                                 PhantomPrefs.toggleVipSender(appCtx, ext.packageName, ext.sender)
                                                             }
-                                                            if (ext.pin) "已將「${ext.sender}」（${ext.appLabel}）釘選為 VIP。"
-                                                            else "已取消「${ext.sender}」（${ext.appLabel}）的 VIP 釘選。"
+                                                            if (ext.pin) resCtx.getString(R.string.chat_s_7c4901, ext.sender, ext.appLabel)
+                                                            else resCtx.getString(R.string.chat_s_2561d1, ext.sender, ext.appLabel)
                                                         }
                                                         is PendingExtendedAction.MuteApp -> {
                                                             PhantomPrefs.setAppMuted(appCtx, ext.packageName, ext.mute)
-                                                            if (ext.mute) "已靜音「${ext.appLabel}」。"
-                                                            else "已取消靜音「${ext.appLabel}」。"
+                                                            if (ext.mute) resCtx.getString(R.string.chat_s_ec3c41, ext.appLabel)
+                                                            else resCtx.getString(R.string.chat_s_702a00, ext.appLabel)
                                                         }
                                                         is PendingExtendedAction.MarkRead -> {
                                                             val count = when (ext.scope) {
@@ -4990,7 +4993,7 @@ fun ChatAssistantTab(
                                                                 }
                                                             }
                                                             StatsForegroundService.startOrRefresh(appCtx, force = true)
-                                                            "已將 $count 則非詐騙訊息標記為已讀（詐騙紀錄維持不變）。"
+                                                            resCtx.getString(R.string.chat_s_f51f1c, count)
                                                         }
                                                         is PendingExtendedAction.ExportMessages -> {
                                                             val res = com.phantom.checker.util.MessageExporter.exportToDownloads(
@@ -4999,8 +5002,8 @@ fun ChatAssistantTab(
                                                                 daysBack = ext.days
                                                             )
                                                             res.fold(
-                                                                onSuccess = { fileName -> "已匯出 CSV 至 Downloads/$fileName。" },
-                                                                onFailure = { err -> "匯出失敗：${err.message ?: "未知錯誤"}" }
+                                                                onSuccess = { fileName -> resCtx.getString(R.string.chat_s_5734dd, fileName) },
+                                                                onFailure = { err -> resCtx.getString(R.string.chat_s_55fba2, err.message ?: resCtx.getString(R.string.common_unknown_error)) }
                                                             )
                                                         }
                                                         is PendingExtendedAction.WhitelistDelete -> {
@@ -5009,9 +5012,9 @@ fun ChatAssistantTab(
                                                                 val stillExists = db.aiRuleDao().byId(r.id) != null
                                                                 val label = r.sender?.takeIf { it.isNotBlank() } ?: r.ruleText.take(40)
                                                                 if (!stillExists) {
-                                                                    "✓ 已移出白名單：#${r.id} $label（已驗證刪除）"
+                                                                    resCtx.getString(R.string.chat_s_aee760, r.id, label)
                                                                 } else {
-                                                                    "✗ 移出失敗：#${r.id} $label（DB 仍存在）"
+                                                                    resCtx.getString(R.string.chat_s_b00068, r.id, label)
                                                                 }
                                                             }
                                                             NotificationCollectorService.invalidateRuleCaches()
@@ -5035,7 +5038,7 @@ fun ChatAssistantTab(
                                             }
                                         }
                                     ) {
-                                        Text("確認執行")
+                                        Text(stringResource(R.string.chat_s_eba931))
                                     }
                                 }
                             }
@@ -5049,7 +5052,7 @@ fun ChatAssistantTab(
                             val catLbl = com.phantom.checker.data.MemoryEngine.categoryLabel(memWrite.category)
                             val layerLbl = com.phantom.checker.data.MemoryEngine.layerLabel(memWrite.layer)
                             val privLbl = com.phantom.checker.data.MemoryEngine.privacyLabel(memWrite.privacyTier)
-                            val expStr = memWrite.expiresAt?.let { "（到期：${formatChatTime(it)}）" }.orEmpty()
+                            val expStr = memWrite.expiresAt?.let { resCtx.getString(R.string.chat_s_be1c17, formatChatTime(it)) }.orEmpty()
                             PhantomGlassCard(
                                 glassState = glassState,
                                 modifier = Modifier.fillMaxWidth(),
@@ -5058,22 +5061,22 @@ fun ChatAssistantTab(
                             ) {
                                 Text(
                                     text = when {
-                                        hasConflict -> "⚠️ 偵測到記憶衝突（同主題「${memWrite.subject}」內容不同）"
-                                        memWrite.isUpdate -> "確認更新記憶"
-                                        else -> "確認新增記憶（AI 推測）"
-                                    } + if (sessionMemWrites.size > 1) "（尚有 ${sessionMemWrites.size} 筆）" else "",
+                                        hasConflict -> resCtx.getString(R.string.chat_s_d5cd08, memWrite.subject)
+                                        memWrite.isUpdate -> resCtx.getString(R.string.chat_s_0eab01)
+                                        else -> resCtx.getString(R.string.chat_s_306fd1)
+                                    } + if (sessionMemWrites.size > 1) resCtx.getString(R.string.chat_s_5ed028, sessionMemWrites.size) else "",
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = if (hasConflict) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(Modifier.height(6.dp))
                                 Text(
-                                    text = "分類：$catLbl ｜ 層級：$layerLbl$expStr ｜ 隱私：$privLbl",
+                                    text = resCtx.getString(R.string.chat_s_d3bfc6, catLbl, layerLbl, expStr, privLbl),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Text(
-                                    text = "主題：${memWrite.subject}",
+                                    text = resCtx.getString(R.string.chat_s_6de585, memWrite.subject),
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -5087,12 +5090,12 @@ fun ChatAssistantTab(
                                     ) {
                                         Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                             Text(
-                                                text = "既有記憶（#${oldMem.id}）：${oldMem.content}",
+                                                text = resCtx.getString(R.string.chat_s_1879b3, oldMem.id, oldMem.content),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                             Text(
-                                                text = "新提議內容：${memWrite.content}",
+                                                text = resCtx.getString(R.string.chat_s_347f4a, memWrite.content),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 fontWeight = FontWeight.SemiBold,
                                                 color = MaterialTheme.colorScheme.primary
@@ -5101,18 +5104,18 @@ fun ChatAssistantTab(
                                     }
                                     Spacer(Modifier.height(4.dp))
                                     Text(
-                                        text = "請選擇「更新記憶」（將舊筆封存並標記為已確認）或「保留原樣」（保留舊筆並標記為已確認，也可以稍後至「記憶」分頁衝突區裁定）：",
+                                        text = resCtx.getString(R.string.chat_s_d08d9c),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 } else {
                                     Text(
-                                        text = "內容：${memWrite.content}",
+                                        text = resCtx.getString(R.string.chat_s_e51be0, memWrite.content),
                                         style = MaterialTheme.typography.bodyMedium
                                     )
                                 }
                                 Text(
-                                    text = "來源：${memWrite.sourceRef}",
+                                    text = resCtx.getString(R.string.chat_s_c7cde7, memWrite.sourceRef),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -5138,7 +5141,7 @@ fun ChatAssistantTab(
                                                             )
                                                         )
                                                         val oldContentDisplay = if (oldMem.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE) {
-                                                            "🔒敏感（內容僅本機可見）"
+                                                            resCtx.getString(R.string.chat_s_2ac638)
                                                         } else {
                                                             oldMem.content
                                                         }
@@ -5146,18 +5149,18 @@ fun ChatAssistantTab(
                                                             ChatMessageEntity(
                                                                 sessionId = sid,
                                                                 role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                                content = "✓ 已選擇「保留原樣」：維持既有記憶 #${oldMem.id}「${oldMem.subject}：$oldContentDisplay」（已標記為已確認）。",
+                                                                content = resCtx.getString(R.string.chat_s_cec181, oldMem.id, oldMem.subject, oldContentDisplay),
                                                                 createdAt = System.currentTimeMillis()
                                                             )
                                                         )
                                                     }
                                                     loadMessages(sid)
-                                                    onShowMessage("已保留原記憶")
+                                                    onShowMessage(resCtx.getString(R.string.chat_s_9378f3))
                                                 }
                                             },
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Text("保留原樣")
+                                            Text(resCtx.getString(R.string.chat_s_cb42f5))
                                         }
                                         Button(
                                             onClick = {
@@ -5187,7 +5190,7 @@ fun ChatAssistantTab(
                                                         val newContentDisplay = if (memWrite.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE ||
                                                             savedPrivacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE
                                                         ) {
-                                                            "🔒敏感（內容僅本機可見）"
+                                                            resCtx.getString(R.string.chat_s_2ac638)
                                                         } else {
                                                             memWrite.content
                                                         }
@@ -5195,7 +5198,7 @@ fun ChatAssistantTab(
                                                             ChatMessageEntity(
                                                                 sessionId = sid,
                                                                 role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                                content = "✓ 已選擇「更新記憶」：新記憶 #$savedId「${memWrite.subject}：$newContentDisplay」（已確認，舊筆 #${oldMem.id} 已封存）。",
+                                                                content = resCtx.getString(R.string.chat_s_86f153, savedId, memWrite.subject, newContentDisplay, oldMem.id),
                                                                 createdAt = System.currentTimeMillis()
                                                             )
                                                         )
@@ -5204,17 +5207,17 @@ fun ChatAssistantTab(
                                                     if (memWrite.category == com.phantom.checker.data.MemoryEntity.CATEGORY_SCAM_IMMUNITY &&
                                                         onShowActionMessage != null && onOpenMemoryWithFilter != null
                                                     ) {
-                                                        onShowActionMessage("已更新防詐免疫記憶", "查看") {
+                                                        onShowActionMessage(resCtx.getString(R.string.chat_s_6336ff), resCtx.getString(R.string.chat_s_f7acef)) {
                                                             onOpenMemoryWithFilter(com.phantom.checker.data.MemoryEntity.CATEGORY_SCAM_IMMUNITY)
                                                         }
                                                     } else {
-                                                        onShowMessage("已更新記憶並封存舊版本")
+                                                        onShowMessage(resCtx.getString(R.string.chat_s_391a64))
                                                     }
                                                 }
                                             },
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Text("更新記憶")
+                                            Text(resCtx.getString(R.string.chat_s_c75fb0))
                                         }
                                     }
                                     Spacer(Modifier.height(4.dp))
@@ -5246,24 +5249,24 @@ fun ChatAssistantTab(
                                                             ChatMessageEntity(
                                                                 sessionId = sid,
                                                                 role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                                content = "已將衝突記憶移至「記憶」分頁的「衝突待確認」區塊，您可隨時前往裁定。",
+                                                                content = resCtx.getString(R.string.chat_s_42693b),
                                                                 createdAt = System.currentTimeMillis()
                                                             )
                                                         )
                                                     }
                                                     loadMessages(sid)
-                                                    onShowMessage("已移至記憶頁衝突待確認區")
+                                                    onShowMessage(resCtx.getString(R.string.chat_s_9ddeb0))
                                                 }
                                             }
                                         ) {
-                                            Text("移至記憶頁稍後裁定")
+                                            Text(resCtx.getString(R.string.chat_s_501aad))
                                         }
                                         TextButton(
                                             onClick = {
                                                 pendingMemoryWriteQueue = pendingMemoryWriteQueue.filterNot { it === memWrite }
                                             }
                                         ) {
-                                            Text("略過不寫入")
+                                            Text(resCtx.getString(R.string.chat_s_4771e7))
                                         }
                                     }
                                 } else {
@@ -5281,7 +5284,7 @@ fun ChatAssistantTab(
                                                             ChatMessageEntity(
                                                                 sessionId = sid,
                                                                 role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                                content = "已取消記住「${memWrite.subject}」。",
+                                                                content = resCtx.getString(R.string.chat_s_39b882, memWrite.subject),
                                                                 createdAt = System.currentTimeMillis()
                                                             )
                                                         )
@@ -5291,7 +5294,7 @@ fun ChatAssistantTab(
                                             },
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Text("不符／取消")
+                                            Text(resCtx.getString(R.string.chat_s_0179de))
                                         }
                                         Button(
                                             onClick = {
@@ -5316,16 +5319,16 @@ fun ChatAssistantTab(
                                                         when (outcome) {
                                                             is com.phantom.checker.data.MemoryEngine.WriteOutcome.Inserted -> {
                                                                 val contentDisplay = if (outcome.memory.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE) {
-                                                                    "🔒敏感（內容僅本機可見）"
+                                                                    resCtx.getString(R.string.chat_s_2ac638)
                                                                 } else {
                                                                     outcome.memory.content
                                                                 }
-                                                                "✓ 已記住 #${outcome.memory.id} [$catLbl/$layerLbl] ${outcome.memory.subject}：$contentDisplay"
+                                                                resCtx.getString(R.string.chat_s_22468b, outcome.memory.id, catLbl, layerLbl, outcome.memory.subject, contentDisplay)
                                                             }
                                                             is com.phantom.checker.data.MemoryEngine.WriteOutcome.Deduplicated ->
-                                                                "✓ 記憶庫已有相同內容 #${outcome.memory.id}，已更新時間。"
+                                                                resCtx.getString(R.string.chat_s_af6ebf, outcome.memory.id)
                                                             is com.phantom.checker.data.MemoryEngine.WriteOutcome.ConflictDetected ->
-                                                                "⚠️ 寫入時偵測到與既有記憶 #${outcome.existingMemory.id} 衝突，兩筆皆已標為「衝突待確認」，請至「記憶」分頁裁定。"
+                                                                resCtx.getString(R.string.chat_s_245709, outcome.existingMemory.id)
                                                         }
                                                     }
                                                     withContext(Dispatchers.IO) {
@@ -5342,17 +5345,17 @@ fun ChatAssistantTab(
                                                     if (memWrite.category == com.phantom.checker.data.MemoryEntity.CATEGORY_SCAM_IMMUNITY &&
                                                         onShowActionMessage != null && onOpenMemoryWithFilter != null
                                                     ) {
-                                                        onShowActionMessage("已加入防詐免疫記憶", "查看") {
+                                                        onShowActionMessage(resCtx.getString(R.string.chat_s_6d6862), resCtx.getString(R.string.chat_s_f7acef)) {
                                                             onOpenMemoryWithFilter(com.phantom.checker.data.MemoryEntity.CATEGORY_SCAM_IMMUNITY)
                                                         }
                                                     } else {
-                                                        onShowMessage("已寫入記憶庫")
+                                                        onShowMessage(resCtx.getString(R.string.chat_s_4de516))
                                                     }
                                                 }
                                             },
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Text("確認記住")
+                                            Text(resCtx.getString(R.string.chat_s_598492))
                                         }
                                     }
                                 }
@@ -5369,7 +5372,7 @@ fun ChatAssistantTab(
                             ) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(
-                                        text = "${crossAct.title()}（確認後執行）",
+                                        text = resCtx.getString(R.string.chat_s_1e9df7, crossAct.title()),
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
@@ -5399,7 +5402,7 @@ fun ChatAssistantTab(
                                         )
                                     }
                                     Text(
-                                        text = "系統不會自動執行此操作；請確認參數無誤後點擊「執行」。",
+                                        text = resCtx.getString(R.string.chat_s_5688db),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -5413,7 +5416,7 @@ fun ChatAssistantTab(
                                             },
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Text("取消")
+                                            Text(resCtx.getString(R.string.common_cancel))
                                         }
                                         Button(
                                             onClick = {
@@ -5422,7 +5425,7 @@ fun ChatAssistantTab(
                                             },
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Text("執行")
+                                            Text(resCtx.getString(R.string.chat_s_88675e))
                                         }
                                     }
                                 }
@@ -5439,13 +5442,13 @@ fun ChatAssistantTab(
                             ) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Text(
-                                        text = "👤 疑似通訊錄聯絡人暱稱（純本機比對）",
+                                        text = stringResource(R.string.chat_s_733970),
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                     Text(
-                                        text = "寄件者「${aliasCand.alias}」疑似本機聯絡人「${aliasCand.matchedDisplayName}」。綁定後防詐檢查將視其為熟人寄件者。",
+                                        text = stringResource(R.string.chat_s_0c2141, aliasCand.alias, aliasCand.matchedDisplayName),
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                     Row(
@@ -5456,7 +5459,7 @@ fun ChatAssistantTab(
                                             onClick = { pendingAliasCandidate = null },
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Text("略過")
+                                            Text(stringResource(R.string.common_skip))
                                         }
                                         Button(
                                             onClick = {
@@ -5468,17 +5471,17 @@ fun ChatAssistantTab(
                                                                 alias = aliasCand.alias,
                                                                 displayName = aliasCand.matchedDisplayName,
                                                                 packageName = aliasCand.packageName,
-                                                                note = "由聊天確認卡綁定"
+                                                                note = resCtx.getString(R.string.chat_s_12816a)
                                                             )
                                                         )
                                                     }
                                                     com.phantom.checker.util.ContactContext.invalidateCache()
-                                                    onShowMessage("已綁定暱稱「${aliasCand.alias} → ${aliasCand.matchedDisplayName}」")
+                                                    onShowMessage(resCtx.getString(R.string.chat_s_366ff8, aliasCand.alias, aliasCand.matchedDisplayName))
                                                 }
                                             },
                                             modifier = Modifier.weight(1f)
                                         ) {
-                                            Text("確認綁定")
+                                            Text(stringResource(R.string.chat_s_40d4cd))
                                         }
                                     }
                                 }
@@ -5499,7 +5502,7 @@ fun ChatAssistantTab(
                                 contentPadding = 12.dp
                             ) {
                                 Text(
-                                    text = "確認刪除記憶（${memDel.filterSummary} · 共 ${memDel.targets.size} 筆）",
+                                    text = stringResource(R.string.chat_s_7e222e, memDel.filterSummary, memDel.targets.size),
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.error
@@ -5548,7 +5551,7 @@ fun ChatAssistantTab(
                                     }
                                     if (memDel.targets.size > 10) {
                                         Text(
-                                            text = "…另有 ${memDel.targets.size - 10} 筆記憶",
+                                            text = stringResource(R.string.chat_s_de7c4a, memDel.targets.size - 10),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -5569,7 +5572,7 @@ fun ChatAssistantTab(
                                                         ChatMessageEntity(
                                                             sessionId = sid,
                                                             role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                            content = "已取消刪除記憶（${memDel.filterSummary}）。",
+                                                            content = resCtx.getString(R.string.chat_s_e9efb8, memDel.filterSummary),
                                                             createdAt = System.currentTimeMillis()
                                                         )
                                                     )
@@ -5579,7 +5582,7 @@ fun ChatAssistantTab(
                                         },
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("取消")
+                                        Text(stringResource(R.string.common_cancel))
                                     }
                                     Button(
                                         enabled = selectedIds.isNotEmpty(),
@@ -5596,18 +5599,18 @@ fun ChatAssistantTab(
                                                         ChatMessageEntity(
                                                             sessionId = sid,
                                                             role = ChatMessageEntity.ROLE_ASSISTANT,
-                                                            content = "✓ 已刪除 ${idsToDelete.size} 筆記憶（${memDel.filterSummary}）。",
+                                                            content = resCtx.getString(R.string.chat_s_5dfd16, idsToDelete.size, memDel.filterSummary),
                                                             createdAt = System.currentTimeMillis()
                                                         )
                                                     )
                                                 }
                                                 loadMessages(sid)
-                                                onShowMessage("已刪除 ${idsToDelete.size} 筆記憶")
+                                                onShowMessage(resCtx.getString(R.string.chat_s_cba5f8, idsToDelete.size))
                                             }
                                         },
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("確認刪除（${selectedIds.size}）")
+                                        Text(stringResource(R.string.chat_s_1ecc3e, selectedIds.size))
                                     }
                                 }
                             }
@@ -5640,7 +5643,7 @@ fun ChatAssistantTab(
                                 contentPadding = 12.dp
                             ) {
                                 Text(
-                                    text = "回覆失敗：$err",
+                                    text = stringResource(R.string.chat_s_111b22, err),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.error
                                 )
@@ -5649,7 +5652,7 @@ fun ChatAssistantTab(
                                     OutlinedButton(onClick = { sendQuery(q, isRetry = true) }) {
                                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                         Spacer(Modifier.width(6.dp))
-                                        Text("重試")
+                                        Text(resCtx.getString(R.string.chat_s_a7d12d))
                                     }
                                 }
                             }
@@ -5675,7 +5678,7 @@ fun ChatAssistantTab(
                 ) {
                     Image(
                         bitmap = attachment.thumbnail.asImageBitmap(),
-                        contentDescription = "已選擇的圖片預覽",
+                        contentDescription = resCtx.getString(R.string.chat_s_892dff),
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .size(44.dp)
@@ -5683,14 +5686,14 @@ fun ChatAssistantTab(
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "已附加圖片（送出將由 AI 視覺模型檢視）",
+                            text = resCtx.getString(R.string.chat_s_000cac),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "圖片會消耗較多 token，建議搭配簡短提問",
+                            text = resCtx.getString(R.string.chat_s_3193f7),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -5699,7 +5702,7 @@ fun ChatAssistantTab(
                         onClick = { pendingImageAttachment = null },
                         modifier = Modifier.size(48.dp)
                     ) {
-                        Icon(Icons.Default.Close, contentDescription = "移除圖片")
+                        Icon(Icons.Default.Close, contentDescription = resCtx.getString(R.string.chat_s_3e9b6f))
                     }
                 }
             }
@@ -5720,7 +5723,7 @@ fun ChatAssistantTab(
                         PhantomPrefs.setPurposeProfileId(appCtx, com.phantom.checker.util.AiPurpose.CHAT.id, selected.id)
                         activeProfile = selected
                         hasApiKey = true
-                        onShowMessage("已切換對話模型：${selected.name}・${selected.model}")
+                        onShowMessage(resCtx.getString(R.string.chat_s_93e855, selected.name, selected.model))
                     },
                     label = ""
                 )
@@ -5733,12 +5736,12 @@ fun ChatAssistantTab(
                             webSearchEnabled = !webSearchEnabled
                         } else {
                             webSearchEnabled = false
-                            onShowMessage("目前供應商不支援聯網查詢（請使用 Gemini 3+ 預設檔，或於設定填寫 BYOK 外部搜尋端點）")
+                            onShowMessage(resCtx.getString(R.string.chat_s_ea28d8))
                         }
                     },
                     label = {
                         Text(
-                            text = if (webSearchEnabled && webSearchSupported) "🔍 聯網中" else "🔍 聯網",
+                            text = if (webSearchEnabled && webSearchSupported) stringResource(R.string.chat_s_89f22e) else stringResource(R.string.chat_s_c5c547),
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1
                         )
@@ -5762,7 +5765,7 @@ fun ChatAssistantTab(
                 ) {
                     Icon(
                         Icons.Default.Add,
-                        contentDescription = if (showSuggestions) "常用指令與圖片上傳" else "圖片上傳"
+                        contentDescription = if (showSuggestions) stringResource(R.string.chat_s_987c2c) else stringResource(R.string.chat_s_d90d2f)
                     )
                 }
                 DropdownMenu(
@@ -5771,7 +5774,7 @@ fun ChatAssistantTab(
                 ) {
                     if (showSuggestions) {
                         DropdownMenuItem(
-                            text = { Text("常用指令") },
+                            text = { Text(stringResource(R.string.chat_s_dda835)) },
                             leadingIcon = { Icon(AutoAwesomeIcon, contentDescription = null, modifier = Modifier.size(20.dp)) },
                             modifier = Modifier.heightIn(min = 48.dp),
                             onClick = {
@@ -5782,7 +5785,7 @@ fun ChatAssistantTab(
                         )
                     }
                     DropdownMenuItem(
-                        text = { Text("上傳圖片讓 AI 檢視") },
+                        text = { Text(stringResource(R.string.chat_s_de4406)) },
                         leadingIcon = { Icon(PhotoIcon, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         modifier = Modifier.heightIn(min = 48.dp),
                         onClick = {
@@ -5805,7 +5808,7 @@ fun ChatAssistantTab(
                 textStyle = MaterialTheme.typography.bodyMedium,
                 placeholder = {
                     Text(
-                        text = "詢問訊息紀錄、昨日簡報或風險…",
+                        text = stringResource(R.string.chat_s_3898c4),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -5820,7 +5823,7 @@ fun ChatAssistantTab(
                     .size(44.dp)
                     .pressableScale(0.90f)
             ) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "送出", modifier = Modifier.size(20.dp))
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.common_send), modifier = Modifier.size(20.dp))
             }
         }
         }
@@ -5885,7 +5888,7 @@ fun ChatAssistantTab(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "歷史對話",
+                                text = stringResource(R.string.chat_s_4e6af9),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -5893,12 +5896,12 @@ fun ChatAssistantTab(
                                 if (sessions.isNotEmpty()) {
                                     TextButton(onClick = {
                                         if (isSending) {
-                                            onShowMessage("AI 正在回覆中，請稍候再清除對話")
+                                            onShowMessage(resCtx.getString(R.string.chat_s_fae667))
                                         } else {
                                             showClearAllSessionsConfirm = true
                                         }
                                     }) {
-                                        Text("清除全部對話", color = MaterialTheme.colorScheme.error)
+                                        Text(stringResource(R.string.chat_s_5d2541), color = MaterialTheme.colorScheme.error)
                                     }
                                 }
                                 TextButton(onClick = {
@@ -5907,13 +5910,13 @@ fun ChatAssistantTab(
                                     lastError = null
                                     showSessionDrawer = false
                                 }) {
-                                    Text("+ 新對話")
+                                    Text(stringResource(R.string.chat_s_b0d90a))
                                 }
                             }
                         }
                         if (sessions.isEmpty()) {
                             Text(
-                                text = "尚無歷史對話紀錄",
+                                text = stringResource(R.string.chat_s_09c780),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 12.dp)
@@ -5972,7 +5975,7 @@ fun ChatAssistantTab(
                                             IconButton(onClick = { deleteSessionConfirm = session }) {
                                                 Icon(
                                                     imageVector = Icons.Default.Delete,
-                                                    contentDescription = "刪除會話",
+                                                    contentDescription = stringResource(R.string.chat_s_0399b3),
                                                     tint = MaterialTheme.colorScheme.error
                                                 )
                                             }
@@ -5990,12 +5993,12 @@ fun ChatAssistantTab(
     if (showQuickCommandsDialog) {
         AlertDialog(
             onDismissRequest = { showQuickCommandsDialog = false },
-            title = { Text("常用指令") },
+            title = { Text(stringResource(R.string.chat_s_dda835)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (quickCommands.isEmpty()) {
                         Text(
-                            text = "尚未設定常用指令，可至設定頁新增或對 AI 說「加入常用指令：…」。",
+                            text = stringResource(R.string.chat_s_d76c24),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -6006,11 +6009,11 @@ fun ChatAssistantTab(
                             val isDirect = resolvedMode == PhantomPrefs.QuickChatCommand.MODE_DIRECT
                             val isFollow = cmd.mode == PhantomPrefs.QuickChatCommand.MODE_FOLLOW
                             val modeLabel = if (isFollow) {
-                                "跟隨預設・${if (isDirect) "直接執行" else "預輸入"}"
+                                resCtx.getString(R.string.chat_s_5fa372, if (isDirect) resCtx.getString(R.string.chat_s_aa0b15) else resCtx.getString(R.string.chat_s_5af577))
                             } else if (isDirect) {
-                                "直接執行"
+                                resCtx.getString(R.string.chat_s_aa0b15)
                             } else {
-                                "預輸入"
+                                resCtx.getString(R.string.chat_s_5af577)
                             }
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
@@ -6068,7 +6071,7 @@ fun ChatAssistantTab(
             },
             confirmButton = {
                 TextButton(onClick = { showQuickCommandsDialog = false }) {
-                    Text("關閉")
+                    Text(stringResource(R.string.common_close))
                 }
             }
         )
@@ -6081,7 +6084,7 @@ fun AiProviderSwitcherChip(
     activeProfile: AiProviderProfile?,
     onSelectProfile: (AiProviderProfile) -> Unit,
     modifier: Modifier = Modifier,
-    label: String = "對話模型："
+    label: String = stringResource(R.string.chat_s_b2351f)
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -6092,7 +6095,7 @@ fun AiProviderSwitcherChip(
                 enabled = false,
                 label = {
                     Text(
-                        text = "尚未設定 AI Provider",
+                        text = stringResource(R.string.chat_s_01bd1a),
                         style = MaterialTheme.typography.labelSmall
                     )
                 }

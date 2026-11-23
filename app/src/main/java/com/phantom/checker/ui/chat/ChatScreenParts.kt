@@ -171,6 +171,7 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 import com.phantom.checker.ui.*
+import com.phantom.checker.R
 
 /** 自製相片圖示（無需額外 material-icons-extended 依賴） */
 internal val PhotoIcon: ImageVector by lazy {
@@ -1877,7 +1878,7 @@ internal fun encodeImageUriToDataUri(ctx: Context, uri: android.net.Uri): ImageE
         val openedBounds = ctx.contentResolver.openInputStream(uri)
         if (openedBounds == null) {
             android.util.Log.w(tag, "openInputStream returned null (bounds) for $uri")
-            return ImageEncodeResult.Failure("無法開啟圖片（可能是雲端圖未下載），請先將圖片下載至本機再選取")
+            return ImageEncodeResult.Failure(ctx.getString(R.string.chat_img_open_failed))
         }
         openedBounds.use { stream ->
             BitmapFactory.decodeStream(stream, null, boundsOpts)
@@ -1887,7 +1888,7 @@ internal fun encodeImageUriToDataUri(ctx: Context, uri: android.net.Uri): ImageE
         val rawH = boundsOpts.outHeight
         if (rawW <= 0 || rawH <= 0) {
             android.util.Log.w(tag, "Invalid bounds ${rawW}x${rawH} for $uri")
-            return ImageEncodeResult.Failure("圖片格式不支援或已損毀")
+            return ImageEncodeResult.Failure(ctx.getString(R.string.chat_img_invalid_format))
         }
 
         val tokenSaver = PhantomPrefs.isTokenSaverEnabled(ctx)
@@ -1918,13 +1919,13 @@ internal fun encodeImageUriToDataUri(ctx: Context, uri: android.net.Uri): ImageE
                 decodeWithSample(sampleSize)
             } catch (oom2: OutOfMemoryError) {
                 android.util.Log.e(tag, "OOM again at inSampleSize=$sampleSize for $uri", oom2)
-                return ImageEncodeResult.Failure("圖片過大，記憶體不足")
+                return ImageEncodeResult.Failure(ctx.getString(R.string.chat_img_oom))
             }
         }
 
         if (rawBitmap == null) {
             android.util.Log.w(tag, "decodeStream returned null after valid bounds for $uri")
-            return ImageEncodeResult.Failure("圖片格式不支援或已損毀")
+            return ImageEncodeResult.Failure(ctx.getString(R.string.chat_img_invalid_format))
         }
 
         val w = rawBitmap.width
@@ -1946,7 +1947,7 @@ internal fun encodeImageUriToDataUri(ctx: Context, uri: android.net.Uri): ImageE
         if (!ok) {
             scaledBitmap.recycle()
             android.util.Log.e(tag, "JPEG compress failed for $uri")
-            return ImageEncodeResult.Failure("圖片格式不支援或已損毀")
+            return ImageEncodeResult.Failure(ctx.getString(R.string.chat_img_invalid_format))
         }
         val b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
         val thumbScale = 128f / maxOf(scaledBitmap.width, scaledBitmap.height).toFloat()
@@ -1970,15 +1971,15 @@ internal fun encodeImageUriToDataUri(ctx: Context, uri: android.net.Uri): ImageE
         )
     } catch (e: SecurityException) {
         android.util.Log.e(tag, "SecurityException reading $uri", e)
-        ImageEncodeResult.Failure("無權限讀取此圖片，請改選本地圖片")
+        ImageEncodeResult.Failure(ctx.getString(R.string.chat_img_no_permission))
     } catch (e: java.io.FileNotFoundException) {
         android.util.Log.e(tag, "FileNotFoundException reading $uri", e)
-        ImageEncodeResult.Failure("無法開啟圖片（可能是雲端圖未下載），請先將圖片下載至本機再選取")
+        ImageEncodeResult.Failure(ctx.getString(R.string.chat_img_open_failed))
     } catch (e: OutOfMemoryError) {
         android.util.Log.e(tag, "OutOfMemoryError encoding $uri", e)
-        ImageEncodeResult.Failure("圖片過大，記憶體不足")
+        ImageEncodeResult.Failure(ctx.getString(R.string.chat_img_oom))
     } catch (e: Exception) {
         android.util.Log.e(tag, "Unexpected error encoding $uri", e)
-        ImageEncodeResult.Failure("讀取圖片失敗（${e.javaClass.simpleName}）：${e.message ?: "未知錯誤"}")
+        ImageEncodeResult.Failure(ctx.getString(R.string.chat_img_read_failed, e.javaClass.simpleName, e.message ?: ctx.getString(R.string.common_unknown_error)))
     }
 }
