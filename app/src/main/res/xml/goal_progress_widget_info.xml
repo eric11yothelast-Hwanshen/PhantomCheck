@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/goal_progress_widget_description"
+    android:initialLayout="@layout/widget_goal_progress"
+    android:previewLayout="@layout/widget_goal_progress"
+    android:previewImage="@drawable/widget_preview_goal_progress"
+    android:minWidth="180dp"
+    android:minHeight="72dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="56dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="1"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />
