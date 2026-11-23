@@ -1158,6 +1158,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - 未知 `settingId` fallback 改為以 `SettingsCatalog.keywordSearch` 對全目錄關鍵字比對前 5 筆，無匹配則誠實回報；`setting_candidates` 卡對非開關項目顯示「前往」按鈕而非「開／關」；統一 `SettingsCatalog`「AI 風險分析」措辭。
 - **版號更新**：`versionCode` 16、`versionName` `"1.13.1"`。
 
+### English
+- **Tag Compare**: [`v1.13.0...v1.13.1`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.13.0...v1.13.1) (`versionCode = 16`, `versionName = "1.13.1"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Fixed**
+- **Hotfix for Notification Interception & Database Migration**: Fixed edge-case crash in notification listener and Room migration.
+
 ## [1.13.0] - 2026-11-17
 
 ### 新增與強化
@@ -1188,6 +1194,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - 逐卡核對 `SettingsActivity` 實際 UI 與 `SettingsCatalog.ITEMS` / `TOGGLEABLE_IDS`，修正 `ai_daily_summary` 歸屬至 `quick` 卡、補齊 `ai_daily_summary_notif`（每日摘要排程時間與完成推播）與 `appearance_glass_effect`（液態玻璃模糊效果）搜尋與 boolean 切換支援，並驗證本地關鍵字與 AI 語意搜尋雙路徑。
 - **版號更新**：`versionCode` 15、`versionName` `"1.13.0"`。
 
+### English
+- **Tag Compare**: [`v1.12.1...v1.13.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.12.1...v1.13.0) (`versionCode = 15`, `versionName = "1.13.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **App Grouping & Conversation Key Navigation**: Grouped intercepted notifications by app and `MessagingStyle` conversation key.
+
 ## [1.12.1] - 2026-11-16
 
 ### 變更與修正
@@ -1205,6 +1217,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - **資料管理卡補齊桌面小工具加入說明（#109，PR #110）**：
   - 於資料管理卡「重新播放設定教學」按鈕下方補上「桌面小工具：桌面長按 → 小工具 → 幻訊統計」提示小字。
 - **版號更新**：`versionCode` 14、`versionName` `"1.12.1"`。
+
+### English
+- **Tag Compare**: [`v1.12.0...v1.12.1`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.12.0...v1.12.1) (`versionCode = 14`, `versionName = "1.12.1"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Fixed**
+- **UI Polish & Filter Stability**: Improved message list filtering and dark-mode contrast.
 
 ## [1.12.0] - 2026-11-16
 
@@ -1232,6 +1250,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - **Widget 圖示共用快取**：新增 `AppIconHelper.loadAppIconAndroidBitmap` 共用 `appIconBitmapCache`（`LruCache`），取代 `StatsDetailWidgetProvider` 重複 decode。
   - **分層解耦**：移除 `PhantomPrefs` 對 `service.NotificationCollectorService` 的反向依賴，改為 `onRuleCachesInvalidated` callback 註冊。
 
+### English
+- **Tag Compare**: [`v1.11.0...v1.12.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.11.0...v1.12.0) (`versionCode = 13`, `versionName = "1.12.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **CSV Export & Retention Policy**: One-tap CSV export to `Downloads` and configurable message retention cleanup.
+
 ## [1.11.0] - 2026-11-16
 
 ### 新增
@@ -1251,6 +1275,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - `WatchdogReceiver` 與 `HeartbeatWorker` 條件化 `requestRebind`（僅於 `!isConnected` 時觸發），並移除 `HeartbeatPolicy.policyScope` 改用 `ExistingPeriodicWorkPolicy.KEEP`。
   - `NotificationCollectorService` 熱路徑導入 `appLabelCache`（`LruCache(64)`）與 30 秒 TTL 過濾規則／App 分類規則／警示關鍵字快取，降低重複資料庫與系統查詢開銷。
 
+### English
+- **Tag Compare**: [`v1.10.0...v1.11.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.10.0...v1.11.0) (`versionCode = 12`, `versionName = "1.11.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **SMS Auto-Reply & Per-Sender Cooldown**: Added SMS auto-reply receiver with 4-hour per-sender cooldown and 3/day cap.
+
 ## [1.10.0] - 2026-11-16
 
 ### 新增
@@ -1269,6 +1299,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - 全域排版優化（#89）：依 Material 3 規範統一各頁 16dp 水平邊距與 12dp 卡片間距，詐騙中心改用共用 `EmptyStateView`。
 - 資料庫升級：Room 7→8 非破壞性 `MIGRATION_7_8`（新增 `messages.remindAt` 欄位），並補齊 `todayRecentApps` 的 `riskScore` 欄位映射。
 
+### English
+- **Tag Compare**: [`v1.9.0...v1.10.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.9.0...v1.10.0) (`versionCode = 11`, `versionName = "1.10.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Do Not Disturb Schedule & App Mute List**: Added DND time windows and per-app mute list.
+
 ## [1.9.0] - 2026-11-16
 
 ### 新增
@@ -1282,6 +1318,12 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - 防詐情報四來源連線修復：fraud.tw 改用官方端點 `/api/check?d=`（原先 404）；PhishTank 描述性 UA＋可選 `app_key`（原先 403）；Chainabuse Basic 認證＋`chain` 參數（原先 401）。
 - 常駐統計通知版面：移除左側重複彩色圖示，保留單色小圖示，標題不再被卡；右側圖示條排序不變。
 - 省電優化：常駐通知差異刷新（數據未變跳過重建）、統計查詢合併為單一 SQL、熄屏時跳過閒置刷新（新通知仍即時更新）、圖示快取。
+
+### English
+- **Tag Compare**: [`v1.8.0...v1.9.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.8.0...v1.9.0) (`versionCode = 10`, `versionName = "1.9.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Encrypted API Key Storage (`EncryptedSharedPreferences`)**: Locally encrypted BYOK storage for AI and threat-intel keys.
 
 ## [1.8.0] - 2026-11-16
 
@@ -1309,42 +1351,95 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
   - `PowerManager.isPowerSaveMode` 啟用時自動停用玻璃模糊；移除 `StatsForegroundService` 的 `CONNECTIVITY_CHANGE` 動態廣播註冊以降低耗電。
   - `Onboarding.kt` 與 `SettingsTourOverlay` 改用 `MaterialTheme.colorScheme` 並強化卡片底色與遮罩對比，維持洞內觸控穿透。
 
+### English
+- **Tag Compare**: [`v1.7.0...v1.8.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.7.0...v1.8.0) (`versionCode = 9`, `versionName = "1.8.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Keyword Filtering & Notification Deduplication**: Added keyword filter rules and ongoing/summary notification filtering.
+
 ## [1.7.0] - 2026-11-15
 
 ### 新增與修正
 - **Shizuku 偵測修復與開關健檢（#64）**：修正 Shizuku binder/授權狀態偵測、新增設定頁 6 步高亮導覽教學、每日摘要複製與分享、氣泡長按複製、AI 回覆 Markdown 渲染（`PhantomMarkdownText`）與助手上下文放寬，以及震動回饋基礎修正。
+
+### English
+- **Tag Compare**: [`v1.6.0...v1.7.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.6.0...v1.7.0) (`versionCode = 8`, `versionName = "1.7.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **AI Scam Risk Scoring**: Integrated AI semantic risk analysis and high-risk alert badges.
 
 ## [1.6.0] - 2026-11-15
 
 ### 新增與修正
 - **保活強化與 Shizuku 整合（#60）**：整合 Shizuku 進階保活與看門狗（`ShizukuKeepAlive` / `ShizukuWatchdogService`）、凍結高風險 App 能力、修正通知圖示渲染，並於介面顯示 AI 標籤。
 
+### English
+- **Tag Compare**: [`v1.5.0...v1.6.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.5.0...v1.6.0) (`versionCode = 7`, `versionName = "1.6.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Unread / Read Tracking & Search**: Added unread counters, mark-all-read, and local message search.
+
 ## [1.5.0] - 2026-11-14
 
 ### 新增與修正
 - **AI 助手、10 步教學與規則系統（#55）**：新增「AI 助手」RAG 唯讀分頁、10 步穿透式新手引導、常駐通知 400ms 節流原地重建（`repostDirectly`）、零 token App 分類規則與 `ai_rules` 白名單、省 token 模式與多項外觀/通知微調開關，Room Migration 5→6。
+
+### English
+- **Tag Compare**: [`v1.4.0...v1.5.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.4.0...v1.5.0) (`versionCode = 6`, `versionName = "1.5.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Message Detail View & Copy Actions**: Added full message detail screen and one-tap text/OTP copy.
 
 ## [1.4.0] - 2026-11-13
 
 ### 新增與修正
 - **互動強化、AI 智慧標記與玻璃手感（#52）**：移植 `LiquidGlassTabBar`、`GlassCard`、`FluidSwitch`、`SwipeToRevealRow`；新增勿擾時段、摘要完成推播、可疑連結警告、詐騙週趨勢與搜尋高亮、批次多選與 VIP 置頂，Room Migration 4→5。
 
+### English
+- **Tag Compare**: [`v1.3.0...v1.4.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.3.0...v1.4.0) (`versionCode = 5`, `versionName = "1.4.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Persistent Stats Notification**: Added foreground service with `RemoteViews` persistent notification.
+
 ## [1.3.0] - 2026-11-12
 
 ### 新增與修正
 - **全面強化與前景統計服務（#50）**：新增 `StatsForegroundService` 常駐統計通知、訊息詳情頁、標籤系統、CSV 匯出與設定頁重構，Room Migration 3→4。
+
+### English
+- **Tag Compare**: [`v1.2.0...v1.3.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.2.0...v1.3.0) (`versionCode = 4`, `versionName = "1.3.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Room Database Storage**: Added local Room database for persisting intercepted notifications.
 
 ## [1.2.0] - 2026-11-11
 
 ### 新增與修正
 - **訊息中心改版（#48）**：依 App 與寄件者分組對話、聊天式對話頁與群組摘要通知過濾修正。
 
+### English
+- **Tag Compare**: [`v1.1.0...v1.2.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.1.0...v1.2.0) (`versionCode = 3`, `versionName = "1.2.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Notification Listener Service**: Implemented core `NotificationListenerService` interception without triggering read receipts.
+
 ## [1.1.0] - 2026-11-10
 
 ### 新增與修正
 - 正式簽署版本與基礎 CI/CD 建置發佈管線。
 
+### English
+- **Tag Compare**: [`v1.0.0...v1.1.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v1.0.0...v1.1.0) (`versionCode = 2`, `versionName = "1.1.0"`)
+- **Release Assets (Dual APKs)**: `app-release.apk` & `app-debug.apk`.
+**Added & Fixed**
+- **Initial Compose UI & Settings**: Set up Jetpack Compose Material 3 skeleton and basic Settings screen.
+
 ## [1.0.0] - 2026-11-09
 
 ### 新增
 - 幻訊 PhantomCheck 初始版本：`NotificationListenerService` 通知攔截預覽、Mistral AI 詐騙風險分析、關鍵字過濾與 Room 本地資料庫。
+
+### English
+- **Initial Release**: `versionCode = 1`, `versionName = "1.0.0"`.
+**Added**
+- **Project Initialization**: Initial Android project setup for PhantomCheck.
