@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="phantom_bg_dark">#0E0A18</color>
+    <color name="phantom_window_bg">#FF0E0A18</color>
     <color name="phantom_primary">#5B21B6</color>
     <color name="phantom_primary_light">#C4B5FD</color>
     <color name="phantom_scam_red">#DC2626</color>

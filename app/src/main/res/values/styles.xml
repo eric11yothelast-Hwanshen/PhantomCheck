@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.PhantomCheck" parent="android:Theme.Material.Light.NoActionBar">
+    <style name="Theme.PhantomCheck" parent="android:Theme.Material.NoActionBar">
+        <!-- #417 強制深色／轉場期間防止視窗層白底閃現 -->
+        <item name="android:windowBackground">@color/phantom_window_bg</item>
+        <item name="android:colorBackground">@color/phantom_window_bg</item>
         <!-- #398 M11：全域 Activity 轉場（設定子頁等）；系統視窗動畫縮放＝0 時自動省略 -->
         <item name="android:windowAnimationStyle">@style/PhantomWindowAnimation</item>
     </style>
