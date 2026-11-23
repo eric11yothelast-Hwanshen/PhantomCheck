@@ -2564,6 +2564,8 @@
     <string name="partner_stage_3_tagline">Proactively spotting key messages and schedules ahead of time</string>
     <string name="partner_stage_4_title">Confidant</string>
     <string name="partner_stage_4_tagline">Your dedicated digital partner who knows you best</string>
+    <string name="partner_stage_5_title">Kindred</string>
+    <string name="partner_stage_5_tagline">A lifelong digital companion who anticipates your needs in harmony</string>
     <string name="todo_filter_pending">Pending</string>
     <string name="todo_filter_overdue">Overdue</string>
     <string name="onboarding_s_fd6afc">Hide troubleshooting ▲</string>

@@ -109,9 +109,10 @@ private const val INTIMACY_WEIGHT_CONFIRMED_MEMORY = 2
 private const val INTIMACY_WEIGHT_CHAT_MESSAGE = 1
 private const val INTIMACY_WEIGHT_BRIEFING_READ = 1
 
-private const val INTIMACY_THRESHOLD_LV2 = 30
-private const val INTIMACY_THRESHOLD_LV3 = 100
-private const val INTIMACY_THRESHOLD_LV4 = 250
+private const val INTIMACY_THRESHOLD_LV2 = 50
+private const val INTIMACY_THRESHOLD_LV3 = 160
+private const val INTIMACY_THRESHOLD_LV4 = 420
+private const val INTIMACY_THRESHOLD_LV5 = 900
 
 private data class IntimacyStage(
     val level: Int,
@@ -128,7 +129,8 @@ private val INTIMACY_STAGES: List<IntimacyStage> = listOf(
     IntimacyStage(1, R.string.partner_stage_1_title, 0, INTIMACY_THRESHOLD_LV2, R.string.partner_stage_1_tagline),
     IntimacyStage(2, R.string.partner_stage_2_title, INTIMACY_THRESHOLD_LV2, INTIMACY_THRESHOLD_LV3, R.string.partner_stage_2_tagline),
     IntimacyStage(3, R.string.partner_stage_3_title, INTIMACY_THRESHOLD_LV3, INTIMACY_THRESHOLD_LV4, R.string.partner_stage_3_tagline),
-    IntimacyStage(4, R.string.partner_stage_4_title, INTIMACY_THRESHOLD_LV4, null, R.string.partner_stage_4_tagline)
+    IntimacyStage(4, R.string.partner_stage_4_title, INTIMACY_THRESHOLD_LV4, INTIMACY_THRESHOLD_LV5, R.string.partner_stage_4_tagline),
+    IntimacyStage(5, R.string.partner_stage_5_title, INTIMACY_THRESHOLD_LV5, null, R.string.partner_stage_5_tagline)
 )
 
 private data class IntimacyLevelInfo(
