@@ -260,7 +260,7 @@ object WeeklySummaryPolicy {
         nm.createNotificationChannel(
             NotificationChannel(
                 "daily_summary",
-                "每日與每週摘要",
+                com.phantom.checker.PhantomApplication.str(R.string.notif_weekly_s_1a5e7e),
                 NotificationManager.IMPORTANCE_LOW
             )
         )
@@ -278,10 +278,10 @@ object WeeklySummaryPolicy {
             .replace(Regex("\\s+"), " ")
             .trim()
             .take(120)
-            .ifBlank { "點擊查看本週訊息統計與風險趨勢" }
+            .ifBlank { com.phantom.checker.PhantomApplication.str(R.string.notif_weekly_s_2ffc1d) }
         val notif = android.app.Notification.Builder(ctx, "daily_summary")
             .setSmallIcon(R.drawable.ic_stat_phantom)
-            .setContentTitle("本週 AI 摘要報告已生成")
+            .setContentTitle(com.phantom.checker.PhantomApplication.str(R.string.notif_weekly_s_55374c))
             .setContentText(plainPreview)
             .setContentIntent(pi)
             .setAutoCancel(true)

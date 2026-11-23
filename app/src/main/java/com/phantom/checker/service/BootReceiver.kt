@@ -79,7 +79,7 @@ class BootReceiver : BroadcastReceiver() {
             nm.createNotificationChannel(
                 NotificationChannel(
                     "system_alert",
-                    "系統提醒",
+                    com.phantom.checker.PhantomApplication.str(R.string.notif_boot_s_7687ab),
                     NotificationManager.IMPORTANCE_DEFAULT
                 )
             )
@@ -94,8 +94,8 @@ class BootReceiver : BroadcastReceiver() {
             )
             val notif = Notification.Builder(appCtx, "system_alert")
                 .setSmallIcon(R.drawable.ic_stat_phantom)
-                .setContentTitle("幻訊通知權限需要重新開啟")
-                .setContentText("開機後系統可能已重設通知存取權限，點擊前往重新授權。")
+                .setContentTitle(com.phantom.checker.PhantomApplication.str(R.string.notif_boot_s_12efcf))
+                .setContentText(com.phantom.checker.PhantomApplication.str(R.string.notif_boot_s_8dca8c))
                 .setContentIntent(pendingIntent)
                 .setAutoCancel(true)
                 .build()

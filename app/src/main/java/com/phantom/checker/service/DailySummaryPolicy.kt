@@ -19,6 +19,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import com.phantom.checker.R
 
 /**
  * 每日自動生成當日訊息 AI 摘要的排程 Worker。
@@ -158,7 +159,7 @@ object DailySummaryPolicy {
         nm.createNotificationChannel(
             android.app.NotificationChannel(
                 "daily_summary",
-                "每日摘要",
+                com.phantom.checker.PhantomApplication.str(R.string.notif_daily_s_a3d0ed),
                 android.app.NotificationManager.IMPORTANCE_LOW
             )
         )
@@ -176,10 +177,10 @@ object DailySummaryPolicy {
             .replace(Regex("\\s+"), " ")
             .trim()
             .take(120)
-            .ifBlank { "點擊查看今日訊息重點與風險統計" }
+            .ifBlank { com.phantom.checker.PhantomApplication.str(R.string.notif_daily_s_88f2a5) }
         val notif = android.app.Notification.Builder(ctx, "daily_summary")
             .setSmallIcon(com.phantom.checker.R.drawable.ic_stat_phantom)
-            .setContentTitle("今日訊息摘要已生成")
+            .setContentTitle(com.phantom.checker.PhantomApplication.str(R.string.notif_daily_s_bd12ae))
             .setContentText(plainPreview)
             .setContentIntent(pi)
             .setAutoCancel(true)

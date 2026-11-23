@@ -13,6 +13,7 @@ import androidx.core.app.RemoteInput
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.phantom.checker.R
 
 /**
  * 接收代理回覆通知的「回覆」、「關閉」、滑掉（deleteIntent）與閒置逾時事件。
@@ -69,7 +70,7 @@ class ReplyProxyReceiver : BroadcastReceiver() {
                             Handler(Looper.getMainLooper()).post {
                                 Toast.makeText(
                                     appCtx,
-                                    "對話已結束，請開啟原 App 回覆",
+                                    com.phantom.checker.PhantomApplication.str(R.string.notif_reply_rx_s_ce3721),
                                     Toast.LENGTH_LONG
                                 ).show()
                             }
@@ -156,7 +157,7 @@ class ReplyProxyReceiver : BroadcastReceiver() {
                                             ctx = appCtx,
                                             sessionKey = sessionKey,
                                             isSelf = false,
-                                            text = "⚠️ 無法送出：${e.message ?: "簡訊發送失敗"}，請開啟原 App 回覆"
+                                            text = com.phantom.checker.PhantomApplication.str(R.string.notif_reply_rx_s_46ab77, e.message ?: com.phantom.checker.PhantomApplication.str(R.string.notif_reply_rx_s_df71eb))
                                         )
                                     }
                                 } else {
@@ -164,7 +165,7 @@ class ReplyProxyReceiver : BroadcastReceiver() {
                                         ctx = appCtx,
                                         sessionKey = sessionKey,
                                         isSelf = false,
-                                        text = "⚠️ 無法送出：原始通知已移除，請開啟原 App 回覆"
+                                        text = com.phantom.checker.PhantomApplication.str(R.string.notif_reply_rx_s_74cc37)
                                     )
                                 }
                             }
@@ -179,7 +180,7 @@ class ReplyProxyReceiver : BroadcastReceiver() {
                         Handler(Looper.getMainLooper()).post {
                             Toast.makeText(
                                 appCtx,
-                                "回覆失敗，請開啟原 App",
+                                com.phantom.checker.PhantomApplication.str(R.string.notif_reply_rx_s_74000d),
                                 Toast.LENGTH_LONG
                             ).show()
                         }

@@ -296,8 +296,8 @@ object PendingAiAnalysisPolicy {
         if (count <= 0 || PhantomPrefs.isInQuietHoursNow(ctx)) return
         postLowPriorityNotif(
             ctx = ctx,
-            title = "離線 AI 分析排程中",
-            text = "有 $count 則訊息待網路恢復後自動分析"
+            title = com.phantom.checker.PhantomApplication.str(R.string.notif_pending_ai_s_89e940),
+            text = com.phantom.checker.PhantomApplication.str(R.string.notif_pending_ai_s_2ff01b, count)
         )
     }
 
@@ -305,8 +305,8 @@ object PendingAiAnalysisPolicy {
         if (PhantomPrefs.isInQuietHoursNow(ctx)) return
         postLowPriorityNotif(
             ctx = ctx,
-            title = "離線 AI 分析已完成",
-            text = "待補分析佇列已全數處理完成"
+            title = com.phantom.checker.PhantomApplication.str(R.string.notif_pending_ai_s_decac3),
+            text = com.phantom.checker.PhantomApplication.str(R.string.notif_pending_ai_s_692a1b)
         )
     }
 
@@ -314,8 +314,8 @@ object PendingAiAnalysisPolicy {
         if (count <= 0 || PhantomPrefs.isInQuietHoursNow(ctx)) return
         postLowPriorityNotif(
             ctx = ctx,
-            title = "部分訊息補分析已略過",
-            text = "有 $count 則訊息重試達 3 次上限，已誠實略過"
+            title = com.phantom.checker.PhantomApplication.str(R.string.notif_pending_ai_s_573d85),
+            text = com.phantom.checker.PhantomApplication.str(R.string.notif_pending_ai_s_dc60b7, count)
         )
     }
 
@@ -323,7 +323,7 @@ object PendingAiAnalysisPolicy {
         val appCtx = ctx.applicationContext
         val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "離線 AI 補分析通知", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL_ID, com.phantom.checker.PhantomApplication.str(R.string.notif_pending_ai_s_fd8b2e), NotificationManager.IMPORTANCE_LOW)
         )
         val intent = Intent(appCtx, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP

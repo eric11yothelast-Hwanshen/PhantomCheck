@@ -98,7 +98,7 @@ object ReplyProxyManager {
                 val history = mutableListOf(
                     ReplyHistoryEntry(
                         isSelf = false,
-                        text = originalSnippet.trim().take(200).ifBlank { "（無訊息預覽）" },
+                        text = originalSnippet.trim().take(200).ifBlank { com.phantom.checker.PhantomApplication.str(R.string.notif_reply_proxy_s_dd3c15) },
                         timestamp = now
                     )
                 )
@@ -187,10 +187,10 @@ object ReplyProxyManager {
                 nm.createNotificationChannel(
                     NotificationChannel(
                         CHANNEL_ID,
-                        "快速回覆對話",
+                        com.phantom.checker.PhantomApplication.str(R.string.notif_reply_proxy_s_055491),
                         NotificationManager.IMPORTANCE_DEFAULT
                     ).apply {
-                        description = "透過 AI 助手回覆後保留於通知欄，方便連續回覆同一對話"
+                        description = com.phantom.checker.PhantomApplication.str(R.string.notif_reply_proxy_s_b050ef)
                     }
                 )
             }
@@ -204,7 +204,7 @@ object ReplyProxyManager {
             ensureChannel(ctx)
             val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
 
-            val selfPerson = Person.Builder().setName("我").build()
+            val selfPerson = Person.Builder().setName(com.phantom.checker.PhantomApplication.str(R.string.chat_s_34f201)).build()
             val senderPerson = Person.Builder().setName(session.sender).build()
             val style = NotificationCompat.MessagingStyle(selfPerson)
                 .setConversationTitle("${session.sender}（${session.appLabel}）")
@@ -230,11 +230,11 @@ object ReplyProxyManager {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
             )
             val remoteInput = RemoteInput.Builder(REMOTE_INPUT_KEY)
-                .setLabel("繼續回覆 ${session.sender}…")
+                .setLabel(com.phantom.checker.PhantomApplication.str(R.string.notif_reply_proxy_s_f799ab, session.sender))
                 .build()
             val replyAction = NotificationCompat.Action.Builder(
                 R.drawable.ic_stat_phantom,
-                "回覆",
+                com.phantom.checker.PhantomApplication.str(R.string.notif_reply_proxy_s_86c667),
                 replyPi
             ).addRemoteInput(remoteInput).build()
 
@@ -250,7 +250,7 @@ object ReplyProxyManager {
             )
             val closeAction = NotificationCompat.Action.Builder(
                 0,
-                "關閉",
+                com.phantom.checker.PhantomApplication.str(R.string.common_close),
                 closePi
             ).build()
 

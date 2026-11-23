@@ -55,7 +55,7 @@ object CloudExtensionsClient {
     /** 驗證 GitHub PAT（呼叫 GET /user，不記錄任何 token） */
     suspend fun testGitHubPat(ctx: Context): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val pat = EncryptedByokStore.getGitHubPat(ctx)
-        if (pat.isBlank()) return@withContext false to "請先輸入 GitHub PAT"
+        if (pat.isBlank()) return@withContext false to com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_d70c30)
         var conn: HttpURLConnection? = null
         try {
             conn = (URL("https://api.github.com/user").openConnection() as HttpURLConnection).apply {
@@ -72,12 +72,12 @@ object CloudExtensionsClient {
                 val login = runCatching {
                     JsonParser.parseString(body).asJsonObject.get("login")?.asString
                 }.getOrNull().orEmpty()
-                true to if (login.isNotBlank()) "連線成功（帳號：$login）" else "連線成功"
+                true to if (login.isNotBlank()) com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_395907, login) else com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_adda8c)
             } else {
-                false to "驗證失敗（HTTP $code），請確認 PAT 權限與有效期限"
+                false to com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_3b8ff2, code)
             }
         } catch (_: Exception) {
-            false to "網路連線失敗，請稍後再試"
+            false to com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_1f6021)
         } finally {
             conn?.disconnect()
         }
@@ -103,12 +103,12 @@ object CloudExtensionsClient {
             OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(payload) }
             val code = conn.responseCode
             if (code in 200..299) {
-                true to "Discord 推播成功"
+                true to com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_05b2a7)
             } else {
-                false to "Discord 回傳 HTTP $code，請確認 Webhook 網址"
+                false to com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_cf550c, code)
             }
         } catch (_: Exception) {
-            false to "無法連線至 Discord Webhook"
+            false to com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_cb2d1b)
         } finally {
             conn?.disconnect()
         }
@@ -140,7 +140,7 @@ object CloudExtensionsClient {
                         val key = "gh_fail_${repo}_$runId"
                         if (PhantomPrefs.getLastGitHubAlertKey(ctx) != key) {
                             PhantomPrefs.setLastGitHubAlertKey(ctx, key)
-                            alerts.add("❌ [$repo] Build 失敗：$wfName")
+                            alerts.add(com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_6bca43, repo, wfName))
                         }
                     }
                 }
@@ -164,7 +164,7 @@ object CloudExtensionsClient {
             }
         }
         if (alerts.isNotEmpty()) {
-            postCloudAlert(ctx, "GitHub 動態通知", alerts.joinToString("\n"))
+            postCloudAlert(ctx, com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_641a53), alerts.joinToString("\n"))
         }
         anySuccess
     }
@@ -194,7 +194,7 @@ object CloudExtensionsClient {
         if (!ProactiveEngine.areNotificationsEnabled(ctx)) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL_CLOUD_EXT, "雲端擴充通知（GitHub）", NotificationManager.IMPORTANCE_DEFAULT)
+            NotificationChannel(CHANNEL_CLOUD_EXT, com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_2ec0e4), NotificationManager.IMPORTANCE_DEFAULT)
         )
         val pi = PendingIntent.getActivity(
             ctx,
@@ -239,8 +239,8 @@ class GitHubMonitorWorker(
                     android.util.Log.w("PhantomCloudExt", "GitHub monitor consecutive failures reached 3")
                     CloudExtensionsClient.postCloudAlert(
                         applicationContext,
-                        "GitHub 監控連線異常",
-                        "GitHub 監控已連續 3 次輪詢失敗，請至「連結應用程式中心」確認 PAT 權限或有效期限。"
+                        com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_388df5),
+                        com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_ff1595)
                     )
                 }
             }
@@ -256,8 +256,8 @@ class GitHubMonitorWorker(
             if (fails == 3) {
                 CloudExtensionsClient.postCloudAlert(
                     applicationContext,
-                    "GitHub 監控連線異常",
-                    "GitHub 監控已連續 3 次發生錯誤（${e.javaClass.simpleName}），請至「連結應用程式中心」確認設定。"
+                    com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_388df5),
+                    com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_9c579c, e.javaClass.simpleName)
                 )
             }
             Result.success()

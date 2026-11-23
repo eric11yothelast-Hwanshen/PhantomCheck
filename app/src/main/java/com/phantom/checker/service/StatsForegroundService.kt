@@ -393,7 +393,7 @@ class StatsForegroundService : Service() {
             nm.createNotificationChannel(
                 NotificationChannel(
                     STATS_CHANNEL_ID,
-                    "統計",
+                    com.phantom.checker.PhantomApplication.str(R.string.common_stats),
                     NotificationManager.IMPORTANCE_LOW
                 )
             )
@@ -431,12 +431,12 @@ class StatsForegroundService : Service() {
             val pendingIntent = buildContentIntent(appCtx, latestPackageName)
             val style = PhantomPrefs.getPersistentNotifStyle(appCtx)
             val showIcons = PhantomPrefs.isPersistentNotifShowIcons(appCtx)
-            val title = "幻訊・今日 $today 則訊息"
+            val title = com.phantom.checker.PhantomApplication.str(R.string.notif_stats_s_6d05d2, today)
             val text = when (style) {
                 com.phantom.checker.util.PersistentNotifStyle.DETAILED ->
-                    "未讀 $unread 則・詐騙警示 $scam 則"
+                    com.phantom.checker.PhantomApplication.str(R.string.notif_stats_s_fe53e3, unread, scam)
                 com.phantom.checker.util.PersistentNotifStyle.COMPACT ->
-                    "常駐監控中"
+                    com.phantom.checker.PhantomApplication.str(R.string.notif_stats_s_7d33b6)
             }
 
             val builder = Notification.Builder(appCtx, STATS_CHANNEL_ID)

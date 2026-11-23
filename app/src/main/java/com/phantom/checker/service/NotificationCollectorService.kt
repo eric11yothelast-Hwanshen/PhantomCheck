@@ -888,17 +888,17 @@ class NotificationCollectorService : NotificationListenerService() {
         if (PhantomPrefs.isInQuietHoursNow(ctx)) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(
-            NotificationChannel("scam_alert", "詐騙警示", NotificationManager.IMPORTANCE_HIGH)
+            NotificationChannel("scam_alert", com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_d01582), NotificationManager.IMPORTANCE_HIGH)
         )
         val notifId = NotifIds.scamAlert(msgId)
         val pendingIntent = buildClickPendingIntent(ctx, notifId, msgId, pkg)
         val plainReason = com.phantom.checker.ui.stripMarkdown(reason)
             .replace(WHITESPACE_REGEX, " ")
             .trim()
-            .ifBlank { "請前往詐騙警示中心查看風險分析" }
+            .ifBlank { com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_a9e4de) }
         val notif = Notification.Builder(ctx, "scam_alert")
             .setSmallIcon(R.drawable.ic_stat_phantom)
-            .setContentTitle("⚠️ 偵測到高風險訊息：$sender")
+            .setContentTitle(com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_5fb150, sender))
             .setContentText(plainReason)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
@@ -919,13 +919,13 @@ class NotificationCollectorService : NotificationListenerService() {
         if (PhantomPrefs.isInQuietHoursNow(ctx)) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(
-            NotificationChannel("important_alert", "重要訊息提醒", NotificationManager.IMPORTANCE_HIGH)
+            NotificationChannel("important_alert", com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_5e3269), NotificationManager.IMPORTANCE_HIGH)
         )
         val notifId = NotifIds.importantAlert(msgId)
         val pendingIntent = buildClickPendingIntent(ctx, notifId, msgId, pkg)
         val notif = Notification.Builder(ctx, "important_alert")
             .setSmallIcon(R.drawable.ic_stat_phantom)
-            .setContentTitle("🔔 重要訊息：$sender")
+            .setContentTitle(com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_459e86, sender))
             .setContentText(content.take(120))
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
@@ -971,7 +971,7 @@ class NotificationCollectorService : NotificationListenerService() {
             val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             val chId = "ai_tag_status"
             nm.createNotificationChannel(
-                NotificationChannel(chId, "AI 標籤狀態通知", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(chId, com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_c4f7e1), NotificationManager.IMPORTANCE_LOW)
             )
             val openAppIntent = PendingIntent.getActivity(
                 ctx,
@@ -981,10 +981,10 @@ class NotificationCollectorService : NotificationListenerService() {
                 },
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            val bodyText = "AI 標籤分發近 24 小時已失敗 $count 次，請檢查所用模型的指令遵循能力，或至設定更換訊息分析模型"
+            val bodyText = com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_8722b7, count)
             val notif = Notification.Builder(ctx, chId)
                 .setSmallIcon(R.drawable.ic_stat_phantom)
-                .setContentTitle("AI 標籤分發多次失敗")
+                .setContentTitle(com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_c83fea))
                 .setContentText(bodyText)
                 .setStyle(Notification.BigTextStyle().bigText(bodyText))
                 .setAutoCancel(true)
@@ -1023,22 +1023,22 @@ class NotificationCollectorService : NotificationListenerService() {
             val service = activeInstance
             if (service == null) {
                 Log.w("PhantomReply", "sendReplyToNotification: activeInstance is null pkg=$packageName")
-                return ReplySendResult.Unavailable("通知監聽服務尚未連線，無法取得即時通知，建議開啟原 App 回覆。")
+                return ReplySendResult.Unavailable(com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_bd21fb))
             }
             val trimmedReply = replyText.trim()
             if (trimmedReply.isEmpty()) {
-                return ReplySendResult.Unavailable("回覆內容不可為空。")
+                return ReplySendResult.Unavailable(com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_c41838))
             }
             val active = try {
                 service.activeNotifications?.toList().orEmpty()
             } catch (e: Exception) {
                 Log.e("PhantomReply", "sendReplyToNotification: activeNotifications failed pkg=$packageName", e)
-                return ReplySendResult.Unavailable("無法讀取目前通知列狀態，建議開啟原 App 回覆。")
+                return ReplySendResult.Unavailable(com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_1c6534))
             }
             val pkgNotifs = active.filter { it.packageName == packageName }
             if (pkgNotifs.isEmpty()) {
                 Log.w("PhantomReply", "sendReplyToNotification: no active notifs for pkg=$packageName")
-                return ReplySendResult.Unavailable("該通知已被清除或不在通知列中，無法快速回覆，建議開啟原 App 回覆。")
+                return ReplySendResult.Unavailable(com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_f96696))
             }
 
             val senderNorm = sender.trim()
@@ -1129,15 +1129,15 @@ class NotificationCollectorService : NotificationListenerService() {
                     ReplySendResult.Success
                 } catch (e: Exception) {
                     Log.e("PhantomReply", "sendReplyToNotification: actionIntent.send failed pkg=$packageName convKey=$convKeyNorm", e)
-                    ReplySendResult.Unavailable("傳送快速回覆失敗（${e.message ?: "未知錯誤"}），建議開啟原 App 回覆。")
+                    ReplySendResult.Unavailable(com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_1363d8, e.message ?: com.phantom.checker.PhantomApplication.str(R.string.common_unknown_error)))
                 }
             }
 
             Log.w("PhantomReply", "sendReplyToNotification: no suitable RemoteInput pkg=$packageName convKey=$convKeyNorm sender=$senderNorm noRemoteInput=$foundMatchingNotifWithoutRemoteInput")
             return if (foundMatchingNotifWithoutRemoteInput) {
-                ReplySendResult.Unavailable("該通知不支援快速回覆（無 RemoteInput），建議開啟原 App 回覆。")
+                ReplySendResult.Unavailable(com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_0a745e))
             } else {
-                ReplySendResult.Unavailable("找不到來自「${sender.ifBlank { convKeyNorm.ifBlank { packageName } }}」的可回覆通知，可能已被清除，建議開啟原 App 回覆。")
+                ReplySendResult.Unavailable(com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_867307, sender.ifBlank { convKeyNorm.ifBlank { packageName } }))
             }
         }
 
@@ -1301,7 +1301,7 @@ class NotificationCollectorService : NotificationListenerService() {
             if (PhantomPrefs.isInQuietHoursNow(ctx)) return
             val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
             nm.createNotificationChannel(
-                NotificationChannel("scam_alert", "詐騙警示", NotificationManager.IMPORTANCE_HIGH)
+                NotificationChannel("scam_alert", com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_d01582), NotificationManager.IMPORTANCE_HIGH)
             )
             val notifId = NotifIds.scamAlert(msgId)
             val intent = MessageDetailActivity.createIntent(ctx, msgId).apply {
@@ -1316,10 +1316,10 @@ class NotificationCollectorService : NotificationListenerService() {
             val plainReason = com.phantom.checker.ui.stripMarkdown(reason)
                 .replace(WHITESPACE_REGEX, " ")
                 .trim()
-                .ifBlank { "請前往詐騙警示中心查看風險分析" }
+                .ifBlank { com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_a9e4de) }
             val notif = Notification.Builder(ctx, "scam_alert")
                 .setSmallIcon(R.drawable.ic_stat_phantom)
-                .setContentTitle("⚠️ 偵測到高風險訊息：$sender")
+                .setContentTitle(com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_5fb150, sender))
                 .setContentText(plainReason)
                 .setContentIntent(pi)
                 .setAutoCancel(true)

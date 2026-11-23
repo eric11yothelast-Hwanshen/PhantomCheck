@@ -555,7 +555,7 @@ object ProactiveEngine {
                     .setStyle(NotificationCompat.BigTextStyle().bigText(preview))
                     .setAutoCancel(true)
                     .setContentIntent(contentPi)
-                    .addAction(0, "不再關注", mutePi)
+                    .addAction(0, com.phantom.checker.PhantomApplication.str(R.string.notif_proactive_s_a4b3d1), mutePi)
                     .build()
                 try {
                     nm.notify(NotifIds.PROACTIVE_INTEL, notif)
@@ -778,7 +778,7 @@ object ProactiveEngine {
         val nm = ctx.applicationContext.getSystemService(NotificationManager::class.java) ?: return null
         val channel = NotificationChannel(
             CHANNEL_ASSISTANT_BRIEFING,
-            "AI 助手早晚簡報與主動提醒",
+            com.phantom.checker.PhantomApplication.str(R.string.notif_proactive_s_04d38e),
             NotificationManager.IMPORTANCE_DEFAULT
         )
         nm.createNotificationChannel(channel)
@@ -878,7 +878,7 @@ class ProactiveMonitorWorker(
             if (check.hasHighPriority && !check.highPrioritySummary.isNullOrBlank() && check.pendingMilestoneKeys.isNotEmpty()) {
                 ProactiveEngine.deliverProactiveAlert(
                     ctx = applicationContext,
-                    title = "重要行程／待辦提醒",
+                    title = com.phantom.checker.PhantomApplication.str(R.string.notif_proactive_s_bae241),
                     body = check.highPrioritySummary,
                     milestoneKeys = check.pendingMilestoneKeys
                 )

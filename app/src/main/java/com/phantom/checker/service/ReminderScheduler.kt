@@ -178,10 +178,10 @@ object ReminderScheduler {
             nm.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_ID,
-                    "訊息待辦提醒",
+                    com.phantom.checker.PhantomApplication.str(R.string.notif_reminder_s_8a5259),
                     NotificationManager.IMPORTANCE_HIGH
                 ).apply {
-                    description = "「稍後處理」與 AI 待辦排程的提醒通知"
+                    description = com.phantom.checker.PhantomApplication.str(R.string.notif_reminder_s_550192)
                 }
             )
         }
@@ -203,7 +203,7 @@ object ReminderScheduler {
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val title = "待辦提醒：${msg.sender}（${msg.appLabel}）"
+        val title = com.phantom.checker.PhantomApplication.str(R.string.notif_reminder_s_179bba, msg.sender, msg.appLabel)
         val notif = Notification.Builder(appCtx, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_phantom)
             .setContentTitle(title)
@@ -243,7 +243,7 @@ object ReminderScheduler {
         )
         val notif = Notification.Builder(appCtx, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_phantom)
-            .setContentTitle("⏰ 待辦提醒")
+            .setContentTitle(com.phantom.checker.PhantomApplication.str(R.string.notif_reminder_s_a954c6))
             .setContentText(todo.title.take(120))
             .setContentIntent(pi)
             .setAutoCancel(true)
