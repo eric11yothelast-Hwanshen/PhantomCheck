@@ -352,6 +352,88 @@ internal fun StatsTab(
                 Text("分享本週統計報告圖卡（本機產生）")
             }
         }
+        // §4.5 本週重點摘要條（純本機聚合自既有 StatsUiState，不新增資料來源，不動 13 卡順序）
+        item(key = "stats_weekly_highlights") {
+            val todayTotal = state.weeklyCounts.lastOrNull()?.count ?: 0
+            val riskTotal = state.scamCount + state.suspiciousCount
+            val todoRateText = if (state.todoTotalCount > 0) {
+                "${(state.todoDoneCount * 100) / state.todoTotalCount}%"
+            } else {
+                "—"
+            }
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(com.phantom.checker.ui.components.AuroraTokens.CornerCard),
+                color = MaterialTheme.colorScheme.surfaceContainer
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "本週重點",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            com.phantom.checker.ui.components.PhantomAnimatedCount(
+                                count = todayTotal,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "今日訊息",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            com.phantom.checker.ui.components.PhantomAnimatedCount(
+                                count = riskTotal,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = if (riskTotal > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "風險攔截",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = todoRateText,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = "待辦完成率",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
         // #349 早晚簡報玻璃卡（取代每日 AI 摘要，首次展開閱讀計入親密值）
         if ("stats_briefing" in visibleCards) {
         phantomItem(0, key = "stats_briefing") {
