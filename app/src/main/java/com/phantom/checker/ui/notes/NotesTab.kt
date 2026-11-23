@@ -734,17 +734,7 @@ internal fun NotesTab(
             val spawned = withContext(Dispatchers.IO) {
                 ReminderScheduler.completeTodoWithRecurrence(appCtx, t, checked)
             }
-            val goalAdvanced = if (checked) {
-                com.phantom.checker.util.GoalEngine.onTodoCompleted(
-                    appCtx,
-                    t.copy(isDone = true, completedAt = System.currentTimeMillis())
-                )
-            } else {
-                false
-            }
-            if (goalAdvanced) {
-                onShowMessage(resCtx.getString(R.string.notes_s_dd002c))
-            } else if (spawned != null) {
+            if (spawned != null) {
                 onShowMessage(resCtx.getString(R.string.notes_s_44a2ba))
             }
         }

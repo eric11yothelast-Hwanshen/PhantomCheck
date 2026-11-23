@@ -212,6 +212,10 @@ object GoalEngine {
         val goal = db.goalDao().byId(goalId) ?: return@withContext false
         if (goal.status != GoalEntity.STATUS_ACTIVE) return@withContext false
 
+        if (db.goalDao().progressForGoal(goalId).any { it.todoId == todo.id }) {
+            return@withContext false
+        }
+
         val inserted = db.goalDao().insertProgress(
             GoalProgressEntity(
                 goalId = goalId,
