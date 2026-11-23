@@ -145,9 +145,14 @@ class CalendarInsightWorker(
             val finalBody = if (PhantomPrefs.isTokenSaverEnabled(appCtx)) {
                 templateBody
             } else {
+                val calSystemPrompt = if (AiClient.isZhTwLocale()) {
+                    "你是「$assistantName」，請將以下即將到來的日曆事件與最新外部情報潤飾為簡潔實用的繁體中文提醒（≤220字，保留所有事件名稱與時間，不可編造）。"
+                } else {
+                    "You are \"$assistantName\". Polish the upcoming calendar events and latest external updates below into a concise, practical reminder in English (locale: ${AiClient.resolveLocaleTag()}), within 160 words. Preserve all event names and times, and never fabricate details."
+                }
                 val polished = AiClient.generateBriefingText(
                     context = appCtx,
-                    systemPrompt = "你是「$assistantName」，請將以下即將到來的日曆事件與最新外部情報潤飾為簡潔實用的繁體中文提醒（≤220字，保留所有事件名稱與時間，不可編造）。",
+                    systemPrompt = calSystemPrompt,
                     userPrompt = templateBody,
                     maxTokens = 300
                 )

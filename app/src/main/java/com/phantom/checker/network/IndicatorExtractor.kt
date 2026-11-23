@@ -51,10 +51,33 @@ object IndicatorExtractor {
      * #375 強可疑關鍵字（可單獨觸發省 token 模式之 AI 分析）：
      * 已移除「$」「元」「客服」「投資」「獲利」「領取」「扣款」「刷卡」「中獎」「帳號」「急件」等日常高頻單字，
      * 避免朋友玩笑、家人領取包裹、銀行扣款、購物促銷誤觸發 AI 分析。
+     * #431 同步擴充 2025–2026 高頻英文詐騙話術（概念意譯，以高精準度片語為主，避免日常單字誤觸發）。
      */
     val SUSPICIOUS_KEYWORDS = listOf(
+        // 中文既有詞庫（不動）
         "轉帳", "匯款", "密碼", "驗證碼", "OTP",
-        "凍結", "超商代碼", "ATM", "解除分期", "投資群", "飆股", "保證金", "帳戶異常"
+        "凍結", "超商代碼", "ATM", "解除分期", "投資群", "飆股", "保證金", "帳戶異常",
+        // Phishing / Bank account compromise / ATO (FTC, FBI IC3 PSA251125, UK Report Fraud, APWG)
+        "account suspended", "account locked", "account compromised", "account frozen",
+        "account restricted", "unusual activity", "unauthorized access", "unauthorized charge",
+        "fraud department", "safe account", "verify your account", "confirm your identity",
+        "wire transfer",
+        // OTP / Credential & wallet theft
+        "verification code", "one-time code", "one-time passcode", "security code",
+        "seed phrase", "recovery phrase",
+        // Parcel / Delivery / Unpaid toll smishing (FTC Top Text Scams, FCC 2025, UK Report Fraud)
+        "unpaid toll", "outstanding toll", "toll balance", "package could not be delivered",
+        "incomplete address", "redelivery fee", "customs fee", "shipment on hold", "delivery failed",
+        // Pig butchering / Romance & Investment pump-and-dump (FinCEN, Chainalysis, APWG)
+        "crypto platform", "investment platform", "liquidity mining", "unlock fee",
+        "withdrawal fee", "investment group", "trading group", "signal group", "vip trading",
+        "stock tip", "insider tip", "guaranteed profit", "guaranteed return", "margin deposit",
+        // Fake customer service refund / Gift card / Remote access (FTC, FBI IC3)
+        "overpayment refund", "claim your refund", "refund department", "processing fee",
+        "gift card", "apple gift card", "google play card", "western union",
+        "remote access", "anydesk", "teamviewer",
+        // Identity / Law enforcement / Government impersonation (FBI IC3 PSA260917 & PSA260720, HMRC)
+        "arrest warrant", "social security suspended", "tax refund", "fund recovery", "legal action"
     )
 
     private val FULL_URL_REGEX = Regex(

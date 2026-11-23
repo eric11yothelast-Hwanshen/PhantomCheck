@@ -162,6 +162,8 @@ object DigestComposer {
             val isNothing = rawText.isBlank() ||
                 rawText.contains("查無新資訊") ||
                 rawText.contains("近期無新資訊") ||
+                rawText.contains("no new information", ignoreCase = true) ||
+                rawText.contains("no recent updates", ignoreCase = true) ||
                 rawText.contains("\"foundNothing\":true", ignoreCase = true) ||
                 rawText.contains("\"foundNothing\": true", ignoreCase = true)
 

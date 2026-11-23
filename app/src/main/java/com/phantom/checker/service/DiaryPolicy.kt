@@ -318,10 +318,15 @@ object DiaryPolicy {
         }
 
         val assistantName = PhantomPrefs.getAssistantName(appCtx)
+        val diarySystemPrompt = if (AiClient.isZhTwLocale()) {
+            "你是「$assistantName」。請僅依據下方 JSON 時間軸事實，用繁體中文寫 1–2 句簡短溫暖的回顧註記（以「我注意到今天…」開頭，≤80字）。嚴格禁止補充時間軸以外的任何事實、推測或情緒臆測。"
+        } else {
+            "You are \"$assistantName\". Based strictly on the JSON timeline facts below, write 1–2 brief, warm reflection sentences in English (locale: ${AiClient.resolveLocaleTag()}), starting with \"I noticed today...\" and within 60 words. Strictly forbid adding any facts, assumptions, or emotional speculation not present in the timeline."
+        }
         val generated = runCatching {
             AiClient.generateBriefingText(
                 context = appCtx,
-                systemPrompt = "你是「$assistantName」。請僅依據下方 JSON 時間軸事實，用繁體中文寫 1–2 句簡短溫暖的回顧註記（以「我注意到今天…」開頭，≤80字）。嚴格禁止補充時間軸以外的任何事實、推測或情緒臆測。",
+                systemPrompt = diarySystemPrompt,
                 userPrompt = day.timelineJson,
                 maxTokens = 140,
                 purpose = com.phantom.checker.util.AiPurpose.DIARY_ANNOTATION

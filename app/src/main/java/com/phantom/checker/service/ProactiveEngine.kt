@@ -411,9 +411,14 @@ object ProactiveEngine {
         val finalBody = if (tokenSaver || facts.isEmpty()) {
             templateBody // 省 token 模式純零 token 模板
         } else {
+            val briefingSystemPrompt = if (AiClient.isZhTwLocale()) {
+                "你是「$assistantName」，請將以下本機整理的事實潤飾為簡潔溫暖的繁體中文簡報（≤220字，保留所有關鍵數字與項目，不可編造，且務必以完整句號收尾）。"
+            } else {
+                "You are \"$assistantName\". Polish the locally compiled facts below into a concise, warm briefing in English (locale: ${AiClient.resolveLocaleTag()}), within 160 words. Preserve all key numbers and items, never fabricate facts, and always end with a complete sentence."
+            }
             val polished = AiClient.generateBriefingText(
                 context = appCtx,
-                systemPrompt = "你是「$assistantName」，請將以下本機整理的事實潤飾為簡潔溫暖的繁體中文簡報（≤220字，保留所有關鍵數字與項目，不可編造，且務必以完整句號收尾）。",
+                systemPrompt = briefingSystemPrompt,
                 userPrompt = templateBody,
                 maxTokens = 480
             )

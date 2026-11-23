@@ -48,7 +48,20 @@ object MemoryEngine {
     private val MONEY_URGENCY_OTP_KEYWORDS = listOf(
         "借錢", "急用", "轉帳", "轉賬", "匯款", "驗證碼", "otp", "認證碼", "動態密碼",
         "馬上", "立刻", "緊急", "凍結", "刷卡", "扣款", "包裹", "異常", "補件",
-        "解除分期", "投資", "獲利", "提領", "客服", "點數", "罰單", "催繳"
+        "解除分期", "投資", "獲利", "提領", "客服", "點數", "罰單", "催繳",
+        // #431 English money / urgency / OTP / scam keywords (lowercase for lower.contains)
+        "borrow money", "lend me", "wire transfer", "bank transfer", "send money",
+        "transfer funds", "safe account", "gift card", "zelle", "venmo", "crypto",
+        "verification code", "one-time code", "one-time passcode", "security code",
+        "passcode", "seed phrase", "recovery phrase",
+        "urgent", "immediately", "act now", "right away",
+        "account suspended", "account locked", "account frozen", "account compromised",
+        "unauthorized", "fraud department",
+        "unpaid toll", "outstanding toll", "package", "parcel", "redelivery",
+        "customs fee", "refund", "customer support", "tech support", "overdue",
+        "late fee", "arrest warrant",
+        "investment", "guaranteed profit", "guaranteed return", "trading group",
+        "withdrawal fee", "unlock fee", "margin deposit"
     )
 
     fun normalizeCategory(raw: String?): String {
@@ -682,9 +695,14 @@ object MemoryEngine {
             "- [${categoryLabel(mem.category)}] ${AiClient.sanitizeForPrompt(mem.subject).take(18)}：${AiClient.sanitizeForPrompt(mem.content).take(60)}"
         }
         val assistantName = PhantomPrefs.getAssistantName(appCtx)
+        val portraitSystemPrompt = if (AiClient.isZhTwLocale()) {
+            "你是「$assistantName」，請根據以下已過濾的一般記憶，用繁體中文第一人稱寫一段溫暖精準的「我對你的瞭解」個人畫像摘要（嚴格 ≤140 字／≤200 tokens，分 2–3 句，不要列點、不要編造未提供的事實）。"
+        } else {
+            "You are \"$assistantName\". Based only on the filtered normal memories below, write a warm, accurate first-person \"What I know about you\" profile summary in English (locale: ${AiClient.resolveLocaleTag()}). Keep it concise (within 100 words / ≤200 tokens, 2–3 sentences, no bullet points, and never fabricate facts not provided)."
+        }
         val aiText = AiClient.generateBriefingText(
             context = appCtx,
-            systemPrompt = "你是「$assistantName」，請根據以下已過濾的一般記憶，用繁體中文第一人稱寫一段溫暖精準的「我對你的瞭解」個人畫像摘要（嚴格 ≤140 字／≤200 tokens，分 2–3 句，不要列點、不要編造未提供的事實）。",
+            systemPrompt = portraitSystemPrompt,
             userPrompt = memLines,
             maxTokens = 200
         )
@@ -1013,7 +1031,13 @@ class ScamImmunitySummaryWorker(
 
             val tacticKeywords = listOf(
                 "驗證碼", "OTP", "借錢", "匯款", "轉帳", "包裹異常", "刷卡失敗",
-                "投資", "解除分期", "帳戶凍結", "罰單", "客服", "點數"
+                "投資", "解除分期", "帳戶凍結", "罰單", "客服", "點數",
+                // #431 English scam tactics
+                "verification code", "one-time passcode", "wire transfer", "bank transfer",
+                "account suspended", "account locked", "account compromised", "fraud department",
+                "unpaid toll", "redelivery fee", "customs fee", "shipment on hold",
+                "guaranteed return", "guaranteed profit", "trading group", "crypto platform",
+                "refund", "gift card", "remote access", "arrest warrant", "seed phrase"
             )
             val hitTactics = tacticKeywords.filter { kw ->
                 recentScams.any { m ->

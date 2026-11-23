@@ -41,12 +41,30 @@ object ContactContext {
         "借錢", "急用", "周轉", "週轉", "驗證碼", "otp", "認證碼", "動態密碼",
         "馬上", "立刻", "緊急", "盡快", "儘快", "帳戶凍結", "帳戶遭凍結", "帳號凍結",
         "帳號異常", "匯款", "轉帳", "轉賬", "代付", "代收", "點數卡", "解除分期",
-        "刷卡失敗", "包裹異常", "補件", "臨時改約", "換號碼", "新號碼", "新帳號"
+        "刷卡失敗", "包裹異常", "補件", "臨時改約", "換號碼", "新號碼", "新帳號",
+        // #431 English urgency / scam keywords (lowercase for lowerContent.contains)
+        "borrow money", "lend me", "need money", "emergency", "wire transfer",
+        "bank transfer", "send money", "transfer funds", "pay for me", "gift card",
+        "apple gift card", "zelle", "venmo", "verification code", "one-time code",
+        "one-time passcode", "security code", "passcode", "seed phrase", "recovery phrase",
+        "urgent", "immediately", "right away", "asap", "act now",
+        "account suspended", "account locked", "account frozen", "account compromised",
+        "unusual activity", "unauthorized charge", "fraud department", "safe account",
+        "payment failed", "card declined", "unpaid toll", "delivery failed",
+        "shipment on hold", "redelivery fee", "customs fee", "claim your refund",
+        "refund department", "new number", "changed my number", "new account"
     )
 
     private val IMPERSONATION_SELF_REF_KEYWORDS = listOf(
         "我是", "猜猜我是誰", "換新號碼", "換號碼了", "新帳號", "加我新", "這是我新",
-        "我手機壞了", "我換手機", "媽我", "爸我", "哥我", "姐我", "老同學", "前同事"
+        "我手機壞了", "我換手機", "媽我", "爸我", "哥我", "姐我", "老同學", "前同事",
+        // #431 English impersonation self-reference phrases (UK Report Fraud "Hi Mum", FTC family/boss impersonation)
+        "hi mum", "hi mom", "hey mum", "hey mom", "hi dad", "hey dad",
+        "guess who", "this is my new number", "my new number", "got a new number",
+        "changed my number", "save my new number", "text me on my new",
+        "broke my phone", "broken my phone", "lost my phone", "dropped my phone",
+        "phone broke", "new phone", "add my new account", "my new account",
+        "it's me", "former colleague", "old classmate", "your boss", "this is the ceo"
     )
 
     private val KNOWN_APP_KEYWORDS: Map<String, List<String>> = mapOf(
@@ -239,7 +257,11 @@ object ContactContext {
         val isLateNight = hour in 0..4 || (hour == 5 && minute <= 30)
         if (isLateNight && (hasUrgencyKeyword || matchedPersonMem != null)) {
             val memAllowsNight = matchedPersonMem?.content?.let { c ->
-                c.contains("夜班") || c.contains("凌晨") || c.contains("時差") || c.contains("半夜")
+                c.contains("夜班") || c.contains("凌晨") || c.contains("時差") || c.contains("半夜") ||
+                    c.contains("night shift", ignoreCase = true) ||
+                    c.contains("time difference", ignoreCase = true) ||
+                    c.contains("timezone", ignoreCase = true) ||
+                    c.contains("late night", ignoreCase = true)
             } ?: false
             if (!memAllowsNight) {
                 val hhmm = String.format(Locale.ROOT, "%02d:%02d", hour, minute)

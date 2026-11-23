@@ -145,9 +145,14 @@ object TaskTemplateEngine {
         val usePolish = template.polishEnabled && !PhantomPrefs.isTokenSaverEnabled(appCtx)
         val finalBody = if (usePolish) {
             val assistantName = PhantomPrefs.getAssistantName(appCtx)
+            val taskSystemPrompt = if (AiClient.isZhTwLocale()) {
+                "你是「$assistantName」，請將以下本地彙整的 3 點重點潤飾為簡短溫暖的繁體中文定時報告（≤160字，保留所有數字與項目，不可編造）。"
+            } else {
+                "You are \"$assistantName\". Polish the 3 locally compiled bullet points below into a brief, warm scheduled report in English (locale: ${AiClient.resolveLocaleTag()}), within 120 words. Preserve all numbers and items, and never fabricate details."
+            }
             val polished = AiClient.generateBriefingText(
                 context = appCtx,
-                systemPrompt = "你是「$assistantName」，請將以下本地彙整的 3 點重點潤飾為簡短溫暖的繁體中文定時報告（≤160字，保留所有數字與項目，不可編造）。",
+                systemPrompt = taskSystemPrompt,
                 userPrompt = agg.fullText,
                 maxTokens = 240
             )
