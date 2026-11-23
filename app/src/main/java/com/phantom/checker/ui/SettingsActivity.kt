@@ -1031,9 +1031,52 @@ fun FilterSettingsScreen(
                     else -> emptySet()
                 }
             }
-            val visibleCardKeys = remember(isLocalFiltering, localMatchedItems, allCardKeys) {
-                if (isLocalFiltering) localMatchedItems.map { it.cardKey }.toSet()
-                else allCardKeys.toSet()
+            val visibleCardKeys = remember(isLocalFiltering, localMatchedItems, aiMatchedCardKeys, allCardKeys) {
+                when {
+                    aiMatchedCardKeys.isNotEmpty() -> aiMatchedCardKeys
+                    isLocalFiltering -> localMatchedItems.map { it.cardKey }.toSet()
+                    else -> allCardKeys.toSet()
+                }
+            }
+
+            fun expandAndScrollToSettingItem(item: SettingSearchItem) {
+                val targetCard = item.cardKey
+                when (targetCard) {
+                    "quick" -> expandQuick = true
+                    "personalization" -> expandPersonalization = true
+                    "stats" -> expandStats = true
+                    "ai" -> expandAi = true
+                    "memory_assistant" -> expandMemoryAssistant = true
+                    "notif" -> expandNotif = true
+                    "data" -> expandData = true
+                    "appearance" -> expandAppearance = true
+                    "shizuku" -> expandShizuku = true
+                    "intel" -> expandIntel = true
+                    "about" -> expandAbout = true
+                }
+                val targetActivityClass = when (item.page) {
+                    "AutoReplySettingsActivity" -> AutoReplySettingsActivity::class.java
+                    "ScamCenterActivity" -> ScamCenterActivity::class.java
+                    "TagManagementActivity" -> TagManagementActivity::class.java
+                    "WhitelistManagementActivity" -> WhitelistManagementActivity::class.java
+                    "ApiKeySettingsActivity" -> ApiKeySettingsActivity::class.java
+                    "PermissionHubActivity" -> PermissionHubActivity::class.java
+                    "AssistantHubActivity" -> AssistantHubActivity::class.java
+                    "LinkedAppsActivity" -> LinkedAppsActivity::class.java
+                    else -> null
+                }
+                if (targetActivityClass != null) {
+                    ctx.startActivity(Intent(ctx, targetActivityClass))
+                    return
+                }
+                scope.launch {
+                    val orderedVisible = allCardKeys.filter { it in visibleCardKeys }
+                    val scrollIdx = orderedVisible.indexOf(targetCard).takeIf { it >= 0 }
+                        ?: allCardKeys.indexOf(targetCard)
+                    if (scrollIdx >= 0) {
+                        listState.animateScrollToItem(scrollIdx)
+                    }
+                }
             }
 
             fun runAiSettingsSearch() {
@@ -1051,10 +1094,16 @@ fun FilterSettingsScreen(
                     )
                     isAiSearching = false
                     result.onSuccess { ids ->
-                        aiMatchedIds = ids
                         val matchedItems = ids.mapNotNull { id ->
                             SettingsCatalog.findById(id)
                         }
+                        if (matchedItems.isEmpty()) {
+                            aiMatchedIds = emptyList()
+                            aiSearchNote = "AI 語意搜尋查無與「$q」相符的設定項目"
+                            snackbarHostState.showSnackbar("查無相符的設定項目")
+                            return@onSuccess
+                        }
+                        aiMatchedIds = matchedItems.map { it.id }
                         val targetCards = matchedItems.map { it.cardKey }.toSet()
                         if ("quick" in targetCards) expandQuick = true
                         if ("personalization" in targetCards) expandPersonalization = true
@@ -1068,12 +1117,11 @@ fun FilterSettingsScreen(
                         if ("intel" in targetCards) expandIntel = true
                         if ("about" in targetCards) expandAbout = true
 
-                        aiSearchNote = "AI 定位：${matchedItems.joinToString("、") { it.title }}"
+                        aiSearchNote = "✨ AI 語意命中 ${matchedItems.size} 項設定（點選直達）："
                         val firstCardKey = matchedItems.firstOrNull()?.cardKey
-                        val scrollIdx = allCardKeys.indexOf(firstCardKey)
-                        if (scrollIdx >= 0) {
-                            listState.animateScrollToItem(scrollIdx)
-                        }
+                        val orderedVisible = allCardKeys.filter { it in targetCards }
+                        val scrollIdx = orderedVisible.indexOf(firstCardKey).takeIf { it >= 0 } ?: 0
+                        listState.animateScrollToItem(scrollIdx)
                     }.onFailure { err ->
                         snackbarHostState.showSnackbar(err.message ?: "AI 搜尋失敗")
                     }
@@ -1142,51 +1190,81 @@ fun FilterSettingsScreen(
                 )
 
                 if (aiSearchNote != null) {
-                    val firstMatchedPage = remember(aiMatchedIds) {
-                        aiMatchedIds.mapNotNull { id ->
-                            SettingsCatalog.findById(id)
-                        }.firstOrNull()?.page
-                    }
-                    val targetActivityClass = when (firstMatchedPage) {
-                        "AutoReplySettingsActivity" -> AutoReplySettingsActivity::class.java
-                        "ScamCenterActivity" -> ScamCenterActivity::class.java
-                        "TagManagementActivity" -> TagManagementActivity::class.java
-                        "WhitelistManagementActivity" -> WhitelistManagementActivity::class.java
-                        "ApiKeySettingsActivity" -> ApiKeySettingsActivity::class.java
-                        else -> null
+                    val matchedItems = remember(aiMatchedIds) {
+                        aiMatchedIds.mapNotNull { id -> SettingsCatalog.findById(id) }
                     }
                     Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(
-                                text = aiSearchNote!!,
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (targetActivityClass != null) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = aiSearchNote!!,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                                 TextButton(onClick = {
-                                    ctx.startActivity(Intent(ctx, targetActivityClass))
+                                    aiMatchedIds = emptyList()
+                                    aiSearchNote = null
                                 }) {
-                                    Text("前往")
+                                    Text("清除定位")
                                 }
                             }
-                            TextButton(onClick = {
-                                aiMatchedIds = emptyList()
-                                aiSearchNote = null
-                            }) {
-                                Text("清除定位")
+                            matchedItems.forEach { item ->
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable { expandAndScrollToSettingItem(item) }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = item.title,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = item.description,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            text = if (item.page != null) "開啟頁面 →" else "跳轉卡片 ↓",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
