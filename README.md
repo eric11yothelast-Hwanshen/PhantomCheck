@@ -48,6 +48,19 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
 
+### v4.1.0 更新重點（versionCode 49，2026-11-23）
+
+- **#416 訊息頁統計卡重新排版（PR #426）**：單行三段式（今日／未讀／詐騙）＋ 1dp 垂直分隔線，「全部標已讀」移至同行尾端，unread 99→0 高度零跳動。
+- **#417 強制深色修正（PR #426）**：視窗層 theme 改 `android:Theme.Material` 並設定 `android:windowBackground`／`android:colorBackground` 為深色（phantom_window_bg #FF0E0A18），消除 Activity 轉場白底閃現；Compose 層維持高對比。
+- **#418 記憶頁統計卡與次級分頁分離（PR #426）**：記憶頁「長期／短期／衝突／免疫」統計卡降低視覺重量（alpha 0.35），與「記憶｜規則｜防詐免疫」次級分頁以 10dp 間距明確分離。
+- **#419 AI 健康查詢零幻覺（PR #426）**：Health Connect 擴充距離（DistanceRecord）與消耗熱量（TotalCaloriesBurnedRecord）讀取，改為 per-type 權限查詢；未授權型別顯示「未授權」、無資料顯示「無紀錄／無資料」，AI 拒答幻覺正反例與 health_query 動作落地。
+- **#420 統計頁健康明細卡（PR #426）**：日／週／月切換（當日健康快照、近 7 日彙總＋可滑動每日明細表、近 30 日彙總與趨勢），本機聚合零 token。
+- **#421 AI 回顧註記修復（PR #426）**：新增 AI 用途 DIARY_ANNOTATION（ai_model_diary_annotation 可綁定獨立模型，未綁定沿用預設 profile）；不可用時三態診斷（省 token 模式／未設定供應商／同類註記被停權）各附捷徑按鈕；新增「省 token 模式下仍生成回顧註記」開關（diary_annotation_in_saver，預設關閉）。
+- **#422 主動聊天室與一般聊天室切換重疊修復（PR #426）**：切換前清空訊息、以 key(currentSessionId) 重建訊息列表、coroutine 內二次確認防止快速切換競態。
+- **#423 設定健檢與搜尋擴展（PR #426）**：catalogue 新增 diary_annotation_in_saver、ai_model_diary_annotation、proactive_intel_enabled、proactive_extract_enabled 條目（皆有對稱讀寫實作）；同義詞組新增「深色／主題」組、健康組擴充距離／熱量；全域設定搜尋改用 SETTINGS_SEARCH 用途 profile。
+- **#424 AI 更智能與主動（PR #426）**：早晚簡報逐段誠實降級（缺資料明確標「無資料」）；回饋驅動節流（近 7 日同主題 👎≥2 等待窗 ×1.5，👍≥2 且無 👎 ×0.75，無回饋不變）；15 分鐘內有對話不投遞主動訊息（標記 dirty 併入下一輪）；聊天室動態建議 chips（狀態驅動、純本機、零 token、最多 4 顆）。
+- **#425 全天行程誤判撞期修復（PR #426）**：全天（ALL_DAY）事件不計入定時行程衝突判定；偵測到全天事件時顯示全天事件資訊卡（新增日曆事件與通知轉日程皆適用）。
+
 ### v4.0.0 更新重點（versionCode 48，2026-11-23）
 
 - **v4.0.0 全域資訊架構（IA）大改版與搜尋優先設定中心（#409 / PR #413）**：① **導覽 6→5（「洞察」整併「夥伴｜統計」，D1）**：底部導覽精簡為「訊息、AI 助手、記事、記憶、洞察」5 分頁（64dp 高度、N5 指示器寬度與位移彈簧），「洞察」頂部以 `PhantomSecondaryTabRow` 切換「夥伴｜統計」，既有通知／小工具／教學深連結全數相容映射；② **設定中心重構（D2）**：新增 `SettingsHomeScreen` 與 `SettingsCategoryRegistry`，改為頂部 56dp 雙模搜尋框（本地關鍵字＋AI 語意搜尋）＋預設 6 項可編輯釘選常用設定雙欄磁貼（開關類支援內嵌 `FluidSwitch` 直切）＋最近調整膠囊列＋8 大分類頁（將原個人化與外觀合併為「外觀與個人化」，同 Activity 內以 N1／N2 共享 X 軸轉場切換並相容 `highlight_card_key` 直達）；③ **訊息首頁減法與中央堆疊保留（D3）**：`CenterFocusCardStack` 中央聚焦堆疊幾何 0 diff 完整保留，首頁頂部改為圓角三欄統計卡與 3 顆智慧篩選膠囊＋「篩選 ▾」BottomSheet，一般條列升級為圓角分段群組清單；④ **進階設定預設折疊可搜尋展開（D4）**：24 項低頻／專家設定與 Shizuku 預設收納於各分類底部 `SettingsAdvancedSection`，搜尋命中自動展開並脈衝高亮（N7）；⑤ **移除常駐 22dp 把手視覺、保留下拉手勢（D5）**：移除頂部常駐 22dp 把手橫條，保留清單頂端下拉超界手勢觸發搜尋並於 56dp 頂部列常駐搜尋膠囊鈕；⑥ **教學精簡（D6）**：主頁 20→8 步、設定 9→5 步，舊使用者完成旗標不重置；⑦ **大螢幕導覽軌（D7）**：寬度 `>= 600dp` 自動切換左側 `NavigationRail`＋置中 `840dp` 主容器；⑧ **新元件、動效 N1–N7 與零回歸保證**：新增 `PhantomPageScaffold`、`GlobalSearchOverlay`（5 範圍 chips／最近搜尋／常用動作／釘選）、`SettingsRow` 與僅存設定 ID 之 `UiLayoutPrefs`（`phantom_ui_v400`），`PhantomMotion` 追加 N1–N7 draw-phase 常數並於設定分類頁與全域搜尋接入 `PredictiveBackHandler`；`service/`、`data/`、`network/`、`util/` 四目錄 **0 diff**，純 UI 層改版無資料與背景行為變更。

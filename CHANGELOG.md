@@ -2,6 +2,25 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [4.1.0] - 2026-11-23
+
+- **Tag 對照**：[`v4.0.0...v4.1.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.0.0...v4.1.0)（`versionCode = 49`、`versionName = "4.1.0"`）
+- **發佈資產（雙 APK）**：
+  - `app-release.apk`：正式簽章＋R8 程式碼縮減與資源壓縮（`isMinifyEnabled = true`、`isShrinkResources = true`），供一般使用者安裝與原簽章覆蓋升級。
+  - `app-debug.apk`：除錯建置版本，供開發測試與排錯使用。
+
+### 新增、變更與修正
+- **#416 訊息頁統計卡重新排版（PR #426）**：單行三段式（今日／未讀／詐騙）＋ 1dp 垂直分隔線，「全部標已讀」移至同行尾端，unread 99→0 高度零跳動。
+- **#417 強制深色修正（PR #426）**：視窗層 theme 改 `android:Theme.Material` 並設定 `android:windowBackground`／`android:colorBackground` 為深色（phantom_window_bg #FF0E0A18），消除 Activity 轉場白底閃現；Compose 層維持高對比。
+- **#418 記憶頁統計卡與次級分頁分離（PR #426）**：記憶頁「長期／短期／衝突／免疫」統計卡降低視覺重量（alpha 0.35），與「記憶｜規則｜防詐免疫」次級分頁以 10dp 間距明確分離。
+- **#419 AI 健康查詢零幻覺（PR #426）**：Health Connect 擴充距離（DistanceRecord）與消耗熱量（TotalCaloriesBurnedRecord）讀取，改為 per-type 權限查詢；未授權型別顯示「未授權」、無資料顯示「無紀錄／無資料」，AI 拒答幻覺正反例與 health_query 動作落地。
+- **#420 統計頁健康明細卡（PR #426）**：日／週／月切換（當日健康快照、近 7 日彙總＋可滑動每日明細表、近 30 日彙總與趨勢），本機聚合零 token。
+- **#421 AI 回顧註記修復（PR #426）**：新增 AI 用途 DIARY_ANNOTATION（ai_model_diary_annotation 可綁定獨立模型，未綁定沿用預設 profile）；不可用時三態診斷（省 token 模式／未設定供應商／同類註記被停權）各附捷徑按鈕；新增「省 token 模式下仍生成回顧註記」開關（diary_annotation_in_saver，預設關閉）。
+- **#422 主動聊天室與一般聊天室切換重疊修復（PR #426）**：切換前清空訊息、以 key(currentSessionId) 重建訊息列表、coroutine 內二次確認防止快速切換競態。
+- **#423 設定健檢與搜尋擴展（PR #426）**：catalogue 新增 diary_annotation_in_saver、ai_model_diary_annotation、proactive_intel_enabled、proactive_extract_enabled 條目（皆有對稱讀寫實作）；同義詞組新增「深色／主題」組、健康組擴充距離／熱量；全域設定搜尋改用 SETTINGS_SEARCH 用途 profile。
+- **#424 AI 更智能與主動（PR #426）**：早晚簡報逐段誠實降級（缺資料明確標「無資料」）；回饋驅動節流（近 7 日同主題 👎≥2 等待窗 ×1.5，👍≥2 且無 👎 ×0.75，無回饋不變）；15 分鐘內有對話不投遞主動訊息（標記 dirty 併入下一輪）；聊天室動態建議 chips（狀態驅動、純本機、零 token、最多 4 顆）。
+- **#425 全天行程誤判撞期修復（PR #426）**：全天（ALL_DAY）事件不計入定時行程衝突判定；偵測到全天事件時顯示全天事件資訊卡（新增日曆事件與通知轉日程皆適用）。
+
 ## [4.0.0] - 2026-11-23
 
 - **Tag 對照**：[`v3.8.0...v4.0.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v3.8.0...v4.0.0)（`versionCode = 48`、`versionName = "4.0.0"`）
