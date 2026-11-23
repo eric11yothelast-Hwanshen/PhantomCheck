@@ -523,51 +523,7 @@ fun FilterSettingsScreen(
                 aiMatchedIds = emptyList()
                 aiSearchNote = null
             }
-            val step = SettingsTourStep.fromIndex(tourStepIndex)
-            when (step) {
-                SettingsTourStep.QUICK -> {
-                    expandQuick = true
-                    PhantomPrefs.setSettingsCardExpanded(appCtx, "quick", true)
-                }
-                SettingsTourStep.HUB -> {
-                    expandHub = true
-                    PhantomPrefs.setSettingsCardExpanded(appCtx, "hub", true)
-                }
-                SettingsTourStep.PERSONALIZATION -> {
-                    expandPersonalization = true
-                    PhantomPrefs.setSettingsCardExpanded(appCtx, "personalization", true)
-                }
-                SettingsTourStep.AI -> {
-                    expandAi = true
-                    PhantomPrefs.setSettingsCardExpanded(appCtx, "ai", true)
-                }
-                SettingsTourStep.NOTIF -> {
-                    expandNotif = true
-                    PhantomPrefs.setSettingsCardExpanded(appCtx, "notif", true)
-                }
-                SettingsTourStep.DATA,
-                SettingsTourStep.WHITELIST -> {
-                    expandData = true
-                    PhantomPrefs.setSettingsCardExpanded(appCtx, "data", true)
-                }
-                SettingsTourStep.APPEARANCE -> {
-                    expandAppearance = true
-                    PhantomPrefs.setSettingsCardExpanded(appCtx, "appearance", true)
-                }
-                SettingsTourStep.SHIZUKU -> {
-                    expandShizuku = true
-                    PhantomPrefs.setSettingsCardExpanded(appCtx, "shizuku_advanced", true)
-                }
-            }
-            val scrollIdx = SETTINGS_CARD_ORDER.indexOf(step.scrollCardKey)
-            if (scrollIdx >= 0) {
-                listState.animateScrollToItem(scrollIdx)
-            }
             withFrameNanos { }
-            if (step == SettingsTourStep.WHITELIST) {
-                whitelistBringIntoViewRequester.bringIntoView()
-                withFrameNanos { }
-            }
         }
     }
 
@@ -5740,34 +5696,71 @@ private fun AboutSettingsCard(
     }
 
     CollapsibleSettingsCard(
-        title = "關於",
+        title = "關於與更新",
         expanded = expanded,
         onToggle = onToggle,
         glassState = glassState,
         modifier = modifier,
         highlighted = highlighted
     ) {
-        Text(
-            text = "幻訊 PhantomCheck",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            text = "版本：$versionDisplay",
-            style = MaterialTheme.typography.bodyMedium
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = "作者：幻神（Hwanshen）",
-            style = MaterialTheme.typography.bodyMedium
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = "本 App 只在本機被動讀取通知備份，不上傳訊息內容。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        // §4.9 版本狀態卡（保留 AppUpdateHelper / ReleaseNotesPreviewBox / 未知來源 / snooze 狀態機 0 diff）
+        val statusPillText = when {
+            isDownloading -> "下載中"
+            isDownloadError -> "下載失敗可重試"
+            updateResult is UpdateCheckResult.UpdateAvailable ->
+                "可更新 v${(updateResult as UpdateCheckResult.UpdateAvailable).latestVersion}"
+            updateResult is UpdateCheckResult.UpToDate -> "已是最新"
+            isCheckingUpdate -> "檢查中…"
+            else -> "本機保護"
+        }
+        val statusPillColor = when {
+            isDownloadError -> MaterialTheme.colorScheme.errorContainer
+            updateResult is UpdateCheckResult.UpdateAvailable -> MaterialTheme.colorScheme.primaryContainer
+            else -> MaterialTheme.colorScheme.surfaceContainerHigh
+        }
+        Surface(
+            shape = RoundedCornerShape(AuroraTokens.CornerCard),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "幻訊 PhantomCheck",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = statusPillColor
+                    ) {
+                        Text(
+                            text = statusPillText,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = "版本：$versionDisplay · 作者：幻神（Hwanshen）",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "本 App 只在本機被動讀取通知備份，不上傳訊息內容。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         Spacer(Modifier.height(8.dp))
         var updateAutoCheck by remember { mutableStateOf(PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)) }
         val updateBusVer by PhantomSettingsBus.version.collectAsState()
@@ -6383,6 +6376,7 @@ private fun AppThrottlePickerDialog(
     )
 }
 
+/** D6 裁定：設定教學由 9 步精簡為 5 步（搜尋／釘選／分類／進階折疊／重播） */
 private enum class SettingsTourStep(
     val index: Int,
     val cardKey: String,
@@ -6390,73 +6384,45 @@ private enum class SettingsTourStep(
     val title: String,
     val description: String
 ) {
-    QUICK(
+    SEARCH(
         index = 1,
-        cardKey = "quick",
-        scrollCardKey = "quick",
-        title = "快速設定與省 Token",
-        description = "最常用的核心開關都集中於此，包含「省 token 模式」、常駐統計通知與快速操作；你可以直接點擊洞內開關立即試用。"
+        cardKey = "search",
+        scrollCardKey = "search",
+        title = "搜尋優先，直達 136 項設定",
+        description = "在頂部搜尋列輸入關鍵字即可即時離線查找任意設定；右側 ✨ 支援 AI 語意搜尋，點選結果直接定位並展開目標項目。"
     ),
-    HUB(
+    PINNED(
         index = 2,
-        cardKey = "hub",
-        scrollCardKey = "hub",
-        title = "權限與 AI 夥伴中心",
-        description = "收合時一眼查看已授予權限數與早晚簡報時間；展開後可直達權限授予中心、AI 夥伴與主動推播及連結應用程式中心。"
+        cardKey = "pinned",
+        scrollCardKey = "pinned",
+        title = "釘選常用開關（≤6 項）",
+        description = "預設釘選省 token、常駐通知、AI 風險分析等 6 項常用設定，開關可直接切換；點擊「編輯」或長按進階項即可自訂釘選。"
     ),
-    PERSONALIZATION(
+    CATEGORIES(
         index = 3,
-        cardKey = "personalization",
-        scrollCardKey = "personalization",
-        title = "個人化、玻璃強度與背景圖片",
-        description = "調整卡片密度、時間格式、首頁排序與篩選欄，並可自訂全域／AI 聊天／對話頁三層背景圖片與液態玻璃強度。"
+        cardKey = "categories",
+        scrollCardKey = "categories",
+        title = "8 大分類與一行狀態摘要",
+        description = "外觀與個人化已合併為 8 大清晰分類，每列即時顯示目前模型、勿擾時段或待授權數，點擊進入專屬分類子頁。"
     ),
-    AI(
+    ADVANCED(
         index = 4,
-        cardKey = "ai",
-        scrollCardKey = "ai",
-        title = "AI 用途模型與雙模型路由",
-        description = "管理多 Provider API Key 與各用途模型（含簡報與畫像卡），並可開啟「雙模型信心路由」進一步省 token。"
+        cardKey = "advanced",
+        scrollCardKey = "advanced",
+        title = "進階設定預設折疊",
+        description = "低頻微調參數（24 項）與 Shizuku 預設收納於各分類頁尾「進階設定」折疊區，保持畫面清爽；透過搜尋點入會自動展開。"
     ),
-    NOTIF(
+    REPLAY(
         index = 5,
-        cardKey = "notif",
-        scrollCardKey = "notif",
-        title = "訊息與通知",
-        description = "設定勿擾時段、即時關鍵字提醒、重複通知節流秒數、滑動刪除與點擊開啟行為，並可使用「清除已讀訊息」。"
-    ),
-    DATA(
-        index = 6,
-        cardKey = "data",
-        scrollCardKey = "data",
-        title = "資料管理與自訂標籤",
-        description = "管理 App 靜音清單、自訂標籤規則、訊息保留天數與則數上限、CSV 匯出，也可隨時重播新手或設定教學。"
-    ),
-    WHITELIST(
-        index = 7,
-        cardKey = "whitelist",
-        scrollCardKey = "data",
-        title = "白名單管理卡",
-        description = "依 App 分組收合檢視所有寄件者／內容白名單，支援手動新增（防重複）、開關啟停與確認刪除；AI 助手也會同步讀取這份清單。"
-    ),
-    APPEARANCE(
-        index = 8,
-        cardKey = "appearance",
-        scrollCardKey = "appearance",
-        title = "外觀、卡片底色與保活",
-        description = "切換深淺主題、Material You 動態取色、分頁欄模式，以及「卡片底色模式」（跟隨玻璃強度／透明模式滑桿／深色底），並檢查電池最佳化與前景保活狀態。"
-    ),
-    SHIZUKU(
-        index = 9,
-        cardKey = "shizuku",
-        scrollCardKey = "shizuku",
-        title = "Shizuku 進階",
-        description = "進階使用者可透過 Shizuku 進行系統級保活強化、權限補齊與連線診斷；未安裝時可略過不影響一般功能。"
+        cardKey = "replay",
+        scrollCardKey = "replay",
+        title = "隨時重播導覽與檢查更新",
+        description = "頁尾「重播導覽」與「關於與更新」可隨時重看教學、檢視版本狀態卡與更新說明。"
     );
 
     companion object {
         fun fromIndex(index: Int): SettingsTourStep =
-            entries.firstOrNull { it.index == index } ?: QUICK
+            entries.firstOrNull { it.index == index } ?: SEARCH
     }
 }
 

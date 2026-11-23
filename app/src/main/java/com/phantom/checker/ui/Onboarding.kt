@@ -81,27 +81,16 @@ object OnboardingTargets {
     const val SEARCH_PILL = "search_pill"
 }
 
+/** D6 裁定：主頁教學由 20 步精簡為 8 步（§4.10） */
 enum class OnboardingStep(val index: Int) {
     PERMISSION(1),
-    HOME_APP(2),
-    LONG_PRESS(3),
-    SWIPE_DELETE(4),
-    QUICK_REPLY(5),
-    MULTI_SELECT(6),
-    FILTER_CHIPS(7),
-    SEARCH_PILL(8),
-    AI_ASSISTANT(9),
-    MEMORY_TAB(10),
-    SCAM_IMMUNITY(11),
-    CONTACTS_BINDING(12),
-    NOTES_TAB(13),
-    TODO_AND_BATCH(14),
-    CALENDAR_SUGGESTION(15),
-    TAGS_AND_RULES(16),
-    PARTNER_TAB(17),
-    BRIEFING_PROACTIVE(18),
-    KEEP_ALIVE(19),
-    DONE(20);
+    SEARCH_PILL(2),
+    MESSAGES(3),
+    AI_ASSISTANT(4),
+    NOTES_TAB(5),
+    MEMORY_TAB(6),
+    INSIGHT_TAB(7),
+    SETTINGS_CENTER(8);
 
     companion object {
         fun fromIndex(index: Int): OnboardingStep =
@@ -314,19 +303,12 @@ fun OnboardingOverlay(
             return@LaunchedEffect
         }
         val requiredTarget = when (step) {
-            OnboardingStep.MULTI_SELECT -> OnboardingTargets.SELECT_BUTTON
-            OnboardingStep.FILTER_CHIPS,
-            OnboardingStep.TAGS_AND_RULES -> OnboardingTargets.FILTER_CHIPS
             OnboardingStep.SEARCH_PILL -> OnboardingTargets.SEARCH_PILL
             OnboardingStep.AI_ASSISTANT -> OnboardingTargets.AI_ASSISTANT_TAB
-            OnboardingStep.MEMORY_TAB,
-            OnboardingStep.SCAM_IMMUNITY,
-            OnboardingStep.CONTACTS_BINDING -> OnboardingTargets.MEMORY_TAB
-            OnboardingStep.NOTES_TAB,
-            OnboardingStep.CALENDAR_SUGGESTION -> OnboardingTargets.NOTES_TAB
-            OnboardingStep.TODO_AND_BATCH -> OnboardingTargets.TODO_ADD
-            OnboardingStep.PARTNER_TAB,
-            OnboardingStep.BRIEFING_PROACTIVE -> OnboardingTargets.PARTNER_TAB
+            OnboardingStep.NOTES_TAB -> OnboardingTargets.NOTES_TAB
+            OnboardingStep.MEMORY_TAB -> OnboardingTargets.MEMORY_TAB
+            OnboardingStep.INSIGHT_TAB -> OnboardingTargets.PARTNER_TAB
+            OnboardingStep.SETTINGS_CENTER -> OnboardingTargets.SETTINGS_GEAR
             else -> null
         }
         if (requiredTarget != null && targetBounds.isNotEmpty() && !targetBounds.containsKey(requiredTarget)) {
@@ -356,8 +338,7 @@ fun OnboardingOverlay(
         }
         val target = when (step) {
             OnboardingStep.PERMISSION -> targetBounds[OnboardingTargets.NOTIFICATION_GUIDE]
-            OnboardingStep.QUICK_REPLY -> null
-            OnboardingStep.HOME_APP -> {
+            OnboardingStep.MESSAGES -> {
                 val stats = targetBounds[OnboardingTargets.STATS_CARD]
                 val appRow = targetBounds[OnboardingTargets.FIRST_APP_ROW]
                 when {
@@ -371,23 +352,12 @@ fun OnboardingOverlay(
                     else -> stats
                 }
             }
-            OnboardingStep.LONG_PRESS,
-            OnboardingStep.SWIPE_DELETE -> targetBounds[OnboardingTargets.FIRST_APP_ROW]
-            OnboardingStep.MULTI_SELECT -> targetBounds[OnboardingTargets.SELECT_BUTTON]
-            OnboardingStep.FILTER_CHIPS,
-            OnboardingStep.TAGS_AND_RULES -> targetBounds[OnboardingTargets.FILTER_CHIPS]
             OnboardingStep.AI_ASSISTANT -> targetBounds[OnboardingTargets.AI_ASSISTANT_TAB]
-            OnboardingStep.MEMORY_TAB,
-            OnboardingStep.SCAM_IMMUNITY,
-            OnboardingStep.CONTACTS_BINDING -> targetBounds[OnboardingTargets.MEMORY_TAB]
-            OnboardingStep.NOTES_TAB,
-            OnboardingStep.CALENDAR_SUGGESTION -> targetBounds[OnboardingTargets.NOTES_TAB]
-            OnboardingStep.TODO_AND_BATCH -> targetBounds[OnboardingTargets.TODO_ADD]
-            OnboardingStep.PARTNER_TAB,
-            OnboardingStep.BRIEFING_PROACTIVE -> targetBounds[OnboardingTargets.PARTNER_TAB]
-            OnboardingStep.KEEP_ALIVE -> targetBounds[OnboardingTargets.SETTINGS_GEAR]
-            OnboardingStep.SEARCH_PILL,
-            OnboardingStep.DONE -> null
+            OnboardingStep.NOTES_TAB -> targetBounds[OnboardingTargets.NOTES_TAB]
+            OnboardingStep.MEMORY_TAB -> targetBounds[OnboardingTargets.MEMORY_TAB]
+            OnboardingStep.INSIGHT_TAB -> targetBounds[OnboardingTargets.PARTNER_TAB]
+            OnboardingStep.SETTINGS_CENTER -> targetBounds[OnboardingTargets.SETTINGS_GEAR]
+            OnboardingStep.SEARCH_PILL -> null
         }
         target?.let {
             Rect(
@@ -508,75 +478,33 @@ fun OnboardingOverlay(
                 val totalSteps = OnboardingStep.entries.size
                 val (title, body) = when (step) {
                     OnboardingStep.PERMISSION ->
-                        "步驟 ${step.index} / $totalSteps・開啟權限" to
-                            "幻訊需要通知存取權才能即時備份訊息、偵測詐騙風險與自動分類標籤。\n若開關為灰色（受限制的設定），請展開下方疑難排解。"
-                    OnboardingStep.HOME_APP ->
-                        "步驟 ${step.index} / $totalSteps・訊息分頁與風險卡" to
-                            "點選 App 查看對話與訊息；頂部統計與風險卡顯示今日、未讀與詐騙數，並可一鍵進入「詐騙警示中心」。"
-                    OnboardingStep.LONG_PRESS -> {
-                        if (!hasAnyAppRows) {
-                            "步驟 ${step.index} / $totalSteps・訊息操作（目前尚無訊息）" to
-                                "長按 App 或訊息可開啟操作選單（星標、釘選、靜音、AI 深度分析、刪除）；進入對話後可向左滑動快速刪除訊息、於底部輸入框快速回覆；篩選或搜尋清單可用「選取」批次處理。目前資料庫尚無訊息，收到通知後即可實際操作，先按「下一步」繼續。"
-                        } else {
-                            "步驟 ${step.index} / $totalSteps・長按與深度分析" to
-                                "長按 App 或訊息可開啟操作選單，進行星標、釘選、靜音、AI 訊息深度分析或刪除。"
-                        }
-                    }
-                    OnboardingStep.SWIPE_DELETE -> {
-                        val noMsgNote = if (!targetBounds.containsKey(OnboardingTargets.FIRST_APP_ROW)) {
-                            "\n\n（目前尚無訊息，收到通知後即可左滑刪除，請點擊「下一步」繼續）"
-                        } else ""
-                        "步驟 ${step.index} / $totalSteps・滑動刪除" to
-                            "進入對話頁後，將任一訊息向左滑動即可快速刪除（需在「設定 → 訊息與通知」開啟滑動刪除）。$noMsgNote"
-                    }
-                    OnboardingStep.QUICK_REPLY ->
-                        "步驟 ${step.index} / $totalSteps・快速回覆" to
-                            "在對話詳情頁底部輸入框可直接回覆訊息（支援通知快速回覆或簡訊），你送出的回覆會顯示在對話右側氣泡並完整保留。"
-                    OnboardingStep.MULTI_SELECT ->
-                        "步驟 ${step.index} / $totalSteps・多選批次" to
-                            "在篩選或搜尋清單點右上角「選取」，可一次批次標記已讀、星標或刪除多則訊息。"
-                    OnboardingStep.FILTER_CHIPS ->
-                        "步驟 ${step.index} / $totalSteps・固定表頭與分類篩選" to
-                            "頂部統計卡、分類篩選列與我的最愛列固定於上方，下方訊息清單可獨立捲動；可依未讀、星標、詐騙、已記事、已待辦或 AI 標籤快速過濾。"
+                        "步驟 ${step.index} / $totalSteps・底部 5 分頁與通知權限" to
+                            "底部 5 分頁涵蓋訊息、助手、記事、記憶與洞察。幻訊需要通知存取權才能即時備份訊息、偵測詐騙風險與自動分類。\n若開關為灰色（受限制的設定），請展開下方疑難排解。"
                     OnboardingStep.SEARCH_PILL ->
-                        "步驟 ${step.index} / $totalSteps・下拉搜尋" to
-                            "頂部把手可下拉或點擊開啟全畫面訊息搜尋，支援即時文字搜尋訊息／待辦／備忘錄，以及 AI 語意搜尋。"
+                        "步驟 ${step.index} / $totalSteps・全域統一搜尋" to
+                            "點擊頂部搜尋膠囊（或自頂部下拉）開啟全螢幕搜尋，一次查找訊息、設定開關、記憶與記事，無網路也能完整使用本地搜尋。"
+                    OnboardingStep.MESSAGES -> {
+                        val noMsgNote = if (!hasAnyAppRows) {
+                            "\n\n（目前資料庫尚無訊息，收到通知後即可實際操作，先按「下一步」繼續。）"
+                        } else ""
+                        "步驟 ${step.index} / $totalSteps・訊息卡、篩選與手勢" to
+                            "頂部三格統計顯示今日／未讀／詐騙；點選 App 進入對話可左滑刪除與快速回覆，長按可釘選、靜音或 AI 深度分析；單排智慧篩選＋「更多」快速過濾。$noMsgNote"
+                    }
                     OnboardingStep.AI_ASSISTANT ->
-                        "步驟 ${step.index} / $totalSteps・AI 助手與跨 App 行動卡" to
-                            "切換到「AI 助手」分頁，支援自然語言查訊、查詢本機日曆空檔、截圖分析，以及「確認後執行」郵件／導航／鬧鐘行動卡。"
-                    OnboardingStep.MEMORY_TAB ->
-                        "步驟 ${step.index} / $totalSteps・個人記憶庫與畫像卡" to
-                            "「記憶」分頁上方提供記憶分佈總覽與分層篩選列，集中管理長期／短期記憶、「我對你的瞭解」畫像卡與衝突版本裁定；標記「🔒 敏感」的記憶絕不外送 AI。"
-                    OnboardingStep.SCAM_IMMUNITY ->
-                        "步驟 ${step.index} / $totalSteps・防詐免疫記憶專區" to
-                            "切換上方「防詐免疫」篩選標籤即可檢視曾記錄的詐騙話術特徵，並可直接點「查看來源訊息」跳轉原始通知詳情。"
-                    OnboardingStep.CONTACTS_BINDING ->
-                        "步驟 ${step.index} / $totalSteps・通訊錄暱稱綁定與 VIP 信任圈" to
-                            "在「設定 → 權限與 AI 夥伴 → AI 夥伴與主動推播」可進行純本機暱稱綁定本名、零額度消耗的關係匯入與 VIP 信任圈同步，原始通訊錄絕不外送 AI。"
+                        "步驟 ${step.index} / $totalSteps・AI 助手與確認卡" to
+                            "在「助手」分頁可用自然語言查訊、檢視待辦與主動訊息，寫入記憶／日曆或跨 App 操作皆必經確認卡；頂部 ⋮ 可切換省 token，左緣滑動可開歷史對話。"
                     OnboardingStep.NOTES_TAB ->
-                        "步驟 ${step.index} / $totalSteps・記事與自動備忘錄" to
-                            "切換到「記事」分頁可管理備忘與自動記事規則；開啟「自動備忘錄」後，AI 分析訊息時會自動擷取待辦與重點事項。"
-                    OnboardingStep.TODO_AND_BATCH ->
-                        "步驟 ${step.index} / $totalSteps・待辦提醒與批次管理" to
-                            "在「記事」分頁可手動「+」新增與編輯待辦提醒（含每日／每週重複與逾期標示）；訊息與搜尋清單同樣支援批次管理。"
-                    OnboardingStep.CALENDAR_SUGGESTION ->
-                        "步驟 ${step.index} / $totalSteps・行程分流與日曆建議卡" to
-                            "啟用本機日曆整合後，訂位、看診、會議等行程類通知會優先顯示「📅 加入日曆」建議卡（含撞期檢查），不再誤入待辦／記事。"
-                    OnboardingStep.TAGS_AND_RULES ->
-                        "步驟 ${step.index} / $totalSteps・標籤、VIP 與 AI 規則" to
-                            "在「設定 → 資料管理」可設定免 AI 額度的 App 分類、自然語言白名單與備忘規則（明確指定的備忘規則優先於行程分流）。"
-                    OnboardingStep.PARTNER_TAB ->
-                        "步驟 ${step.index} / $totalSteps・AI 夥伴個人分頁" to
-                            "底部最右側是以你為助手命名的「AI 夥伴」分頁，展示大頭像、陪伴天數、近 7 天動態與親密度等級；點擊親密度卡可查看成長旅程與積分明細。"
-                    OnboardingStep.BRIEFING_PROACTIVE ->
-                        "步驟 ${step.index} / $totalSteps・早晚簡報與主動推播" to
-                            "在「設定 → 權限與 AI 夥伴 → AI 夥伴與主動推播」可自訂早晚簡報時段（預設 08:45／22:25）、每日上限與勿擾時段；簡報除了推送至 AI 助手與通知欄，也能在「統計」分頁展開閱讀並累積親密度。"
-                    OnboardingStep.KEEP_ALIVE ->
-                        "步驟 ${step.index} / $totalSteps・保活與權限授予中心" to
-                            "完成以下三項檢查，或前往「設定 → 權限與 AI 夥伴 → 權限授予中心」集中一鍵管理所有系統權限，讓幻訊在背景穩定運行："
-                    OnboardingStep.DONE ->
-                        "步驟 ${step.index} / $totalSteps・你學會了！" to
-                            "已掌握六大分頁（訊息、AI 助手、記憶、記事、統計、AI 夥伴）、防詐免疫、行程日曆分流、早晚簡報與權限授予中心，開始體驗吧！"
+                        "步驟 ${step.index} / $totalSteps・記事、待辦與行事曆" to
+                            "「記事」分頁整合待辦提醒、本機行事曆（日／週／月）與自動備忘錄；行程類通知會優先建議加入日曆並檢查撞期。"
+                    OnboardingStep.MEMORY_TAB ->
+                        "步驟 ${step.index} / $totalSteps・記憶庫與防詐免疫" to
+                            "「記憶」分頁提供四格總覽與「記憶｜規則｜防詐免疫」切換，集中管理長期／短期記憶與關注主題；標記「🔒 敏感」的記憶 100% 留存本機絕不外送。"
+                    OnboardingStep.INSIGHT_TAB ->
+                        "步驟 ${step.index} / $totalSteps・洞察（夥伴＋統計）" to
+                            "「洞察」整合 AI 夥伴（日記、目標、親密度、畫像卡）與統計總覽（本週重點、13 張圖表與早晚簡報），一鍵切換。"
+                    OnboardingStep.SETTINGS_CENTER ->
+                        "步驟 ${step.index} / $totalSteps・設定中心與保活檢查" to
+                            "點擊右上角 ⚙ 進入新版設定中心：頂部搜尋直達 136 項設定、常用釘選與 8 大分類，進階項預設折疊但不影響搜尋。可同步完成以下保活檢查："
                 }
 
                 Text(
@@ -601,7 +529,7 @@ fun OnboardingOverlay(
                     )
                 }
 
-                if (step == OnboardingStep.KEEP_ALIVE) {
+                if (step == OnboardingStep.SETTINGS_CENTER) {
                     Spacer(Modifier.height(10.dp))
                     Column(
                         modifier = Modifier
@@ -702,7 +630,7 @@ fun OnboardingOverlay(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (step != OnboardingStep.DONE) {
+                    if (step != OnboardingStep.SETTINGS_CENTER) {
                         TextButton(onClick = onSkip) {
                             Text("跳過")
                         }
@@ -718,7 +646,7 @@ fun OnboardingOverlay(
                                 Text("前往開啟")
                             }
                         }
-                        if (step == OnboardingStep.DONE) {
+                        if (step == OnboardingStep.SETTINGS_CENTER) {
                             Button(onClick = onFinish) {
                                 Text("完成")
                             }

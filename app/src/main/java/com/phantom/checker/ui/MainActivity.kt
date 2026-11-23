@@ -512,17 +512,6 @@ private fun PhantomCheckApp(
         selectedMessageIds = emptySet()
     }
 
-    LaunchedEffect(actionTargetApp, onboardingStep, onboardingCompleted) {
-        if (!onboardingCompleted && onboardingStep == OnboardingStep.LONG_PRESS) {
-            if (actionTargetApp != null) {
-                wasActionDialogOpenInStep3 = true
-            } else if (wasActionDialogOpenInStep3) {
-                wasActionDialogOpenInStep3 = false
-                onboardingStep = OnboardingStep.SWIPE_DELETE
-            }
-        }
-    }
-
     var isListenerEnabled by remember {
         mutableStateOf(isNotificationListenerEnabled(appCtx))
     }
@@ -539,14 +528,9 @@ private fun PhantomCheckApp(
         if (!onboardingCompleted && postNotificationPromptDone) {
             selectedTab = when (onboardingStep) {
                 OnboardingStep.AI_ASSISTANT -> MainTab.ASSISTANT
-                OnboardingStep.MEMORY_TAB,
-                OnboardingStep.SCAM_IMMUNITY,
-                OnboardingStep.CONTACTS_BINDING -> MainTab.MEMORY
-                OnboardingStep.NOTES_TAB,
-                OnboardingStep.TODO_AND_BATCH,
-                OnboardingStep.CALENDAR_SUGGESTION -> MainTab.NOTES
-                OnboardingStep.PARTNER_TAB,
-                OnboardingStep.BRIEFING_PROACTIVE -> {
+                OnboardingStep.NOTES_TAB -> MainTab.NOTES
+                OnboardingStep.MEMORY_TAB -> MainTab.MEMORY
+                OnboardingStep.INSIGHT_TAB -> {
                     insightSubTab = InsightSubTab.PARTNER
                     MainTab.INSIGHT
                 }
@@ -2229,32 +2213,20 @@ private fun PhantomCheckApp(
                 },
                 onNextStep = {
                     onboardingStep = when (onboardingStep) {
-                        OnboardingStep.PERMISSION -> OnboardingStep.HOME_APP
-                        OnboardingStep.HOME_APP -> OnboardingStep.LONG_PRESS
-                        OnboardingStep.LONG_PRESS ->
-                            if (hasAnyAppRows) OnboardingStep.SWIPE_DELETE else OnboardingStep.FILTER_CHIPS
-                        OnboardingStep.SWIPE_DELETE -> OnboardingStep.QUICK_REPLY
-                        OnboardingStep.QUICK_REPLY -> OnboardingStep.MULTI_SELECT
-                        OnboardingStep.MULTI_SELECT -> OnboardingStep.FILTER_CHIPS
-                        OnboardingStep.FILTER_CHIPS -> OnboardingStep.SEARCH_PILL
-                        OnboardingStep.SEARCH_PILL -> OnboardingStep.AI_ASSISTANT
-                        OnboardingStep.AI_ASSISTANT -> OnboardingStep.MEMORY_TAB
-                        OnboardingStep.MEMORY_TAB -> OnboardingStep.SCAM_IMMUNITY
-                        OnboardingStep.SCAM_IMMUNITY -> OnboardingStep.CONTACTS_BINDING
-                        OnboardingStep.CONTACTS_BINDING -> OnboardingStep.NOTES_TAB
-                        OnboardingStep.NOTES_TAB -> OnboardingStep.TODO_AND_BATCH
-                        OnboardingStep.TODO_AND_BATCH -> OnboardingStep.CALENDAR_SUGGESTION
-                        OnboardingStep.CALENDAR_SUGGESTION -> OnboardingStep.TAGS_AND_RULES
-                        OnboardingStep.TAGS_AND_RULES -> OnboardingStep.PARTNER_TAB
-                        OnboardingStep.PARTNER_TAB -> OnboardingStep.BRIEFING_PROACTIVE
-                        OnboardingStep.BRIEFING_PROACTIVE -> OnboardingStep.KEEP_ALIVE
-                        OnboardingStep.KEEP_ALIVE -> OnboardingStep.DONE
-                        OnboardingStep.DONE -> {
+                        OnboardingStep.PERMISSION -> OnboardingStep.SEARCH_PILL
+                        OnboardingStep.SEARCH_PILL -> OnboardingStep.MESSAGES
+                        OnboardingStep.MESSAGES -> OnboardingStep.AI_ASSISTANT
+                        OnboardingStep.AI_ASSISTANT -> OnboardingStep.NOTES_TAB
+                        OnboardingStep.NOTES_TAB -> OnboardingStep.MEMORY_TAB
+                        OnboardingStep.MEMORY_TAB -> OnboardingStep.INSIGHT_TAB
+                        OnboardingStep.INSIGHT_TAB -> OnboardingStep.SETTINGS_CENTER
+                        OnboardingStep.SETTINGS_CENTER -> {
                             PhantomPrefs.setOnboardingCompleted(appCtx, true)
                             onboardingCompleted = true
-                            OnboardingStep.DONE
+                            OnboardingStep.SETTINGS_CENTER
                         }
                     }
+                    PhantomPrefs.setOnboardingStep(appCtx, onboardingStep.index)
                 },
                 onSkip = {
                     PhantomPrefs.setOnboardingCompleted(appCtx, true)
