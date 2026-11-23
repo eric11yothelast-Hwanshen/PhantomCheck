@@ -240,6 +240,19 @@
                 android:resource="@xml/notes_widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".widget.TodoTodayWidgetProvider"
+            android:label="@string/widget_label_todo_today"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.phantom.checker.widget.ACTION_TODO_TODAY_TOGGLE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/todo_today_widget_info" />
+        </receiver>
+
         <receiver android:name=".service.ReminderReceiver" android:exported="false" />
         <receiver android:name=".service.ReplyProxyReceiver" android:exported="false" />
         <receiver android:name=".service.WatchTopicMuteReceiver" android:exported="false" />

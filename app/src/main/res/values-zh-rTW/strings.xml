@@ -2913,4 +2913,9 @@
     <string name="settings_language_follow_system">跟隨系統</string>
     <string name="settings_language_zh_tw">繁體中文</string>
     <string name="settings_language_en">English</string>
+    <string name="widget_label_todo_today">幻訊 · 今天待辦</string>
+    <string name="todo_today_widget_description">顯示今日到期未完成待辦前 4 筆，點擊即可直接勾選完成</string>
+    <string name="widget_todo_today_title">今天待辦</string>
+    <string name="widget_todo_today_empty">今日無待辦</string>
+    <string name="widget_todo_today_mark_done">標記完成</string>
 </resources>

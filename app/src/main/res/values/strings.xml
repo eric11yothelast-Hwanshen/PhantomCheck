@@ -2913,4 +2913,9 @@
     <string name="settings_language_follow_system">Follow system</string>
     <string name="settings_language_zh_tw">繁體中文</string>
     <string name="settings_language_en">English</string>
+    <string name="widget_label_todo_today">PhantomCheck · Today\'s Todos</string>
+    <string name="todo_today_widget_description">Shows up to 4 pending todos due today with one-tap completion</string>
+    <string name="widget_todo_today_title">Today\'s Todos</string>
+    <string name="widget_todo_today_empty">No todos due today</string>
+    <string name="widget_todo_today_mark_done">Mark done</string>
 </resources>
