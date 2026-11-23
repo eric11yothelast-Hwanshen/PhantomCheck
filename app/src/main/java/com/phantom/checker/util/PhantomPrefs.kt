@@ -2508,7 +2508,7 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
 
     fun saveChatContinuityAnchor(ctx: Context, text: String, nowMs: Long = System.currentTimeMillis()) {
         prefs(ctx).edit()
-            .putString("chat_continuity_anchor_text", text.trim().take(80))
+            .putString("chat_continuity_anchor_text", text.trim())
             .putLong("chat_continuity_anchor_at", nowMs)
             .putBoolean("chat_continuity_anchor_dismissed", false)
             .apply()

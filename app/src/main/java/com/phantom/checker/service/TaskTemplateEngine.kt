@@ -62,7 +62,7 @@ object TaskTemplateEngine {
                 val bullets = buildList {
                     add("記事庫共 ${notes.size} 筆，近 7 日新增 ${recent.size} 筆")
                     recent.take(2).forEach { n ->
-                        add("📝 ${n.content.trim().take(28)}（${timeFmt.format(Date(n.createdAt))}）")
+                        add("📝 ${n.content.replace("\n", " ").trim()}（${timeFmt.format(Date(n.createdAt))}）")
                     }
                     if (recent.isEmpty()) add("近 7 日尚無新增記事")
                 }.take(3)
@@ -79,7 +79,7 @@ object TaskTemplateEngine {
                 val bullets = buildList {
                     add("尚有 ${pending.size} 項未完成待辦（逾期 $overdue 項）")
                     pending.sortedBy { it.dueAt }.take(2).forEach { t ->
-                        add("📌 ${t.title.take(28)}（到期 ${timeFmt.format(Date(t.dueAt))}）")
+                        add("📌 ${t.title.trim()}（到期 ${timeFmt.format(Date(t.dueAt))}）")
                     }
                     if (pending.isEmpty()) add("目前所有待辦皆已完成")
                 }.take(3)

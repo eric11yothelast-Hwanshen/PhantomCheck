@@ -2600,14 +2600,14 @@ object AiClient {
     }
 
     /**
-     * #337 早晚簡報與畫像卡生成（走 AiPurpose.BRIEFING 獨立模型路由，不干擾訊息分析額度計數）。
-     * 未設定 AI 金鑰或失敗時回傳 null，由呼叫端降級為零 token 模板。
+     * #337 / #407 早晚簡報與畫像卡生成（走 AiPurpose.BRIEFING 獨立模型路由，不干擾訊息分析額度計數）。
+     * 未設定 AI 金鑰、失敗、finish_reason=length 或句子未完整收尾（如括號未閉合或半句中斷）時一律回傳 null，由呼叫端 fallback 使用未潤飾完整模板，絕不存入半句。
      */
     suspend fun generateBriefingText(
         context: Context,
         systemPrompt: String,
         userPrompt: String,
-        maxTokens: Int = 360
+        maxTokens: Int = 420
     ): String? = withContext(Dispatchers.IO) {
         val profile = getProfileForPurpose(context, AiPurpose.BRIEFING) ?: return@withContext null
         val apiKey = profile.apiKey.trim()
@@ -2617,16 +2617,25 @@ object AiClient {
         val body = ChatRequest(
             model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
             messages = listOf(
-                ChatMessage("system", systemPrompt),
+                ChatMessage("system", "$systemPrompt 請務必以完整句子與句號（。）收尾，嚴禁在半句或括號未閉合處中斷。"),
                 ChatMessage("user", userPrompt)
             ),
-            maxTokens = maxTokens.coerceIn(120, 600),
-            temperature = 0.4
+            maxTokens = maxTokens.coerceIn(160, 800),
+            temperature = 0.35
         )
         try {
             enforceRateLimit()
             val res = getApi(profile.baseUrl).chat(url = fullUrl, auth = auth, body = body)
-            extractReplyText(res.choices.firstOrNull()?.message?.content).takeIf { it.isNotBlank() }
+            val choice = res.choices.firstOrNull() ?: return@withContext null
+            val finishReason = choice.finishReason?.lowercase().orEmpty()
+            if (finishReason == "length" || finishReason == "max_tokens") {
+                return@withContext null
+            }
+            val text = extractReplyText(choice.message.content).trim()
+            if (text.isBlank() || !endsWithCompleteSentence(text)) {
+                return@withContext null
+            }
+            text
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {

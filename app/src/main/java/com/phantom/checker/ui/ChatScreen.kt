@@ -2838,9 +2838,10 @@ fun ChatAssistantTab(
             }
         }
 
-        // #366 單一對話框連續性：壓縮錨點（單行，過期自動消失）＋未決事項膠囊列（至多 3 顆，無未決不佔位）
+        // #366 / #407 單一對話框連續性：壓縮錨點（點擊展開全文或帶入對話，過期自動消失）＋未決事項膠囊列（至多 3 顆，無未決不佔位）
         if (!isViewingProactiveRoom && pendingCapsulesEnabled) {
             continuityAnchorText?.takeIf { it.isNotBlank() }?.let { anchor ->
+                var anchorExpanded by remember(anchor) { mutableStateOf(false) }
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f),
@@ -2848,35 +2849,50 @@ fun ChatAssistantTab(
                         .fillMaxWidth()
                         .padding(bottom = 6.dp)
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                inputText = "接續上次提到的「$anchor」，目前進度如何？"
+                                anchorExpanded = !anchorExpanded
                             }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
-                        Text(
-                            text = "↪ 接續：上次你提到「$anchor」尚未完成",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = "✕",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .padding(start = 8.dp)
-                                .clickable {
-                                    PhantomPrefs.dismissChatContinuityAnchor(appCtx)
-                                    continuityAnchorText = null
-                                }
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "↪ 接續：上次你提到「$anchor」尚未完成",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                maxLines = if (anchorExpanded) Int.MAX_VALUE else 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = "追問",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .padding(start = 8.dp)
+                                    .clickable {
+                                        inputText = "接續上次提到的「$anchor」，目前進度如何？"
+                                    }
+                            )
+                            Text(
+                                text = "✕",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .padding(start = 8.dp)
+                                    .clickable {
+                                        PhantomPrefs.dismissChatContinuityAnchor(appCtx)
+                                        continuityAnchorText = null
+                                    }
+                            )
+                        }
                     }
                 }
             }
@@ -2892,6 +2908,7 @@ fun ChatAssistantTab(
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(pendingCapsules, key = { it.id }) { todo ->
+                        var capsuleExpanded by remember(todo.id) { mutableStateOf(false) }
                         Surface(
                             shape = RoundedCornerShape(14.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
@@ -2899,7 +2916,11 @@ fun ChatAssistantTab(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(14.dp))
                                 .clickable {
-                                    inputText = "幫我確認未決事項「${todo.title}」的相關訊息與安排"
+                                    if (todo.title.length > 24 && !capsuleExpanded) {
+                                        capsuleExpanded = true
+                                    } else {
+                                        inputText = "幫我確認未決事項「${todo.title}」的相關訊息與安排"
+                                    }
                                 }
                         ) {
                             Row(
@@ -2908,10 +2929,12 @@ fun ChatAssistantTab(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text(
-                                    text = "📌 ${todo.title.take(14)}",
+                                    text = "📌 ${todo.title}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = if (capsuleExpanded) Modifier else Modifier.widthIn(max = 220.dp)
                                 )
                                 Text(
                                     text = "✕",

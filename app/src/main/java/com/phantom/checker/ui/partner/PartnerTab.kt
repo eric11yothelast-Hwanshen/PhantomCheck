@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -48,6 +49,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -78,6 +80,7 @@ import com.phantom.checker.data.MemoryEntity
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.ui.AssistantHubActivity
 import com.phantom.checker.ui.PhantomGlassCard
+import com.phantom.checker.ui.PhantomMarkdownText
 import com.phantom.checker.ui.ThemePreferences
 import com.phantom.checker.ui.components.PortraitCardSection
 import com.phantom.checker.ui.components.pressableScale
@@ -582,8 +585,55 @@ internal fun PartnerTab(
             }
         }
 
-        // 3. 近 7 天事件橫向滑動卡（#357 等高視覺化對齊）
+        // 3. 近 7 天事件橫向滑動卡（#357 等高視覺化對齊 ＋ #407 點擊簡報卡可展開閱讀全文）
         phantomItem(4, key = "partner_recent_events") {
+            var showFullBriefingDialog by remember { mutableStateOf(false) }
+            var fullBriefingText by remember { mutableStateOf<String?>(null) }
+            val lastMsgId = remember(settingsTick) { PhantomPrefs.getLastBriefingMessageId(appCtx) }
+
+            LaunchedEffect(showFullBriefingDialog, lastMsgId) {
+                if (showFullBriefingDialog && lastMsgId > 0L) {
+                    fullBriefingText = withContext(Dispatchers.IO) {
+                        runCatching {
+                            val dao = db.chatDao()
+                            dao.allSessions().firstNotNullOfOrNull { s ->
+                                dao.messagesForSession(s.id).firstOrNull { it.id == lastMsgId }?.content
+                            }
+                        }.getOrNull()
+                    }
+                    PhantomPrefs.markBriefingReadOnce(appCtx, lastMsgId)
+                }
+            }
+
+            if (showFullBriefingDialog) {
+                val bodyToShow = fullBriefingText?.takeIf { it.isNotBlank() } ?: lastBriefingSummary
+                AlertDialog(
+                    onDismissRequest = { showFullBriefingDialog = false },
+                    title = { Text("📰 最新早晚簡報全文") },
+                    text = {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            if (bodyToShow.isNotBlank()) {
+                                PhantomMarkdownText(
+                                    markdown = bodyToShow,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            } else {
+                                Text("尚無早晚簡報紀錄")
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showFullBriefingDialog = false }) {
+                            Text("關閉")
+                        }
+                    }
+                )
+            }
+
             Column(
                 modifier = Modifier.padding(horizontal = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -602,7 +652,15 @@ internal fun PartnerTab(
                     items(recentCards, key = { it.key }) { card ->
                         PhantomGlassCard(
                             glassState = glassState,
-                            modifier = Modifier.width(204.dp),
+                            modifier = Modifier
+                                .width(204.dp)
+                                .then(
+                                    if (card.key == "briefing" && lastBriefingSummary.isNotBlank()) {
+                                        Modifier.clickable { showFullBriefingDialog = true }
+                                    } else {
+                                        Modifier
+                                    }
+                                ),
                             cornerRadius = 18.dp,
                             contentPadding = 14.dp
                         ) {
@@ -626,7 +684,7 @@ internal fun PartnerTab(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = card.subtitle,
+                                    text = card.subtitle.replace("**", ""),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     minLines = 2,
