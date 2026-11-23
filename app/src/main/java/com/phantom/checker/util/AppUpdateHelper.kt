@@ -82,24 +82,24 @@ object AppUpdateHelper {
                 if (!resp.isSuccessful) {
                     val code = resp.code
                     val msg = when (code) {
-                        403, 429 -> "GitHub API 請求次數已達上限，請稍後再試或前往 GitHub 查看。"
-                        404 -> "找不到發佈資訊，請前往 GitHub 查看。"
-                        else -> "檢查更新失敗（HTTP $code），請稍後再試。"
+                        403, 429 -> com.phantom.checker.PhantomApplication.str(R.string.update_s_77657f)
+                        404 -> com.phantom.checker.PhantomApplication.str(R.string.update_s_f552e8)
+                        else -> com.phantom.checker.PhantomApplication.str(R.string.update_s_b791c7, code)
                     }
                     return@withContext UpdateCheckResult.Error(msg)
                 }
                 val body = resp.body?.string().orEmpty()
                 if (body.isBlank()) {
-                    return@withContext UpdateCheckResult.Error("GitHub 回傳內容為空，請稍後再試。")
+                    return@withContext UpdateCheckResult.Error(com.phantom.checker.PhantomApplication.str(R.string.update_s_38b21c))
                 }
                 val json = JSONObject(body)
                 val tagName = json.optString("tag_name", "").trim()
                 val cleanRemote = normalizeVersion(tagName)
                 if (cleanRemote.isBlank()) {
-                    return@withContext UpdateCheckResult.Error("無法解析遠端版本號，請前往 GitHub 查看。")
+                    return@withContext UpdateCheckResult.Error(com.phantom.checker.PhantomApplication.str(R.string.update_s_6aa1c4))
                 }
                 val publishedRaw = json.optString("published_at", "").trim()
-                val publishedDate = if (publishedRaw.length >= 10) publishedRaw.take(10) else "未知日期"
+                val publishedDate = if (publishedRaw.length >= 10) publishedRaw.take(10) else com.phantom.checker.PhantomApplication.str(R.string.update_s_be1965)
                 val htmlUrl = json.optString("html_url", REPO_RELEASES_URL).ifBlank { REPO_RELEASES_URL }
                 val releaseNotes = json.optString("body", "").trim()
 
@@ -136,13 +136,13 @@ object AppUpdateHelper {
                 )
             }
         } catch (_: SocketTimeoutException) {
-            UpdateCheckResult.Error("連線逾時（10 秒），請檢查網路後再試。")
+            UpdateCheckResult.Error(com.phantom.checker.PhantomApplication.str(R.string.update_s_650ea3))
         } catch (_: UnknownHostException) {
-            UpdateCheckResult.Error("無法連線至 GitHub，請檢查網路連線。")
+            UpdateCheckResult.Error(com.phantom.checker.PhantomApplication.str(R.string.update_s_948b34))
         } catch (_: ConnectException) {
-            UpdateCheckResult.Error("無法連線至 GitHub，請檢查網路連線。")
+            UpdateCheckResult.Error(com.phantom.checker.PhantomApplication.str(R.string.update_s_948b34))
         } catch (e: Exception) {
-            UpdateCheckResult.Error("檢查更新失敗：${e.message ?: "未知錯誤"}")
+            UpdateCheckResult.Error(com.phantom.checker.PhantomApplication.str(R.string.update_s_9e07c4, e.message ?: com.phantom.checker.PhantomApplication.str(R.string.common_unknown_error)))
         }
     }
 
@@ -275,7 +275,7 @@ object AppUpdateHelper {
                                     PhantomPrefs.clearActiveApkDownload(appCtx)
                                     return ApkDownloadState.Failed(
                                         version = cleanVer,
-                                        reasonText = "下載完成但更新檔不存在或損毀（0 bytes），請重新下載。"
+                                        reasonText = com.phantom.checker.PhantomApplication.str(R.string.update_s_93dea7)
                                     )
                                 }
                             }
@@ -313,15 +313,15 @@ object AppUpdateHelper {
     }
 
     fun formatDownloadFailureReason(reason: Int): String = when (reason) {
-        DownloadManager.ERROR_INSUFFICIENT_SPACE -> "下載失敗：裝置儲存空間不足，請清理空間後重試。"
-        DownloadManager.ERROR_DEVICE_NOT_FOUND -> "下載失敗：找不到外部儲存空間。"
-        DownloadManager.ERROR_CANNOT_RESUME -> "下載失敗：連線中斷且無法續傳，請重新下載。"
-        DownloadManager.ERROR_HTTP_DATA_ERROR -> "下載失敗：網路資料傳輸錯誤，請檢查網路連線後重試。"
-        DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "下載失敗：重新導向次數過多。"
-        DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> "下載失敗：伺服器回應異常（HTTP 錯誤），請稍後重試。"
-        DownloadManager.ERROR_FILE_ERROR -> "下載失敗：檔案寫入錯誤，請重試。"
-        in 400..599 -> "下載失敗（HTTP $reason），請稍後重試或前往 GitHub 下載。"
-        else -> "下載失敗（代碼 $reason），請檢查網路後點擊重新下載，或前往 GitHub 下載。"
+        DownloadManager.ERROR_INSUFFICIENT_SPACE -> com.phantom.checker.PhantomApplication.str(R.string.update_s_ef2be7)
+        DownloadManager.ERROR_DEVICE_NOT_FOUND -> com.phantom.checker.PhantomApplication.str(R.string.update_s_248599)
+        DownloadManager.ERROR_CANNOT_RESUME -> com.phantom.checker.PhantomApplication.str(R.string.update_s_db2afc)
+        DownloadManager.ERROR_HTTP_DATA_ERROR -> com.phantom.checker.PhantomApplication.str(R.string.update_s_787b67)
+        DownloadManager.ERROR_TOO_MANY_REDIRECTS -> com.phantom.checker.PhantomApplication.str(R.string.update_s_bea682)
+        DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> com.phantom.checker.PhantomApplication.str(R.string.update_s_0a2345)
+        DownloadManager.ERROR_FILE_ERROR -> com.phantom.checker.PhantomApplication.str(R.string.update_s_ebfe53)
+        in 400..599 -> com.phantom.checker.PhantomApplication.str(R.string.update_s_c0343e, reason)
+        else -> com.phantom.checker.PhantomApplication.str(R.string.update_s_8138a1, reason)
     }
 
     /**
@@ -353,7 +353,7 @@ object AppUpdateHelper {
         return try {
             val req = DownloadManager.Request(Uri.parse(downloadUrl))
                 .setTitle("PhantomCheck v$cleanVer")
-                .setDescription("正在下載更新 APK…")
+                .setDescription(com.phantom.checker.PhantomApplication.str(R.string.update_s_a76912))
                 .setMimeType("application/vnd.android.package-archive")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 .setDestinationInExternalFilesDir(appCtx, Environment.DIRECTORY_DOWNLOADS, fileName)
@@ -401,7 +401,7 @@ object AppUpdateHelper {
 
     fun launchApkInstaller(ctx: Context, apkFile: File): Result<Unit> {
         if (!apkFile.exists() || apkFile.length() <= 0L) {
-            return Result.failure(IllegalStateException("更新檔不存在或已被移除，請重新下載。"))
+            return Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.update_s_814a6b)))
         }
         return try {
             val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", apkFile)
@@ -478,10 +478,10 @@ object AppUpdateHelper {
             nm.createNotificationChannel(
                 NotificationChannel(
                     UPDATE_CHANNEL_ID,
-                    "版本更新",
+                    com.phantom.checker.PhantomApplication.str(R.string.update_s_ca9576),
                     NotificationManager.IMPORTANCE_DEFAULT
                 ).apply {
-                    description = "偵測到新版本發佈時提醒；選擇稍後更新將於 snooze 間隔後再提醒"
+                    description = com.phantom.checker.PhantomApplication.str(R.string.update_s_c810ba)
                 }
             )
         }
@@ -497,11 +497,11 @@ object AppUpdateHelper {
         )
         val notif = Notification.Builder(ctx, UPDATE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_phantom)
-            .setContentTitle("幻訊有新版本 v${update.latestVersion}")
-            .setContentText("發佈於 ${update.publishedDate}・點擊前往下載。可至設定關閉自動檢查更新。")
+            .setContentTitle(com.phantom.checker.PhantomApplication.str(R.string.update_s_d4cf93, update.latestVersion))
+            .setContentText(com.phantom.checker.PhantomApplication.str(R.string.update_s_bda843, update.publishedDate))
             .setStyle(
                 Notification.BigTextStyle().bigText(
-                    "已推出新版本 v${update.latestVersion}（發佈於 ${update.publishedDate}），點擊前往設定 → 關於下載更新。可至設定關閉自動檢查更新。"
+                    com.phantom.checker.PhantomApplication.str(R.string.update_s_86fb4b, update.latestVersion, update.publishedDate)
                 )
             )
             .setContentIntent(pi)

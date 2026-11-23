@@ -11,11 +11,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import androidx.annotation.StringRes
+import com.phantom.checker.R
 
-enum class BackgroundLayer(val fileName: String, val label: String) {
-    GLOBAL("global.jpg", "全域背景"),
-    CHAT("chat.jpg", "AI 聊天背景"),
-    CONVERSATION("conversation.jpg", "對話頁背景")
+enum class BackgroundLayer(val fileName: String, @StringRes val labelRes: Int) {
+    GLOBAL("global.jpg", R.string.bg_layer_global),
+    CHAT("chat.jpg", R.string.bg_layer_chat),
+    CONVERSATION("conversation.jpg", R.string.bg_layer_conv);
+
+    val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 }
 
 object BackgroundImageHelper {
@@ -75,13 +79,13 @@ object BackgroundImageHelper {
 
             val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             val openedBounds = appCtx.contentResolver.openInputStream(uri)
-                ?: return@withContext Result.failure(IllegalStateException("無法開啟圖片（可能是雲端圖未下載），請先將圖片下載至本機再選取"))
+                ?: return@withContext Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.chat_img_open_failed)))
             openedBounds.use { stream ->
                 BitmapFactory.decodeStream(stream, null, boundsOpts)
             }
 
             if (boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) {
-                return@withContext Result.failure(IllegalStateException("不支援或已損毀的圖片格式"))
+                return@withContext Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.bg_img_s_a7ce49)))
             }
 
             val sampleSize = calculateInSampleSize(
@@ -96,7 +100,7 @@ object BackgroundImageHelper {
             }
             val decoded = appCtx.contentResolver.openInputStream(uri)?.use { stream ->
                 BitmapFactory.decodeStream(stream, null, decodeOpts)
-            } ?: return@withContext Result.failure(IllegalStateException("圖片解碼失敗"))
+            } ?: return@withContext Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.bg_img_s_06167a)))
 
             val dir = backgroundDir(appCtx)
             if (!dir.exists()) dir.mkdirs()
@@ -105,7 +109,7 @@ object BackgroundImageHelper {
                 FileOutputStream(outFile).use { fos ->
                     val ok = decoded.compress(Bitmap.CompressFormat.JPEG, 85, fos)
                     if (!ok) {
-                        return@withContext Result.failure(IllegalStateException("圖片壓縮儲存失敗"))
+                        return@withContext Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.bg_img_s_10d888)))
                     }
                 }
             } finally {
@@ -117,11 +121,11 @@ object BackgroundImageHelper {
             Result.success(outFile)
         } catch (e: OutOfMemoryError) {
             trimMemory()
-            Result.failure(IllegalStateException("圖片過大，記憶體不足（${e.message ?: "OOM"}）"))
+            Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.bg_img_s_3ed646, e.message ?: "OOM")))
         } catch (e: SecurityException) {
-            Result.failure(IllegalStateException("無權限讀取此圖片，請改選本地圖片", e))
+            Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.chat_img_no_permission), e))
         } catch (e: java.io.FileNotFoundException) {
-            Result.failure(IllegalStateException("無法開啟圖片（可能是雲端圖未下載），請先將圖片下載至本機再選取", e))
+            Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.chat_img_open_failed), e))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -159,12 +163,12 @@ object BackgroundImageHelper {
 
             val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             val openedBounds = appCtx.contentResolver.openInputStream(uri)
-                ?: return@withContext Result.failure(IllegalStateException("無法開啟圖片（可能是雲端圖未下載），請先將圖片下載至本機再選取"))
+                ?: return@withContext Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.chat_img_open_failed)))
             openedBounds.use { stream ->
                 BitmapFactory.decodeStream(stream, null, boundsOpts)
             }
             if (boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) {
-                return@withContext Result.failure(IllegalStateException("不支援或已損毀的圖片格式"))
+                return@withContext Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.bg_img_s_a7ce49)))
             }
 
             val sampleSize = calculateInSampleSize(
@@ -179,7 +183,7 @@ object BackgroundImageHelper {
             }
             val decoded = appCtx.contentResolver.openInputStream(uri)?.use { stream ->
                 BitmapFactory.decodeStream(stream, null, decodeOpts)
-            } ?: return@withContext Result.failure(IllegalStateException("圖片解碼失敗"))
+            } ?: return@withContext Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.bg_img_s_06167a)))
 
             val dir = backgroundDir(appCtx)
             if (!dir.exists()) dir.mkdirs()
@@ -187,7 +191,7 @@ object BackgroundImageHelper {
             try {
                 FileOutputStream(outFile).use { fos ->
                     if (!decoded.compress(Bitmap.CompressFormat.JPEG, 85, fos)) {
-                        return@withContext Result.failure(IllegalStateException("圖片壓縮儲存失敗"))
+                        return@withContext Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.bg_img_s_10d888)))
                     }
                 }
             } finally {
@@ -199,11 +203,11 @@ object BackgroundImageHelper {
             Result.success(outFile)
         } catch (e: OutOfMemoryError) {
             trimMemory()
-            Result.failure(IllegalStateException("圖片過大，記憶體不足（${e.message ?: "OOM"}）"))
+            Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.bg_img_s_3ed646, e.message ?: "OOM")))
         } catch (e: SecurityException) {
-            Result.failure(IllegalStateException("無權限讀取此圖片，請改選本地圖片", e))
+            Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.chat_img_no_permission), e))
         } catch (e: java.io.FileNotFoundException) {
-            Result.failure(IllegalStateException("無法開啟圖片（可能是雲端圖未下載），請先將圖片下載至本機再選取", e))
+            Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.chat_img_open_failed), e))
         } catch (e: Exception) {
             Result.failure(e)
         }

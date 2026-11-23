@@ -63,6 +63,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.min
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * #315 B3 AI 助手頭像選圖、降採樣、圓形中心裁切與快取管理。
@@ -106,12 +108,12 @@ object AssistantAvatarHelper {
         try {
             val boundsOpts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             val openedBounds = appCtx.contentResolver.openInputStream(uri)
-                ?: return@withContext Result.failure(IllegalStateException("無法開啟圖片（可能是雲端圖未下載），請先下載至本機再選取"))
+                ?: return@withContext Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.avatar_s_02ee73)))
             openedBounds.use { stream ->
                 BitmapFactory.decodeStream(stream, null, boundsOpts)
             }
             if (boundsOpts.outWidth <= 0 || boundsOpts.outHeight <= 0) {
-                return@withContext Result.failure(IllegalStateException("不支援或已損毀的圖片格式"))
+                return@withContext Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.bg_img_s_a7ce49)))
             }
 
             val sampleSize = calculateAvatarInSampleSize(
@@ -120,15 +122,15 @@ object AssistantAvatarHelper {
                 targetMax = AVATAR_DECODE_TARGET
             )
             val decoded = decodeSampledStreamWithOomFallback(appCtx, uri, sampleSize)
-                ?: return@withContext Result.failure(IllegalStateException("圖片解碼失敗"))
+                ?: return@withContext Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.bg_img_s_06167a)))
             Result.success(decoded)
         } catch (e: OutOfMemoryError) {
             trimMemory()
-            Result.failure(IllegalStateException("圖片過大，記憶體不足（${e.message ?: "OOM"}）"))
+            Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.bg_img_s_3ed646, e.message ?: "OOM")))
         } catch (e: SecurityException) {
-            Result.failure(IllegalStateException("無權限讀取此圖片，請改選本地圖片", e))
+            Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.chat_img_no_permission), e))
         } catch (e: java.io.FileNotFoundException) {
-            Result.failure(IllegalStateException("無法開啟圖片（可能是雲端圖未下載），請先將圖片下載至本機再選取", e))
+            Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.chat_img_open_failed), e))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -190,7 +192,7 @@ object AssistantAvatarHelper {
                 FileOutputStream(outFile).use { fos ->
                     val ok = cropped.compress(Bitmap.CompressFormat.JPEG, 88, fos)
                     if (!ok) {
-                        return@withContext Result.failure(IllegalStateException("頭像壓縮儲存失敗"))
+                        return@withContext Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.avatar_s_b6e624)))
                     }
                 }
             } finally {
@@ -203,7 +205,7 @@ object AssistantAvatarHelper {
             Result.success(outFile)
         } catch (e: OutOfMemoryError) {
             trimMemory()
-            Result.failure(IllegalStateException("頭像處理記憶體不足（${e.message ?: "OOM"}）"))
+            Result.failure(IllegalStateException(com.phantom.checker.PhantomApplication.str(R.string.avatar_s_0bafa5, e.message ?: "OOM")))
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -312,7 +314,7 @@ fun AssistantAvatarCircle(
     if (avatarBitmap != null) {
         Image(
             bitmap = avatarBitmap,
-            contentDescription = "$assistantName 頭像",
+            contentDescription = stringResource(R.string.avatar_s_423457, assistantName),
             contentScale = ContentScale.Crop,
             modifier = modifier
                 .size(size)
@@ -320,7 +322,7 @@ fun AssistantAvatarCircle(
                 .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f), CircleShape)
         )
     } else {
-        val initial = assistantName.trim().firstOrNull()?.toString() ?: "幻"
+        val initial = assistantName.trim().firstOrNull()?.toString() ?: stringResource(R.string.avatar_s_f96157)
         Box(
             modifier = modifier
                 .size(size)
@@ -349,6 +351,7 @@ fun AssistantAvatarCropDialog(
     onLoadError: (String) -> Unit,
     onConfirmCrop: (zoomScale: Float, offsetXNorm: Float, offsetYNorm: Float) -> Unit
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     var previewBitmap by remember(uri) { mutableStateOf<ImageBitmap?>(null) }
     var isLoading by remember(uri) { mutableStateOf(true) }
@@ -367,7 +370,7 @@ fun AssistantAvatarCropDialog(
             },
             onFailure = { err ->
                 isLoading = false
-                onLoadError(err.message ?: "圖片載入失敗")
+                onLoadError(err.message ?: resCtx.getString(R.string.avatar_s_9309c6))
                 onDismiss()
             }
         )
@@ -377,7 +380,7 @@ fun AssistantAvatarCropDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "裁切 AI 助手圓形頭像",
+                text = stringResource(R.string.avatar_s_a7bfcb),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -389,7 +392,7 @@ fun AssistantAvatarCropDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "可拖曳移動位置或調整下方滑桿縮放，圓框內為最終顯示範圍：",
+                    text = stringResource(R.string.avatar_s_ad8f08),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -422,7 +425,7 @@ fun AssistantAvatarCropDialog(
                             val maxPanY = (h * (zoomScale - 1f) / 2f).coerceAtLeast(16f)
                             Image(
                                 bitmap = img,
-                                contentDescription = "頭像裁切預覽",
+                                contentDescription = resCtx.getString(R.string.avatar_s_a6f1f7),
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -452,7 +455,7 @@ fun AssistantAvatarCropDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "縮放",
+                        text = stringResource(R.string.avatar_s_6d878f),
                         style = MaterialTheme.typography.labelMedium
                     )
                     Slider(
@@ -468,7 +471,7 @@ fun AssistantAvatarCropDialog(
                             offsetYNorm = 0f
                         }
                     ) {
-                        Text("置中")
+                        Text(stringResource(R.string.avatar_s_53708a))
                     }
                 }
             }
@@ -480,12 +483,12 @@ fun AssistantAvatarCropDialog(
                     onConfirmCrop(zoomScale, offsetXNorm, offsetYNorm)
                 }
             ) {
-                Text("儲存頭像")
+                Text(stringResource(R.string.avatar_s_0afa34))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.common_cancel))
             }
         }
     )

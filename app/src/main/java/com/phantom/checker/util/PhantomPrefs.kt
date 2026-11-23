@@ -6,10 +6,14 @@ import com.google.gson.reflect.TypeToken
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.annotation.StringRes
+import com.phantom.checker.R
 
-enum class MuteMode(val prefValue: String, val label: String) {
-    BLOCK_RECORD("block", "完全不記錄"),
-    SILENT_RECORD("silent", "記錄但不進統計提醒");
+enum class MuteMode(val prefValue: String, @StringRes val labelRes: Int) {
+    BLOCK_RECORD("block", R.string.prefs_mute_block),
+    SILENT_RECORD("silent", R.string.prefs_mute_silent);
+
+    val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 
     companion object {
         fun fromPref(value: String?): MuteMode =
@@ -17,9 +21,11 @@ enum class MuteMode(val prefValue: String, val label: String) {
     }
 }
 
-enum class NotifClickBehavior(val prefValue: String, val label: String) {
-    OPEN_PHANTOM("phantom", "開啟幻訊對話"),
-    OPEN_ORIGINAL_APP("original", "開啟原 App");
+enum class NotifClickBehavior(val prefValue: String, @StringRes val labelRes: Int) {
+    OPEN_PHANTOM("phantom", R.string.prefs_notif_click_phantom),
+    OPEN_ORIGINAL_APP("original", R.string.common_open_original_app);
+
+    val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 
     companion object {
         fun fromPref(value: String?): NotifClickBehavior =
@@ -27,10 +33,12 @@ enum class NotifClickBehavior(val prefValue: String, val label: String) {
     }
 }
 
-enum class FontScaleMode(val prefValue: String, val label: String, val scale: Float) {
-    SMALL("small", "小", 0.9f),
-    NORMAL("normal", "標準", 1.0f),
-    LARGE("large", "大", 1.15f);
+enum class FontScaleMode(val prefValue: String, @StringRes val labelRes: Int, val scale: Float) {
+    SMALL("small", R.string.prefs_font_small, 0.9f),
+    NORMAL("normal", R.string.prefs_font_normal, 1.0f),
+    LARGE("large", R.string.prefs_font_large, 1.15f);
+
+    val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 
     companion object {
         fun fromPref(value: String?): FontScaleMode =
@@ -38,9 +46,11 @@ enum class FontScaleMode(val prefValue: String, val label: String, val scale: Fl
     }
 }
 
-enum class PersistentNotifStyle(val prefValue: String, val label: String) {
-    DETAILED("detailed", "詳細（今日/未讀/詐騙）"),
-    COMPACT("compact", "精簡（僅今日）");
+enum class PersistentNotifStyle(val prefValue: String, @StringRes val labelRes: Int) {
+    DETAILED("detailed", R.string.prefs_pnotif_detailed),
+    COMPACT("compact", R.string.prefs_pnotif_compact);
+
+    val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 
     companion object {
         fun fromPref(value: String?): PersistentNotifStyle =
@@ -48,9 +58,11 @@ enum class PersistentNotifStyle(val prefValue: String, val label: String) {
     }
 }
 
-enum class CardDensity(val prefValue: String, val label: String) {
-    COMFORTABLE("comfortable", "舒適"),
-    COMPACT("compact", "緊湊");
+enum class CardDensity(val prefValue: String, @StringRes val labelRes: Int) {
+    COMFORTABLE("comfortable", R.string.prefs_density_comfortable),
+    COMPACT("compact", R.string.prefs_density_compact);
+
+    val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 
     companion object {
         fun fromPref(value: String?): CardDensity =
@@ -58,22 +70,26 @@ enum class CardDensity(val prefValue: String, val label: String) {
     }
 }
 
-enum class AiPurpose(val id: String, val label: String, val catalogId: String) {
-    CHAT("ai_chat", "AI 助手對話", "ai_model_chat"),
-    MESSAGE_ANALYSIS("ai_message_analysis", "每則訊息風險分析", "ai_model_message_analysis"),
-    WEEKLY_SUMMARY("ai_weekly_summary", "每週摘要", "ai_model_weekly_summary"),
-    DEEP_ANALYSIS("ai_deep_analysis", "訊息深度分析", "ai_model_deep_analysis"),
-    SETTINGS_SEARCH("ai_settings_search", "設定 AI 語意搜尋", "ai_model_settings_search"),
-    AUTO_MEMO("ai_auto_memo", "自動備忘錄生成", "ai_model_auto_memo"),
-    BRIEFING("ai_briefing", "早晚簡報與畫像卡", "ai_model_briefing"),
-    DIARY_ANNOTATION("ai_diary_annotation", "AI 回顧註記", "ai_model_diary_annotation"),
-    PROACTIVE("ai_proactive", "主動情報萃取與摘要", "ai_model_proactive")
+enum class AiPurpose(val id: String, @StringRes val labelRes: Int, val catalogId: String) {
+    CHAT("ai_chat", R.string.prefs_ai_purpose_chat, "ai_model_chat"),
+    MESSAGE_ANALYSIS("ai_message_analysis", R.string.prefs_ai_purpose_msg, "ai_model_message_analysis"),
+    WEEKLY_SUMMARY("ai_weekly_summary", R.string.prefs_ai_purpose_weekly, "ai_model_weekly_summary"),
+    DEEP_ANALYSIS("ai_deep_analysis", R.string.prefs_ai_purpose_deep, "ai_model_deep_analysis"),
+    SETTINGS_SEARCH("ai_settings_search", R.string.prefs_ai_purpose_search, "ai_model_settings_search"),
+    AUTO_MEMO("ai_auto_memo", R.string.prefs_ai_purpose_memo, "ai_model_auto_memo"),
+    BRIEFING("ai_briefing", R.string.prefs_ai_purpose_briefing, "ai_model_briefing"),
+    DIARY_ANNOTATION("ai_diary_annotation", R.string.prefs_ai_purpose_diary, "ai_model_diary_annotation"),
+    PROACTIVE("ai_proactive", R.string.prefs_ai_purpose_proactive, "ai_model_proactive");
+
+    val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 }
 
-enum class TabBarDisplayMode(val prefValue: String, val label: String) {
-    STANDARD("standard", "標準"),
-    COMPACT("compact", "縮小"),
-    AUTO_HIDE("auto_hide", "自動隱藏");
+enum class TabBarDisplayMode(val prefValue: String, @StringRes val labelRes: Int) {
+    STANDARD("standard", R.string.prefs_font_normal),
+    COMPACT("compact", R.string.prefs_tab_compact),
+    AUTO_HIDE("auto_hide", R.string.prefs_tab_autohide);
+
+    val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 
     companion object {
         fun fromPref(value: String?): TabBarDisplayMode =
@@ -81,10 +97,12 @@ enum class TabBarDisplayMode(val prefValue: String, val label: String) {
     }
 }
 
-enum class HomeSortOrder(val prefValue: String, val label: String) {
-    RECENT("recent", "時間新→舊"),
-    UNREAD("unread", "未讀多→少"),
-    RISK("risk", "風險高→低");
+enum class HomeSortOrder(val prefValue: String, @StringRes val labelRes: Int) {
+    RECENT("recent", R.string.prefs_sort_recent),
+    UNREAD("unread", R.string.prefs_sort_unread),
+    RISK("risk", R.string.prefs_sort_risk);
+
+    val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 
     companion object {
         fun fromPref(value: String?): HomeSortOrder =
@@ -156,10 +174,12 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     const val TOKEN_SAVER_CHAT_RAG_LIMIT = 100
     const val DEFAULT_DUAL_MODEL_ROUTING_MODEL = "mistral-small-2603"
 
-    enum class CardBgMode(val prefValue: String, val label: String) {
-        FOLLOW_GLASS("follow_glass", "跟隨玻璃強度"),
-        TRANSPARENT("transparent", "透明模式"),
-        DARK("dark", "深色底");
+    enum class CardBgMode(val prefValue: String, @StringRes val labelRes: Int) {
+        FOLLOW_GLASS("follow_glass", R.string.prefs_cardbg_glass),
+        TRANSPARENT("transparent", R.string.prefs_cardbg_transparent),
+        DARK("dark", R.string.prefs_cardbg_dark);
+
+        val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 
         companion object {
             fun fromPref(raw: String?): CardBgMode =
@@ -1386,9 +1406,11 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     fun isAiChatTabContinue(ctx: Context): Boolean =
         getAiChatTabBehavior(ctx) == AI_CHAT_TAB_CONTINUE
 
-    enum class HomeCardLayoutMode(val key: String, val label: String) {
-        LIST("list", "一般條列"),
-        CENTER("center", "中央堆疊")
+    enum class HomeCardLayoutMode(val key: String, @StringRes val labelRes: Int) {
+        LIST("list", R.string.catalog_layout_list),
+        CENTER("center", R.string.catalog_layout_stack);
+
+        val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
     }
 
     private const val KEY_HOME_CARD_LAYOUT_MODE = "home_card_layout_mode"
@@ -1414,9 +1436,11 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     }
 
     /** 記事分頁卡片排列模式（獨立於首頁，不互相衝突） */
-    enum class NoteCardLayoutMode(val key: String, val label: String) {
-        LIST("list", "一般條列"),
-        CENTER("center", "中央堆疊")
+    enum class NoteCardLayoutMode(val key: String, @StringRes val labelRes: Int) {
+        LIST("list", R.string.catalog_layout_list),
+        CENTER("center", R.string.catalog_layout_stack);
+
+        val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
     }
 
     private const val KEY_NOTE_CARD_LAYOUT_MODE = "note_card_layout_mode"
@@ -2130,21 +2154,24 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putBoolean("cloud_discord_forward_enabled", enabled).apply()
     }
 
-    data class StatsCardOption(val key: String, val title: String, val subtitle: String, val defaultVisible: Boolean)
+    data class StatsCardOption(val key: String, @StringRes val titleRes: Int, @StringRes val subtitleRes: Int, val defaultVisible: Boolean) {
+        val title: String get() = com.phantom.checker.PhantomApplication.str(titleRes)
+        val subtitle: String get() = com.phantom.checker.PhantomApplication.str(subtitleRes)
+    }
 
     val STATS_CARD_OPTIONS: List<StatsCardOption> = listOf(
-        StatsCardOption("stats_briefing", "早晚簡報", "顯示最近一次早間／晚間個人簡報，點擊可展開閱讀", true),
-        StatsCardOption("stats_weekly_bar", "本週 7 日訊息量", "顯示近 7 日每日訊息長條圖", true),
-        StatsCardOption("stats_risk_dist", "風險分布三色", "顯示安全／疑似／詐騙計數卡", true),
-        StatsCardOption("stats_hourly", "今日每小時分布", "顯示今日 24 小時訊息分布圖", true),
-        StatsCardOption("stats_daily_top_apps", "今日 App 訊息量排行榜 Top 5", "顯示今日收到訊息最多的前五名 App", true),
-        StatsCardOption("stats_ai_tags", "今日 AI 智慧標記", "顯示今日 AI 自動標記分類統計", true),
-        StatsCardOption("stats_harassment", "騷擾佔比環形", "顯示行銷與垃圾通知佔比環形圖", true),
-        StatsCardOption("stats_top_risky", "Top 5 高風險 App", "顯示累計疑似與詐騙訊息前五名 App", true),
-        StatsCardOption("stats_risk_trend", "7 日風險趨勢折線", "顯示近 7 日每日疑似與詐騙訊息趨勢", false),
-        StatsCardOption("stats_unread_ratio", "未讀 / 已讀比例環形", "顯示未讀與已讀訊息佔比環形圖", false),
-        StatsCardOption("stats_app_share", "各 App 訊息佔比橫條前 8", "顯示各 App 歷史訊息量佔比排行", false),
-        StatsCardOption("stats_todo_done", "待辦完成率環形", "顯示待辦事項已完成比例環形圖", false)
+        StatsCardOption("stats_briefing", R.string.prefs_stats_briefing_title, R.string.prefs_stats_briefing_sub, true),
+        StatsCardOption("stats_weekly_bar", R.string.stats_s_b1fd50, R.string.prefs_stats_weekly_bar_sub, true),
+        StatsCardOption("stats_risk_dist", R.string.prefs_stats_risk_dist_title, R.string.prefs_stats_risk_dist_sub, true),
+        StatsCardOption("stats_hourly", R.string.stats_s_5c449d, R.string.prefs_stats_hourly_sub, true),
+        StatsCardOption("stats_daily_top_apps", R.string.stats_s_a5df5e, R.string.prefs_stats_daily_top_apps_sub, true),
+        StatsCardOption("stats_ai_tags", R.string.stats_s_a167e9, R.string.prefs_stats_ai_tags_sub, true),
+        StatsCardOption("stats_harassment", R.string.prefs_stats_harassment_title, R.string.prefs_stats_harassment_sub, true),
+        StatsCardOption("stats_top_risky", R.string.stats_s_147fec, R.string.prefs_stats_top_risky_sub, true),
+        StatsCardOption("stats_risk_trend", R.string.prefs_stats_risk_trend_title, R.string.prefs_stats_risk_trend_sub, false),
+        StatsCardOption("stats_unread_ratio", R.string.prefs_stats_unread_ratio_title, R.string.prefs_stats_unread_ratio_sub, false),
+        StatsCardOption("stats_app_share", R.string.prefs_stats_app_share_title, R.string.prefs_stats_app_share_sub, false),
+        StatsCardOption("stats_todo_done", R.string.prefs_stats_todo_done_title, R.string.prefs_stats_todo_done_sub, false)
     )
 
     val DEFAULT_VISIBLE_STATS_CARDS: Set<String> =
@@ -2295,12 +2322,14 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
 
     // ==================== #315 B3 自訂 AI 助手（名字／個性 preset／自訂個性／詳細度／頭像） ====================
 
-    enum class AssistantPersonalityPreset(val key: String, val label: String, val promptInstruction: String) {
-        DEFAULT("default", "預設", "語氣平衡自然，兼顧訊息整理與防詐提醒。"),
-        CONCISE_PRO("concise_pro", "簡潔專業", "語氣商務專業、精準俐落，直接給結論與關鍵數據，不寒暄。"),
-        WARM_DETAILED("warm_detailed", "親切詳細", "語氣親切溫和、有耐心，清楚解釋來龍去脈與貼心提醒。"),
-        STRICT_ANTI_SCAM("strict_anti_scam", "嚴謹防詐顧問", "以資安與防詐最高標準審視訊息，主動點出可疑話術、連結與查證步驟。"),
-        CUSTOM("custom", "完全自訂", "");
+    enum class AssistantPersonalityPreset(val key: String, @StringRes val labelRes: Int, val promptInstruction: String) {
+        DEFAULT("default", R.string.common_default, "語氣平衡自然，兼顧訊息整理與防詐提醒。"),
+        CONCISE_PRO("concise_pro", R.string.prefs_persona_concise_pro, "語氣商務專業、精準俐落，直接給結論與關鍵數據，不寒暄。"),
+        WARM_DETAILED("warm_detailed", R.string.prefs_persona_warm, "語氣親切溫和、有耐心，清楚解釋來龍去脈與貼心提醒。"),
+        STRICT_ANTI_SCAM("strict_anti_scam", R.string.prefs_persona_anti_scam, "以資安與防詐最高標準審視訊息，主動點出可疑話術、連結與查證步驟。"),
+        CUSTOM("custom", R.string.prefs_persona_custom, "");
+
+        val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 
         companion object {
             fun fromKey(raw: String?): AssistantPersonalityPreset =
@@ -2308,10 +2337,12 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         }
     }
 
-    enum class AssistantVerbosity(val key: String, val label: String, val promptInstruction: String) {
-        CONCISE("concise", "精簡", "回答極度精簡，控制在 3 句或 3 點以內。"),
-        STANDARD("standard", "適中", "回答條理分明，篇幅適中，重點突出。"),
-        DETAILED("detailed", "詳細", "回答完整深入，提供背景脈絡、分點說明與具體建議。");
+    enum class AssistantVerbosity(val key: String, @StringRes val labelRes: Int, val promptInstruction: String) {
+        CONCISE("concise", R.string.prefs_verbosity_concise, "回答極度精簡，控制在 3 句或 3 點以內。"),
+        STANDARD("standard", R.string.prefs_verbosity_standard, "回答條理分明，篇幅適中，重點突出。"),
+        DETAILED("detailed", R.string.common_details, "回答完整深入，提供背景脈絡、分點說明與具體建議。");
+
+        val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 
         companion object {
             fun fromKey(raw: String?): AssistantVerbosity =

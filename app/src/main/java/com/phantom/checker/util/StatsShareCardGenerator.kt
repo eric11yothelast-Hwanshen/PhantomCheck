@@ -16,6 +16,7 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.phantom.checker.R
 
 data class ShareCardReportData(
     val todayCount: Int,
@@ -69,9 +70,9 @@ object StatsShareCardGenerator {
             }
 
             // Header
-            canvas.drawText("幻訊 PhantomCheck", 64f, 110f, titlePaint)
+            canvas.drawText(com.phantom.checker.PhantomApplication.str(R.string.settings_s_e38167), 64f, 110f, titlePaint)
             val dateStr = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault()).format(Date())
-            canvas.drawText("每週通訊與防詐統計報告 · $dateStr", 64f, 160f, subPaint)
+            canvas.drawText(com.phantom.checker.PhantomApplication.str(R.string.share_card_s_32d37a, dateStr), 64f, 160f, subPaint)
 
             // 總覽卡片
             val overviewRect = RectF(64f, 210f, width - 64f, 410f)
@@ -88,14 +89,14 @@ object StatsShareCardGenerator {
                 textSize = 28f
             }
             canvas.drawText("${data.todayCount}", 110f, 310f, bigNumPaint)
-            canvas.drawText("今日訊息", 110f, 360f, metricLabelPaint)
+            canvas.drawText(com.phantom.checker.PhantomApplication.str(R.string.stats_s_f042c8), 110f, 360f, metricLabelPaint)
 
             canvas.drawText("${data.weekTotalCount}", 420f, 310f, bigNumPaint)
-            canvas.drawText("近 7 日總計", 420f, 360f, metricLabelPaint)
+            canvas.drawText(com.phantom.checker.PhantomApplication.str(R.string.share_card_s_c50fe5), 420f, 360f, metricLabelPaint)
 
             val scamPaint = Paint(bigNumPaint).apply { color = 0xFFF87171.toInt() }
             canvas.drawText("${data.scamCount}", 760f, 310f, scamPaint)
-            canvas.drawText("詐騙警示", 760f, 360f, metricLabelPaint)
+            canvas.drawText(com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_d01582), 760f, 360f, metricLabelPaint)
 
             // 風險分布條
             val riskRect = RectF(64f, 450f, width - 64f, 650f)
@@ -107,7 +108,7 @@ object StatsShareCardGenerator {
                 textSize = 36f
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             }
-            canvas.drawText("風險分布", 104f, 510f, sectionPaint)
+            canvas.drawText(com.phantom.checker.PhantomApplication.str(R.string.share_card_s_ec31ff), 104f, 510f, sectionPaint)
 
             val totalRisk = (data.safeCount + data.suspiciousCount + data.scamCount).coerceAtLeast(1)
             val barLeft = 104f
@@ -128,7 +129,7 @@ object StatsShareCardGenerator {
             canvas.drawRect(barLeft + safeW + suspW, barTop, barLeft + safeW + suspW + scamW, barBottom, scamBarPaint)
 
             canvas.drawText(
-                "安全 ${data.safeCount}  ·  疑似 ${data.suspiciousCount}  ·  詐騙 ${data.scamCount}",
+                com.phantom.checker.PhantomApplication.str(R.string.share_card_s_af4a1e, data.safeCount, data.suspiciousCount, data.scamCount),
                 104f,
                 624f,
                 subPaint
@@ -138,7 +139,7 @@ object StatsShareCardGenerator {
             val chartRect = RectF(64f, 690f, width - 64f, 990f)
             canvas.drawRoundRect(chartRect, 32f, 32f, cardPaint)
             canvas.drawRoundRect(chartRect, 32f, 32f, cardBorderPaint)
-            canvas.drawText("近 7 日訊息量", 104f, 750f, sectionPaint)
+            canvas.drawText(com.phantom.checker.PhantomApplication.str(R.string.share_card_s_8a6265), 104f, 750f, sectionPaint)
 
             val days = data.dailyCounts.take(7)
             val labels = data.dailyLabels.take(7)
@@ -168,14 +169,14 @@ object StatsShareCardGenerator {
             val topRect = RectF(64f, 1030f, width - 64f, 1250f)
             canvas.drawRoundRect(topRect, 32f, 32f, cardPaint)
             canvas.drawRoundRect(topRect, 32f, 32f, cardBorderPaint)
-            canvas.drawText("最活躍來源", 104f, 1090f, sectionPaint)
+            canvas.drawText(com.phantom.checker.PhantomApplication.str(R.string.share_card_s_253b07), 104f, 1090f, sectionPaint)
 
             val topList = data.topApps.take(3)
             if (topList.isEmpty()) {
-                canvas.drawText("尚無足夠紀錄", 104f, 1150f, subPaint)
+                canvas.drawText(com.phantom.checker.PhantomApplication.str(R.string.share_card_s_bdb0b2), 104f, 1150f, subPaint)
             } else {
                 topList.forEachIndexed { i, (appName, cnt) ->
-                    canvas.drawText("${i + 1}. $appName（$cnt 則）", 104f, 1142f + i * 44f, subPaint)
+                    canvas.drawText(com.phantom.checker.PhantomApplication.str(R.string.share_card_s_52706f, i + 1, appName, cnt), 104f, 1142f + i * 44f, subPaint)
                 }
             }
 
@@ -184,7 +185,7 @@ object StatsShareCardGenerator {
                 textSize = 24f
                 textAlign = Paint.Align.CENTER
             }
-            canvas.drawText("本機 Canvas 產生・未上傳任何訊息內容", width / 2f, 1305f, footerPaint)
+            canvas.drawText(com.phantom.checker.PhantomApplication.str(R.string.share_card_s_e597ed), width / 2f, 1305f, footerPaint)
 
             val shareDir = File(ctx.cacheDir, "share").apply { mkdirs() }
             val outFile = File(shareDir, "phantom_weekly_report.png")
@@ -197,10 +198,10 @@ object StatsShareCardGenerator {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "image/png"
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "幻訊 PhantomCheck 統計報告")
+                putExtra(Intent.EXTRA_SUBJECT, com.phantom.checker.PhantomApplication.str(R.string.share_card_s_fd3f39))
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            ctx.startActivity(Intent.createChooser(shareIntent, "分享統計報告圖片"))
+            ctx.startActivity(Intent.createChooser(shareIntent, com.phantom.checker.PhantomApplication.str(R.string.share_card_s_4137c9)))
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
