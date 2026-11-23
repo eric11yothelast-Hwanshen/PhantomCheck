@@ -2,6 +2,22 @@
 
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 
+## [4.3.0] - 2026-11-23
+
+- **Tag 對照**：[`v4.2.0...v4.3.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.2.0...v4.3.0)（`versionCode = 51`、`versionName = "4.3.0"`）
+- **發佈資產（雙 APK）**：
+  - `app-release.apk`：正式簽章＋R8 程式碼縮減與資源壓縮（`isMinifyEnabled = true`、`isShrinkResources = true`），供一般使用者安裝與原簽章覆蓋升級。
+  - `app-debug.apk`：除錯建置版本，供開發測試與排錯使用。
+
+### 行為變更（Breaking / Behavior Changes）
+- **#437 AI 傳輸層硬化（PR #442，行為變更明示）**：GitHub Models 已於 2026-07-30 全面退役，`AiClient` 直接攔截退役 host（`models.github.ai`、`models.inference.ai.azure.com`）不發無效請求，拋出附公告連結與遷移建議的例外；統一 `Accept: application/json`；非 JSON 回應（`Content-Type` 或本文首字檢查）改拋出保留 HTTP 狀態碼、`Content-Type` 與前 300 字本文的明確例外；`testConnection` payload 形狀（`Hi`／`max_tokens=5`）不變。
+- **#440 洞察頁長期目標追蹤（PR #442，行為變更明示）**：完成路徑統一由 `ReminderScheduler.completeTodoWithRecurrence` 單點觸發 `GoalEngine.onTodoCompleted`（寫入前加 `(goalId,todoId)` 查重防護），`NotesTab` 直呼移除、原目標進度 Toast（`notes_s_dd002c`）一併移除；逾期降頻改以 `phantom_goal_engine` 專屬 `SharedPreferences` 持久化期數（不受每日清理影響、防 `WorkManager` 15 分鐘重入）；下期派生錨定 `max(今天, 上期 dueAt + cadenceDays)` 不漂移；里程碑真值化消費 `milestoneJson`（`[3,7,14,30]` 自 `startDate` 起算）。
+- **#441 親密度第五階段（PR #442，行為變更明示）**：門檻 `30/100/250` 改為 `50/160/420/900`，新增 Lv5「知己（Kindred）」，既有用戶等效等級可能下修屬預期；權重公式 `2/1/1` 不變。
+- **#438 App 內三態語言切換（PR #442，行為變更明示）**：設定新增「語言」三態（跟隨系統／繁體中文／English；API 33+ 走 `LocaleManager` 與系統 per-app 設定同步，API 26–32 走 `attachBaseContext` 平滑重建）；通知、小工具、設定目錄與 AI 輸出語系全跟隨 App 設定；`zh-TW` 系統＋跟隨系統表現與 v4.2.0 一致。
+
+### 新增、變更與修正
+- **#439 小工具優化與新增四個桌面小工具（PR #442）**：既有 7 工具（`StatsWidgetProvider`、`StatsMiniWidgetProvider`、`StatsDetailWidgetProvider`、`AiSummaryWidgetProvider`、`NotesWidgetProvider`、`ReminderWidgetProvider`、`RiskActionWidgetProvider`）補齊 `targetCellWidth/Height`、`previewLayout`、專屬向量預覽圖（`widget_preview_*.xml`）、`goAsync` 8.5s timeout 與 `onDisabled` 清理；新增今天待辦（`TodoTodayWidgetProvider`）／目標進度（`GoalProgressWidgetProvider`）／快捷記事（`QuickNoteWidgetProvider`）／健康快照（`HealthSnapWidgetProvider`）四個小工具（零新權限、零新網路、`exported=false`、`FLAG_IMMUTABLE`、健康快取 30 分鐘、未授權顯示教學態）。
+
 ## [4.2.0] - 2026-11-23
 
 - **Tag 對照**：[`v4.1.0...v4.2.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.1.0...v4.2.0)（`versionCode = 50`、`versionName = "4.2.0"`）
