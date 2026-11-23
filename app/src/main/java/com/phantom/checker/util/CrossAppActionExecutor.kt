@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.AlarmClock
 import android.widget.Toast
+import com.phantom.checker.R
 
 /**
  * #339 「確認後執行」跨 App 動作執行器：
@@ -33,21 +34,21 @@ sealed class CrossAppActionProposal {
     ) : CrossAppActionProposal()
 
     fun title(): String = when (this) {
-        is GmailCompose -> "✉️ 撰寫郵件"
-        is MapsNavigate -> "🗺️ 地圖導航"
-        is SetAlarm -> "⏰ 設定鬧鐘"
-        is OpenApp -> "📱 開啟應用程式"
+        is GmailCompose -> com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_7dd521)
+        is MapsNavigate -> com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_a965fe)
+        is SetAlarm -> com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_a4b30e)
+        is OpenApp -> com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_174375)
     }
 
     fun summary(): String = when (this) {
         is GmailCompose -> buildString {
-            if (to.isNotBlank()) appendLine("收件者：$to")
-            if (subject.isNotBlank()) appendLine("主旨：$subject")
-            if (body.isNotBlank()) append("內文：${body.take(120)}")
-        }.trim().ifBlank { "開啟郵件撰寫畫面" }
-        is MapsNavigate -> "目的地：$destination"
-        is SetAlarm -> "時間：$hhmm" + if (label.isNotBlank()) "（$label）" else ""
-        is OpenApp -> "套件名：$packageName"
+            if (to.isNotBlank()) appendLine(com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_ed986d, to))
+            if (subject.isNotBlank()) appendLine(com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_2ec93e, subject))
+            if (body.isNotBlank()) append(com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_e64ee6, body.take(120)))
+        }.trim().ifBlank { com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_2ac21e) }
+        is MapsNavigate -> com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_bc4b0c, destination)
+        is SetAlarm -> com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_17ab77, hhmm) + if (label.isNotBlank()) "（$label）" else ""
+        is OpenApp -> com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_008270, packageName)
     }
 }
 
@@ -82,17 +83,17 @@ object CrossAppActionExecutor {
             val gmailIntent = Intent(baseIntent).setPackage("com.google.android.gm")
             if (tryStart(ctx, gmailIntent)) return true
         }
-        if (tryStart(ctx, Intent.createChooser(baseIntent, "選擇郵件 App").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))) {
+        if (tryStart(ctx, Intent.createChooser(baseIntent, com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_c61ded)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))) {
             return true
         }
-        Toast.makeText(ctx, "找不到可用的 App", Toast.LENGTH_SHORT).show()
+        Toast.makeText(ctx, com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_551677), Toast.LENGTH_SHORT).show()
         return false
     }
 
     private fun executeMaps(ctx: Context, action: CrossAppActionProposal.MapsNavigate): Boolean {
         val dest = action.destination.trim()
         if (dest.isEmpty()) {
-            Toast.makeText(ctx, "找不到可用的 App", Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_551677), Toast.LENGTH_SHORT).show()
             return false
         }
         val navIntent = Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=${Uri.encode(dest)}")).apply {
@@ -104,10 +105,10 @@ object CrossAppActionExecutor {
         val geoIntent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(dest)}")).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        if (tryStart(ctx, Intent.createChooser(geoIntent, "選擇導航 App").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))) {
+        if (tryStart(ctx, Intent.createChooser(geoIntent, com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_e179a4)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))) {
             return true
         }
-        Toast.makeText(ctx, "找不到可用的 App", Toast.LENGTH_SHORT).show()
+        Toast.makeText(ctx, com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_551677), Toast.LENGTH_SHORT).show()
         return false
     }
 
@@ -125,14 +126,14 @@ object CrossAppActionExecutor {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         if (tryStart(ctx, intent)) return true
-        Toast.makeText(ctx, "找不到可用的 App", Toast.LENGTH_SHORT).show()
+        Toast.makeText(ctx, com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_551677), Toast.LENGTH_SHORT).show()
         return false
     }
 
     private fun executeOpenApp(ctx: Context, action: CrossAppActionProposal.OpenApp): Boolean {
         val pkg = action.packageName.trim()
         if (pkg.isEmpty()) {
-            Toast.makeText(ctx, "找不到可用的 App", Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_551677), Toast.LENGTH_SHORT).show()
             return false
         }
         val launch = try {
@@ -143,7 +144,7 @@ object CrossAppActionExecutor {
             null
         }
         if (launch != null && tryStart(ctx, launch)) return true
-        Toast.makeText(ctx, "找不到可用的 App", Toast.LENGTH_SHORT).show()
+        Toast.makeText(ctx, com.phantom.checker.PhantomApplication.str(R.string.cross_app_s_551677), Toast.LENGTH_SHORT).show()
         return false
     }
 

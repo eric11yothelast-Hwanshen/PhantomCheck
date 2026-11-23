@@ -2852,4 +2852,18 @@
     <string name="widget_stats_detail_s_f5dcc6">第4天</string>
     <string name="widget_stats_detail_s_1113fd">第5天</string>
     <string name="widget_stats_detail_s_0a52f5">第6天</string>
+    <string name="cross_app_s_7dd521">✉️ 撰寫郵件</string>
+    <string name="cross_app_s_a965fe">🗺️ 地圖導航</string>
+    <string name="cross_app_s_a4b30e">⏰ 設定鬧鐘</string>
+    <string name="cross_app_s_174375">📱 開啟應用程式</string>
+    <string name="cross_app_s_ed986d">收件者：%1$s</string>
+    <string name="cross_app_s_2ec93e">主旨：%1$s</string>
+    <string name="cross_app_s_e64ee6">內文：%1$s</string>
+    <string name="cross_app_s_2ac21e">開啟郵件撰寫畫面</string>
+    <string name="cross_app_s_bc4b0c">目的地：%1$s</string>
+    <string name="cross_app_s_17ab77">時間：%1$s</string>
+    <string name="cross_app_s_008270">套件名：%1$s</string>
+    <string name="cross_app_s_c61ded">選擇郵件 App</string>
+    <string name="cross_app_s_551677">找不到可用的 App</string>
+    <string name="cross_app_s_e179a4">選擇導航 App</string>
 </resources>
