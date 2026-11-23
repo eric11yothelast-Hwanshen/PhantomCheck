@@ -2928,4 +2928,10 @@
     <string name="widget_quick_note_title">Quick Notes</string>
     <string name="widget_quick_note_add_btn">+ New</string>
     <string name="widget_quick_note_empty">No notes yet. Tap + New to capture</string>
+    <string name="widget_label_health_snap">PhantomCheck · Health Snapshot</string>
+    <string name="health_snap_widget_description">Shows today\'s steps and sleep duration from Health Connect (cached locally)</string>
+    <string name="widget_health_snap_title">Health Snapshot</string>
+    <string name="widget_health_snap_unauth_msg">Health Connect not authorized. Tap to open permission settings</string>
+    <string name="widget_health_snap_steps_label">Today\'s Steps</string>
+    <string name="widget_health_snap_sleep_label">Sleep</string>
 </resources>

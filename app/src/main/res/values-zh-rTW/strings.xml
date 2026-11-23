@@ -2928,4 +2928,10 @@
     <string name="widget_quick_note_title">快捷記事</string>
     <string name="widget_quick_note_add_btn">＋新增</string>
     <string name="widget_quick_note_empty">尚無記事，點「＋新增」快速記錄</string>
+    <string name="widget_label_health_snap">幻訊 · 健康快照</string>
+    <string name="health_snap_widget_description">顯示 Health Connect 今日步數與睡眠時數（本機快取、未授權顯示設定引導）</string>
+    <string name="widget_health_snap_title">健康快照</string>
+    <string name="widget_health_snap_unauth_msg">尚未授權 Health Connect，點此開啟權限設定</string>
+    <string name="widget_health_snap_steps_label">今日步數</string>
+    <string name="widget_health_snap_sleep_label">睡眠時數</string>
 </resources>
