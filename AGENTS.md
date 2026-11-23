@@ -19,6 +19,7 @@
 4. **開工前先看 issue**：每個任務先在 GitHub issue 建立/認領，branch 名對應 issue 編號，如 feature/12-scam-alert。
 5. **不留未完成合併**：PR 描述必須註明「完成」或「WIP（缺什麼）」，交接資訊寫在 PR 或 issue。
 6. **UI 字串抽離紀律**：新 UI 字串一律寫進 res/values/strings.xml，不得在 .kt／res XML／Manifest 硬寫自然語言字面；資源 key 用 snake_case、相同字面共用 key。
+7. **文件雙語紀律（2026-11-23）**：之後所有 CHANGELOG 新條目、README 變更（`README.md` 與 `README.zh-TW.md`）、Release notes、新增功能的面向使用者描述，**一律中英雙語同步撰寫（中文在前、English 隨後）**，缺任一語言即 review 退回。
 
 ## 工作流程
 
