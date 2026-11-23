@@ -391,11 +391,95 @@ internal fun PartnerDiaryCard(
                                                         }
                                                     }
                                                 }
-                                                else -> Text(
-                                                    text = "未設定 API Key、省 token 模式或此類註記已降權；上方本地時間軸仍可完整瀏覽。",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
+                                                else -> {
+                                                    val reason = DiaryPolicy.diagnoseAnnotationUnavailable(appCtx, summary)
+                                                    val dominantCat = summary.annotationCategory?.ifBlank { null }
+                                                        ?: DiaryPolicy.dominantCategoryOf(summary)
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Text(
+                                                            text = when (reason) {
+                                                                DiaryPolicy.AnnotationUnavailableReason.TOKEN_SAVER ->
+                                                                    "省 token 模式已開啟，回顧註記暫停"
+                                                                DiaryPolicy.AnnotationUnavailableReason.NO_PROFILE ->
+                                                                    "尚未設定 AI 供應商，註記暫停"
+                                                                DiaryPolicy.AnnotationUnavailableReason.DISLIKED_SUPPRESSED ->
+                                                                    "你先前將同類註記標記不準，已自動停權"
+                                                                DiaryPolicy.AnnotationUnavailableReason.OTHER ->
+                                                                    "暫時無法生成註記；上方本地時間軸仍可完整瀏覽"
+                                                            },
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            modifier = Modifier.weight(1f)
+                                                        )
+                                                        when (reason) {
+                                                            DiaryPolicy.AnnotationUnavailableReason.TOKEN_SAVER -> {
+                                                                TextButton(
+                                                                    onClick = {
+                                                                        ctx.startActivity(
+                                                                            android.content.Intent(
+                                                                                ctx,
+                                                                                com.phantom.checker.ui.AssistantHubActivity::class.java
+                                                                            )
+                                                                        )
+                                                                    },
+                                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                                ) {
+                                                                    Text("設定", style = MaterialTheme.typography.labelSmall)
+                                                                }
+                                                            }
+                                                            DiaryPolicy.AnnotationUnavailableReason.NO_PROFILE -> {
+                                                                TextButton(
+                                                                    onClick = {
+                                                                        ctx.startActivity(
+                                                                            android.content.Intent(
+                                                                                ctx,
+                                                                                com.phantom.checker.ui.ApiKeySettingsActivity::class.java
+                                                                            )
+                                                                        )
+                                                                    },
+                                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                                ) {
+                                                                    Text("前往設定", style = MaterialTheme.typography.labelSmall)
+                                                                }
+                                                            }
+                                                            DiaryPolicy.AnnotationUnavailableReason.DISLIKED_SUPPRESSED -> {
+                                                                TextButton(
+                                                                    onClick = {
+                                                                        DiaryPolicy.resetDislikeForCategory(appCtx, dominantCat)
+                                                                        annotationLoading = true
+                                                                        scope.launch {
+                                                                            annotationText = DiaryPolicy.getOrGenerateAnnotation(appCtx, summary.dayKey)
+                                                                            annotationLoading = false
+                                                                            refreshKey++
+                                                                        }
+                                                                    },
+                                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                                ) {
+                                                                    Text("重新啟用", style = MaterialTheme.typography.labelSmall)
+                                                                }
+                                                            }
+                                                            DiaryPolicy.AnnotationUnavailableReason.OTHER -> {
+                                                                TextButton(
+                                                                    onClick = {
+                                                                        annotationLoading = true
+                                                                        scope.launch {
+                                                                            annotationText = DiaryPolicy.getOrGenerateAnnotation(appCtx, summary.dayKey)
+                                                                            annotationLoading = false
+                                                                            refreshKey++
+                                                                        }
+                                                                    },
+                                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                                ) {
+                                                                    Text("重試", style = MaterialTheme.typography.labelSmall)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }

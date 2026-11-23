@@ -2607,9 +2607,10 @@ object AiClient {
         context: Context,
         systemPrompt: String,
         userPrompt: String,
-        maxTokens: Int = 420
+        maxTokens: Int = 420,
+        purpose: AiPurpose = AiPurpose.BRIEFING
     ): String? = withContext(Dispatchers.IO) {
-        val profile = getProfileForPurpose(context, AiPurpose.BRIEFING) ?: return@withContext null
+        val profile = getProfileForPurpose(context, purpose) ?: return@withContext null
         val apiKey = profile.apiKey.trim()
         if (apiKey.isEmpty()) return@withContext null
         val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())

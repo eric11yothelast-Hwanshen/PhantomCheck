@@ -255,28 +255,64 @@ object DiaryPolicy {
         }
     }
 
+    enum class AnnotationUnavailableReason {
+        TOKEN_SAVER,
+        NO_PROFILE,
+        DISLIKED_SUPPRESSED,
+        OTHER
+    }
+
+    fun dominantCategoryOf(summary: DayTimelineSummary): String = when {
+        summary.scamCount > 0 -> "scam"
+        summary.todoDoneCount > 0 -> "todo"
+        summary.noteCount > 0 -> "note"
+        else -> "messages"
+    }
+
+    /** #421 診斷 AI 回顧註記不可用的具體原因（供 DiarySection 顯示三態具體文案與捷徑） */
+    fun diagnoseAnnotationUnavailable(ctx: Context, summary: DayTimelineSummary): AnnotationUnavailableReason {
+        val appCtx = ctx.applicationContext
+        if (PhantomPrefs.isTokenSaverEnabled(appCtx) && !PhantomPrefs.isDiaryAnnotationInSaverEnabled(appCtx)) {
+            return AnnotationUnavailableReason.TOKEN_SAVER
+        }
+        val profile = com.phantom.checker.network.AiClient.getProfileForPurpose(
+            appCtx,
+            com.phantom.checker.util.AiPurpose.DIARY_ANNOTATION
+        )
+        if (profile == null || profile.apiKey.trim().isEmpty()) {
+            return AnnotationUnavailableReason.NO_PROFILE
+        }
+        val dominantCategory = dominantCategoryOf(summary)
+        if (PhantomPrefs.getDiaryAnnotationDislikeCount(appCtx, dominantCategory) >= DISLIKE_SUPPRESS_THRESHOLD) {
+            return AnnotationUnavailableReason.DISLIKED_SUPPRESSED
+        }
+        return AnnotationUnavailableReason.OTHER
+    }
+
+    fun resetDislikeForCategory(ctx: Context, category: String?) {
+        val cat = category?.ifBlank { "messages" } ?: "messages"
+        PhantomPrefs.resetDiaryAnnotationDislike(ctx.applicationContext, cat)
+    }
+
     /**
      * AI 註記三重防護：
      * 1. 已有快取直接回傳，絕不重複付費。
-     * 2. 同類註記「不準」次數達門檻（≥3）則不再自動生成。
-     * 3. 僅送出 timelineJson 作為唯一事實輸入，prompt 嚴禁補無來源敘述；無 API key 或省 token 模式直接回傳 null。
+     * 2. 同類註記「不準」次數達門檻（≥3）則不再自動生成（可於 UI 重新啟用）。
+     * 3. 僅送出 timelineJson 作為唯一事實輸入，prompt 嚴禁補無來源敘述；省 token 模式預設關閉（可由 diary_annotation_in_saver 放行）。
      */
     suspend fun getOrGenerateAnnotation(ctx: Context, dayKey: String): String? = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
         val db = AppDatabaseHolder.db(appCtx)
         val day = db.diaryDao().byDayKey(dayKey) ?: return@withContext null
         if (!day.annotation.isNullOrBlank()) return@withContext day.annotation
-        if (PhantomPrefs.isTokenSaverEnabled(appCtx)) return@withContext null
+        if (PhantomPrefs.isTokenSaverEnabled(appCtx) && !PhantomPrefs.isDiaryAnnotationInSaverEnabled(appCtx)) {
+            return@withContext null
+        }
 
         val summary = parseSummary(day)
         if (summary.items.isEmpty()) return@withContext null
 
-        val dominantCategory = when {
-            summary.scamCount > 0 -> "scam"
-            summary.todoDoneCount > 0 -> "todo"
-            summary.noteCount > 0 -> "note"
-            else -> "messages"
-        }
+        val dominantCategory = dominantCategoryOf(summary)
         if (PhantomPrefs.getDiaryAnnotationDislikeCount(appCtx, dominantCategory) >= DISLIKE_SUPPRESS_THRESHOLD) {
             return@withContext null
         }
@@ -287,7 +323,8 @@ object DiaryPolicy {
                 context = appCtx,
                 systemPrompt = "你是「$assistantName」。請僅依據下方 JSON 時間軸事實，用繁體中文寫 1–2 句簡短溫暖的回顧註記（以「我注意到今天…」開頭，≤80字）。嚴格禁止補充時間軸以外的任何事實、推測或情緒臆測。",
                 userPrompt = day.timelineJson,
-                maxTokens = 140
+                maxTokens = 140,
+                purpose = com.phantom.checker.util.AiPurpose.DIARY_ANNOTATION
             )
         }.getOrNull()?.trim()?.takeIf { it.isNotBlank() } ?: return@withContext null
 

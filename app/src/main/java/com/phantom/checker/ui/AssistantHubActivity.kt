@@ -126,6 +126,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
     var calInsightWebSearchEnabled by remember { mutableStateOf(PhantomPrefs.isProactiveCalendarWebSearchEnabled(appCtx)) }
     var calInsightIntervalMin by remember { mutableStateOf(PhantomPrefs.getCalendarInsightIntervalMinutes(appCtx)) }
     var memoryAutoExtract by remember { mutableStateOf(PhantomPrefs.isMemoryAutoExtractEnabled(appCtx)) }
+    var diaryAnnotationInSaver by remember { mutableStateOf(PhantomPrefs.isDiaryAnnotationInSaverEnabled(appCtx)) }
     var chatPendingCapsules by remember { mutableStateOf(PhantomPrefs.isChatPendingCapsulesEnabled(appCtx)) }
     var regionKeyword by remember { mutableStateOf(PhantomPrefs.getProactiveRegionKeyword(appCtx)) }
 
@@ -651,6 +652,21 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                     onCheckedChange = {
                                         chatPendingCapsules = it
                                         PhantomPrefs.setChatPendingCapsulesEnabled(appCtx, it)
+                                        PhantomSettingsBus.notifyChanged()
+                                    }
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("省 token 模式下仍生成每日回顧 AI 註記（預設關閉，將耗少量 token）", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                FluidSwitch(
+                                    checked = diaryAnnotationInSaver,
+                                    onCheckedChange = {
+                                        diaryAnnotationInSaver = it
+                                        PhantomPrefs.setDiaryAnnotationInSaverEnabled(appCtx, it)
                                         PhantomSettingsBus.notifyChanged()
                                     }
                                 )

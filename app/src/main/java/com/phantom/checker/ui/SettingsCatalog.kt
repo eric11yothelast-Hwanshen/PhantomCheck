@@ -143,12 +143,14 @@ object SettingsCatalog {
         SettingSearchItem("chat_pending_capsules_enabled", "hub", "未決事項膠囊列", "對話框頂部顯示至多 3 顆可滑除的未決事項快速膠囊與壓縮接續錨點（預設開啟）", listOf("膠囊", "未決事項", "錨點", "連續性", "capsules", "話題接續列", "上次你提到", "聊天頂部膠囊"), page = "AssistantHubActivity"),
         SettingSearchItem("chat_bubble_timestamp_enabled", "about", "聊天室訊息右下角時間戳", "控制 AI 對話與主動訊息氣泡右下角是否顯示 HH:mm 發送時間（預設開啟）", listOf("時間戳", "發送時間", "聊天時間", "timestamp", "氣泡時間", "對話幾點傳的", "右下角時間")),
         SettingSearchItem("diary_daily_enabled", "hub", "AI 日記／每日回顧", "每日 00:30 零 token 本機整理前一日時間軸，AI 註記展開快取且可「不準」降權（無 API key 亦可用）", listOf("日記", "每日回顧", "時間軸", "diary", "註記", "昨天做了什麼", "生活紀錄", "自動日記"), page = "AssistantHubActivity"),
+        SettingSearchItem("diary_annotation_in_saver", "hub", "省 token 模式仍生成回顧註記", "省 token 模式下仍允許生成夥伴頁每日回顧的 AI 註記（預設關閉，開啟後展開將耗用少量 token）", listOf("回顧註記", "省token日記", "日記註記開關", "diary_annotation_in_saver", "省電模式註記"), page = "AssistantHubActivity"),
         SettingSearchItem("goal_tracking_enabled", "hub", "長程目標追蹤", "偵測習慣／目標訊號必經確認卡建立、自動拆解週期子待辦並支援只降不升頻率調整（無 API key 亦可手動建立）", listOf("目標", "長程目標", "習慣", "打卡", "goal", "養成習慣", "週期計畫", "進度追蹤"), page = "AssistantHubActivity"),
         SettingSearchItem("health_briefing_enabled", "hub", "Health Connect 生理節奏整合", "晨間簡報附查表式睡眠／步數／心率規則建議（增強不依賴、原始數值不出本機）", listOf("健康", "睡眠", "步數", "心率", "health connect", "生理", "早報健康建議", "穿戴數據", "睡多久"), page = "PermissionHubActivity"),
         SettingSearchItem("health_soft_invite_enabled", "hub", "Health Connect 軟性邀請", "未授權 Health Connect 時於晨間簡報每週最多一次顯示軟性連接邀請", listOf("穿戴", "手錶", "health", "軟邀請", "智慧手錶提醒", "健康連接邀請", "手環提示"), page = "PermissionHubActivity"),
         SettingSearchItem("health_ai_query_enabled", "hub", "允許 AI 讀取健康摘要", "開啟時，聊天詢問睡眠／步數／心率僅注入近 7 日匯總數值，並啟用查表式主動健康觀察提醒（預設開啟）", listOf("健康摘要", "允許AI讀取健康", "睡眠", "步數", "心率", "health connect", "健康觀察", "運動", "卡路里", "問AI睡多久"), page = "PermissionHubActivity"),
         SettingSearchItem("decision_confirm_threshold", "hub", "雙門檻自動決策置信閾值", "調整 AI 自動判定高風險與降級確認卡的分數門檻（預設 60，範圍 40–85）", listOf("雙門檻", "決策", "閾值", "防詐門檻", "確認卡", "decision", "threshold", "幾分算詐騙", "風險分數線"), page = "AssistantHubActivity"),
         SettingSearchItem("ai_model_briefing", "ai", "簡報與畫像卡模型", "為早晚簡報與「我對你的瞭解」畫像卡指定獨立 AI 模型", listOf("簡報模型", "畫像卡模型", "briefing", "模型", "早晚報模型", "個人畫像模型"), page = "ApiKeySettingsActivity"),
+        SettingSearchItem("ai_model_diary_annotation", "ai", "AI 回顧註記模型", "為夥伴頁每日回顧的 AI 註記指定模型，未綁定時自動沿用預設 profile", listOf("日記註記", "回顧註記", "diary", "每日回顧模型", "日記模型"), page = "ApiKeySettingsActivity"),
         SettingSearchItem("ai_model_proactive", "ai", "主動情報萃取與摘要模型", "為主動情報中樞（關注主題萃取與動態摘要）指定獨立 AI 模型與設定檔", listOf("主動情報", "情報模型", "proactive", "關注主題", "模型", "時事查詢模型", "話題萃取模型"), page = "ApiKeySettingsActivity"),
         SettingSearchItem("proactive_intel_enabled", "intel", "主動情報中樞（總開關）", "定期將關注主題關鍵字送往設定的 AI 供應商查詢最新動態並摘要推播（預設關閉）", listOf("主動情報", "情報中樞", "關注動態", "proactive", "自動查詢", "追蹤新聞", "主題推播總開關")),
         SettingSearchItem("proactive_extract_enabled", "intel", "每日自動萃取關注主題", "每日從近期非敏感素材自動萃取最多 5 個待確認關注主題（敏感記憶硬排除）", listOf("萃取", "關注主題", "自動萃取", "watch_topics", "推薦關注話題", "自動找興趣")),
@@ -209,6 +211,7 @@ object SettingsCatalog {
         "stats_todo_done",
         "chat_bubble_timestamp_enabled",
         "diary_daily_enabled",
+        "diary_annotation_in_saver",
         "goal_tracking_enabled",
         "health_briefing_enabled",
         "health_soft_invite_enabled",
@@ -270,6 +273,7 @@ object SettingsCatalog {
             "stats_todo_done" -> PhantomPrefs.isStatsCardVisible(appCtx, id)
             "chat_bubble_timestamp_enabled" -> PhantomPrefs.isChatTimestampEnabled(appCtx)
             "diary_daily_enabled" -> PhantomPrefs.isDiaryDailyEnabled(appCtx)
+            "diary_annotation_in_saver" -> PhantomPrefs.isDiaryAnnotationInSaverEnabled(appCtx)
             "goal_tracking_enabled" -> PhantomPrefs.isGoalTrackingEnabled(appCtx)
             "health_briefing_enabled" -> PhantomPrefs.isHealthBriefingEnabled(appCtx)
             "health_soft_invite_enabled" -> PhantomPrefs.isHealthSoftInviteEnabled(appCtx)
@@ -368,6 +372,7 @@ object SettingsCatalog {
                 PhantomPrefs.setDiaryDailyEnabled(appCtx, enabled)
                 com.phantom.checker.service.DiaryPolicy.schedule(appCtx)
             }
+            "diary_annotation_in_saver" -> PhantomPrefs.setDiaryAnnotationInSaverEnabled(appCtx, enabled)
             "goal_tracking_enabled" -> PhantomPrefs.setGoalTrackingEnabled(appCtx, enabled)
             "health_briefing_enabled" -> PhantomPrefs.setHealthBriefingEnabled(appCtx, enabled)
             "health_soft_invite_enabled" -> PhantomPrefs.setHealthSoftInviteEnabled(appCtx, enabled)

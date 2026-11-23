@@ -66,6 +66,7 @@ enum class AiPurpose(val id: String, val label: String, val catalogId: String) {
     SETTINGS_SEARCH("ai_settings_search", "設定 AI 語意搜尋", "ai_model_settings_search"),
     AUTO_MEMO("ai_auto_memo", "自動備忘錄生成", "ai_model_auto_memo"),
     BRIEFING("ai_briefing", "早晚簡報與畫像卡", "ai_model_briefing"),
+    DIARY_ANNOTATION("ai_diary_annotation", "AI 回顧註記", "ai_model_diary_annotation"),
     PROACTIVE("ai_proactive", "主動情報萃取與摘要", "ai_model_proactive")
 }
 
@@ -2667,6 +2668,20 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         val key = "diary_annotation_dislike_${category.lowercase(Locale.ROOT)}"
         val p = prefs(ctx)
         p.edit().putInt(key, p.getInt(key, 0) + 1).apply()
+    }
+
+    /** #421 重置指定類別的回顧註記不準降權計數 */
+    fun resetDiaryAnnotationDislike(ctx: Context, category: String) {
+        val key = "diary_annotation_dislike_${category.lowercase(Locale.ROOT)}"
+        prefs(ctx).edit().remove(key).apply()
+    }
+
+    /** #421 省 token 模式下是否仍允許生成每日回顧 AI 註記（預設關閉；開啟將耗用少量 token） */
+    fun isDiaryAnnotationInSaverEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("diary_annotation_in_saver", false)
+
+    fun setDiaryAnnotationInSaverEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("diary_annotation_in_saver", enabled).apply()
     }
 
     // ---- #379 長程目標追蹤 ----
