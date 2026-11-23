@@ -2923,4 +2923,9 @@
     <string name="widget_goal_progress_title">目標進度</string>
     <string name="widget_goal_progress_empty">尚無進行中的長期目標</string>
     <string name="widget_goal_progress_meta">連續 %1$d 期 · 下期 %2$s</string>
+    <string name="widget_label_quick_note">幻訊 · 快捷記事</string>
+    <string name="quick_note_widget_description">顯示最近 3 筆記事預覽，並提供一鍵「新增記事」捷徑</string>
+    <string name="widget_quick_note_title">快捷記事</string>
+    <string name="widget_quick_note_add_btn">＋新增</string>
+    <string name="widget_quick_note_empty">尚無記事，點「＋新增」快速記錄</string>
 </resources>

@@ -2923,4 +2923,9 @@
     <string name="widget_goal_progress_title">Goal Progress</string>
     <string name="widget_goal_progress_empty">No active long-term goals</string>
     <string name="widget_goal_progress_meta">%1$d-period streak · Next due %2$s</string>
+    <string name="widget_label_quick_note">PhantomCheck · Quick Notes</string>
+    <string name="quick_note_widget_description">Previews your 3 most recent notes with a one-tap New Note shortcut</string>
+    <string name="widget_quick_note_title">Quick Notes</string>
+    <string name="widget_quick_note_add_btn">+ New</string>
+    <string name="widget_quick_note_empty">No notes yet. Tap + New to capture</string>
 </resources>

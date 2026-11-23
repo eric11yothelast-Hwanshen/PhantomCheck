@@ -265,6 +265,18 @@
                 android:resource="@xml/goal_progress_widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".widget.QuickNoteWidgetProvider"
+            android:label="@string/widget_label_quick_note"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/quick_note_widget_info" />
+        </receiver>
+
         <receiver android:name=".service.ReminderReceiver" android:exported="false" />
         <receiver android:name=".service.ReplyProxyReceiver" android:exported="false" />
         <receiver android:name=".service.WatchTopicMuteReceiver" android:exported="false" />
