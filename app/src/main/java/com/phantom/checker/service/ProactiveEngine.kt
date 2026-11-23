@@ -122,7 +122,19 @@ object ProactiveEngine {
                             } else {
                                 val allDayNotes = CalendarBridge.findAllDayEventsInWindow(appCtx, ev.beginMs, ev.endMs)
                                     .filter { it.eventId != ev.eventId }
-                                CalendarBridge.formatAllDayInfoNote(allDayNotes)?.let { highPriorityParts.add(it) }
+                                if (allDayNotes.isNotEmpty()) {
+                                    val allDayIdsFp = allDayNotes
+                                        .map { it.eventId }
+                                        .sorted()
+                                        .joinToString(",")
+                                    val allDayNoteKey = "allDayNote:$dayKey:$allDayIdsFp"
+                                    if (allDayNoteKey !in deliveredMilestones) {
+                                        CalendarBridge.formatAllDayInfoNote(allDayNotes)?.let {
+                                            highPriorityParts.add(it)
+                                            newMilestoneKeys.add(allDayNoteKey)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -711,10 +723,15 @@ object ProactiveEngine {
         if (milestoneKeys.isNotEmpty()) {
             PhantomPrefs.markProactiveMilestonesDelivered(appCtx, milestoneKeys, dayKey)
         }
+        val effectiveNotifId = if (notifId == NotifIds.PROACTIVE_PUSH) {
+            NotifIds.proactivePush(contentHash.hashCode())
+        } else {
+            notifId
+        }
         if (sendNotif && !isInDndWindow(appCtx, nowMs)) {
             postBriefingNotification(
                 ctx = appCtx,
-                notifId = notifId,
+                notifId = effectiveNotifId,
                 title = title,
                 preview = (previewOverride ?: body).replace("**", "").replace("\n", " ").take(90),
                 messageId = msgId

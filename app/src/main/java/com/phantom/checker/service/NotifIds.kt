@@ -4,11 +4,15 @@ package com.phantom.checker.service
  * 全專案通知 ID 集中管理，各區段嚴格互斥，避免互相覆蓋。
  *
  * 區段配置：
- * - 1001..1099：系統/常駐/排程固定通知（1001 常駐統計、1002 開機提醒、1003 每日摘要、1004 週報）
+ * - 1001..1014：系統/常駐/排程/主動固定通知（1001 常駐統計、1002 開機提醒、1003 每日摘要、1004 週報、1005..1014 固定功能通知）
+ * - 1020..1044：行事曆洞察（1020 + Math.floorMod(hash, 25)）
+ * - 1050..1089：任務模板（1050 + Math.floorMod(templateId, 40)）
+ * - 1090..1099：主動提醒推播（1090 + Math.floorMod(contentHash, 10)，multi-notification 並存不互蓋）
  * - 2000..21999：詐騙警示（2000 + msgId % 20000）
  * - 22000..41999：重要訊息提醒（22000 + msgId % 20000）
  * - 100000..109999：待辦提醒（100000 + messageId % 10000）
  * - 110000..119999：AI 自然語言待辦提醒（110000 + todoId % 10000）
+ * - 120000..129999：快速回覆代理（120000 + sessionHash % 10000）
  */
 object NotifIds {
     const val STATS_PERSISTENT = 1001
@@ -30,11 +34,17 @@ object NotifIds {
     private const val CALENDAR_INSIGHT_BASE = 1020
     private const val CALENDAR_INSIGHT_SPAN = 25
 
+    private const val PROACTIVE_PUSH_BASE = 1090
+    private const val PROACTIVE_PUSH_SPAN = 10
+
     fun calendarInsight(hash: Int): Int =
         CALENDAR_INSIGHT_BASE + Math.floorMod(hash, CALENDAR_INSIGHT_SPAN)
 
     fun taskTemplate(templateId: Long): Int =
         TASK_TEMPLATE_BASE + Math.floorMod(templateId, 40L).toInt()
+
+    fun proactivePush(contentHash: Int): Int =
+        PROACTIVE_PUSH_BASE + Math.floorMod(contentHash, PROACTIVE_PUSH_SPAN)
 
     private const val SCAM_ALERT_BASE = 2000
     private const val SCAM_ALERT_SPAN = 20000L
