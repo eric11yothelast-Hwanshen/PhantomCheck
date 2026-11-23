@@ -1221,13 +1221,33 @@ fun FilterSettingsScreen(
                         }
                     )
                 } else {
+                    LaunchedEffect(currentCategory) {
+                        when (currentCategory) {
+                            SettingsCategory.QUICK -> expandQuick = true
+                            SettingsCategory.AI -> expandAi = true
+                            SettingsCategory.NOTIF -> expandNotif = true
+                            SettingsCategory.ASSISTANT -> {
+                                expandHub = true
+                                expandMemoryAssistant = true
+                                expandIntel = true
+                            }
+                            SettingsCategory.PERMISSIONS -> expandHub = true
+                            SettingsCategory.APPEARANCE -> {
+                                expandPersonalization = true
+                                expandAppearance = true
+                                expandStats = true
+                            }
+                            SettingsCategory.DATA -> expandData = true
+                            SettingsCategory.ABOUT -> expandAbout = true
+                        }
+                    }
                     val categoryCardKeys = remember(currentCategory) {
                         when (currentCategory) {
                             SettingsCategory.QUICK -> setOf("quick")
                             SettingsCategory.AI -> setOf("ai")
                             SettingsCategory.NOTIF -> setOf("notif")
                             SettingsCategory.ASSISTANT -> setOf("hub", "memory_assistant", "intel")
-                            SettingsCategory.PERMISSIONS -> setOf("hub", "shizuku")
+                            SettingsCategory.PERMISSIONS -> setOf("permissions_links")
                             SettingsCategory.APPEARANCE -> setOf("personalization", "appearance", "stats")
                             SettingsCategory.DATA -> setOf("data")
                             SettingsCategory.ABOUT -> setOf("about")
@@ -4525,23 +4545,70 @@ fun FilterSettingsScreen(
             }
             }
 
-            // 6. Shizuku 進階
-            if ("shizuku" in visibleCardKeys) {
-            item(key = "card_shizuku") {
-                ShizukuAdvancedCard(
-                    expanded = expandShizuku || ("shizuku" in highlightedCardKeys),
-                    highlighted = "shizuku" in highlightedCardKeys,
-                    onToggle = {
-                        expandShizuku = !expandShizuku
-                        PhantomPrefs.setSettingsCardExpanded(appCtx, "shizuku_advanced", expandShizuku)
-                    },
-                    glassState = glassState,
-                    modifier = Modifier.onGloballyPositioned { coords ->
-                        cardBounds["shizuku"] = coords.boundsInRoot()
-                    },
-                    onShowMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
-                )
+            // ⑤ 權限與連結：權限中心＋連結應用程式中心（Shizuku 收進下方 D4 進階折疊）
+            if ("permissions_links" in visibleCardKeys) {
+                item(key = "card_permissions_links") {
+                    com.phantom.checker.ui.components.SettingsSegmentedGroup {
+                        com.phantom.checker.ui.components.SettingsNavigationRow(
+                            title = "權限授予中心",
+                            subtitle = "集中檢視通知、簡訊、通訊錄、日曆、鬧鐘、電池與 Health Connect 權限",
+                            shape = AuroraTokens.segmentedItemShape(0, 2),
+                            highlighted = activeHighlightSettingId == "permission_hub",
+                            onClick = {
+                                UiLayoutPrefs.recordRecentSetting(appCtx, "permission_hub")
+                                ctx.startActivity(Intent(ctx, PermissionHubActivity::class.java))
+                            }
+                        )
+                        com.phantom.checker.ui.components.SettingsNavigationRow(
+                            title = "連結應用程式中心",
+                            subtitle = "日曆、通訊錄、通知、鬧鐘狀態與自填金鑰雲端擴充（GitHub／Discord）",
+                            shape = AuroraTokens.segmentedItemShape(1, 2),
+                            highlighted = activeHighlightSettingId == "linked_apps_center",
+                            onClick = {
+                                UiLayoutPrefs.recordRecentSetting(appCtx, "linked_apps_center")
+                                ctx.startActivity(Intent(ctx, LinkedAppsActivity::class.java))
+                            }
+                        )
+                    }
+                }
             }
+
+            // ⑦ 資料與隱私：白名單／標籤規則／詐騙警示中心分段入口（§5.2）
+            if (currentCategory == SettingsCategory.DATA) {
+                item(key = "card_data_shortcuts") {
+                    com.phantom.checker.ui.components.SettingsSegmentedGroup {
+                        com.phantom.checker.ui.components.SettingsNavigationRow(
+                            title = "白名單管理",
+                            subtitle = "依 App 分組管理信任寄件者與訊息白名單",
+                            shape = AuroraTokens.segmentedItemShape(0, 3),
+                            highlighted = activeHighlightSettingId == "whitelist_management",
+                            onClick = {
+                                UiLayoutPrefs.recordRecentSetting(appCtx, "whitelist_management")
+                                ctx.startActivity(Intent(ctx, WhitelistManagementActivity::class.java))
+                            }
+                        )
+                        com.phantom.checker.ui.components.SettingsNavigationRow(
+                            title = "自訂標籤規則管理",
+                            subtitle = "管理自訂標籤、App 分類與條件規則",
+                            shape = AuroraTokens.segmentedItemShape(1, 3),
+                            highlighted = activeHighlightSettingId == "ai_rules",
+                            onClick = {
+                                UiLayoutPrefs.recordRecentSetting(appCtx, "ai_rules")
+                                ctx.startActivity(Intent(ctx, TagManagementActivity::class.java))
+                            }
+                        )
+                        com.phantom.checker.ui.components.SettingsNavigationRow(
+                            title = "詐騙警示中心",
+                            subtitle = "檢視高風險詐騙紀錄、趨勢與處置動作",
+                            shape = AuroraTokens.segmentedItemShape(2, 3),
+                            highlighted = activeHighlightSettingId == "ai_scam_center",
+                            onClick = {
+                                UiLayoutPrefs.recordRecentSetting(appCtx, "ai_scam_center")
+                                ctx.startActivity(Intent(ctx, ScamCenterActivity::class.java))
+                            }
+                        )
+                    }
+                }
             }
 
             // 7. 防詐情報
@@ -4585,6 +4652,101 @@ fun FilterSettingsScreen(
                     glassState = glassState
                 )
             }
+            }
+
+            // D4：各分類頁尾「進階設定」折疊區（預設收合；搜尋命中自動展開；含長按釘選）
+            if (advancedItemsInCat.isNotEmpty()) {
+                item(key = "cat_advanced_${currentCategory.id}") {
+                    val settingsBusVer by PhantomSettingsBus.version.collectAsState()
+                    SettingsAdvancedSection(
+                        expanded = isAdvancedExpanded,
+                        onToggle = { advancedExpandedMap[currentCategory] = !isAdvancedExpanded },
+                        count = advancedItemsInCat.size,
+                        modifier = Modifier.onGloballyPositioned { coords ->
+                            cardBounds["advanced"] = coords.boundsInRoot()
+                        }
+                    ) {
+                        if (currentCategory == SettingsCategory.PERMISSIONS) {
+                            ShizukuAdvancedCard(
+                                expanded = true,
+                                highlighted = activeHighlightSettingId == "shizuku_mode" || ("shizuku" in highlightedCardKeys),
+                                onToggle = {
+                                    expandShizuku = !expandShizuku
+                                    PhantomPrefs.setSettingsCardExpanded(appCtx, "shizuku_advanced", expandShizuku)
+                                },
+                                glassState = glassState,
+                                onShowMessage = { msg -> scope.launch { snackbarHostState.showSnackbar(msg) } }
+                            )
+                        }
+                        val nonShizukuAdv = advancedItemsInCat.filterNot { it.id == "shizuku_mode" }
+                        if (nonShizukuAdv.isNotEmpty()) {
+                            com.phantom.checker.ui.components.SettingsSegmentedGroup {
+                                nonShizukuAdv.forEachIndexed { idx, advItem ->
+                                    val shape = AuroraTokens.segmentedItemShape(idx, nonShizukuAdv.size)
+                                    val isHl = activeHighlightSettingId == advItem.id
+                                    val toggleable = SettingsCatalog.isToggleable(advItem.id)
+                                    val onLongPin: () -> Unit = {
+                                        if (UiLayoutPrefs.isPinned(appCtx, advItem.id)) {
+                                            UiLayoutPrefs.removePinned(appCtx, advItem.id)
+                                            scope.launch { snackbarHostState.showSnackbar("已取消釘選「${advItem.title}」") }
+                                        } else {
+                                            val added = UiLayoutPrefs.addPinned(appCtx, advItem.id)
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    if (added) "已釘選「${advItem.title}」到設定首頁"
+                                                    else "釘選已達上限（${UiLayoutPrefs.MAX_PINNED} 項），請先取消一項"
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (toggleable) {
+                                        var checked by remember(advItem.id, settingsBusVer) {
+                                            mutableStateOf(SettingsCatalog.getBooleanState(appCtx, advItem.id) == true)
+                                        }
+                                        com.phantom.checker.ui.components.SettingsSwitchRow(
+                                            title = advItem.title,
+                                            subtitle = advItem.description,
+                                            checked = checked,
+                                            onCheckedChange = { next ->
+                                                checked = next
+                                                SettingsCatalog.applyBooleanSetting(appCtx, advItem.id, next)
+                                                UiLayoutPrefs.recordRecentSetting(appCtx, advItem.id)
+                                            },
+                                            shape = shape,
+                                            highlighted = isHl,
+                                            onLongClick = onLongPin
+                                        )
+                                    } else {
+                                        val numSpec = SettingsCatalog.findNumericSpec(advItem.id)
+                                        val valueLabel = numSpec?.let { spec ->
+                                            SettingsCatalog.getNumericValue(appCtx, advItem.id)?.let { spec.formatValue(it) }
+                                        }
+                                        if (valueLabel != null) {
+                                            com.phantom.checker.ui.components.SettingsOptionRow(
+                                                title = advItem.title,
+                                                valueText = valueLabel,
+                                                subtitle = advItem.description,
+                                                shape = shape,
+                                                highlighted = isHl,
+                                                onClick = { navigateToSettingItem(advItem) },
+                                                onLongClick = onLongPin
+                                            )
+                                        } else {
+                                            com.phantom.checker.ui.components.SettingsNavigationRow(
+                                                title = advItem.title,
+                                                subtitle = advItem.description,
+                                                shape = shape,
+                                                highlighted = isHl,
+                                                onClick = { navigateToSettingItem(advItem) },
+                                                onLongClick = onLongPin
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
                                 }
                             }
