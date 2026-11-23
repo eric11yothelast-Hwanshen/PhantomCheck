@@ -722,11 +722,11 @@ internal fun MemoryTab(
 
         Spacer(Modifier.height(6.dp))
 
-        // §4.4 單張卡四等分統計總覽（點擊直達對應篩選）
+        // §4.4 / #418 單張卡四等分統計總覽（降視覺重量、與下方次級分頁以 10dp 明確分離）
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(com.phantom.checker.ui.components.AuroraTokens.CornerCard),
-            color = MaterialTheme.colorScheme.surfaceContainer
+            color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.35f)
         ) {
             val statTiles = listOf(
                 MemoryStatTile("🧠", "長期", longTermMemories.size, MemoryFilterChip.LONG_TERM),
@@ -738,7 +738,7 @@ internal fun MemoryTab(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 8.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 statTiles.forEach { tile ->
                     val isSelected = selectedFilter == tile.filter
@@ -779,13 +779,16 @@ internal fun MemoryTab(
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = valueColor,
-                                maxLines = 1
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                     }
                 }
             }
         }
+
+        Spacer(Modifier.height(10.dp))
 
         // §4.4 二級分頁（N6）：記憶｜規則｜防詐免疫
         val primaryMemoryTabIndex = when (selectedFilter) {
