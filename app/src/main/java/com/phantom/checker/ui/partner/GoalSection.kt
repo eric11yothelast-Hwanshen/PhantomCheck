@@ -160,8 +160,29 @@ internal fun PartnerGoalsCard(
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp))
                             )
+                            val milestoneText = item.nextMilestoneDate.ifBlank {
+                                resCtx.getString(R.string.goal_milestone_reached)
+                            }
+                            val summaryText = if (item.nextDueDate.isNotBlank()) {
+                                resCtx.getString(
+                                    R.string.goal_progress_summary_periods,
+                                    item.completedCount,
+                                    g.targetCount,
+                                    item.streakDays,
+                                    item.nextDueDate,
+                                    milestoneText
+                                )
+                            } else {
+                                resCtx.getString(
+                                    R.string.goal_progress_summary_periods_no_due,
+                                    item.completedCount,
+                                    g.targetCount,
+                                    item.streakDays,
+                                    milestoneText
+                                )
+                            }
                             Text(
-                                text = resCtx.getString(R.string.goal_s_c783b0, item.completedCount, g.targetCount, item.streakDays, item.nextMilestoneDate),
+                                text = summaryText,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -232,7 +253,7 @@ internal fun PartnerGoalsCard(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = stringResource(R.string.goal_s_6f3a78, item.completedCount, g.targetCount, item.streakDays),
+                        text = stringResource(R.string.goal_manage_summary_periods, item.completedCount, g.targetCount, item.streakDays),
                         style = MaterialTheme.typography.bodySmall
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

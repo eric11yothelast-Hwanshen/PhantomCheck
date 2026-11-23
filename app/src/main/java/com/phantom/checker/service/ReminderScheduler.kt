@@ -121,6 +121,10 @@ object ReminderScheduler {
                 spawned = nextTodo.copy(id = newId)
                 scheduleTodo(appCtx, newId, nextDue)
             }
+            com.phantom.checker.util.GoalEngine.onTodoCompleted(
+                appCtx,
+                todo.copy(isDone = true, completedAt = now)
+            )
         } else if (todo.dueAt > now) {
             scheduleTodo(appCtx, todo.id, todo.dueAt)
         }

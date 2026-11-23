@@ -2900,4 +2900,8 @@
     <string name="util_linked_027">Webhook ready · Forwarding disabled</string>
     <string name="util_linked_028">Discord Webhook not configured</string>
     <string name="util_linked_029">Configured (controlled by forwarding toggle)</string>
+    <string name="goal_progress_summary_periods">Progress %1$d/%2$d · %3$d-period streak · Next due %4$s · Milestone %5$s</string>
+    <string name="goal_progress_summary_periods_no_due">Progress %1$d/%2$d · %3$d-period streak · Milestone %4$s</string>
+    <string name="goal_manage_summary_periods">Completed %1$d/%2$d periods (%3$d-period streak). Adjust frequency manually (system only auto-decreases, never auto-increases):</string>
+    <string name="goal_milestone_reached">Reached</string>
 </resources>

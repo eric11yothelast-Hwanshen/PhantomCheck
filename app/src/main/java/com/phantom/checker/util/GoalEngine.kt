@@ -45,11 +45,18 @@ object GoalEngine {
         val messageHash: String
     )
 
+    private const val GOAL_ENGINE_PREFS = "phantom_goal_engine"
+    private const val KEY_SEEN_MISSED_KEYS = "seen_missed_goal_keys"
+    private const val MAX_SEEN_MISSED_KEYS = 200
+    private val DEFAULT_MILESTONES = listOf(3, 7, 14, 30)
+
     data class GoalDisplayItem(
         val goal: GoalEntity,
         val completedCount: Int,
         val streakDays: Int,
-        val nextMilestoneDate: String
+        val nextMilestoneDate: String,
+        val nextDueDate: String = "",
+        val nextMilestoneCount: Int? = null
     )
 
     fun cadenceLabel(cadenceDays: Int): String = when {
@@ -151,11 +158,20 @@ object GoalEngine {
         ctx: Context,
         goal: GoalEntity,
         baseDate: LocalDate = LocalDate.now()
+    ): Long {
+        val nextDate = baseDate.plusDays(goal.cadenceDays.toLong().coerceAtLeast(1L))
+        return spawnNextChildTodoForDate(ctx, goal, nextDate)
+    }
+
+    /** 以指定到期日排程下一期目標子 todo（供錨定排程共用，防遲交漂移與早交壓縮） */
+    private suspend fun spawnNextChildTodoForDate(
+        ctx: Context,
+        goal: GoalEntity,
+        nextDate: LocalDate
     ): Long = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
         val db = AppDatabaseHolder.db(appCtx)
         val zone = ZoneId.systemDefault()
-        val nextDate = baseDate.plusDays(goal.cadenceDays.toLong().coerceAtLeast(1L))
         val dueMs = nextDate.atTime(LocalTime.of(20, 0)).atZone(zone).toInstant().toEpochMilli()
         val childTitle = "[目標#${goal.id}] ${goal.title}"
         val todoId = db.todoDao().insert(
@@ -168,6 +184,23 @@ object GoalEngine {
         )
         ReminderScheduler.scheduleTodo(appCtx, todoId, dueMs)
         todoId
+    }
+
+    /** 計算下期錨定日：max(今天, 上期 dueAt + cadenceDays)，避免遲交無限漂移或早交壓縮節奏 */
+    internal fun computeAnchoredNextDueDate(
+        prevDueAtMs: Long,
+        cadenceDays: Int,
+        today: LocalDate = LocalDate.now(ZoneId.systemDefault()),
+        zone: ZoneId = ZoneId.systemDefault()
+    ): LocalDate {
+        val safeCadence = cadenceDays.toLong().coerceAtLeast(1L)
+        val prevDueDate = if (prevDueAtMs > 0L) {
+            Instant.ofEpochMilli(prevDueAtMs).atZone(zone).toLocalDate()
+        } else {
+            today
+        }
+        val anchored = prevDueDate.plusDays(safeCadence)
+        return if (today.isAfter(anchored)) today else anchored
     }
 
     /** 保守進度歸因：僅明確帶有 [目標#id] 的子 todo 完成時才計入進度並排程下一期 */
@@ -196,15 +229,43 @@ object GoalEngine {
         if (progressCount >= goal.targetCount) {
             db.goalDao().updateGoal(goal.copy(status = GoalEntity.STATUS_COMPLETED, missedPushStreak = 0))
         } else {
-            spawnNextChildTodo(appCtx, goal, LocalDate.now())
+            val zone = ZoneId.systemDefault()
+            val nextDate = computeAnchoredNextDueDate(
+                prevDueAtMs = todo.dueAt,
+                cadenceDays = goal.cadenceDays,
+                today = LocalDate.now(zone),
+                zone = zone
+            )
+            spawnNextChildTodoForDate(appCtx, goal, nextDate)
         }
         PhantomSettingsBus.notifyChanged()
         true
     }
 
+    private fun isMissedKeySeen(ctx: Context, key: String): Boolean {
+        val prefs = ctx.applicationContext.getSharedPreferences(GOAL_ENGINE_PREFS, Context.MODE_PRIVATE)
+        val raw = prefs.getStringSet(KEY_SEEN_MISSED_KEYS, emptySet()).orEmpty()
+        return key in raw
+    }
+
+    private fun markMissedKeySeen(ctx: Context, key: String) {
+        val prefs = ctx.applicationContext.getSharedPreferences(GOAL_ENGINE_PREFS, Context.MODE_PRIVATE)
+        val existing = prefs.getStringSet(KEY_SEEN_MISSED_KEYS, emptySet()).orEmpty().toMutableList()
+        if (key !in existing) {
+            existing.add(key)
+        }
+        val trimmed = if (existing.size > MAX_SEEN_MISSED_KEYS) {
+            existing.takeLast(MAX_SEEN_MISSED_KEYS).toSet()
+        } else {
+            existing.toSet()
+        }
+        prefs.edit().putStringSet(KEY_SEEN_MISSED_KEYS, trimmed).apply()
+    }
+
     /**
      * 只降不升動態調整：檢查逾期未互動超過 12 小時的目標子 todo，
-     * 連續 3 次未互動自動降頻一級並發一張可滑除告知卡（沿用 ProactiveEngine 里程碑去重）。
+     * 依到期週期推進（seenKey 綁定 todo.id 與週期序號，不含 dayKey）累計連續 3 期未互動才降頻一級，
+     * 並發一張可滑除告知卡；嚴禁單一逾期 todo 在 3 天內誤觸降頻。
      */
     suspend fun evaluateMissedGoalPushes(ctx: Context, nowMs: Long = System.currentTimeMillis()) = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
@@ -218,13 +279,17 @@ object GoalEngine {
             if (todo.dueAt > overdueThresholdMs) continue
             val match = GOAL_TAG_REGEX.find(todo.title) ?: continue
             val goalId = match.groupValues.getOrNull(1)?.toLongOrNull() ?: continue
-            val seenKey = "goal_miss:${todo.id}:$dayKey"
-            if (PhantomPrefs.isProactiveMilestoneDelivered(appCtx, seenKey, dayKey)) continue
 
             val goal = db.goalDao().byId(goalId) ?: continue
             if (goal.status != GoalEntity.STATUS_ACTIVE) continue
 
-            PhantomPrefs.markProactiveMilestonesDelivered(appCtx, listOf(seenKey), dayKey)
+            val cadenceMs = goal.cadenceDays.toLong().coerceAtLeast(1L) * 24L * 60L * 60L * 1000L
+            val overdueElapsedMs = (overdueThresholdMs - todo.dueAt).coerceAtLeast(0L)
+            val periodIndex = overdueElapsedMs / cadenceMs
+            val seenKey = "goal_miss:${todo.id}:p$periodIndex"
+            if (isMissedKeySeen(appCtx, seenKey)) continue
+
+            markMissedKeySeen(appCtx, seenKey)
             val nextStreak = goal.missedPushStreak + 1
             if (nextStreak >= 3) {
                 val lowerCadence = nextLowerCadence(goal.cadenceDays)
@@ -246,9 +311,48 @@ object GoalEngine {
         }
     }
 
+    internal fun parseMilestones(milestoneJson: String): List<Int> {
+        val parsed = Regex("""\d+""")
+            .findAll(milestoneJson)
+            .mapNotNull { it.value.toIntOrNull() }
+            .filter { it > 0 }
+            .distinct()
+            .sorted()
+            .toList()
+        return parsed.ifEmpty { DEFAULT_MILESTONES }
+    }
+
+    internal fun resolveNextMilestone(
+        goal: GoalEntity,
+        completedCount: Int,
+        zone: ZoneId = ZoneId.systemDefault()
+    ): Pair<Int?, LocalDate?> {
+        val milestones = parseMilestones(goal.milestoneJson)
+        val nextCount = milestones.firstOrNull { it > completedCount }
+            ?: goal.targetCount.takeIf { it > completedCount }
+            ?: return null to null
+        val startDate = runCatching {
+            LocalDate.parse(goal.startDate, DateTimeFormatter.ISO_LOCAL_DATE)
+        }.getOrElse {
+            Instant.ofEpochMilli(goal.createdAt).atZone(zone).toLocalDate()
+        }
+        val offsetDays = nextCount.toLong() * goal.cadenceDays.toLong().coerceAtLeast(1L)
+        return nextCount to startDate.plusDays(offsetDays)
+    }
+
     suspend fun loadGoalDisplayItems(ctx: Context): List<GoalDisplayItem> = withContext(Dispatchers.IO) {
         val db = AppDatabaseHolder.db(ctx.applicationContext)
         val goals = runCatching { db.goalDao().allGoals() }.getOrDefault(emptyList())
+        val pendingTodos = runCatching { db.todoDao().pendingTodos() }.getOrDefault(emptyList())
+        val pendingDueByGoalId = HashMap<Long, Long>()
+        for (todo in pendingTodos) {
+            val match = GOAL_TAG_REGEX.find(todo.title) ?: continue
+            val gId = match.groupValues.getOrNull(1)?.toLongOrNull() ?: continue
+            val existing = pendingDueByGoalId[gId]
+            if (existing == null || todo.dueAt < existing) {
+                pendingDueByGoalId[gId] = todo.dueAt
+            }
+        }
         val zone = ZoneId.systemDefault()
         val fmt = DateTimeFormatter.ofPattern("MM/dd")
         goals.map { g ->
@@ -269,12 +373,18 @@ object GoalEngine {
                     }
                 }
             }
-            val nextMilestone = LocalDate.now().plusDays(g.cadenceDays.toLong()).format(fmt)
+            val (nextMilestoneCount, nextMilestoneLocalDate) = resolveNextMilestone(g, progress.size, zone)
+            val nextMilestone = nextMilestoneLocalDate?.format(fmt).orEmpty()
+            val nextDue = pendingDueByGoalId[g.id]?.let { dueMs ->
+                Instant.ofEpochMilli(dueMs).atZone(zone).toLocalDate().format(fmt)
+            }.orEmpty()
             GoalDisplayItem(
                 goal = g,
                 completedCount = progress.size,
                 streakDays = streak,
-                nextMilestoneDate = nextMilestone
+                nextMilestoneDate = nextMilestone,
+                nextDueDate = nextDue,
+                nextMilestoneCount = nextMilestoneCount
             )
         }
     }
