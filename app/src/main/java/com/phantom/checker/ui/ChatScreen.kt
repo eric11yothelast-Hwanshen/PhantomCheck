@@ -242,7 +242,9 @@ fun ChatAssistantTab(
     isSearchActive: Boolean = false,
     onToggleSearch: () -> Unit = {},
     onRefresh: () -> Unit = {},
-    onOpenSettings: () -> Unit = {}
+    onOpenSettings: () -> Unit = {},
+    requestedBriefingMsgId: Long? = null,
+    onConsumedBriefingMsgId: () -> Unit = {}
 ) {
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
@@ -327,6 +329,8 @@ fun ChatAssistantTab(
     var dismissedCapsuleIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var continuityAnchorText by remember { mutableStateOf(PhantomPrefs.getActiveChatContinuityAnchor(appCtx)) }
     var pendingCapsulesEnabled by remember { mutableStateOf(PhantomPrefs.isChatPendingCapsulesEnabled(appCtx)) }
+    var briefingChannelBlocked by remember { mutableStateOf(com.phantom.checker.service.ProactiveEngine.isBriefingChannelBlocked(appCtx)) }
+    var briefingChannelGuideDismissed by remember { mutableStateOf(PhantomPrefs.isBriefingChannelGuideDismissed(appCtx)) }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -393,6 +397,8 @@ fun ChatAssistantTab(
                 showSuggestions = PhantomPrefs.isChatSuggestionsEnabled(appCtx)
                 assistantName = PhantomPrefs.getAssistantName(appCtx)
                 tokenSaverEnabled = PhantomPrefs.isTokenSaverEnabled(appCtx)
+                briefingChannelBlocked = com.phantom.checker.service.ProactiveEngine.isBriefingChannelBlocked(appCtx)
+                briefingChannelGuideDismissed = PhantomPrefs.isBriefingChannelGuideDismissed(appCtx)
                 scope.launch {
                     assistantAvatar = AssistantAvatarHelper.loadAvatarBitmap(appCtx)
                 }
@@ -2697,6 +2703,49 @@ fun ChatAssistantTab(
                     Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("前往設定")
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        // #404 通知可見性健檢：偵測 assistant_briefing channel 被停用時於聊天室頂部顯示一次引導卡
+        if (briefingChannelBlocked && !briefingChannelGuideDismissed) {
+            PhantomGlassCard(
+                glassState = glassState,
+                modifier = Modifier.fillMaxWidth(),
+                cornerRadius = 18.dp,
+                contentPadding = 12.dp
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "🔕 「AI 助手早晚簡報與主動提醒」通知頻道已停用",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Text(
+                        text = "系統偵測到此通知類別已被關閉，早晚簡報與主動提醒仍會寫入下方「主動訊息」聊天室，但不會在手機通知欄彈出。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = {
+                            briefingChannelGuideDismissed = true
+                            PhantomPrefs.setBriefingChannelGuideDismissed(appCtx, true)
+                        }) {
+                            Text("知道了")
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Button(onClick = {
+                            com.phantom.checker.service.ProactiveEngine.openBriefingChannelSettings(ctx)
+                        }) {
+                            Text("前往開啟通知頻道")
+                        }
+                    }
                 }
             }
             Spacer(Modifier.height(8.dp))

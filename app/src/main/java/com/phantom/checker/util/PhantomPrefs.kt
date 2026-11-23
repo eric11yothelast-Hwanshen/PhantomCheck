@@ -2767,6 +2767,14 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     fun markHealthSoftInviteShown(ctx: Context, nowMs: Long = System.currentTimeMillis()) {
         prefs(ctx).edit().putLong("health_last_soft_invite_ms", nowMs).apply()
     }
+
+    /** #404 主動通知頻道（assistant_briefing）被停用時的一次性聊天室頂部引導卡開關 */
+    fun isBriefingChannelGuideDismissed(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("briefing_channel_guide_dismissed", false)
+
+    fun setBriefingChannelGuideDismissed(ctx: Context, dismissed: Boolean) {
+        prefs(ctx).edit().putBoolean("briefing_channel_guide_dismissed", dismissed).apply()
+    }
 }
 
 

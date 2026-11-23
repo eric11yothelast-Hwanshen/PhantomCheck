@@ -299,6 +299,7 @@ class MainActivity : ComponentActivity() {
 
     private val requestedTabState = mutableStateOf<MainTab?>(null)
     private val requestedEditTodoIdState = mutableStateOf<Long?>(null)
+    private val requestedBriefingMsgIdState = mutableStateOf<Long?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -318,7 +319,9 @@ class MainActivity : ComponentActivity() {
                     requestedTab = requestedTabState.value,
                     onConsumedRequestedTab = { requestedTabState.value = null },
                     requestedEditTodoId = requestedEditTodoIdState.value,
-                    onConsumedEditTodoId = { requestedEditTodoIdState.value = null }
+                    onConsumedEditTodoId = { requestedEditTodoIdState.value = null },
+                    requestedBriefingMsgId = requestedBriefingMsgIdState.value,
+                    onConsumedBriefingMsgId = { requestedBriefingMsgIdState.value = null }
                 )
             }
         }
@@ -340,6 +343,7 @@ class MainActivity : ComponentActivity() {
         val briefingMsgId = intent?.getLongExtra(com.phantom.checker.service.BriefingScheduler.EXTRA_BRIEFING_MSG_ID, -1L) ?: -1L
         if (briefingMsgId > 0L) {
             requestedTabState.value = MainTab.ASSISTANT
+            requestedBriefingMsgIdState.value = briefingMsgId
             PhantomPrefs.markBriefingReadOnce(applicationContext, briefingMsgId)
         }
         val todoId = intent?.getLongExtra(com.phantom.checker.widget.ReminderWidgetProvider.EXTRA_EDIT_TODO_ID, -1L) ?: -1L
@@ -381,7 +385,9 @@ private fun PhantomCheckApp(
     requestedTab: MainTab? = null,
     onConsumedRequestedTab: () -> Unit = {},
     requestedEditTodoId: Long? = null,
-    onConsumedEditTodoId: () -> Unit = {}
+    onConsumedEditTodoId: () -> Unit = {},
+    requestedBriefingMsgId: Long? = null,
+    onConsumedBriefingMsgId: () -> Unit = {}
 ) {
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
@@ -1814,7 +1820,9 @@ private fun PhantomCheckApp(
                                 onRefresh = { refreshTrigger++ },
                                 onOpenSettings = {
                                     ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
-                                }
+                                },
+                                requestedBriefingMsgId = requestedBriefingMsgId,
+                                onConsumedBriefingMsgId = onConsumedBriefingMsgId
                             )
                         }
                     }
