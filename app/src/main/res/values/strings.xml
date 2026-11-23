@@ -2866,4 +2866,38 @@
     <string name="cross_app_s_c61ded">選擇郵件 App</string>
     <string name="cross_app_s_551677">找不到可用的 App</string>
     <string name="cross_app_s_e179a4">選擇導航 App</string>
+
+    <!-- Batch 5c: util/ CrossAppActionExecutor, MessageExporter, LinkedAppActionRegistry -->
+    <string name="util_export_001">匯出至 Downloads 需要 Android 10 (API 29) 以上版本</string>
+    <string name="util_export_002">無法在 Downloads 建立檔案</string>
+    <string name="util_export_003">無法開啟檔案輸出串流</string>
+    <string name="util_linked_001">本機日曆讀取</string>
+    <string name="util_linked_002">唯讀查詢已勾選的本機日曆行程與空檔</string>
+    <string name="util_linked_003">App 使用情況統計</string>
+    <string name="util_linked_004">唯讀查詢系統 UsageStatsManager 真實前景時間與啟動次數</string>
+    <string name="util_linked_005">GitHub CI / PR 唯讀監控</string>
+    <string name="util_linked_006">每 15 分鐘零 AI 輪詢指定倉庫建置失敗與待審 PR（BYOK PAT）</string>
+    <string name="util_linked_007">Discord 轉發狀態與統計（唯讀示範連接器）</string>
+    <string name="util_linked_008">唯讀檢視 Discord Webhook 連線狀態與近期簡報轉發設定（透過 Registry 零核心 UI 修改擴展）</string>
+    <string name="util_linked_009">Discord Webhook 轉發（寫入需確認）</string>
+    <string name="util_linked_010">將早晚簡報或指定訊息轉發至自訂 Discord 頻道（寫入動作必經確認／開關）</string>
+    <string name="util_linked_011">跨 App 行動卡（Gmail／地圖／鬧鐘／開 App）</string>
+    <string name="util_linked_012">一律彈出確認卡由使用者手動點擊執行，絕不自動觸發外部 App</string>
+    <string name="util_linked_013">即用（必經確認卡）</string>
+    <string name="util_linked_014">尚未同步</string>
+    <string name="util_linked_015">待排程</string>
+    <string name="util_linked_016">最後同步 %1$s · 下輪 %2$s</string>
+    <string name="util_linked_017">【連結應用動作登錄檔（僅限以下已註冊能力）】</string>
+    <string name="util_linked_018">已授權且已勾選日曆</string>
+    <string name="util_linked_019">待授權或尚未勾選日曆</string>
+    <string name="util_linked_020">已授權系統使用情況存取</string>
+    <string name="util_linked_021">待授權（PACKAGE_USAGE_STATS）</string>
+    <string name="util_linked_022">未設定 GitHub PAT（灰色待設定）</string>
+    <string name="util_linked_023">上次同步異常：%1$s</string>
+    <string name="util_linked_024">已設定並啟用唯讀輪詢</string>
+    <string name="util_linked_025">未設定 Discord Webhook（灰色待設定）</string>
+    <string name="util_linked_026">Webhook 就緒 · 簡報轉發已開啟</string>
+    <string name="util_linked_027">Webhook 就緒 · 轉發未開啟</string>
+    <string name="util_linked_028">未設定 Discord Webhook</string>
+    <string name="util_linked_029">已設定（轉發開關控制）</string>
 </resources>

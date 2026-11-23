@@ -97,7 +97,7 @@ fun ContactsIntegrationSection(
         }
         Toast.makeText(
             ctx,
-            if (hasContactsPerm) stringResource(R.string.contacts_s_9599ea) else stringResource(R.string.contacts_s_83389c),
+            if (hasContactsPerm) resCtx.getString(R.string.contacts_s_9599ea) else resCtx.getString(R.string.contacts_s_83389c),
             Toast.LENGTH_SHORT
         ).show()
     }

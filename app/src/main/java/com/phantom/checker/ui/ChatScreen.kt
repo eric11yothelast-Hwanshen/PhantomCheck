@@ -502,7 +502,7 @@ fun ChatAssistantTab(
         if ((rawTrimmed.isEmpty() && attachedImage == null) || isSending) return
         val query = rawTrimmed.ifBlank { resCtx.getString(R.string.chat_s_47f861) }
         val displayUserText = if (attachedImage != null) {
-            if (rawTrimmed.isNotEmpty()) stringResource(R.string.chat_s_19907c, rawTrimmed) else stringResource(R.string.chat_s_08e22d)
+            if (rawTrimmed.isNotEmpty()) resCtx.getString(R.string.chat_s_19907c, rawTrimmed) else resCtx.getString(R.string.chat_s_08e22d)
         } else {
             query
         }
@@ -3963,9 +3963,9 @@ fun ChatAssistantTab(
                                 "open_app" -> stringResource(R.string.chat_s_ec1f14)
                                 "delete_message" -> stringResource(R.string.chat_s_932343, actState.messages.size)
                                 "tag_message" -> if (actState.tagOperation == "remove") {
-                                    stringResource(R.string.chat_s_3914e0, actState.tagName)
+                                    stringResource(R.string.chat_s_3914e0, actState.tagName.orEmpty())
                                 } else {
-                                    stringResource(R.string.chat_s_d71346, actState.tagName)
+                                    stringResource(R.string.chat_s_d71346, actState.tagName.orEmpty())
                                 }
                                 else -> stringResource(R.string.chat_s_e6d941)
                             }

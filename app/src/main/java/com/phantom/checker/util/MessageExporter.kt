@@ -13,6 +13,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import com.phantom.checker.R
 
 object MessageExporter {
 
@@ -25,7 +26,7 @@ object MessageExporter {
     ): Result<String> = withContext(Dispatchers.IO) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             return@withContext Result.failure(
-                UnsupportedOperationException("匯出至 Downloads 需要 Android 10 (API 29) 以上版本")
+                UnsupportedOperationException(ctx.getString(R.string.util_export_001))
             )
         }
 
@@ -55,7 +56,7 @@ object MessageExporter {
 
         val resolver = appCtx.contentResolver
         val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            ?: return@withContext Result.failure(IllegalStateException("無法在 Downloads 建立檔案"))
+            ?: return@withContext Result.failure(IllegalStateException(ctx.getString(R.string.util_export_002)))
 
         try {
             resolver.openOutputStream(uri)?.use { out ->
@@ -64,7 +65,7 @@ object MessageExporter {
                 out.write(0xBB)
                 out.write(0xBF)
                 out.write(csvContent.toByteArray(Charsets.UTF_8))
-            } ?: throw IllegalStateException("無法開啟檔案輸出串流")
+            } ?: throw IllegalStateException(ctx.getString(R.string.util_export_003))
 
             val doneValues = ContentValues().apply {
                 put(MediaStore.Downloads.IS_PENDING, 0)

@@ -403,7 +403,7 @@ fun FilterSettingsScreen(
         com.phantom.checker.util.ContactContext.invalidateCache()
         Toast.makeText(
             ctx,
-            if (granted) stringResource(R.string.settings_s_9e473c) else stringResource(R.string.settings_s_1b5759),
+            if (granted) resCtx.getString(R.string.settings_s_9e473c) else resCtx.getString(R.string.settings_s_1b5759),
             Toast.LENGTH_SHORT
         ).show()
     }
@@ -423,7 +423,7 @@ fun FilterSettingsScreen(
             com.phantom.checker.util.CalendarBridge.hasWritePermission(appCtx)
         Toast.makeText(
             ctx,
-            if (calendarReadGranted) stringResource(R.string.settings_s_469985) else stringResource(R.string.settings_s_20e13e),
+            if (calendarReadGranted) resCtx.getString(R.string.settings_s_469985) else resCtx.getString(R.string.settings_s_20e13e),
             Toast.LENGTH_SHORT
         ).show()
     }
@@ -714,7 +714,7 @@ fun FilterSettingsScreen(
                 PhantomPrefs.setAppSameKeyThrottle(appCtx, pkg, seconds)
                 appThrottleMap = PhantomPrefs.getAppSameKeyThrottleMap(appCtx)
                 showAppThrottlePicker = false
-                val msg = if (seconds == 0) stringResource(R.string.settings_s_5d94cf, pkg) else stringResource(R.string.settings_s_62eb29, pkg, seconds)
+                val msg = if (seconds == 0) resCtx.getString(R.string.settings_s_5d94cf, pkg) else resCtx.getString(R.string.settings_s_62eb29, pkg, seconds)
                 scope.launch { snackbarHostState.showSnackbar(msg) }
             }
         )
@@ -1087,18 +1087,18 @@ fun FilterSettingsScreen(
         shizukuReady
     ) {
         val profileCount = AiClient.getProfiles(appCtx).size
-        val activeModel = AiClient.getActiveProfile(appCtx)?.model?.takeIf { it.isNotBlank() } ?: stringResource(R.string.settings_s_79aacc)
+        val activeModel = AiClient.getActiveProfile(appCtx)?.model?.takeIf { it.isNotBlank() } ?: resCtx.getString(R.string.settings_s_79aacc)
         val quietSummary = if (quietHoursEnabled) {
-            stringResource(R.string.settings_s_461b79).format(
+            resCtx.getString(R.string.settings_s_461b79).format(
                 quietStartMinute / 60, quietStartMinute % 60,
                 quietEndMinute / 60, quietEndMinute % 60
             )
         } else {
-            stringResource(R.string.settings_s_528d2f, if (persistentStats) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81))
+            resCtx.getString(R.string.settings_s_528d2f, if (persistentStats) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81))
         }
         val displayAssistantName = assistantName.ifBlank { resCtx.getString(R.string.chat_s_8dd976) }
         val themeLabel = ThemePreferences.getThemeMode(appCtx).label
-        val layoutLabel = if (homeCardLayoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER) stringResource(R.string.catalog_layout_stack) else stringResource(R.string.settings_s_0c69cd)
+        val layoutLabel = if (homeCardLayoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER) resCtx.getString(R.string.catalog_layout_stack) else resCtx.getString(R.string.settings_s_0c69cd)
         val notifAccessGranted = androidx.core.app.NotificationManagerCompat
             .getEnabledListenerPackages(appCtx).contains(appCtx.packageName)
         val pendingPermCount = listOf(
@@ -1113,15 +1113,15 @@ fun FilterSettingsScreen(
             ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: ""
         }.getOrDefault("")
         SettingsHomeSummaries(
-            quickSummary = stringResource(R.string.settings_s_d185c0, if (tokenSaverEnabled) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81), if (aiRiskEnabled) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81)),
-            aiSummary = stringResource(R.string.settings_s_360eec, profileCount, activeModel, todayAiUsage, dailyAiLimit),
+            quickSummary = resCtx.getString(R.string.settings_s_d185c0, if (tokenSaverEnabled) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81), if (aiRiskEnabled) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81)),
+            aiSummary = resCtx.getString(R.string.settings_s_360eec, profileCount, activeModel, todayAiUsage, dailyAiLimit),
             notifSummary = quietSummary,
-            assistantSummary = stringResource(R.string.settings_s_79736a, displayAssistantName, if (memoryChatCaptureEnabled) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81)),
+            assistantSummary = resCtx.getString(R.string.settings_s_79736a, displayAssistantName, if (memoryChatCaptureEnabled) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81)),
             permissionsSummary = permSummary,
-            permissionsBadge = if (pendingPermCount > 0) stringResource(R.string.settings_s_b6b5df, pendingPermCount) else null,
-            appearanceSummary = stringResource(R.string.settings_s_8ee5e7, themeLabel, layoutLabel),
-            dataSummary = stringResource(R.string.settings_s_97d64e, retentionDays, mutedApps.size),
-            aboutSummary = stringResource(R.string.settings_s_96f247, versionName, if (PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81)),
+            permissionsBadge = if (pendingPermCount > 0) resCtx.getString(R.string.settings_s_b6b5df, pendingPermCount) else null,
+            appearanceSummary = resCtx.getString(R.string.settings_s_8ee5e7, themeLabel, layoutLabel),
+            dataSummary = resCtx.getString(R.string.settings_s_97d64e, retentionDays, mutedApps.size),
+            aboutSummary = resCtx.getString(R.string.settings_s_96f247, versionName, if (PhantomPrefs.isUpdateAutoCheckEnabled(appCtx)) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81)),
             versionDisplay = "v$versionName"
         )
     }
@@ -1697,7 +1697,7 @@ fun FilterSettingsScreen(
                             pickingLayerName = null
                             if (uri == null) return
                             if (targetLayer == null) {
-                                bgStatusMsg = stringResource(R.string.settings_s_189dca)
+                                bgStatusMsg = resCtx.getString(R.string.settings_s_189dca)
                                 bgPickerFailed = false
                                 return
                             }
@@ -5506,14 +5506,14 @@ private fun AboutSettingsCard(
             isDownloading = false
             isDownloadError = true
             PhantomPrefs.clearActiveApkDownload(appCtx)
-            downloadStatusText = stringResource(R.string.settings_s_039d16)
+            downloadStatusText = resCtx.getString(R.string.settings_s_039d16)
             return
         }
         if (!AppUpdateHelper.canRequestPackageInstallsCompat(ctx)) {
             pendingInstallAfterUnknownSourceGrant = true
             showUnknownSourceDialog = true
             isDownloadError = false
-            downloadStatusText = stringResource(R.string.settings_s_5feb09)
+            downloadStatusText = resCtx.getString(R.string.settings_s_5feb09)
             return
         }
         pendingInstallAfterUnknownSourceGrant = false
@@ -5547,7 +5547,7 @@ private fun AboutSettingsCard(
                 downloadedApkFile = state.file
                 downloadProgressPct = state.progressPercent
                 val pctSuffix = state.progressPercent?.let { "（$it%）" }.orEmpty()
-                downloadStatusText = stringResource(R.string.settings_s_503bd5, state.file.name, pctSuffix)
+                downloadStatusText = resCtx.getString(R.string.settings_s_503bd5, state.file.name, pctSuffix)
             }
             is AppUpdateHelper.ApkDownloadState.ReadyToInstall -> {
                 val wasDownloading = isDownloading
@@ -5558,10 +5558,10 @@ private fun AboutSettingsCard(
                 downloadProgressPct = 100
                 val alreadyAutoLaunched = PhantomPrefs.isActiveApkAutoInstallLaunched(appCtx)
                 if (allowAutoInstall && (wasDownloading || !alreadyAutoLaunched) && state.downloadId > 0L && !alreadyAutoLaunched) {
-                    downloadStatusText = stringResource(R.string.settings_s_610a25, state.file.name)
+                    downloadStatusText = resCtx.getString(R.string.settings_s_610a25, state.file.name)
                     attemptInstall(state.file, isAutoTrigger = true)
                 } else {
-                    downloadStatusText = stringResource(R.string.settings_s_cc1889, state.version)
+                    downloadStatusText = resCtx.getString(R.string.settings_s_cc1889, state.version)
                 }
             }
             is AppUpdateHelper.ApkDownloadState.Failed -> {

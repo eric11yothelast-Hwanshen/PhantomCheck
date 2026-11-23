@@ -4,6 +4,8 @@ import android.content.Context
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.phantom.checker.PhantomApplication
+import com.phantom.checker.R
 
 /**
  * #368 連結應用程式中心：宣告式動作登錄檔（Action Registry）單一來源：
@@ -37,73 +39,73 @@ object LinkedAppActionRegistry {
     val ACTIONS: List<LinkedAppAction> = listOf(
         LinkedAppAction(
             id = "calendar_readonly",
-            title = "本機日曆讀取",
-            description = "唯讀查詢已勾選的本機日曆行程與空檔",
+            title = PhantomApplication.str(R.string.util_linked_001),
+            description = PhantomApplication.str(R.string.util_linked_002),
             category = "local",
             isReadOnly = true,
             needsPermission = "READ_CALENDAR",
             evaluateStatus = { ctx ->
                 if (CalendarBridge.isCalendarEnabledForAi(ctx)) {
-                    ActionStatus(Availability.READY, "已授權且已勾選日曆")
+                    ActionStatus(Availability.READY, ctx.getString(R.string.util_linked_018))
                 } else {
-                    ActionStatus(Availability.NEEDS_PERMISSION, "待授權或尚未勾選日曆")
+                    ActionStatus(Availability.NEEDS_PERMISSION, ctx.getString(R.string.util_linked_019))
                 }
             }
         ),
         LinkedAppAction(
             id = "usage_stats_readonly",
-            title = "App 使用情況統計",
-            description = "唯讀查詢系統 UsageStatsManager 真實前景時間與啟動次數",
+            title = PhantomApplication.str(R.string.util_linked_003),
+            description = PhantomApplication.str(R.string.util_linked_004),
             category = "local",
             isReadOnly = true,
             needsPermission = "PACKAGE_USAGE_STATS",
             evaluateStatus = { ctx ->
                 if (UsageStatsBridge.hasUsageStatsPermission(ctx)) {
-                    ActionStatus(Availability.READY, "已授權系統使用情況存取")
+                    ActionStatus(Availability.READY, ctx.getString(R.string.util_linked_020))
                 } else {
-                    ActionStatus(Availability.NEEDS_PERMISSION, "待授權（PACKAGE_USAGE_STATS）")
+                    ActionStatus(Availability.NEEDS_PERMISSION, ctx.getString(R.string.util_linked_021))
                 }
             }
         ),
         LinkedAppAction(
             id = "github_monitor_readonly",
-            title = "GitHub CI / PR 唯讀監控",
-            description = "每 15 分鐘零 AI 輪詢指定倉庫建置失敗與待審 PR（BYOK PAT）",
+            title = PhantomApplication.str(R.string.util_linked_005),
+            description = PhantomApplication.str(R.string.util_linked_006),
             category = "cloud",
             isReadOnly = true,
             needsByokKey = "github_pat",
             evaluateStatus = { ctx ->
                 if (!EncryptedByokStore.isGitHubConfigured(ctx)) {
-                    ActionStatus(Availability.NEEDS_BYOK, "未設定 GitHub PAT（灰色待設定）")
+                    ActionStatus(Availability.NEEDS_BYOK, ctx.getString(R.string.util_linked_022))
                 } else {
                     val lastSync = PhantomPrefs.getLinkedAppLastSyncAt(ctx, "github")
                     val err = PhantomPrefs.getLinkedAppLastError(ctx, "github")
                     val intervalMs = PhantomPrefs.getGitHubPollIntervalMinutes(ctx).toLong() * 60_000L
                     val nextSync = if (lastSync > 0L) lastSync + intervalMs else 0L
                     if (err.isNotBlank()) {
-                        ActionStatus(Availability.WARNING, "上次同步異常：$err", lastSync, nextSync, err)
+                        ActionStatus(Availability.WARNING, ctx.getString(R.string.util_linked_023, err), lastSync, nextSync, err)
                     } else {
-                        ActionStatus(Availability.READY, "已設定並啟用唯讀輪詢", lastSync, nextSync)
+                        ActionStatus(Availability.READY, ctx.getString(R.string.util_linked_024), lastSync, nextSync)
                     }
                 }
             }
         ),
         LinkedAppAction(
             id = "discord_digest_stats_readonly",
-            title = "Discord 轉發狀態與統計（唯讀示範連接器）",
-            description = "唯讀檢視 Discord Webhook 連線狀態與近期簡報轉發設定（透過 Registry 零核心 UI 修改擴展）",
+            title = PhantomApplication.str(R.string.util_linked_007),
+            description = PhantomApplication.str(R.string.util_linked_008),
             category = "cloud",
             isReadOnly = true,
             needsByokKey = "discord_webhook",
             evaluateStatus = { ctx ->
                 if (!EncryptedByokStore.isDiscordConfigured(ctx)) {
-                    ActionStatus(Availability.NEEDS_BYOK, "未設定 Discord Webhook（灰色待設定）")
+                    ActionStatus(Availability.NEEDS_BYOK, ctx.getString(R.string.util_linked_025))
                 } else {
                     val fwdOn = PhantomPrefs.isDiscordForwardEnabled(ctx)
                     val lastSync = PhantomPrefs.getLinkedAppLastSyncAt(ctx, "discord")
                     ActionStatus(
                         Availability.READY,
-                        if (fwdOn) "Webhook 就緒 · 簡報轉發已開啟" else "Webhook 就緒 · 轉發未開啟",
+                        if (fwdOn) ctx.getString(R.string.util_linked_026) else ctx.getString(R.string.util_linked_027),
                         lastSyncAtMs = lastSync
                     )
                 }
@@ -111,42 +113,42 @@ object LinkedAppActionRegistry {
         ),
         LinkedAppAction(
             id = "discord_webhook_forward",
-            title = "Discord Webhook 轉發（寫入需確認）",
-            description = "將早晚簡報或指定訊息轉發至自訂 Discord 頻道（寫入動作必經確認／開關）",
+            title = PhantomApplication.str(R.string.util_linked_009),
+            description = PhantomApplication.str(R.string.util_linked_010),
             category = "cloud",
             isReadOnly = false,
             needsByokKey = "discord_webhook",
             evaluateStatus = { ctx ->
                 if (!EncryptedByokStore.isDiscordConfigured(ctx)) {
-                    ActionStatus(Availability.NEEDS_BYOK, "未設定 Discord Webhook")
+                    ActionStatus(Availability.NEEDS_BYOK, ctx.getString(R.string.util_linked_028))
                 } else {
-                    ActionStatus(Availability.READY, "已設定（轉發開關控制）")
+                    ActionStatus(Availability.READY, ctx.getString(R.string.util_linked_029))
                 }
             }
         ),
         LinkedAppAction(
             id = "cross_app_intents",
-            title = "跨 App 行動卡（Gmail／地圖／鬧鐘／開 App）",
-            description = "一律彈出確認卡由使用者手動點擊執行，絕不自動觸發外部 App",
+            title = PhantomApplication.str(R.string.util_linked_011),
+            description = PhantomApplication.str(R.string.util_linked_012),
             category = "cross_app",
             isReadOnly = false,
-            evaluateStatus = { _ -> ActionStatus(Availability.READY, "即用（必經確認卡）") }
+            evaluateStatus = { _ -> ActionStatus(Availability.READY, PhantomApplication.str(R.string.util_linked_013)) }
         )
     )
 
     fun formatSyncWindow(lastSyncMs: Long, nextSyncMs: Long): String {
         val fmt = SimpleDateFormat("HH:mm", Locale.getDefault())
-        val lastStr = if (lastSyncMs > 0L) fmt.format(Date(lastSyncMs)) else "尚未同步"
-        val nextStr = if (nextSyncMs > 0L) fmt.format(Date(nextSyncMs)) else "待排程"
-        return "最後同步 $lastStr · 下輪 $nextStr"
+        val lastStr = if (lastSyncMs > 0L) fmt.format(Date(lastSyncMs)) else PhantomApplication.str(R.string.util_linked_014)
+        val nextStr = if (nextSyncMs > 0L) fmt.format(Date(nextSyncMs)) else PhantomApplication.str(R.string.util_linked_015)
+        return PhantomApplication.str(R.string.util_linked_016, lastStr, nextStr)
     }
 
     /** 供 ChatScreenParts 注入系統提示，確保 AI 只宣稱並呼叫 Registry 內存在的能力 */
     fun buildCapabilityPromptSummary(ctx: Context): String = buildString {
-        appendLine("【連結應用動作登錄檔（僅限以下已註冊能力）】")
+        appendLine(PhantomApplication.str(R.string.util_linked_017))
         ACTIONS.forEach { act ->
             val st = act.evaluateStatus(ctx)
-            val rw = if (act.isReadOnly) "唯讀" else "寫入(必確認)"
+            val rw = if (act.isReadOnly) PhantomApplication.str(R.string.linked_apps_s_8351a4) else PhantomApplication.str(R.string.linked_apps_s_736b95)
             appendLine("- ${act.id}（${act.title}，$rw）：${st.statusText}")
         }
     }.trim()

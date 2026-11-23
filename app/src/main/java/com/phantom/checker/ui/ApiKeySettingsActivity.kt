@@ -314,9 +314,9 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                                 purposeTestResults = purposeTestResults - purpose.id
                                 version++
                                 val label = if (profileId == null) {
-                                    stringResource(R.string.settings_s_4f2580)
+                                    resCtx.getString(R.string.settings_s_4f2580)
                                 } else {
-                                    profiles.firstOrNull { it.id == profileId }?.name ?: stringResource(R.string.common_selected)
+                                    profiles.firstOrNull { it.id == profileId }?.name ?: resCtx.getString(R.string.common_selected)
                                 }
                                 scope.launch {
                                     snackbarHostState.showSnackbar(resCtx.getString(R.string.api_key_s_d1abc6, purpose.label, label))
@@ -326,7 +326,7 @@ fun ApiKeySettingsScreen(onBack: () -> Unit) {
                                 if (testingPurposeId != null) return@PurposeModelsCard
                                 val target = AiClient.getProfileForPurpose(appCtx, purpose)
                                 if (target == null) {
-                                    purposeTestResults = purposeTestResults + (purpose.id to (false to stringResource(R.string.api_key_s_26bea4)))
+                                    purposeTestResults = purposeTestResults + (purpose.id to (false to resCtx.getString(R.string.api_key_s_26bea4)))
                                     return@PurposeModelsCard
                                 }
                                 scope.launch {
