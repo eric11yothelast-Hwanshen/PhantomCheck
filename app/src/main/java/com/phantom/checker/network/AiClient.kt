@@ -2088,7 +2088,7 @@ object AiClient {
     }
 
 
-    /** 每週 AI 摘要生成（含 413 降載與 429 Retry-After 重試，回傳 Result 供誠實顯示失敗原因） */
+    /** 每週 AI 摘要生成（含 413 降載、429 Retry-After 重試與 finish_reason=length 續寫補齊，確保完整句收尾） */
     suspend fun summarizeWeekly(
         prompt: String,
         context: Context? = null
@@ -2097,18 +2097,17 @@ object AiClient {
             ?: return@withContext Result.failure(IllegalStateException("尚未設定 AI Provider API Key"))
         val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
         val auth = "Bearer ${profile.apiKey.trim()}"
+        val modelName = profile.model.trim().ifEmpty { FALLBACK_MODEL }
+        val sysPrompt = "你是個人通訊防詐助理，請用繁體中文整理本週訊息統計、風險分布趨勢、最活躍 App 與高風險訊息重點及詐騙提醒。請使用 Markdown 格式（如 ## 標題、**重點粗體**、- 清單）條列呈現，五個段落皆須完整收尾，最後務必以完整句號（。）結束，不得在半句或括號未閉合處中斷。"
         var currentPrompt = prompt
-        var maxTok = if (isGroqProvider(profile)) 1000 else 1400
+        var maxTok = if (isGroqProvider(profile)) 1600 else 2400
         var degraded = false
         var rateLimitRetries = 0
         while (true) {
             val body = ChatRequest(
-                model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
+                model = modelName,
                 messages = listOf(
-                    ChatMessage(
-                        "system",
-                        "你是個人通訊防詐助理，請用繁體中文整理本週訊息統計、風險分布趨勢、最活躍 App 與高風險訊息重點及詐騙提醒。請使用 Markdown 格式（如 ## 標題、**重點粗體**、- 清單）條列呈現。"
-                    ),
+                    ChatMessage("system", sysPrompt),
                     ChatMessage("user", currentPrompt)
                 ),
                 maxTokens = maxTok,
@@ -2117,12 +2116,41 @@ object AiClient {
             try {
                 enforceRateLimit()
                 val res = getApi(profile.baseUrl).chat(url = fullUrl, auth = auth, body = body)
-                val text = extractReplyText(res.choices.firstOrNull()?.message?.content)
-                return@withContext if (text.isEmpty()) {
-                    Result.failure(IllegalStateException("AI 回應為空"))
-                } else {
-                    Result.success(text)
+                val firstChoice = res.choices.firstOrNull()
+                var text = extractReplyText(firstChoice?.message?.content).trim()
+                if (text.isEmpty()) {
+                    return@withContext Result.failure(IllegalStateException("AI 回應為空"))
                 }
+                val finishReason = firstChoice?.finishReason?.lowercase().orEmpty()
+                val reachedTokenLimit = finishReason == "length" || finishReason == "max_tokens"
+                if (reachedTokenLimit || !endsWithCompleteSentence(text)) {
+                    try {
+                        enforceRateLimit()
+                        val contBody = ChatRequest(
+                            model = modelName,
+                            messages = listOf(
+                                ChatMessage("system", sysPrompt),
+                                ChatMessage("user", currentPrompt),
+                                ChatMessage("assistant", text),
+                                ChatMessage(
+                                    "user",
+                                    "你剛才的週報在半途被截斷了。請直接從截斷處無縫接續補完剩餘段落，不要重複已輸出的內容，並務必以完整句號（。）收尾。"
+                                )
+                            ),
+                            maxTokens = 1200,
+                            temperature = 0.2
+                        )
+                        val contRes = getApi(profile.baseUrl).chat(url = fullUrl, auth = auth, body = contBody)
+                        val contText = extractReplyText(contRes.choices.firstOrNull()?.message?.content).trim()
+                        if (contText.isNotEmpty()) {
+                            text = mergeContinuationText(text, contText)
+                        }
+                    } catch (_: Exception) {
+                        // 續寫失敗時退回對既有文字做完整句收尾整理
+                    }
+                }
+                text = ensureCompleteSentenceEnding(text)
+                return@withContext Result.success(text)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: HttpException) {
@@ -2134,7 +2162,7 @@ object AiClient {
                 if (!degraded && isRequestTooLargeError(e)) {
                     degraded = true
                     currentPrompt = currentPrompt.take((currentPrompt.length / 2).coerceAtLeast(500))
-                    maxTok = 800
+                    maxTok = 1400
                     continue
                 }
                 return@withContext Result.failure(Exception(formatHttpErrorMessage(e)))
@@ -2145,6 +2173,56 @@ object AiClient {
         }
         @Suppress("UNREACHABLE_CODE")
         Result.failure(IllegalStateException("未知錯誤"))
+    }
+
+    internal fun endsWithCompleteSentence(text: String): Boolean {
+        val trimmed = text.trimEnd()
+        if (trimmed.isEmpty()) return false
+        val openParens = trimmed.count { it == '（' || it == '(' }
+        val closeParens = trimmed.count { it == '）' || it == ')' }
+        if (openParens > closeParens) return false
+        val lastChar = trimmed.last()
+        return lastChar in charArrayOf('。', '！', '？', '!', '?', '」', '』', '）', ')', '`', '*')
+    }
+
+    internal fun mergeContinuationText(head: String, tail: String): String {
+        val h = head.trimEnd()
+        val t = tail.trimStart()
+        if (t.isEmpty()) return h
+        // 若模型重複了開頭最後一小段，將重疊區段去除
+        val maxOverlap = minOf(h.length, t.length, 60)
+        for (len in maxOverlap downTo 6) {
+            val suffix = h.substring(h.length - len)
+            if (t.startsWith(suffix)) {
+                return h + t.substring(len)
+            }
+        }
+        return "$h$t"
+    }
+
+    internal fun ensureCompleteSentenceEnding(text: String): String {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return trimmed
+        if (endsWithCompleteSentence(trimmed)) return trimmed
+        // 若仍有未閉合括號或半句，優先補齊未閉合括號並以句號收尾，或裁回最後一個完整句標點（若裁切損失不超過 15%）
+        val sentenceEnders = charArrayOf('。', '！', '？', '\n')
+        val lastStopIdx = trimmed.lastIndexOfAny(sentenceEnders)
+        if (lastStopIdx >= (trimmed.length * 0.85).toInt()) {
+            val candidate = trimmed.substring(0, lastStopIdx + 1).trimEnd()
+            if (candidate.isNotEmpty() && endsWithCompleteSentence(candidate)) {
+                return candidate
+            }
+        }
+        val sb = StringBuilder(trimmed)
+        val openFull = sb.count { it == '（' } - sb.count { it == '）' }
+        val openHalf = sb.count { it == '(' } - sb.count { it == ')' }
+        repeat(openFull.coerceAtLeast(0)) { sb.append('）') }
+        repeat(openHalf.coerceAtLeast(0)) { sb.append(')') }
+        val last = sb.lastOrNull()
+        if (last != null && last !in charArrayOf('。', '！', '？', '!', '?')) {
+            sb.append('。')
+        }
+        return sb.toString()
     }
 
     /** 單則訊息 AI 深度分析（段落式風險解說，含 413 降載、429 Retry-After 與逾時自動重試） */

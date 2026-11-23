@@ -537,14 +537,14 @@ internal fun StatsTab(
                 if (!weeklyExpanded) {
                     val previewText = weekly?.let {
                         val label = WeeklySummaryPolicy.formatWeekLabel(it.date)
-                        val body = stripMarkdown(it.summary).replace("\n", " ").replace(Regex("\\s+"), " ").trim().take(70)
+                        val body = stripMarkdown(it.summary).replace("\n", " ").replace(Regex("\\s+"), " ").trim()
                         "$label：$body"
                     } ?: "尚無本週摘要，點擊展開或立即生成"
                     Text(
                         text = previewText,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -556,52 +556,69 @@ internal fun StatsTab(
                     Spacer(Modifier.height(4.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(
-                            onClick = {
-                                if (isGeneratingWeekly) return@TextButton
-                                scope.launch {
-                                    isGeneratingWeekly = true
-                                    weeklyError = null
-                                    val result = withContext(Dispatchers.IO) {
-                                        WeeklySummaryPolicy.generateWeeklySummary(appCtx, fromSchedule = false)
-                                    }
-                                    isGeneratingWeekly = false
-                                    result.onSuccess {
-                                        onSummaryGenerated()
-                                        onShowMessage("本週 AI 摘要已生成")
-                                    }.onFailure { err ->
-                                        val msg = err.message ?: "週報生成失敗"
-                                        weeklyError = msg
-                                        onShowMessage(msg)
-                                    }
-                                }
-                            },
-                            enabled = !isGeneratingWeekly
-                        ) {
-                            Text(if (isGeneratingWeekly) "生成中…" else if (weekly != null) "重新生成" else "生成週報")
-                        }
                         if (weekly != null) {
                             TextButton(onClick = {
-                                val plain = stripMarkdown(weekly.summary)
-                                val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                cm.setPrimaryClip(ClipData.newPlainText("weekly_ai_summary", plain))
-                                onShowMessage("已複製本週 AI 摘要")
+                                weeklyExpanded = true
+                                PhantomPrefs.setWeeklySummaryExpanded(appCtx, true)
                             }) {
-                                Text("複製")
+                                Text("展開全文")
                             }
-                            TextButton(onClick = {
-                                val plain = stripMarkdown(weekly.summary)
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_SUBJECT, "幻訊本週 AI 摘要")
-                                    putExtra(Intent.EXTRA_TEXT, plain)
+                        } else {
+                            Spacer(Modifier.width(1.dp))
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    if (isGeneratingWeekly) return@TextButton
+                                    scope.launch {
+                                        isGeneratingWeekly = true
+                                        weeklyError = null
+                                        val result = withContext(Dispatchers.IO) {
+                                            WeeklySummaryPolicy.generateWeeklySummary(appCtx, fromSchedule = false)
+                                        }
+                                        isGeneratingWeekly = false
+                                        result.onSuccess {
+                                            weeklyExpanded = true
+                                            PhantomPrefs.setWeeklySummaryExpanded(appCtx, true)
+                                            onSummaryGenerated()
+                                            onShowMessage("本週 AI 摘要已生成")
+                                        }.onFailure { err ->
+                                            val msg = err.message ?: "週報生成失敗"
+                                            weeklyError = msg
+                                            onShowMessage(msg)
+                                        }
+                                    }
+                                },
+                                enabled = !isGeneratingWeekly
+                            ) {
+                                Text(if (isGeneratingWeekly) "生成中…" else if (weekly != null) "重新生成" else "生成週報")
+                            }
+                            if (weekly != null) {
+                                TextButton(onClick = {
+                                    val plain = stripMarkdown(weekly.summary)
+                                    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    cm.setPrimaryClip(ClipData.newPlainText("weekly_ai_summary", plain))
+                                    onShowMessage("已複製本週 AI 摘要")
+                                }) {
+                                    Text("複製")
                                 }
-                                ctx.startActivity(Intent.createChooser(shareIntent, "分享本週 AI 摘要"))
-                            }) {
-                                Text("分享")
+                                TextButton(onClick = {
+                                    val plain = stripMarkdown(weekly.summary)
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_SUBJECT, "幻訊本週 AI 摘要")
+                                        putExtra(Intent.EXTRA_TEXT, plain)
+                                    }
+                                    ctx.startActivity(Intent.createChooser(shareIntent, "分享本週 AI 摘要"))
+                                }) {
+                                    Text("分享")
+                                }
                             }
                         }
                     }
