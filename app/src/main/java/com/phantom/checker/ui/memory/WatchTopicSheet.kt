@@ -43,6 +43,8 @@ import com.phantom.checker.service.AppDatabaseHolder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * #388 主動情報中樞 Phase A：關注主題清單最小管理對話框（記憶頁與設定頁共用）。
@@ -54,6 +56,7 @@ fun WatchTopicManagerDialog(
     onDismiss: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val db = remember(appCtx) { AppDatabaseHolder.db(appCtx) }
@@ -83,9 +86,9 @@ fun WatchTopicManagerDialog(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("關注主題清單（${topics.size}）")
+                Text(stringResource(R.string.watch_topic_s_f669cc, topics.size))
                 TextButton(onClick = { showAddForm = !showAddForm }) {
-                    Text(if (showAddForm) "收合新增" else "+ 新增")
+                    Text(if (showAddForm) stringResource(R.string.watch_topic_s_546921) else stringResource(R.string.watch_topic_s_d2b75d))
                 }
             }
         },
@@ -101,12 +104,12 @@ fun WatchTopicManagerDialog(
                                 val count = withContext(Dispatchers.IO) {
                                     db.watchTopicDao().acceptAllExtracted()
                                 }
-                                onShowMessage("已確認 $count 筆 AI 萃取候選主題")
+                                onShowMessage(resCtx.getString(R.string.watch_topic_s_d68f98, count))
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("一鍵接受全部候選（$pendingCandidatesCount 筆）")
+                        Text(stringResource(R.string.watch_topic_s_731759, pendingCandidatesCount))
                     }
                 }
 
@@ -123,14 +126,14 @@ fun WatchTopicManagerDialog(
                             OutlinedTextField(
                                 value = newLabel,
                                 onValueChange = { newLabel = it.take(40) },
-                                label = { Text("主題名稱（例如：Switch 2、某款遊戲）") },
+                                label = { Text(stringResource(R.string.watch_topic_s_7a736e)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
                                 value = newQueryHint,
                                 onValueChange = { newQueryHint = it.take(80) },
-                                label = { Text("查詢關鍵字提示（可留空同主題名）") },
+                                label = { Text(stringResource(R.string.watch_topic_s_6ecaa6)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -158,7 +161,7 @@ fun WatchTopicManagerDialog(
                                 onClick = {
                                     val lbl = newLabel.trim()
                                     if (lbl.length < 2) {
-                                        onShowMessage("主題名稱至少需 2 個字")
+                                        onShowMessage(resCtx.getString(R.string.watch_topic_s_1a47ca))
                                         return@Button
                                     }
                                     val hint = newQueryHint.trim().ifBlank { lbl }
@@ -178,12 +181,12 @@ fun WatchTopicManagerDialog(
                                         newLabel = ""
                                         newQueryHint = ""
                                         showAddForm = false
-                                        onShowMessage("已新增關注主題「$lbl」")
+                                        onShowMessage(resCtx.getString(R.string.watch_topic_s_0b66f2, lbl))
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("儲存關注主題")
+                                Text(stringResource(R.string.watch_topic_s_488e0c))
                             }
                         }
                     }
@@ -191,7 +194,7 @@ fun WatchTopicManagerDialog(
 
                 if (topics.isEmpty()) {
                     Text(
-                        text = "尚未建立關注主題。可手動新增，或開啟「主動情報」後由系統每日從近期非敏感素材自動萃取候選。",
+                        text = stringResource(R.string.watch_topic_s_05f762),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -233,10 +236,10 @@ fun WatchTopicManagerDialog(
                                         )
                                         Text(
                                             text = when {
-                                                isMuted -> "已靜音"
-                                                isCandidate -> "AI 候選"
-                                                topic.confidence == WatchTopicEntity.CONFIDENCE_MANUAL -> "手動"
-                                                else -> "已確認"
+                                                isMuted -> stringResource(R.string.settings_s_fd8f57)
+                                                isCandidate -> stringResource(R.string.watch_topic_s_c652eb)
+                                                topic.confidence == WatchTopicEntity.CONFIDENCE_MANUAL -> stringResource(R.string.watch_topic_s_74af95)
+                                                else -> stringResource(R.string.watch_topic_s_224aed)
                                             },
                                             style = MaterialTheme.typography.labelSmall,
                                             color = if (isMuted) {
@@ -249,7 +252,7 @@ fun WatchTopicManagerDialog(
                                         )
                                     }
                                     Text(
-                                        text = "查詢詞：${topic.queryHint}",
+                                        text = stringResource(R.string.watch_topic_s_b41c4a, topic.queryHint),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 2,
@@ -266,17 +269,17 @@ fun WatchTopicManagerDialog(
                                                         withContext(Dispatchers.IO) {
                                                             db.watchTopicDao().updateConfidence(topic.id, WatchTopicEntity.CONFIDENCE_CONFIRMED)
                                                         }
-                                                        onShowMessage("已確認「${topic.label}」")
+                                                        onShowMessage(resCtx.getString(R.string.watch_topic_s_f67922, topic.label))
                                                     }
                                                 }
-                                            ) { Text("確認") }
+                                            ) { Text(stringResource(R.string.common_confirm)) }
                                         }
                                         TextButton(
                                             onClick = {
                                                 editingTopic = topic
                                                 editHintText = topic.queryHint
                                             }
-                                        ) { Text("編輯查詢詞") }
+                                        ) { Text(stringResource(R.string.watch_topic_s_9e7770)) }
                                         TextButton(
                                             onClick = {
                                                 val nextStatus = if (isMuted) WatchTopicEntity.STATUS_ACTIVE else WatchTopicEntity.STATUS_MUTED
@@ -284,21 +287,21 @@ fun WatchTopicManagerDialog(
                                                     withContext(Dispatchers.IO) {
                                                         db.watchTopicDao().updateStatus(topic.id, nextStatus)
                                                     }
-                                                    onShowMessage(if (isMuted) "已恢復關注「${topic.label}」" else "已靜音「${topic.label}」")
+                                                    onShowMessage(if (isMuted) resCtx.getString(R.string.watch_topic_s_a81bf1, topic.label) else resCtx.getString(R.string.watch_topic_s_8be493, topic.label))
                                                 }
                                             }
-                                        ) { Text(if (isMuted) "恢復" else "靜音") }
+                                        ) { Text(if (isMuted) stringResource(R.string.memory_s_ca3365) else stringResource(R.string.common_muted)) }
                                         TextButton(
                                             onClick = {
                                                 scope.launch {
                                                     withContext(Dispatchers.IO) {
                                                         db.watchTopicDao().deleteById(topic.id)
                                                     }
-                                                    onShowMessage("已刪除「${topic.label}」")
+                                                    onShowMessage(resCtx.getString(R.string.watch_topic_s_61d2aa, topic.label))
                                                 }
                                             }
                                         ) {
-                                            Text("刪除", color = MaterialTheme.colorScheme.error)
+                                            Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
                                         }
                                     }
                                 }
@@ -310,7 +313,7 @@ fun WatchTopicManagerDialog(
         },
         confirmButton = {
             OutlinedButton(onClick = onDismiss) {
-                Text("關閉")
+                Text(stringResource(R.string.common_close))
             }
         }
     )
@@ -318,12 +321,12 @@ fun WatchTopicManagerDialog(
     editingTopic?.let { target ->
         AlertDialog(
             onDismissRequest = { editingTopic = null },
-            title = { Text("編輯查詢詞：${target.label}") },
+            title = { Text(stringResource(R.string.watch_topic_s_5e8cc8, target.label)) },
             text = {
                 OutlinedTextField(
                     value = editHintText,
                     onValueChange = { editHintText = it.take(80) },
-                    label = { Text("查詢關鍵字提示（外送最小化：僅送此字串）") },
+                    label = { Text(stringResource(R.string.watch_topic_s_bda6fb)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -337,13 +340,13 @@ fun WatchTopicManagerDialog(
                                 db.watchTopicDao().updateQueryHint(target.id, cleaned)
                             }
                             editingTopic = null
-                            onShowMessage("已更新查詢詞")
+                            onShowMessage(resCtx.getString(R.string.watch_topic_s_e9ce70))
                         }
                     }
-                ) { Text("儲存") }
+                ) { Text(stringResource(R.string.common_save)) }
             },
             dismissButton = {
-                TextButton(onClick = { editingTopic = null }) { Text("取消") }
+                TextButton(onClick = { editingTopic = null }) { Text(stringResource(R.string.common_cancel)) }
             }
         )
     }

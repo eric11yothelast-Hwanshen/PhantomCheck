@@ -45,6 +45,8 @@ import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * #379 夥伴分頁長程目標卡（進度條＋連續天數＋下一個里程碑＋手動建立／管理）：
@@ -57,6 +59,7 @@ internal fun PartnerGoalsCard(
     settingsVersion: Long,
     onGoalsChanged: () -> Unit = {}
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -86,7 +89,7 @@ internal fun PartnerGoalsCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "🎯 長程目標追蹤（${items.count { it.goal.status == GoalEntity.STATUS_ACTIVE }} 進行中）",
+                    text = stringResource(R.string.goal_s_ccea0f, items.count { it.goal.status == GoalEntity.STATUS_ACTIVE }),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -96,13 +99,13 @@ internal fun PartnerGoalsCard(
                     onClick = { showCreateDialog = true },
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                 ) {
-                    Text("+ 建立目標", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.goal_s_959895), style = MaterialTheme.typography.labelMedium)
                 }
             }
 
             if (items.isEmpty()) {
                 Text(
-                    text = "尚未建立長程目標。可點右上角手動建立（無需 API Key），或在對話中提及想養成的習慣時由確認卡建立。",
+                    text = stringResource(R.string.goal_s_94865d),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -137,7 +140,7 @@ internal fun PartnerGoalsCard(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = g.title + if (g.status == GoalEntity.STATUS_PAUSED) "（已暫停）" else "",
+                                    text = g.title + if (g.status == GoalEntity.STATUS_PAUSED) resCtx.getString(R.string.goal_s_2ee68c) else "",
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
@@ -158,7 +161,7 @@ internal fun PartnerGoalsCard(
                                     .clip(RoundedCornerShape(3.dp))
                             )
                             Text(
-                                text = "進度 ${item.completedCount}/${g.targetCount} · 連續 ${item.streakDays} 期 · 下個里程碑 ${item.nextMilestoneDate}",
+                                text = resCtx.getString(R.string.goal_s_c783b0, item.completedCount, g.targetCount, item.streakDays, item.nextMilestoneDate),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -174,19 +177,19 @@ internal fun PartnerGoalsCard(
         var cadenceInput by remember { mutableStateOf(7) }
         AlertDialog(
             onDismissRequest = { showCreateDialog = false },
-            title = { Text("建立長程目標") },
+            title = { Text(stringResource(R.string.goal_s_6081ee)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
                         value = titleInput,
                         onValueChange = { titleInput = it },
-                        label = { Text("目標名稱（例如：跑步 30 分鐘）") },
+                        label = { Text(stringResource(R.string.goal_s_71746f)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    Text("提醒頻率", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.goal_s_4f5f34), style = MaterialTheme.typography.labelMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(1 to "每天", 7 to "每週", 14 to "雙週", 30 to "每月").forEach { (days, label) ->
+                        listOf(1 to stringResource(R.string.chat_s_5e4715), 7 to stringResource(R.string.chat_s_d6847a), 14 to stringResource(R.string.chat_s_7d6acc), 30 to stringResource(R.string.chat_s_24aedc)).forEach { (days, label) ->
                             FilterChip(
                                 selected = cadenceInput == days,
                                 onClick = { cadenceInput = days },
@@ -211,11 +214,11 @@ internal fun PartnerGoalsCard(
                     },
                     enabled = titleInput.trim().isNotEmpty()
                 ) {
-                    Text("建立並排程子待辦")
+                    Text(stringResource(R.string.goal_s_cdf108))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCreateDialog = false }) { Text("取消") }
+                TextButton(onClick = { showCreateDialog = false }) { Text(stringResource(R.string.common_cancel)) }
             }
         )
     }
@@ -225,15 +228,15 @@ internal fun PartnerGoalsCard(
         var selectedCadence by remember(g.id) { mutableStateOf(g.cadenceDays) }
         AlertDialog(
             onDismissRequest = { managingItem = null },
-            title = { Text("管理目標：${g.title}") },
+            title = { Text(stringResource(R.string.goal_s_62c91b, g.title)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "已完成 ${item.completedCount}/${g.targetCount} 次（連續 ${item.streakDays} 期）。手動調整頻率（系統只會自動降頻，不會自動升頻）：",
+                        text = stringResource(R.string.goal_s_6f3a78, item.completedCount, g.targetCount, item.streakDays),
                         style = MaterialTheme.typography.bodySmall
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(1 to "每天", 7 to "每週", 14 to "雙週", 30 to "每月").forEach { (days, label) ->
+                        listOf(1 to stringResource(R.string.chat_s_5e4715), 7 to stringResource(R.string.chat_s_d6847a), 14 to stringResource(R.string.chat_s_7d6acc), 30 to stringResource(R.string.chat_s_24aedc)).forEach { (days, label) ->
                             FilterChip(
                                 selected = selectedCadence == days,
                                 onClick = { selectedCadence = days },
@@ -260,7 +263,7 @@ internal fun PartnerGoalsCard(
                                 managingItem = null
                             }
                         ) {
-                            Text(if (g.status == GoalEntity.STATUS_PAUSED) "恢復追蹤" else "暫停追蹤")
+                            Text(if (g.status == GoalEntity.STATUS_PAUSED) stringResource(R.string.goal_s_70b03b) else stringResource(R.string.goal_s_61ac1b))
                         }
                         TextButton(
                             onClick = {
@@ -277,7 +280,7 @@ internal fun PartnerGoalsCard(
                                 managingItem = null
                             }
                         ) {
-                            Text("刪除", color = MaterialTheme.colorScheme.error)
+                            Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -298,11 +301,11 @@ internal fun PartnerGoalsCard(
                         managingItem = null
                     }
                 ) {
-                    Text("儲存頻率")
+                    Text(stringResource(R.string.goal_s_c1cb88))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { managingItem = null }) { Text("關閉") }
+                TextButton(onClick = { managingItem = null }) { Text(stringResource(R.string.common_close)) }
             }
         )
     }

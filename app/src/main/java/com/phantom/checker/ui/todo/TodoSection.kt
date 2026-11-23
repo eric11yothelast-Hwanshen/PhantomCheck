@@ -204,12 +204,17 @@ import java.util.Date
 import java.util.Locale
 
 import com.phantom.checker.ui.*
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
+import androidx.annotation.StringRes
 
-internal enum class TodoFilterMode(val label: String) {
-    ALL("全部"),
-    PENDING("未完成"),
-    DONE("已完成"),
-    OVERDUE("逾期")
+internal enum class TodoFilterMode(@StringRes val labelRes: Int) {
+    ALL(R.string.common_all),
+    PENDING(R.string.todo_filter_pending),
+    DONE(R.string.chat_s_e99b48),
+    OVERDUE(R.string.todo_filter_overdue);
+
+    val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 }
 
 
@@ -284,17 +289,17 @@ internal fun NotesTodoRow(
                 }
             )
             val statusBadge = when {
-                isOverdue -> if (overdueDays >= 1) "已逾期 $overdueDays 天 · " else "已逾期 · "
-                isDueToday -> "今天到期 · "
+                isOverdue -> if (overdueDays >= 1) stringResource(R.string.todo_s_b4ce0c, overdueDays) else stringResource(R.string.todo_s_e55871)
+                isDueToday -> stringResource(R.string.todo_s_4c4355)
                 else -> ""
             }
             val repeatTag = when (todo.repeatRule) {
-                TodoEntity.REPEAT_DAILY -> " · 每日"
-                TodoEntity.REPEAT_WEEKLY -> " · 每週"
+                TodoEntity.REPEAT_DAILY -> stringResource(R.string.todo_s_709832)
+                TodoEntity.REPEAT_WEEKLY -> stringResource(R.string.todo_s_a66138)
                 else -> ""
             }
             Text(
-                text = "${statusBadge}到期：${PhantomPrefs.formatMessageTime(ctx, todo.dueAt, includeDate = true)}$repeatTag",
+                text = stringResource(R.string.todo_s_12173a, statusBadge, PhantomPrefs.formatMessageTime(ctx, todo.dueAt, includeDate = true), repeatTag),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (isOverdue) overdueColor else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -303,7 +308,7 @@ internal fun NotesTodoRow(
             )
             if (todo.isDone && todo.completedAt != null) {
                 Text(
-                    text = "完成於：${PhantomPrefs.formatMessageTime(ctx, todo.completedAt, includeDate = true)}",
+                    text = stringResource(R.string.todo_s_c232c8, PhantomPrefs.formatMessageTime(ctx, todo.completedAt, includeDate = true)),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -325,7 +330,7 @@ internal fun NotesTodoRow(
             ) {
                 Icon(
                     imageVector = Icons.Default.Info,
-                    contentDescription = "查看來源訊息",
+                    contentDescription = stringResource(R.string.notes_s_7f4858),
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
                 )
@@ -334,14 +339,14 @@ internal fun NotesTodoRow(
         IconButton(onClick = { onEdit(todo) }) {
             Icon(
                 imageVector = Icons.Default.Edit,
-                contentDescription = "編輯待辦",
+                contentDescription = stringResource(R.string.todo_s_f2ddea),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         IconButton(onClick = { onDelete(todo) }) {
             Icon(
                 imageVector = Icons.Default.Delete,
-                contentDescription = "刪除待辦",
+                contentDescription = stringResource(R.string.chat_s_ae9e5f),
                 tint = MaterialTheme.colorScheme.error
             )
         }
@@ -366,19 +371,19 @@ internal fun TodoEditorDialog(
     var notes by remember(initial) { mutableStateOf(initial?.notes ?: "") }
 
     val priorityOptions = listOf(
-        TodoEntity.PRIORITY_LOW to "低",
-        TodoEntity.PRIORITY_MEDIUM to "中",
-        TodoEntity.PRIORITY_HIGH to "高"
+        TodoEntity.PRIORITY_LOW to stringResource(R.string.todo_s_b9ee25),
+        TodoEntity.PRIORITY_MEDIUM to stringResource(R.string.todo_s_086907),
+        TodoEntity.PRIORITY_HIGH to stringResource(R.string.todo_s_b096b3)
     )
     val repeatOptions = listOf(
-        TodoEntity.REPEAT_NONE to "不重複",
-        TodoEntity.REPEAT_DAILY to "每日",
-        TodoEntity.REPEAT_WEEKLY to "每週"
+        TodoEntity.REPEAT_NONE to stringResource(R.string.todo_s_cc34e6),
+        TodoEntity.REPEAT_DAILY to stringResource(R.string.assistant_hub_s_08d65b),
+        TodoEntity.REPEAT_WEEKLY to stringResource(R.string.chat_s_d6847a)
     )
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "新增待辦事項" else "編輯待辦事項") },
+        title = { Text(if (initial == null) stringResource(R.string.notes_s_75ab7d) else stringResource(R.string.todo_s_6dd489)) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -387,7 +392,7 @@ internal fun TodoEditorDialog(
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
-                    label = { Text("待辦內容") },
+                    label = { Text(stringResource(R.string.todo_s_9bc9a3)) },
                     singleLine = false,
                     maxLines = 3,
                     modifier = Modifier.fillMaxWidth()
@@ -438,7 +443,7 @@ internal fun TodoEditorDialog(
                         Text(PhantomPrefs.formatMessageTime(ctx, dueAt, includeDate = false), maxLines = 1)
                     }
                 }
-                Text("優先級", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.todo_s_e3c782), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     priorityOptions.forEach { (pVal, pLabel) ->
                         FilterChip(
@@ -448,7 +453,7 @@ internal fun TodoEditorDialog(
                         )
                     }
                 }
-                Text("重複提醒", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.todo_s_4fea89), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     repeatOptions.forEach { (rVal, rLabel) ->
                         FilterChip(
@@ -461,7 +466,7 @@ internal fun TodoEditorDialog(
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
-                    label = { Text("備註（可選）") },
+                    label = { Text(stringResource(R.string.todo_s_9bd8a5)) },
                     minLines = 2,
                     maxLines = 4,
                     modifier = Modifier.fillMaxWidth()
@@ -473,11 +478,11 @@ internal fun TodoEditorDialog(
                 enabled = title.trim().isNotEmpty(),
                 onClick = { onSave(title.trim(), dueAt, priority, repeatRule, notes.trim()) }
             ) {
-                Text("儲存")
+                Text(stringResource(R.string.common_save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         }
     )
 }

@@ -54,6 +54,8 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 /**
  * #378 AI 日記／每日回顧卡片（嵌入夥伴分頁頂部＋展開月份瀏覽 Sheet）：
@@ -65,6 +67,7 @@ import java.time.format.DateTimeFormatter
 internal fun PartnerDiaryCard(
     glassState: HazeState
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -97,13 +100,13 @@ internal fun PartnerDiaryCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "📖 每日回顧・生活時間軸",
+                    text = stringResource(R.string.diary_s_1dd862),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "翻閱月份 ▸",
+                    text = stringResource(R.string.diary_s_743079),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -111,13 +114,13 @@ internal fun PartnerDiaryCard(
             val s = latestSummary
             if (s == null) {
                 Text(
-                    text = "尚未建立時間軸紀錄，點擊即可免費離線整理今日回顧（零 token）。",
+                    text = stringResource(R.string.diary_s_9c72dd),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
                 Text(
-                    text = "${s.dayKey}｜訊息 ${s.messageCount} · 記事 ${s.noteCount} · 完成待辦 ${s.todoDoneCount} · 防詐 ${s.scamCount}",
+                    text = stringResource(R.string.diary_s_c85068, s.dayKey, s.messageCount, s.noteCount, s.todoDoneCount, s.scamCount),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
@@ -180,10 +183,10 @@ internal fun PartnerDiaryCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     TextButton(onClick = { currentMonth = currentMonth.minusMonths(1) }) {
-                        Text("◀ 上月")
+                        Text(stringResource(R.string.diary_s_7f79ec))
                     }
                     Text(
-                        text = currentMonth.format(DateTimeFormatter.ofPattern("yyyy 年 MM 月")),
+                        text = currentMonth.format(DateTimeFormatter.ofPattern(stringResource(R.string.diary_s_25db57))),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -191,7 +194,7 @@ internal fun PartnerDiaryCard(
                         onClick = { currentMonth = currentMonth.plusMonths(1) },
                         enabled = currentMonth.isBefore(YearMonth.now())
                     ) {
-                        Text("下月 ▶")
+                        Text(stringResource(R.string.diary_s_eadc06))
                     }
                 }
 
@@ -206,13 +209,13 @@ internal fun PartnerDiaryCard(
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
-                            text = "本月總覽（已收錄 ${monthDays.size} 天）",
+                            text = stringResource(R.string.diary_s_dd6b2c, monthDays.size),
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "💬 訊息 $monthMsgTotal 則 · 📝 記事 $monthNoteTotal 則 · ✅ 待辦完成 $monthTodoTotal 筆 · 🛡️ 防詐攔截 $monthScamTotal 則",
+                            text = stringResource(R.string.diary_s_9524a7, monthMsgTotal, monthNoteTotal, monthTodoTotal, monthScamTotal),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -235,13 +238,13 @@ internal fun PartnerDiaryCard(
                         },
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
-                        Text("立即整理今日時間軸（免費離線）", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.diary_s_2d69aa), style = MaterialTheme.typography.labelMedium)
                     }
                 }
 
                 if (monthDays.isEmpty()) {
                     Text(
-                        text = "本月尚無每日回顧紀錄，每日 00:30 會自動本地整理前一日時間軸，也可點上方按鈕立即整理今日。",
+                        text = stringResource(R.string.diary_s_b7ca7a),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -259,13 +262,13 @@ internal fun PartnerDiaryCard(
                     activeSummary?.let { summary ->
                         HorizontalDivider()
                         Text(
-                            text = "${summary.dayKey} 事實時間軸",
+                            text = resCtx.getString(R.string.diary_s_f952e7, summary.dayKey),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
                         if (summary.items.isEmpty()) {
                             Text(
-                                text = "當日無可記錄之訊息、記事或待辦活動。",
+                                text = resCtx.getString(R.string.diary_s_9ec059),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -338,7 +341,7 @@ internal fun PartnerDiaryCard(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = if (annotationExpanded) "✨ AI 回顧註記（點擊收合）" else "✨ AI 回顧註記（預設收合・點擊展開）",
+                                            text = if (annotationExpanded) resCtx.getString(R.string.diary_s_39bcb4) else resCtx.getString(R.string.diary_s_ebcb2a),
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.SemiBold,
                                             color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -348,7 +351,7 @@ internal fun PartnerDiaryCard(
                                             onClick = { annotationDismissed = true },
                                             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                                         ) {
-                                            Text("隱藏", style = MaterialTheme.typography.labelSmall)
+                                            Text(resCtx.getString(R.string.api_key_s_6993c6), style = MaterialTheme.typography.labelSmall)
                                         }
                                     }
                                     AnimatedVisibility(
@@ -359,7 +362,7 @@ internal fun PartnerDiaryCard(
                                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             when {
                                                 annotationLoading -> Text(
-                                                    text = "正在依據時間軸事實生成註記…",
+                                                    text = resCtx.getString(R.string.diary_s_58d0d8),
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -387,7 +390,7 @@ internal fun PartnerDiaryCard(
                                                                 }
                                                             }
                                                         ) {
-                                                            Text("不準（降低同類註記權重）", style = MaterialTheme.typography.labelSmall)
+                                                            Text(resCtx.getString(R.string.diary_s_9663c8), style = MaterialTheme.typography.labelSmall)
                                                         }
                                                     }
                                                 }
@@ -403,13 +406,13 @@ internal fun PartnerDiaryCard(
                                                         Text(
                                                             text = when (reason) {
                                                                 DiaryPolicy.AnnotationUnavailableReason.TOKEN_SAVER ->
-                                                                    "省 token 模式已開啟，回顧註記暫停"
+                                                                    resCtx.getString(R.string.diary_s_f456bd)
                                                                 DiaryPolicy.AnnotationUnavailableReason.NO_PROFILE ->
-                                                                    "尚未設定 AI 供應商，註記暫停"
+                                                                    resCtx.getString(R.string.diary_s_a5f77f)
                                                                 DiaryPolicy.AnnotationUnavailableReason.DISLIKED_SUPPRESSED ->
-                                                                    "你先前將同類註記標記不準，已自動停權"
+                                                                    resCtx.getString(R.string.diary_s_62773a)
                                                                 DiaryPolicy.AnnotationUnavailableReason.OTHER ->
-                                                                    "暫時無法生成註記；上方本地時間軸仍可完整瀏覽"
+                                                                    resCtx.getString(R.string.diary_s_c92511)
                                                             },
                                                             style = MaterialTheme.typography.bodySmall,
                                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -428,7 +431,7 @@ internal fun PartnerDiaryCard(
                                                                     },
                                                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                                                 ) {
-                                                                    Text("設定", style = MaterialTheme.typography.labelSmall)
+                                                                    Text(resCtx.getString(R.string.common_settings), style = MaterialTheme.typography.labelSmall)
                                                                 }
                                                             }
                                                             DiaryPolicy.AnnotationUnavailableReason.NO_PROFILE -> {
@@ -443,7 +446,7 @@ internal fun PartnerDiaryCard(
                                                                     },
                                                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                                                 ) {
-                                                                    Text("前往設定", style = MaterialTheme.typography.labelSmall)
+                                                                    Text(resCtx.getString(R.string.chat_s_bfb145), style = MaterialTheme.typography.labelSmall)
                                                                 }
                                                             }
                                                             DiaryPolicy.AnnotationUnavailableReason.DISLIKED_SUPPRESSED -> {
@@ -459,7 +462,7 @@ internal fun PartnerDiaryCard(
                                                                     },
                                                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                                                 ) {
-                                                                    Text("重新啟用", style = MaterialTheme.typography.labelSmall)
+                                                                    Text(resCtx.getString(R.string.diary_s_689d7b), style = MaterialTheme.typography.labelSmall)
                                                                 }
                                                             }
                                                             DiaryPolicy.AnnotationUnavailableReason.OTHER -> {
@@ -474,7 +477,7 @@ internal fun PartnerDiaryCard(
                                                                     },
                                                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                                                 ) {
-                                                                    Text("重試", style = MaterialTheme.typography.labelSmall)
+                                                                    Text(resCtx.getString(R.string.chat_s_a7d12d), style = MaterialTheme.typography.labelSmall)
                                                                 }
                                                             }
                                                         }
@@ -495,7 +498,7 @@ internal fun PartnerDiaryCard(
                     horizontalArrangement = Arrangement.End
                 ) {
                     Button(onClick = { showSheet = false }) {
-                        Text("完成")
+                        Text(stringResource(R.string.common_done))
                     }
                 }
                 Spacer(Modifier.height(16.dp))

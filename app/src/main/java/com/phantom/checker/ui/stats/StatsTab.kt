@@ -206,6 +206,8 @@ import java.util.Date
 import java.util.Locale
 
 import com.phantom.checker.ui.*
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
 
 internal data class DayCountUi(
     val label: String,
@@ -247,6 +249,7 @@ internal fun StatsTab(
     onSummaryGenerated: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -284,11 +287,11 @@ internal fun StatsTab(
                     )
                     isExporting = false
                     result.onSuccess { fileName ->
-                        onShowMessage("匯出成功：$fileName")
+                        onShowMessage(resCtx.getString(R.string.settings_s_11c369, fileName))
                     }.onFailure { err ->
                         val reason = err.localizedMessage?.takeIf { it.isNotBlank() }
                             ?: err.javaClass.simpleName
-                        onShowMessage("匯出失敗：$reason")
+                        onShowMessage(resCtx.getString(R.string.chat_s_55fba2, reason))
                     }
                 }
             }
@@ -311,14 +314,14 @@ internal fun StatsTab(
                     contentPadding = 12.dp
                 ) {
                     Text(
-                        text = "省 token 模式啟用中",
+                        text = stringResource(R.string.stats_s_d4b60a),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = "已暫停每則 AI 掃描並降載對話注入，僅命中可疑特徵時才進行風險分析。",
+                        text = stringResource(R.string.stats_s_605ebc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -343,14 +346,14 @@ internal fun StatsTab(
                     )
                     val res = StatsShareCardGenerator.generateAndShare(ctx, data)
                     if (res.isFailure) {
-                        onShowMessage("產生分享圖卡失敗：${res.exceptionOrNull()?.message ?: "未知錯誤"}")
+                        onShowMessage(resCtx.getString(R.string.stats_s_db9eb8, res.exceptionOrNull()?.message ?: resCtx.getString(R.string.common_unknown_error)))
                     }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .pressableScale(0.97f)
             ) {
-                Text("分享本週統計報告圖卡（本機產生）")
+                Text(stringResource(R.string.stats_s_eb824c))
             }
         }
         // §4.5 本週重點摘要條（純本機聚合自既有 StatsUiState，不新增資料來源，不動 13 卡順序）
@@ -374,7 +377,7 @@ internal fun StatsTab(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "本週重點",
+                        text = stringResource(R.string.stats_s_8650b3),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
@@ -393,7 +396,7 @@ internal fun StatsTab(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "今日訊息",
+                                text = stringResource(R.string.stats_s_f042c8),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -409,7 +412,7 @@ internal fun StatsTab(
                                 color = if (riskTotal > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "風險攔截",
+                                text = stringResource(R.string.stats_s_0120ed),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -426,7 +429,7 @@ internal fun StatsTab(
                                 maxLines = 1
                             )
                             Text(
-                                text = "待辦完成率",
+                                text = stringResource(R.string.stats_s_4bcda6),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -478,7 +481,7 @@ internal fun StatsTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "☀️🌙 早晚簡報",
+                        text = stringResource(R.string.stats_s_76a0cd),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
@@ -496,7 +499,7 @@ internal fun StatsTab(
                     IconButton(onClick = { briefingExpanded = !briefingExpanded }) {
                         PhantomChevron(
  expanded = briefingExpanded,
-                            contentDescription = if (briefingExpanded) "收合早晚簡報" else "展開閱讀早晚簡報"
+                            contentDescription = if (briefingExpanded) stringResource(R.string.stats_s_8020ab) else stringResource(R.string.stats_s_55b595)
                         )
                     }
                 }
@@ -505,7 +508,7 @@ internal fun StatsTab(
                         ?.replace("\n", " ")
                         ?.replace(Regex("\\s+"), " ")
                         ?.trim()
-                        ?: "尚無早晚簡報，可於「設定 → 權限與 AI 夥伴 → AI 夥伴與主動推播」試發或等待排程"
+                        ?: stringResource(R.string.stats_s_5395df)
                     Text(
                         text = previewText,
                         style = MaterialTheme.typography.bodySmall,
@@ -533,14 +536,14 @@ internal fun StatsTab(
                                 val plain = stripMarkdown(displayMarkdown)
                                 val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 cm.setPrimaryClip(ClipData.newPlainText("briefing_summary", plain))
-                                onShowMessage("已複製早晚簡報")
+                                onShowMessage(resCtx.getString(R.string.stats_s_758581))
                             }) {
-                                Text("複製")
+                                Text(stringResource(R.string.common_copy))
                             }
                         }
                     } else {
                         Text(
-                            text = "尚無早晚簡報紀錄，可於「設定 → 權限與 AI 夥伴 → AI 夥伴與主動推播」點擊試發，或等待每日早晚排程。",
+                            text = stringResource(R.string.stats_s_8d6939),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -577,12 +580,12 @@ internal fun StatsTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "本週 AI 摘要",
+                            text = stringResource(R.string.stats_s_920d4b),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "每週日 22:00 自動整理（不受省 token 模式限制）",
+                            text = stringResource(R.string.stats_s_ef458a),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -603,7 +606,7 @@ internal fun StatsTab(
                             weeklyHistoryExpanded = false
                         }
                     }) {
-                        Text(if (weeklyHistoryExpanded) "收合歷史" else "歷史週報")
+                        Text(if (weeklyHistoryExpanded) stringResource(R.string.stats_s_5679c3) else stringResource(R.string.stats_s_f42d23))
                     }
                     IconButton(onClick = {
                         weeklyExpanded = !weeklyExpanded
@@ -611,7 +614,7 @@ internal fun StatsTab(
                     }) {
                         PhantomChevron(
  expanded = weeklyExpanded,
-                            contentDescription = if (weeklyExpanded) "收合本週摘要" else "展開本週摘要"
+                            contentDescription = if (weeklyExpanded) stringResource(R.string.stats_s_f1f241) else stringResource(R.string.stats_s_7860c9)
                         )
                     }
                 }
@@ -622,7 +625,7 @@ internal fun StatsTab(
                         val label = WeeklySummaryPolicy.formatWeekLabel(it.date)
                         val body = stripMarkdown(it.summary).replace("\n", " ").replace(Regex("\\s+"), " ").trim()
                         "$label：$body"
-                    } ?: "尚無本週摘要，點擊展開或立即生成"
+                    } ?: stringResource(R.string.stats_s_8aa322)
                     Text(
                         text = previewText,
                         style = MaterialTheme.typography.bodySmall,
@@ -647,7 +650,7 @@ internal fun StatsTab(
                                 weeklyExpanded = true
                                 PhantomPrefs.setWeeklySummaryExpanded(appCtx, true)
                             }) {
-                                Text("展開全文")
+                                Text(stringResource(R.string.stats_s_04dd5a))
                             }
                         } else {
                             Spacer(Modifier.width(1.dp))
@@ -670,9 +673,9 @@ internal fun StatsTab(
                                             weeklyExpanded = true
                                             PhantomPrefs.setWeeklySummaryExpanded(appCtx, true)
                                             onSummaryGenerated()
-                                            onShowMessage("本週 AI 摘要已生成")
+                                            onShowMessage(resCtx.getString(R.string.stats_s_0ec53f))
                                         }.onFailure { err ->
-                                            val msg = err.message ?: "週報生成失敗"
+                                            val msg = err.message ?: resCtx.getString(R.string.stats_s_0ccbe0)
                                             weeklyError = msg
                                             onShowMessage(msg)
                                         }
@@ -680,27 +683,27 @@ internal fun StatsTab(
                                 },
                                 enabled = !isGeneratingWeekly
                             ) {
-                                Text(if (isGeneratingWeekly) "生成中…" else if (weekly != null) "重新生成" else "生成週報")
+                                Text(if (isGeneratingWeekly) stringResource(R.string.common_generating) else if (weekly != null) stringResource(R.string.common_regenerate) else stringResource(R.string.stats_s_d0864a))
                             }
                             if (weekly != null) {
                                 TextButton(onClick = {
                                     val plain = stripMarkdown(weekly.summary)
                                     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                     cm.setPrimaryClip(ClipData.newPlainText("weekly_ai_summary", plain))
-                                    onShowMessage("已複製本週 AI 摘要")
+                                    onShowMessage(resCtx.getString(R.string.stats_s_50f9d0))
                                 }) {
-                                    Text("複製")
+                                    Text(stringResource(R.string.common_copy))
                                 }
                                 TextButton(onClick = {
                                     val plain = stripMarkdown(weekly.summary)
                                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                         type = "text/plain"
-                                        putExtra(Intent.EXTRA_SUBJECT, "幻訊本週 AI 摘要")
+                                        putExtra(Intent.EXTRA_SUBJECT, resCtx.getString(R.string.stats_s_7ae9e5))
                                         putExtra(Intent.EXTRA_TEXT, plain)
                                     }
-                                    ctx.startActivity(Intent.createChooser(shareIntent, "分享本週 AI 摘要"))
+                                    ctx.startActivity(Intent.createChooser(shareIntent, resCtx.getString(R.string.stats_s_d460c6)))
                                 }) {
-                                    Text("分享")
+                                    Text(stringResource(R.string.stats_s_7a9243))
                                 }
                             }
                         }
@@ -735,7 +738,7 @@ internal fun StatsTab(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "更新於 $timeStr",
+                                text = stringResource(R.string.stats_s_fab088, timeStr),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -744,26 +747,26 @@ internal fun StatsTab(
                                     val plain = stripMarkdown(weekly.summary)
                                     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                     cm.setPrimaryClip(ClipData.newPlainText("weekly_ai_summary", plain))
-                                    onShowMessage("已複製本週 AI 摘要")
+                                    onShowMessage(resCtx.getString(R.string.stats_s_50f9d0))
                                 }) {
-                                    Text("複製")
+                                    Text(stringResource(R.string.common_copy))
                                 }
                                 TextButton(onClick = {
                                     val plain = stripMarkdown(weekly.summary)
                                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                         type = "text/plain"
-                                        putExtra(Intent.EXTRA_SUBJECT, "幻訊本週 AI 摘要")
+                                        putExtra(Intent.EXTRA_SUBJECT, resCtx.getString(R.string.stats_s_7ae9e5))
                                         putExtra(Intent.EXTRA_TEXT, plain)
                                     }
-                                    ctx.startActivity(Intent.createChooser(shareIntent, "分享本週 AI 摘要"))
+                                    ctx.startActivity(Intent.createChooser(shareIntent, resCtx.getString(R.string.stats_s_d460c6)))
                                 }) {
-                                    Text("分享")
+                                    Text(stringResource(R.string.stats_s_7a9243))
                                 }
                             }
                         }
                     } else {
                         Text(
-                            text = "尚無本週摘要",
+                            text = stringResource(R.string.stats_s_2820fc),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -796,9 +799,9 @@ internal fun StatsTab(
                                         }
                                     }
                                     onSummaryGenerated()
-                                    onShowMessage("本週 AI 摘要已生成")
+                                    onShowMessage(resCtx.getString(R.string.stats_s_0ec53f))
                                 }.onFailure { err ->
-                                    val msg = err.message ?: "週報生成失敗"
+                                    val msg = err.message ?: resCtx.getString(R.string.stats_s_0ccbe0)
                                     weeklyError = msg
                                     onShowMessage(msg)
                                 }
@@ -816,9 +819,9 @@ internal fun StatsTab(
                                 color = MaterialTheme.colorScheme.onPrimary
                             )
                             Spacer(Modifier.width(8.dp))
-                            Text("生成週報中…")
+                            Text(stringResource(R.string.stats_s_13a0eb))
                         } else {
-                            Text("生成本週摘要（本週至今）")
+                            Text(stringResource(R.string.stats_s_d97efe))
                         }
                     }
                 }
@@ -827,7 +830,7 @@ internal fun StatsTab(
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
                     if (weeklyHistory.isEmpty()) {
                         Text(
-                            text = "尚無歷史週報紀錄",
+                            text = stringResource(R.string.stats_s_b29d64),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -867,7 +870,7 @@ internal fun StatsTab(
                 contentPadding = 14.dp
             ) {
                 Text(
-                    text = "本週 7 日訊息量",
+                    text = stringResource(R.string.stats_s_b1fd50),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -936,21 +939,21 @@ internal fun StatsTab(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 RiskCountCard(
-                    title = "安全",
+                    title = stringResource(R.string.stats_s_8e662a),
                     count = state.safeCount,
                     accentColor = MaterialTheme.colorScheme.primary,
                     glassState = glassState,
                     modifier = Modifier.weight(1f)
                 )
                 RiskCountCard(
-                    title = "疑似",
+                    title = stringResource(R.string.stats_s_4ea2af),
                     count = state.suspiciousCount,
                     accentColor = Color(0xFFE6A100),
                     glassState = glassState,
                     modifier = Modifier.weight(1f)
                 )
                 RiskCountCard(
-                    title = "詐騙",
+                    title = stringResource(R.string.common_scam),
                     count = state.scamCount,
                     accentColor = MaterialTheme.colorScheme.error,
                     glassState = glassState,
@@ -965,7 +968,7 @@ internal fun StatsTab(
             phantomItem(3, key = "stats_ai_tags") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "今日 AI 智慧標記",
+                        text = stringResource(R.string.stats_s_a167e9),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
@@ -999,7 +1002,7 @@ internal fun StatsTab(
                 contentPadding = 14.dp
             ) {
                 Text(
-                    text = "今日每小時分布",
+                    text = stringResource(R.string.stats_s_5c449d),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -1043,7 +1046,7 @@ internal fun StatsTab(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    listOf("0時", "6時", "12時", "18時", "23時").forEach { label ->
+                    listOf(stringResource(R.string.stats_s_231c29), stringResource(R.string.stats_s_b1dd4d), stringResource(R.string.stats_s_1733a5), stringResource(R.string.stats_s_271ff7), stringResource(R.string.stats_s_5f6ff7)).forEach { label ->
                         Text(
                             text = label,
                             style = MaterialTheme.typography.labelSmall,
@@ -1067,14 +1070,14 @@ internal fun StatsTab(
                     contentPadding = 14.dp
                 ) {
                     Text(
-                        text = "今日 App 訊息量排行榜 Top 5",
+                        text = stringResource(R.string.stats_s_a5df5e),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(10.dp))
                     if (state.dailyTopApps.isEmpty()) {
                         Text(
-                            text = "今日尚無收到任何訊息",
+                            text = stringResource(R.string.stats_s_50add5),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1108,7 +1111,7 @@ internal fun StatsTab(
                                             modifier = Modifier.weight(1f)
                                         )
                                         Text(
-                                            text = "${app.count} 則",
+                                            text = resCtx.getString(R.string.main_s_ddadbf, app.count),
                                             style = MaterialTheme.typography.labelMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.primary
@@ -1193,13 +1196,13 @@ internal fun StatsTab(
                     }
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "騷擾佔比（行銷＋垃圾通知）",
+                            text = stringResource(R.string.stats_s_c04c0d),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "$harass / $total 則訊息屬於行銷或垃圾通知",
+                            text = stringResource(R.string.stats_s_b031c4, harass, total),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1219,14 +1222,14 @@ internal fun StatsTab(
                 contentPadding = 14.dp
             ) {
                 Text(
-                    text = "Top 5 高風險 App",
+                    text = stringResource(R.string.stats_s_147fec),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(8.dp))
                 if (state.topRiskyApps.isEmpty()) {
                     Text(
-                        text = "目前尚無疑似或詐騙紀錄",
+                        text = stringResource(R.string.stats_s_230bf1),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1262,7 +1265,7 @@ internal fun StatsTab(
                                 )
                             }
                             Text(
-                                text = "${row.cnt} 則",
+                                text = resCtx.getString(R.string.main_s_ddadbf, row.cnt),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.error,
                                 fontWeight = FontWeight.Bold
@@ -1275,7 +1278,7 @@ internal fun StatsTab(
                     onClick = { ctx.startActivity(Intent(ctx, ScamCenterActivity::class.java)) },
                     modifier = Modifier.align(Alignment.End)
                 ) {
-                    Text("查看詐騙警示中心")
+                    Text(stringResource(R.string.stats_s_f2dbe8))
                 }
             }
         }
@@ -1293,7 +1296,7 @@ internal fun StatsTab(
                     contentPadding = 14.dp
                 ) {
                     Text(
-                        text = "7 日風險趨勢折線（疑似＋詐騙）",
+                        text = stringResource(R.string.stats_s_34b1d9),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -1415,13 +1418,13 @@ internal fun StatsTab(
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "未讀 / 已讀比例",
+                                text = stringResource(R.string.stats_s_24fb54),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                text = "未讀 $unread 則 · 已讀 $read 則（共 $total 則）",
+                                text = stringResource(R.string.stats_s_848388, unread, read, total),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1445,14 +1448,14 @@ internal fun StatsTab(
                     contentPadding = 14.dp
                 ) {
                     Text(
-                        text = "各 App 訊息佔比 Top 8",
+                        text = stringResource(R.string.stats_s_3a3cc7),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(10.dp))
                     if (top8.isEmpty()) {
                         Text(
-                            text = "目前尚無訊息紀錄",
+                            text = stringResource(R.string.stats_s_e8325f),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1480,7 +1483,7 @@ internal fun StatsTab(
                                             modifier = Modifier.weight(1f)
                                         )
                                         Text(
-                                            text = "${row.cnt} 則 ($pct%)",
+                                            text = resCtx.getString(R.string.stats_s_35439a, row.cnt, pct),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -1559,13 +1562,13 @@ internal fun StatsTab(
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "待辦完成率",
+                                text = stringResource(R.string.stats_s_4bcda6),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                text = if (total == 0) "尚無待辦事項" else "$done / $total 項待辦已完成",
+                                text = if (total == 0) stringResource(R.string.stats_s_1295ad) else stringResource(R.string.stats_s_5efdbe, done, total),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1589,7 +1592,7 @@ internal fun StatsTab(
                     .fillMaxWidth()
                     .pressableScale()
             ) {
-                Text(if (isExporting) "匯出中…" else "匯出訊息 CSV")
+                Text(if (isExporting) stringResource(R.string.settings_s_0fa176) else stringResource(R.string.common_s_07c286))
             }
         }
     }
@@ -1628,6 +1631,7 @@ internal fun RiskCountCard(
 private fun StatsHealthDetailCard(
     glassState: HazeState
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     var selectedPeriod by remember { mutableStateOf(1) } // 0=日, 1=週, 2=月
@@ -1671,7 +1675,7 @@ private fun StatsHealthDetailCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "❤️ Health Connect 健康明細",
+                    text = stringResource(R.string.stats_s_e0e678),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
@@ -1679,7 +1683,7 @@ private fun StatsHealthDetailCard(
                 if (!hcPerm.allGranted) {
                     TextButton(onClick = openPermHub) {
                         Text(
-                            text = if (!hcPerm.anyGranted) "前往授權" else "補授權",
+                            text = if (!hcPerm.anyGranted) stringResource(R.string.settings_s_5df1b3) else stringResource(R.string.perm_hub_s_a1dcba),
                             style = MaterialTheme.typography.labelSmall
                         )
                     }
@@ -1690,11 +1694,11 @@ private fun StatsHealthDetailCard(
                 Text(
                     text = when {
                         hcAvailability == com.phantom.checker.util.HealthConnectBridge.SdkAvailability.UNAVAILABLE ->
-                            "此裝置未支援或未安裝 Health Connect，App 其餘功能不受影響。"
+                            stringResource(R.string.stats_s_71fb23)
                         hcAvailability == com.phantom.checker.util.HealthConnectBridge.SdkAvailability.PROVIDER_UPDATE_REQUIRED ->
-                            "Health Connect 需要安裝或更新，請前往權限中心操作。"
+                            stringResource(R.string.stats_s_3bd313)
                         else ->
-                            "尚未授權 Health Connect（選配功能）。授權後可在此檢視每日睡眠、步數、心率、距離與熱量明細，原始數值絕不出本機。"
+                            stringResource(R.string.stats_s_9cbf7a)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1704,7 +1708,7 @@ private fun StatsHealthDetailCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("日" to 0, "週" to 1, "月" to 2).forEach { (label, idx) ->
+                    listOf(stringResource(R.string.stats_s_15917f) to 0, stringResource(R.string.stats_s_c7803d) to 1, stringResource(R.string.stats_s_d9b598) to 2).forEach { (label, idx) ->
                         FilterChip(
                             selected = selectedPeriod == idx,
                             onClick = { selectedPeriod = idx },
@@ -1729,48 +1733,48 @@ private fun StatsHealthDetailCard(
                         val yesterdayPt = trend7d.getOrNull(trend7d.size - 2) ?: todayPt
                         if (todayPt == null || !hasAny7d) {
                             Text(
-                                text = "近期尚無穿戴裝置或系統健康紀錄（無紀錄）。",
+                                text = stringResource(R.string.stats_s_ef342a),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         } else {
                             val sleepVal = when {
-                                !hcPerm.sleep -> "未授權"
-                                todayPt.sleepHours > 0f -> String.format(Locale.US, "%.1f 小時", todayPt.sleepHours)
-                                else -> "無紀錄"
+                                !hcPerm.sleep -> stringResource(R.string.stats_s_6e428a)
+                                todayPt.sleepHours > 0f -> String.format(Locale.US, stringResource(R.string.stats_s_343e92), todayPt.sleepHours)
+                                else -> stringResource(R.string.stats_s_2f7adc)
                             }
                             val stepsVal = when {
-                                !hcPerm.steps -> "未授權"
-                                yesterdayPt != null && yesterdayPt.steps > 0L -> String.format(Locale.US, "%,d 步", yesterdayPt.steps)
-                                else -> "無紀錄"
+                                !hcPerm.steps -> stringResource(R.string.stats_s_6e428a)
+                                yesterdayPt != null && yesterdayPt.steps > 0L -> String.format(Locale.US, stringResource(R.string.stats_s_efd1c8), yesterdayPt.steps)
+                                else -> stringResource(R.string.stats_s_2f7adc)
                             }
                             val hrVal = when {
-                                !hcPerm.heartRate -> "未授權"
+                                !hcPerm.heartRate -> stringResource(R.string.stats_s_6e428a)
                                 yesterdayPt != null && yesterdayPt.avgHeartRateBpm > 0L -> "${yesterdayPt.avgHeartRateBpm} bpm"
-                                else -> "無紀錄"
+                                else -> stringResource(R.string.stats_s_2f7adc)
                             }
                             val distVal = when {
-                                !hcPerm.distance -> "未授權"
+                                !hcPerm.distance -> stringResource(R.string.stats_s_6e428a)
                                 yesterdayPt != null && yesterdayPt.distanceMeters > 0.0 -> com.phantom.checker.util.HealthConnectBridge.formatDistance(yesterdayPt.distanceMeters)
-                                else -> "無紀錄"
+                                else -> stringResource(R.string.stats_s_2f7adc)
                             }
                             val calVal = when {
-                                !hcPerm.calories -> "未授權"
+                                !hcPerm.calories -> stringResource(R.string.stats_s_6e428a)
                                 yesterdayPt != null && yesterdayPt.caloriesKcal > 0.0 -> "${yesterdayPt.caloriesKcal.toLong()} kcal"
-                                else -> "無紀錄"
+                                else -> stringResource(R.string.stats_s_2f7adc)
                             }
                             Text(
-                                text = "當日健康快照（昨夜睡眠＋昨日活動）",
+                                text = stringResource(R.string.stats_s_915383),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 listOf(
-                                    "昨夜睡眠" to sleepVal,
-                                    "昨日步數" to stepsVal,
-                                    "昨日均心率" to hrVal,
-                                    "昨日距離" to distVal,
-                                    "昨日消耗熱量" to calVal
+                                    stringResource(R.string.stats_s_42866c) to sleepVal,
+                                    stringResource(R.string.stats_s_ccf2fb) to stepsVal,
+                                    stringResource(R.string.stats_s_4045b4) to hrVal,
+                                    stringResource(R.string.stats_s_cc17c2) to distVal,
+                                    stringResource(R.string.stats_s_bb81d3) to calVal
                                 ).forEach { (k, v) ->
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -1786,8 +1790,8 @@ private fun StatsHealthDetailCard(
                                             text = v,
                                             style = MaterialTheme.typography.bodyMedium,
                                             fontWeight = FontWeight.SemiBold,
-                                            color = if (v == "未授權") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                            modifier = if (v == "未授權") Modifier.clickable(onClick = openPermHub) else Modifier
+                                            color = if (v == resCtx.getString(R.string.stats_s_6e428a)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                            modifier = if (v == resCtx.getString(R.string.stats_s_6e428a)) Modifier.clickable(onClick = openPermHub) else Modifier
                                         )
                                     }
                                 }
@@ -1798,7 +1802,7 @@ private fun StatsHealthDetailCard(
                     1 -> {
                         if (trend7d.isEmpty() || !hasAny7d) {
                             Text(
-                                text = "近 7 日尚無穿戴裝置或系統健康紀錄（無紀錄）。",
+                                text = stringResource(R.string.stats_s_340b3d),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1821,23 +1825,23 @@ private fun StatsHealthDetailCard(
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Text(
-                                        text = "近 7 日彙總",
+                                        text = stringResource(R.string.stats_s_da9ed0),
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    val stepsSummary = if (!hcPerm.steps) "未授權" else if (totalSteps7 > 0L) String.format(Locale.US, "%,d 步", totalSteps7) else "無紀錄"
-                                    val sleepSummary = if (!hcPerm.sleep) "未授權" else if (avgSleep7 > 0f) String.format(Locale.US, "均 %.1fh", avgSleep7) else "無紀錄"
-                                    val hrSummary = if (!hcPerm.heartRate) "未授權" else if (avgHr7 > 0L) "均 $avgHr7 bpm" else "無紀錄"
-                                    val distSummary = if (!hcPerm.distance) "未授權" else if (totalDist7 > 0.0) com.phantom.checker.util.HealthConnectBridge.formatDistance(totalDist7) else "無紀錄"
-                                    val calSummary = if (!hcPerm.calories) "未授權" else if (totalCal7 > 0.0) "${totalCal7.toLong()} kcal" else "無紀錄"
+                                    val stepsSummary = if (!hcPerm.steps) stringResource(R.string.stats_s_6e428a) else if (totalSteps7 > 0L) String.format(Locale.US, stringResource(R.string.stats_s_efd1c8), totalSteps7) else stringResource(R.string.stats_s_2f7adc)
+                                    val sleepSummary = if (!hcPerm.sleep) stringResource(R.string.stats_s_6e428a) else if (avgSleep7 > 0f) String.format(Locale.US, stringResource(R.string.stats_s_617b4a), avgSleep7) else stringResource(R.string.stats_s_2f7adc)
+                                    val hrSummary = if (!hcPerm.heartRate) stringResource(R.string.stats_s_6e428a) else if (avgHr7 > 0L) stringResource(R.string.stats_s_28fc11, avgHr7) else stringResource(R.string.stats_s_2f7adc)
+                                    val distSummary = if (!hcPerm.distance) stringResource(R.string.stats_s_6e428a) else if (totalDist7 > 0.0) com.phantom.checker.util.HealthConnectBridge.formatDistance(totalDist7) else stringResource(R.string.stats_s_2f7adc)
+                                    val calSummary = if (!hcPerm.calories) stringResource(R.string.stats_s_6e428a) else if (totalCal7 > 0.0) "${totalCal7.toLong()} kcal" else stringResource(R.string.stats_s_2f7adc)
                                     Text(
-                                        text = "總步數 $stepsSummary · 睡眠 $sleepSummary · 心率 $hrSummary",
+                                        text = stringResource(R.string.stats_s_e1df89, stepsSummary, sleepSummary, hrSummary),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "總距離 $distSummary · 總熱量 $calSummary",
+                                        text = stringResource(R.string.stats_s_24f0b4, distSummary, calSummary),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
@@ -1847,7 +1851,7 @@ private fun StatsHealthDetailCard(
                             val maxSleep = trend7d.maxOf { it.sleepHours }.coerceAtLeast(8f)
                             val maxSteps = trend7d.maxOf { it.steps }.coerceAtLeast(8000L)
                             Text(
-                                text = "睡眠時數（近 7 日迷你條）",
+                                text = stringResource(R.string.stats_s_db073f),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1881,7 +1885,7 @@ private fun StatsHealthDetailCard(
                                 }
                             }
                             Text(
-                                text = "每日步數（近 7 日迷你條）",
+                                text = stringResource(R.string.stats_s_5680f2),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1916,7 +1920,7 @@ private fun StatsHealthDetailCard(
                             }
 
                             Text(
-                                text = "近 7 日每日明細表（可左右滑動）",
+                                text = stringResource(R.string.stats_s_4bb17f),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1930,31 +1934,31 @@ private fun StatsHealthDetailCard(
                                     modifier = Modifier.padding(vertical = 4.dp),
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
-                                    Text("日期", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(48.dp))
-                                    Text("睡眠", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(56.dp))
-                                    Text("步數", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(68.dp))
-                                    Text("均心率", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(64.dp))
-                                    Text("距離", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(74.dp))
-                                    Text("熱量", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(76.dp))
+                                    Text(stringResource(R.string.stats_s_b6fed9), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(48.dp))
+                                    Text(stringResource(R.string.stats_s_ca5f73), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(56.dp))
+                                    Text(stringResource(R.string.stats_s_9cbfad), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(68.dp))
+                                    Text(stringResource(R.string.stats_s_fc4c08), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(64.dp))
+                                    Text(stringResource(R.string.stats_s_081faa), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(74.dp))
+                                    Text(stringResource(R.string.stats_s_c09196), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, modifier = Modifier.width(76.dp))
                                 }
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                 trend7d.reversed().forEach { pt ->
-                                    val sCell = if (!hcPerm.sleep) "未授權" else if (pt.sleepHours > 0f) String.format(Locale.US, "%.1fh", pt.sleepHours) else "—"
-                                    val stCell = if (!hcPerm.steps) "未授權" else if (pt.steps > 0L) String.format(Locale.US, "%,d", pt.steps) else "—"
-                                    val hrCell = if (!hcPerm.heartRate) "未授權" else if (pt.avgHeartRateBpm > 0L) "${pt.avgHeartRateBpm}" else "—"
-                                    val dCell = if (!hcPerm.distance) "未授權" else com.phantom.checker.util.HealthConnectBridge.formatDistance(pt.distanceMeters)
-                                    val cCell = if (!hcPerm.calories) "未授權" else if (pt.caloriesKcal > 0.0) "${pt.caloriesKcal.toLong()} kcal" else "—"
+                                    val sCell = if (!hcPerm.sleep) resCtx.getString(R.string.stats_s_6e428a) else if (pt.sleepHours > 0f) String.format(Locale.US, "%.1fh", pt.sleepHours) else "—"
+                                    val stCell = if (!hcPerm.steps) resCtx.getString(R.string.stats_s_6e428a) else if (pt.steps > 0L) String.format(Locale.US, "%,d", pt.steps) else "—"
+                                    val hrCell = if (!hcPerm.heartRate) resCtx.getString(R.string.stats_s_6e428a) else if (pt.avgHeartRateBpm > 0L) "${pt.avgHeartRateBpm}" else "—"
+                                    val dCell = if (!hcPerm.distance) resCtx.getString(R.string.stats_s_6e428a) else com.phantom.checker.util.HealthConnectBridge.formatDistance(pt.distanceMeters)
+                                    val cCell = if (!hcPerm.calories) resCtx.getString(R.string.stats_s_6e428a) else if (pt.caloriesKcal > 0.0) "${pt.caloriesKcal.toLong()} kcal" else "—"
                                     Row(
                                         modifier = Modifier.padding(vertical = 4.dp),
                                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(pt.dayLabel, style = MaterialTheme.typography.bodySmall, maxLines = 1, modifier = Modifier.width(48.dp))
-                                        Text(sCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (sCell == "未授權") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(56.dp))
-                                        Text(stCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (stCell == "未授權") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(68.dp))
-                                        Text(hrCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (hrCell == "未授權") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(64.dp))
-                                        Text(dCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (dCell == "未授權") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(74.dp))
-                                        Text(cCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (cCell == "未授權") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(76.dp))
+                                        Text(sCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (sCell == resCtx.getString(R.string.stats_s_6e428a)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(56.dp))
+                                        Text(stCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (stCell == resCtx.getString(R.string.stats_s_6e428a)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(68.dp))
+                                        Text(hrCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (hrCell == resCtx.getString(R.string.stats_s_6e428a)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(64.dp))
+                                        Text(dCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (dCell == resCtx.getString(R.string.stats_s_6e428a)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(74.dp))
+                                        Text(cCell, style = MaterialTheme.typography.bodySmall, maxLines = 1, color = if (cCell == resCtx.getString(R.string.stats_s_6e428a)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(76.dp))
                                     }
                                 }
                             }
@@ -1964,7 +1968,7 @@ private fun StatsHealthDetailCard(
                     else -> {
                         if (loading30d) {
                             Text(
-                                text = "正在本機聚合近 30 日健康資料…",
+                                text = stringResource(R.string.stats_s_aabaa1),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1974,7 +1978,7 @@ private fun StatsHealthDetailCard(
                             }
                             if (trend30d.isEmpty() || !hasAny30d) {
                                 Text(
-                                    text = "近 30 日尚無穿戴裝置或系統健康紀錄（無紀錄）。",
+                                    text = stringResource(R.string.stats_s_18bf90),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1998,24 +2002,24 @@ private fun StatsHealthDetailCard(
                                         verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
                                         Text(
-                                            text = "近 30 日彙總",
+                                            text = stringResource(R.string.stats_s_de6736),
                                             style = MaterialTheme.typography.labelSmall,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        val stepsText = if (!hcPerm.steps) "未授權" else if (totalSteps30 > 0L) String.format(Locale.US, "%,d 步（日均 %,d）", totalSteps30, totalSteps30 / stepDays30) else "無紀錄"
-                                        val sleepText = if (!hcPerm.sleep) "未授權" else if (avgSleep30 > 0f) String.format(Locale.US, "均 %.1fh", avgSleep30) else "無紀錄"
-                                        val hrText = if (!hcPerm.heartRate) "未授權" else if (avgHr30 > 0L) "均 $avgHr30 bpm" else "無紀錄"
-                                        val distText = if (!hcPerm.distance) "未授權" else if (totalDist30 > 0.0) com.phantom.checker.util.HealthConnectBridge.formatDistance(totalDist30) else "無紀錄"
-                                        val calText = if (!hcPerm.calories) "未授權" else if (totalCal30 > 0.0) "${totalCal30.toLong()} kcal" else "無紀錄"
-                                        Text("步數 $stepsText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-                                        Text("睡眠 $sleepText · 心率 $hrText · 距離 $distText · 熱量 $calText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                                        val stepsText = if (!hcPerm.steps) stringResource(R.string.stats_s_6e428a) else if (totalSteps30 > 0L) String.format(Locale.US, stringResource(R.string.stats_s_2c740a), totalSteps30, totalSteps30 / stepDays30) else stringResource(R.string.stats_s_2f7adc)
+                                        val sleepText = if (!hcPerm.sleep) stringResource(R.string.stats_s_6e428a) else if (avgSleep30 > 0f) String.format(Locale.US, stringResource(R.string.stats_s_617b4a), avgSleep30) else stringResource(R.string.stats_s_2f7adc)
+                                        val hrText = if (!hcPerm.heartRate) stringResource(R.string.stats_s_6e428a) else if (avgHr30 > 0L) stringResource(R.string.stats_s_28fc11, avgHr30) else stringResource(R.string.stats_s_2f7adc)
+                                        val distText = if (!hcPerm.distance) stringResource(R.string.stats_s_6e428a) else if (totalDist30 > 0.0) com.phantom.checker.util.HealthConnectBridge.formatDistance(totalDist30) else stringResource(R.string.stats_s_2f7adc)
+                                        val calText = if (!hcPerm.calories) stringResource(R.string.stats_s_6e428a) else if (totalCal30 > 0.0) "${totalCal30.toLong()} kcal" else stringResource(R.string.stats_s_2f7adc)
+                                        Text(stringResource(R.string.stats_s_ee02a6, stepsText), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
+                                        Text(stringResource(R.string.stats_s_3b4d6c, sleepText, hrText, distText, calText), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
                                     }
                                 }
 
                                 val maxSleep30 = trend30d.maxOf { it.sleepHours }.coerceAtLeast(8f)
                                 val maxSteps30 = trend30d.maxOf { it.steps }.coerceAtLeast(8000L)
-                                Text("睡眠時數（近 30 日）", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(stringResource(R.string.stats_s_293e0d), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Row(
                                     modifier = Modifier.fillMaxWidth().height(42.dp),
                                     horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -2034,7 +2038,7 @@ private fun StatsHealthDetailCard(
                                         )
                                     }
                                 }
-                                Text("每日步數（近 30 日）", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(stringResource(R.string.stats_s_5de13d), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Row(
                                     modifier = Modifier.fillMaxWidth().height(42.dp),
                                     horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -2060,14 +2064,14 @@ private fun StatsHealthDetailCard(
 
                 if (!hcPerm.allGranted) {
                     Text(
-                        text = "部分型別未授權（顯示「未授權」），點此前往權限中心補授權",
+                        text = stringResource(R.string.stats_s_aa68ed),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable(onClick = openPermHub)
                     )
                 }
                 Text(
-                    text = "資料由 Health Connect 本機聚合（零額度，原始數值絕不出本機）",
+                    text = stringResource(R.string.stats_s_f9f1dc),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

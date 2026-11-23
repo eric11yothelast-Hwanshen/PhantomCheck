@@ -94,6 +94,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
+import androidx.annotation.StringRes
 
 /**
  * #338 / #350 AI 夥伴分頁（底部最右側分頁，標籤為使用者為助手取的名字，未命名 fallback「夥伴」）：
@@ -112,17 +115,20 @@ private const val INTIMACY_THRESHOLD_LV4 = 250
 
 private data class IntimacyStage(
     val level: Int,
-    val title: String,
+    @StringRes val titleRes: Int,
     val minPoints: Int,
     val maxPoints: Int?,
-    val tagline: String
-)
+    @StringRes val taglineRes: Int
+) {
+    val title: String get() = com.phantom.checker.PhantomApplication.str(titleRes)
+    val tagline: String get() = com.phantom.checker.PhantomApplication.str(taglineRes)
+}
 
 private val INTIMACY_STAGES: List<IntimacyStage> = listOf(
-    IntimacyStage(1, "初識", 0, INTIMACY_THRESHOLD_LV2, "剛開始認識彼此的生活節奏"),
-    IntimacyStage(2, "熟絡", INTIMACY_THRESHOLD_LV2, INTIMACY_THRESHOLD_LV3, "逐漸熟悉你的偏好與日常關注"),
-    IntimacyStage(3, "默契", INTIMACY_THRESHOLD_LV3, INTIMACY_THRESHOLD_LV4, "能提前幫你抓出重要訊息與行程"),
-    IntimacyStage(4, "摯友", INTIMACY_THRESHOLD_LV4, null, "最懂你的專屬數位夥伴")
+    IntimacyStage(1, R.string.partner_stage_1_title, 0, INTIMACY_THRESHOLD_LV2, R.string.partner_stage_1_tagline),
+    IntimacyStage(2, R.string.partner_stage_2_title, INTIMACY_THRESHOLD_LV2, INTIMACY_THRESHOLD_LV3, R.string.partner_stage_2_tagline),
+    IntimacyStage(3, R.string.partner_stage_3_title, INTIMACY_THRESHOLD_LV3, INTIMACY_THRESHOLD_LV4, R.string.partner_stage_3_tagline),
+    IntimacyStage(4, R.string.partner_stage_4_title, INTIMACY_THRESHOLD_LV4, null, R.string.partner_stage_4_tagline)
 )
 
 private data class IntimacyLevelInfo(
@@ -174,6 +180,7 @@ internal fun PartnerTab(
     onOpenPersonaSettings: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val db = remember(appCtx) { AppDatabaseHolder.db(appCtx) }
@@ -198,10 +205,10 @@ internal fun PartnerTab(
                     ThemePreferences.bumpBackgroundVersion()
                     headerBgVersion = ThemePreferences.getBackgroundVersion()
                     PhantomSettingsBus.notifyChanged()
-                    onShowMessage("已更新夥伴頁頭部背景")
+                    onShowMessage(resCtx.getString(R.string.partner_s_7a5861))
                 },
                 onFailure = { err ->
-                    onShowMessage("設定背景失敗：${err.localizedMessage ?: "未知錯誤"}")
+                    onShowMessage(resCtx.getString(R.string.partner_s_9e8983, err.localizedMessage ?: resCtx.getString(R.string.common_unknown_error)))
                 }
             )
         }
@@ -266,30 +273,30 @@ internal fun PartnerTab(
             RecentEventCardData(
                 key = "briefing",
                 emoji = "📰",
-                title = "最新早晚簡報",
-                value = if (lastBriefingSummary.isNotBlank()) "已送達" else "尚無紀錄",
-                subtitle = lastBriefingSummary.ifBlank { "啟用早晚簡報後將於指定時段整理今日重點" }
+                title = resCtx.getString(R.string.partner_s_429e9c),
+                value = if (lastBriefingSummary.isNotBlank()) resCtx.getString(R.string.partner_s_eb5cf8) else resCtx.getString(R.string.partner_s_b96a46),
+                subtitle = lastBriefingSummary.ifBlank { resCtx.getString(R.string.partner_s_0adea5) }
             ),
             RecentEventCardData(
                 key = "mem_7d",
                 emoji = "🧠",
-                title = "近 7 天新增確認記憶",
-                value = "$newConfirmed7d 筆",
-                subtitle = if (newConfirmed7d > 0) "已納入個人長期記憶" else "在對話中說「記住…」即可累積"
+                title = resCtx.getString(R.string.partner_s_927e75),
+                value = resCtx.getString(R.string.partner_s_a4fda8, newConfirmed7d),
+                subtitle = if (newConfirmed7d > 0) resCtx.getString(R.string.partner_s_f4706a) else resCtx.getString(R.string.partner_s_7c45c3)
             ),
             RecentEventCardData(
                 key = "conflict",
                 emoji = "⚖️",
-                title = "待裁定記憶衝突",
-                value = "$conflictCount 筆",
-                subtitle = if (conflictCount > 0) "可至記憶分頁選擇保留版本" else "目前記憶庫狀態一致無衝突"
+                title = resCtx.getString(R.string.partner_s_a218ce),
+                value = resCtx.getString(R.string.partner_s_a4fda8, conflictCount),
+                subtitle = if (conflictCount > 0) resCtx.getString(R.string.partner_s_69b431) else resCtx.getString(R.string.partner_s_58bf7b)
             ),
             RecentEventCardData(
                 key = "push",
                 emoji = "🔔",
-                title = "累計主動簡報／提醒",
-                value = "$proactivePushTotal 次",
-                subtitle = if (proactivePushTotal > 0) "已點閱簡報 $briefingReadCount 次" else "零 token 變動偵測待命中"
+                title = resCtx.getString(R.string.partner_s_9316ea),
+                value = resCtx.getString(R.string.partner_s_e893a8, proactivePushTotal),
+                subtitle = if (proactivePushTotal > 0) resCtx.getString(R.string.partner_s_7907bd, briefingReadCount) else resCtx.getString(R.string.partner_s_bc5c52)
             )
         )
     }
@@ -371,7 +378,7 @@ internal fun PartnerTab(
                                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                     )
                                 } catch (e: Exception) {
-                                    onShowMessage("無法開啟相簿選擇器：${e.localizedMessage ?: "不支援"}")
+                                    onShowMessage(resCtx.getString(R.string.partner_s_7ca1e3, e.localizedMessage ?: resCtx.getString(R.string.settings_s_fe6b26)))
                                 }
                             }
                         },
@@ -385,7 +392,7 @@ internal fun PartnerTab(
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Edit,
-                            contentDescription = "更換頭部背景",
+                            contentDescription = stringResource(R.string.partner_s_91acb0),
                             tint = if (hasCustomBg) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
                         )
@@ -395,7 +402,7 @@ internal fun PartnerTab(
                         onDismissRequest = { showHeaderBgMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("更換頭部背景") },
+                            text = { Text(stringResource(R.string.partner_s_91acb0)) },
                             onClick = {
                                 showHeaderBgMenu = false
                                 try {
@@ -403,19 +410,19 @@ internal fun PartnerTab(
                                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                     )
                                 } catch (e: Exception) {
-                                    onShowMessage("無法開啟相簿選擇器：${e.localizedMessage ?: "不支援"}")
+                                    onShowMessage(resCtx.getString(R.string.partner_s_7ca1e3, e.localizedMessage ?: resCtx.getString(R.string.settings_s_fe6b26)))
                                 }
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("移除背景（恢復預設）") },
+                            text = { Text(stringResource(R.string.partner_s_7ce9ea)) },
                             onClick = {
                                 showHeaderBgMenu = false
                                 BackgroundImageHelper.removeAssistantHeaderBackground(appCtx)
                                 ThemePreferences.bumpBackgroundVersion()
                                 headerBgVersion = ThemePreferences.getBackgroundVersion()
                                 PhantomSettingsBus.notifyChanged()
-                                onShowMessage("已移除夥伴頁頭部背景")
+                                onShowMessage(resCtx.getString(R.string.partner_s_07aa1c))
                             }
                         )
                     }
@@ -464,7 +471,7 @@ internal fun PartnerTab(
                                     }
                                 ) {
                                     Text(
-                                        text = "陪伴第 $companionDays 天",
+                                        text = stringResource(R.string.partner_s_ca3ec5, companionDays),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (hasCustomBg) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -496,7 +503,7 @@ internal fun PartnerTab(
                             onClick = onStartChat,
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("開始聊天", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(stringResource(R.string.partner_s_8714cb), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                         OutlinedButton(
                             onClick = onOpenPersonaSettings,
@@ -510,7 +517,7 @@ internal fun PartnerTab(
                             },
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("改名／換頭像", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(stringResource(R.string.partner_s_2442f2), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -561,7 +568,7 @@ internal fun PartnerTab(
                         )
                         Text(
                             text = if (intimacy.level >= INTIMACY_STAGES.size) {
-                                "${intimacy.points} pt（最高階）▸"
+                                stringResource(R.string.partner_s_4a7739, intimacy.points)
                             } else {
                                 "${intimacy.points} / ${intimacy.nextThreshold} pt ▸"
                             },
@@ -577,7 +584,7 @@ internal fun PartnerTab(
                             .clip(RoundedCornerShape(4.dp))
                     )
                     Text(
-                        text = "已確認記憶 $confirmedMemoryCount（×$INTIMACY_WEIGHT_CONFIRMED_MEMORY）＋ 對話互動 $chatMsgCount（×$INTIMACY_WEIGHT_CHAT_MESSAGE）＋ 簡報點閱 $briefingReadCount（×$INTIMACY_WEIGHT_BRIEFING_READ）· 點擊查看旅程",
+                        text = stringResource(R.string.partner_s_a4b510, confirmedMemoryCount, INTIMACY_WEIGHT_CONFIRMED_MEMORY, chatMsgCount, INTIMACY_WEIGHT_CHAT_MESSAGE, briefingReadCount, INTIMACY_WEIGHT_BRIEFING_READ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -609,7 +616,7 @@ internal fun PartnerTab(
                 val bodyToShow = fullBriefingText?.takeIf { it.isNotBlank() } ?: lastBriefingSummary
                 AlertDialog(
                     onDismissRequest = { showFullBriefingDialog = false },
-                    title = { Text("📰 最新早晚簡報全文") },
+                    title = { Text(stringResource(R.string.partner_s_94ebb4)) },
                     text = {
                         Column(
                             modifier = Modifier
@@ -622,13 +629,13 @@ internal fun PartnerTab(
                                     style = MaterialTheme.typography.bodyMedium
                                 )
                             } else {
-                                Text("尚無早晚簡報紀錄")
+                                Text(stringResource(R.string.partner_s_77e16f))
                             }
                         }
                     },
                     confirmButton = {
                         TextButton(onClick = { showFullBriefingDialog = false }) {
-                            Text("關閉")
+                            Text(stringResource(R.string.common_close))
                         }
                     }
                 )
@@ -639,7 +646,7 @@ internal fun PartnerTab(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "近 7 天互動動態",
+                    text = stringResource(R.string.partner_s_61d637),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -718,17 +725,17 @@ internal fun PartnerTab(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "主動推播主題快捷",
+                        text = stringResource(R.string.partner_s_0c9f5c),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
                     val topicOptions = listOf(
-                        PhantomPrefs.PROACTIVE_TOPIC_SCHEDULE to "行程提醒",
-                        PhantomPrefs.PROACTIVE_TOPIC_TODO to "待辦到期",
-                        PhantomPrefs.PROACTIVE_TOPIC_CONFLICT to "撞期偵測",
-                        PhantomPrefs.PROACTIVE_TOPIC_INTEREST to "興趣情報",
-                        PhantomPrefs.PROACTIVE_TOPIC_REGION to "地區情報"
+                        PhantomPrefs.PROACTIVE_TOPIC_SCHEDULE to stringResource(R.string.assistant_hub_s_28ec1f),
+                        PhantomPrefs.PROACTIVE_TOPIC_TODO to stringResource(R.string.assistant_hub_s_58b8bb),
+                        PhantomPrefs.PROACTIVE_TOPIC_CONFLICT to stringResource(R.string.partner_s_32a566),
+                        PhantomPrefs.PROACTIVE_TOPIC_INTEREST to stringResource(R.string.assistant_hub_s_848bcc),
+                        PhantomPrefs.PROACTIVE_TOPIC_REGION to stringResource(R.string.assistant_hub_s_99ed9c)
                     )
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -756,7 +763,7 @@ internal fun PartnerTab(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "助手個性、詳細度與主動推播設定",
+                            text = stringResource(R.string.partner_s_e4e0a7),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -790,6 +797,7 @@ private fun IntimacyDetailSheet(
     glassState: HazeState,
     onDismiss: () -> Unit
 ) {
+    val resCtx = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val primaryColor = MaterialTheme.colorScheme.primary
     val trackColor = MaterialTheme.colorScheme.surfaceVariant
@@ -808,7 +816,7 @@ private fun IntimacyDetailSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "與「$assistantName」的親密度",
+                text = stringResource(R.string.partner_s_81611b, assistantName),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface
@@ -875,10 +883,10 @@ private fun IntimacyDetailSheet(
                     }
                     Text(
                         text = if (intimacy.level >= INTIMACY_STAGES.size) {
-                            "已達最高階段「${intimacy.title}」（$progressPercent%）"
+                            stringResource(R.string.partner_s_63e6ef, intimacy.title, progressPercent)
                         } else {
                             val remaining = (intimacy.nextThreshold - intimacy.points).coerceAtLeast(0)
-                            "距離下一階段還差 $remaining pt（目前進度 $progressPercent%）"
+                            stringResource(R.string.partner_s_838cdd, remaining, progressPercent)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -889,7 +897,7 @@ private fun IntimacyDetailSheet(
             // 我們的旅程（縱向階段清單）
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "我們的旅程",
+                    text = stringResource(R.string.partner_s_9c7eab),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -903,9 +911,9 @@ private fun IntimacyDetailSheet(
                         "${stage.minPoints}+ pt"
                     }
                     val statusLabel = when {
-                        isCurrent -> "目前階段"
-                        isReached -> "已達成"
-                        else -> "還差 ${(stage.minPoints - intimacy.points).coerceAtLeast(1)} pt"
+                        isCurrent -> resCtx.getString(R.string.partner_s_d0a81c)
+                        isReached -> resCtx.getString(R.string.partner_s_767bcf)
+                        else -> resCtx.getString(R.string.partner_s_c9dc39, (stage.minPoints - intimacy.points).coerceAtLeast(1))
                     }
                     Surface(
                         shape = RoundedCornerShape(14.dp),
@@ -958,7 +966,7 @@ private fun IntimacyDetailSheet(
             // 如何獲得積分與目前累積明細
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "如何獲得積分與目前明細",
+                    text = stringResource(R.string.partner_s_9960b7),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -971,21 +979,21 @@ private fun IntimacyDetailSheet(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         IntimacyBreakdownRow(
-                            title = "已確認記憶（×$INTIMACY_WEIGHT_CONFIRMED_MEMORY）",
-                            subtitle = "在對話中說「記住…」或於記憶頁新增並確認",
-                            value = "$confirmedMemoryCount 筆（+${confirmedMemoryCount * INTIMACY_WEIGHT_CONFIRMED_MEMORY} pt）"
+                            title = stringResource(R.string.partner_s_d24af3, INTIMACY_WEIGHT_CONFIRMED_MEMORY),
+                            subtitle = stringResource(R.string.partner_s_f5e9cf),
+                            value = stringResource(R.string.partner_s_5d7399, confirmedMemoryCount, confirmedMemoryCount * INTIMACY_WEIGHT_CONFIRMED_MEMORY)
                         )
                         HorizontalDivider()
                         IntimacyBreakdownRow(
-                            title = "聊天互動（×$INTIMACY_WEIGHT_CHAT_MESSAGE）",
-                            subtitle = "與 AI 助手對話交流，每則訊息累積積分",
-                            value = "$chatMsgCount 則（+${chatMsgCount * INTIMACY_WEIGHT_CHAT_MESSAGE} pt）"
+                            title = stringResource(R.string.partner_s_c7bcc3, INTIMACY_WEIGHT_CHAT_MESSAGE),
+                            subtitle = stringResource(R.string.partner_s_dcedd1),
+                            value = stringResource(R.string.partner_s_edba3b, chatMsgCount, chatMsgCount * INTIMACY_WEIGHT_CHAT_MESSAGE)
                         )
                         HorizontalDivider()
                         IntimacyBreakdownRow(
-                            title = "簡報點閱（×$INTIMACY_WEIGHT_BRIEFING_READ）",
-                            subtitle = "點擊早晚簡報通知、於對話或統計頁展開閱讀早晚簡報",
-                            value = "$briefingReadCount 次（+${briefingReadCount * INTIMACY_WEIGHT_BRIEFING_READ} pt）"
+                            title = stringResource(R.string.partner_s_341096, INTIMACY_WEIGHT_BRIEFING_READ),
+                            subtitle = stringResource(R.string.partner_s_f572e3),
+                            value = stringResource(R.string.partner_s_a719e6, briefingReadCount, briefingReadCount * INTIMACY_WEIGHT_BRIEFING_READ)
                         )
                     }
                 }
@@ -995,7 +1003,7 @@ private fun IntimacyDetailSheet(
                 onClick = onDismiss,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("關閉")
+                Text(stringResource(R.string.common_close))
             }
             Spacer(Modifier.height(16.dp))
         }

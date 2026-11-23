@@ -106,18 +106,23 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
+import com.phantom.checker.R
+import androidx.compose.ui.res.stringResource
+import androidx.annotation.StringRes
 
-private enum class MemoryFilterChip(val label: String) {
-    ALL("全部"),
-    LONG_TERM("長期"),
-    SHORT_TERM("短期"),
-    SCAM_IMMUNITY("防詐免疫"),
-    CONFLICT("衝突待確認"),
-    ARCHIVED("已封存"),
-    AUTO_MEMO("自動備忘錄"),
-    WHITELIST("白名單"),
-    TAG_RULES("標籤規則"),
-    MEMO_RULES("備忘規則")
+private enum class MemoryFilterChip(@StringRes val labelRes: Int) {
+    ALL(R.string.common_all),
+    LONG_TERM(R.string.memory_s_a1c618),
+    SHORT_TERM(R.string.memory_s_7a478f),
+    SCAM_IMMUNITY(R.string.memory_s_fee40c),
+    CONFLICT(R.string.memory_chip_conflict),
+    ARCHIVED(R.string.memory_chip_archived),
+    AUTO_MEMO(R.string.catalog_ai_auto_memo_enabled_title),
+    WHITELIST(R.string.memory_chip_whitelist),
+    TAG_RULES(R.string.memory_chip_tag_rules),
+    MEMO_RULES(R.string.memory_chip_memo_rules);
+
+    val label: String get() = com.phantom.checker.PhantomApplication.str(labelRes)
 }
 
 private data class MemoryStatTile(
@@ -138,6 +143,7 @@ internal fun MemoryTab(
     initialFilterKey: String? = null,
     onConsumedInitialFilter: () -> Unit = {}
 ) {
+    val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
@@ -356,7 +362,7 @@ internal fun MemoryTab(
                                 privacyTier = priv,
                                 confidence = conf,
                                 sourceType = MemoryEntity.SOURCE_MANUAL,
-                                sourceRef = "手動新增（${PhantomPrefs.formatMessageTime(appCtx, now, includeDate = true)}）",
+                                sourceRef = resCtx.getString(R.string.memory_s_fe14a7, PhantomPrefs.formatMessageTime(appCtx, now, includeDate = true)),
                                 forceReplaceConflict = false,
                                 nowMs = now
                             )
@@ -377,7 +383,7 @@ internal fun MemoryTab(
                             )
                         }
                     }
-                    onShowMessage(if (target == null) "已新增記憶" else "已更新記憶")
+                    onShowMessage(if (target == null) resCtx.getString(R.string.memory_s_654619) else resCtx.getString(R.string.memory_s_7f6bb6))
                 }
             }
         )
@@ -387,9 +393,9 @@ internal fun MemoryTab(
     pendingDeleteMemory?.let { target ->
         AlertDialog(
             onDismissRequest = { pendingDeleteMemory = null },
-            title = { Text("確認刪除記憶") },
+            title = { Text(stringResource(R.string.memory_s_514681)) },
             text = {
-                Text("確定要永久刪除記憶「${target.subject}：${target.content.take(50)}」嗎？此操作無法復原。")
+                Text(stringResource(R.string.memory_s_270441, target.subject, target.content.take(50)))
             },
             confirmButton = {
                 Button(
@@ -402,16 +408,16 @@ internal fun MemoryTab(
                                 db.memoryDao().deleteById(id)
                             }
                             selectedBatchIds = selectedBatchIds - id
-                            onShowMessage("已刪除記憶")
+                            onShowMessage(resCtx.getString(R.string.memory_s_7d3b19))
                         }
                     }
                 ) {
-                    Text("確認刪除")
+                    Text(stringResource(R.string.common_confirm_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingDeleteMemory = null }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -422,15 +428,15 @@ internal fun MemoryTab(
         val count = selectedBatchIds.size
         AlertDialog(
             onDismissRequest = { showBatchDeleteConfirm = false },
-            title = { Text("確認批次刪除記憶") },
+            title = { Text(stringResource(R.string.memory_s_cd96c3)) },
             text = {
                 Text(
                     buildString {
-                        append("確定要永久刪除已勾選的 $count 筆記憶嗎？")
+                        append(resCtx.getString(R.string.memory_s_4828b3, count))
                         if (qTrim.isNotEmpty()) {
-                            append("\n（目前搜尋篩選：「$qTrim」）")
+                            append(resCtx.getString(R.string.memory_s_dd222e, qTrim))
                         }
-                        append("\n此操作無法復原。")
+                        append(resCtx.getString(R.string.memory_s_071ef4))
                     }
                 )
             },
@@ -446,16 +452,16 @@ internal fun MemoryTab(
                             withContext(Dispatchers.IO) {
                                 db.memoryDao().deleteByIds(idsToDelete)
                             }
-                            onShowMessage("已批次刪除 ${idsToDelete.size} 筆記憶")
+                            onShowMessage(resCtx.getString(R.string.memory_s_f2e677, idsToDelete.size))
                         }
                     }
                 ) {
-                    Text("確認刪除（$count）")
+                    Text(stringResource(R.string.chat_s_1ecc3e, count))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showBatchDeleteConfirm = false }) {
-                    Text("取消")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -493,16 +499,16 @@ internal fun MemoryTab(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "個人記憶庫",
+                    text = stringResource(R.string.memory_s_c425e2),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "長期 ${longTermMemories.size} · 短期 ${shortTermMemories.size}" +
-                        (if (conflictMemories.isNotEmpty()) " · 衝突 ${conflictMemories.size}" else "") +
-                        " · 封存 ${archivedMemories.size}",
+                    text = stringResource(R.string.memory_s_5639c3, longTermMemories.size, shortTermMemories.size) +
+                        (if (conflictMemories.isNotEmpty()) stringResource(R.string.memory_s_273864, conflictMemories.size) else "") +
+                        stringResource(R.string.memory_s_eed0c6, archivedMemories.size),
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -530,7 +536,7 @@ internal fun MemoryTab(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Search,
-                        contentDescription = if (isSearchVisible) "收合搜尋框" else "搜尋記憶",
+                        contentDescription = if (isSearchVisible) stringResource(R.string.memory_s_92cd9a) else stringResource(R.string.memory_s_01f6b5),
                         tint = if (isSearchVisible) {
                             MaterialTheme.colorScheme.primary
                         } else {
@@ -541,7 +547,7 @@ internal fun MemoryTab(
                 TextButton(
                     onClick = { showWatchTopicDialog = true }
                 ) {
-                    Text("關注清單", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.memory_s_98f8d4), style = MaterialTheme.typography.labelMedium)
                 }
                 IconButton(
                     onClick = {
@@ -550,13 +556,13 @@ internal fun MemoryTab(
                     },
                     modifier = Modifier.size(48.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "新增記憶")
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.memory_s_9a8905))
                 }
                 IconButton(
                     onClick = onOpenMemorySettings,
                     modifier = Modifier.size(48.dp)
                 ) {
-                    Icon(Icons.Default.Settings, contentDescription = "記憶庫與 AI 助手設定")
+                    Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.memory_s_c5308f))
                 }
             }
         }
@@ -593,13 +599,13 @@ internal fun MemoryTab(
                 shape = RoundedCornerShape(16.dp),
                 placeholder = {
                     Text(
-                        text = "搜尋記憶內容、人物主題、來源或規則…",
+                        text = stringResource(R.string.memory_s_8527b8),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 },
                 leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = "搜尋記憶")
+                    Icon(Icons.Default.Search, contentDescription = stringResource(R.string.memory_s_01f6b5))
                 },
                 trailingIcon = {
                     IconButton(
@@ -614,7 +620,7 @@ internal fun MemoryTab(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Clear,
-                            contentDescription = if (searchQuery.isNotEmpty()) "清除搜尋" else "收合搜尋"
+                            contentDescription = if (searchQuery.isNotEmpty()) stringResource(R.string.common_s_59b34b) else stringResource(R.string.memory_s_8b9e0e)
                         )
                     }
                 }
@@ -642,7 +648,7 @@ internal fun MemoryTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "符合「$qTrim」共 ${visibleSelectableMemories.size} 筆可選記憶",
+                        text = stringResource(R.string.memory_s_4f5298, qTrim, visibleSelectableMemories.size),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -653,7 +659,7 @@ internal fun MemoryTab(
                         onClick = { isBatchMode = true },
                         modifier = Modifier.heightIn(min = 36.dp)
                     ) {
-                        Text("批次選取", style = MaterialTheme.typography.labelMedium)
+                        Text(stringResource(R.string.common_batch_select), style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
@@ -685,9 +691,9 @@ internal fun MemoryTab(
                 ) {
                     Text(
                         text = if (qTrim.isNotEmpty()) {
-                            "符合「$qTrim」共 ${allVisibleIds.size} 筆 · 已選 ${selectedBatchIds.size} 筆"
+                            stringResource(R.string.memory_s_7217e8, qTrim, allVisibleIds.size, selectedBatchIds.size)
                         } else {
-                            "已選 ${selectedBatchIds.size} / ${allVisibleIds.size} 筆"
+                            stringResource(R.string.memory_s_28a23b, selectedBatchIds.size, allVisibleIds.size)
                         },
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
@@ -706,14 +712,14 @@ internal fun MemoryTab(
                                 }
                             }
                         ) {
-                            Text(if (allSelected) "取消全選" else "全選結果")
+                            Text(if (allSelected) stringResource(R.string.memory_s_d93a2d) else stringResource(R.string.memory_s_a0fbf7))
                         }
                         Button(
                             enabled = selectedBatchIds.isNotEmpty(),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                             onClick = { showBatchDeleteConfirm = true }
                         ) {
-                            Text("刪除(${selectedBatchIds.size})")
+                            Text(stringResource(R.string.memory_s_60e7e7, selectedBatchIds.size))
                         }
                     }
                 }
@@ -729,10 +735,10 @@ internal fun MemoryTab(
             color = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.35f)
         ) {
             val statTiles = listOf(
-                MemoryStatTile("🧠", "長期", longTermMemories.size, MemoryFilterChip.LONG_TERM),
-                MemoryStatTile("⏳", "短期", shortTermMemories.size, MemoryFilterChip.SHORT_TERM),
-                MemoryStatTile("⚖️", "衝突", conflictMemories.size, MemoryFilterChip.CONFLICT, conflictMemories.isNotEmpty()),
-                MemoryStatTile("🛡️", "免疫", scamImmunityMemories.size, MemoryFilterChip.SCAM_IMMUNITY)
+                MemoryStatTile("🧠", stringResource(R.string.memory_s_a1c618), longTermMemories.size, MemoryFilterChip.LONG_TERM),
+                MemoryStatTile("⏳", stringResource(R.string.memory_s_7a478f), shortTermMemories.size, MemoryFilterChip.SHORT_TERM),
+                MemoryStatTile("⚖️", stringResource(R.string.memory_s_7ab08b), conflictMemories.size, MemoryFilterChip.CONFLICT, conflictMemories.isNotEmpty()),
+                MemoryStatTile("🛡️", stringResource(R.string.memory_s_79027b), scamImmunityMemories.size, MemoryFilterChip.SCAM_IMMUNITY)
             )
             Row(
                 modifier = Modifier
@@ -797,7 +803,7 @@ internal fun MemoryTab(
             else -> 0
         }
         com.phantom.checker.ui.components.PhantomSecondaryTabRow(
-            tabs = listOf("記憶", "規則", "防詐免疫"),
+            tabs = listOf(stringResource(R.string.common_memory), stringResource(R.string.memory_s_21608b), stringResource(R.string.memory_s_fee40c)),
             selectedIndex = primaryMemoryTabIndex,
             badges = listOf(0, autoNotes.size, scamImmunityMemories.size),
             onSelect = { idx ->
@@ -878,7 +884,7 @@ internal fun MemoryTab(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = if (isBatchMode) "結束批次" else "批次管理",
+                            text = if (isBatchMode) stringResource(R.string.memory_s_5ad41d) else stringResource(R.string.memory_s_35742a),
                             style = MaterialTheme.typography.labelMedium,
                             color = if (isBatchMode) {
                                 MaterialTheme.colorScheme.onPrimaryContainer
@@ -902,7 +908,7 @@ internal fun MemoryTab(
                 ) {
                     PhantomChevron(
  expanded = !(filterChipsCollapsed),
-                        contentDescription = if (filterChipsCollapsed) "展開篩選標籤" else "收合篩選標籤",
+                        contentDescription = if (filterChipsCollapsed) stringResource(R.string.memory_s_38d517) else stringResource(R.string.memory_s_d58874),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
                     )
@@ -959,7 +965,7 @@ internal fun MemoryTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "分類篩選",
+                        text = stringResource(R.string.memory_s_fd9e90),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.SemiBold
@@ -976,7 +982,7 @@ internal fun MemoryTab(
                 ) {
                     item(key = "tier_label_mem") {
                         Text(
-                            text = "記憶",
+                            text = stringResource(R.string.common_memory),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.SemiBold,
@@ -1011,7 +1017,7 @@ internal fun MemoryTab(
                 ) {
                     item(key = "tier_label_rules") {
                         Text(
-                            text = "規則",
+                            text = stringResource(R.string.memory_s_21608b),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.SemiBold,
@@ -1056,7 +1062,7 @@ internal fun MemoryTab(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "🛡️ 每週防詐免疫彙總建議（待確認）",
+                        text = resCtx.getString(R.string.memory_s_606736),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onTertiaryContainer
@@ -1075,10 +1081,10 @@ internal fun MemoryTab(
                             onClick = {
                                 PhantomPrefs.clearPendingScamImmunityDraft(appCtx)
                                 pendingImmunityDraft = null
-                                onShowMessage("已略過本次防詐免疫彙總")
+                                onShowMessage(resCtx.getString(R.string.memory_s_2c6cd0))
                             }
                         ) {
-                            Text("略過")
+                            Text(resCtx.getString(R.string.common_skip))
                         }
                         Spacer(Modifier.width(6.dp))
                         Button(
@@ -1093,15 +1099,15 @@ internal fun MemoryTab(
                                         privacyTier = MemoryEntity.PRIVACY_NORMAL,
                                         confidence = MemoryEntity.CONFIDENCE_INFERRED,
                                         sourceType = MemoryEntity.SOURCE_NOTIFICATION,
-                                        sourceRef = "每週詐騙手法彙總"
+                                        sourceRef = resCtx.getString(R.string.memory_s_0ea194)
                                     )
                                     PhantomPrefs.clearPendingScamImmunityDraft(appCtx)
                                     pendingImmunityDraft = null
-                                    onShowMessage("已寫入「防詐免疫」長期記憶")
+                                    onShowMessage(resCtx.getString(R.string.memory_s_0f3b6e))
                                 }
                             }
                         ) {
-                            Text("確認寫入免疫記憶")
+                            Text(resCtx.getString(R.string.memory_s_762764))
                         }
                     }
                 }
@@ -1134,13 +1140,13 @@ internal fun MemoryTab(
             ) {
                 EmptyStateView(
                     icon = MemoryIcon,
-                    title = if (qTrim.isNotEmpty()) "找不到符合「$qTrim」的記憶" else "記憶庫目前為空",
+                    title = if (qTrim.isNotEmpty()) stringResource(R.string.memory_s_934fdb, qTrim) else stringResource(R.string.memory_s_c4d00b),
                     description = if (qTrim.isNotEmpty()) {
-                        "請嘗試其他關鍵字或切換上方篩選標籤。"
+                        stringResource(R.string.memory_s_a5092b)
                     } else {
-                        "你可以在 AI 助手對話中請 AI 記住偏好、人物、行程，或點擊右上角「＋」手動新增長期與短期記憶。"
+                        stringResource(R.string.memory_s_c91513)
                     },
-                    actionLabel = if (qTrim.isNotEmpty()) "清除搜尋" else "新增第一筆記憶",
+                    actionLabel = if (qTrim.isNotEmpty()) stringResource(R.string.common_s_59b34b) else stringResource(R.string.memory_s_092252),
                     onAction = {
                         if (qTrim.isNotEmpty()) {
                             searchQuery = ""
@@ -1178,8 +1184,8 @@ internal fun MemoryTab(
                             }
                         }
                         CollapsibleMemorySectionCard(
-                            title = "⚠️ 衝突待確認（${conflictMemories.size} 筆）",
-                            subtitle = "同主題偵測到不同內容，系統未覆蓋原值，請裁定要保留哪一個版本",
+                            title = stringResource(R.string.memory_s_22010f, conflictMemories.size),
+                            subtitle = stringResource(R.string.memory_s_ba33b9),
                             expanded = expandConflict,
                             highlightWarning = conflictMemories.isNotEmpty(),
                             glassState = glassState,
@@ -1190,7 +1196,7 @@ internal fun MemoryTab(
                         ) {
                             if (conflictMemories.isEmpty()) {
                                 Text(
-                                    text = "目前沒有待裁定的記憶衝突。",
+                                    text = stringResource(R.string.memory_s_d8872f),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1220,15 +1226,15 @@ internal fun MemoryTab(
                                                         modifier = Modifier.size(18.dp)
                                                     )
                                                     Text(
-                                                        text = "[$catLbl] 主題：$firstSubject（共 ${sortedByTime.size} 個候選版本）",
+                                                        text = resCtx.getString(R.string.memory_s_210be4, catLbl, firstSubject, sortedByTime.size),
                                                         style = MaterialTheme.typography.titleSmall,
                                                         fontWeight = FontWeight.Bold
                                                     )
                                                 }
                                                 sortedByTime.forEachIndexed { idx, cand ->
                                                     val isOldest = idx == 0 && sortedByTime.size > 1
-                                                    val versionTag = if (isOldest) "原記憶 (#${cand.id})" else "新記憶 (#${cand.id})"
-                                                    val btnLabel = if (isOldest) "保留原樣" else "更新記憶（採用此版）"
+                                                    val versionTag = if (isOldest) resCtx.getString(R.string.memory_s_a31e35, cand.id) else resCtx.getString(R.string.memory_s_dc8ad0, cand.id)
+                                                    val btnLabel = if (isOldest) resCtx.getString(R.string.chat_s_cb42f5) else resCtx.getString(R.string.memory_s_723303)
                                                     Surface(
                                                         shape = RoundedCornerShape(10.dp),
                                                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
@@ -1265,7 +1271,7 @@ internal fun MemoryTab(
                                                             )
                                                             if (!cand.sourceRef.isNullOrBlank()) {
                                                                 Text(
-                                                                    text = "來源：${cand.sourceRef}",
+                                                                    text = resCtx.getString(R.string.chat_s_c7cde7, cand.sourceRef),
                                                                     style = MaterialTheme.typography.labelSmall,
                                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                                 )
@@ -1281,13 +1287,13 @@ internal fun MemoryTab(
                                                                         showEditorDialog = true
                                                                     }
                                                                 ) {
-                                                                    Text("編輯")
+                                                                    Text(resCtx.getString(R.string.common_edit))
                                                                 }
                                                                 Button(
                                                                     onClick = {
                                                                         scope.launch {
                                                                             MemoryEngine.resolveConflictGroup(db, cand.id)
-                                                                            onShowMessage("已裁定採用 #$${cand.id} 並將衝突舊版封存".replace("#$", "#"))
+                                                                            onShowMessage(resCtx.getString(R.string.memory_s_f0e267, cand.id).replace("#$", "#"))
                                                                         }
                                                                     }
                                                                 ) {
@@ -1310,8 +1316,8 @@ internal fun MemoryTab(
                 if (showScamImmunity && (scamImmunityMemories.isNotEmpty() || selectedFilter == MemoryFilterChip.SCAM_IMMUNITY)) {
                     phantomItem(2, key = "section_scam_immunity") {
                         CollapsibleMemorySectionCard(
-                            title = "🛡️ 防詐免疫（${scamImmunityMemories.size} 筆）",
-                            subtitle = "曾遇過的詐騙話術與免疫特徵；收到金錢、催促或驗證碼訊息時自動交叉比對",
+                            title = stringResource(R.string.memory_s_6436d2, scamImmunityMemories.size),
+                            subtitle = stringResource(R.string.memory_s_9be97c),
                             expanded = expandScamImmunity,
                             glassState = glassState,
                             onToggle = {
@@ -1321,7 +1327,7 @@ internal fun MemoryTab(
                         ) {
                             if (scamImmunityMemories.isEmpty()) {
                                 Text(
-                                    text = "尚無防詐免疫記憶。可在詐騙中心點擊「加入防詐免疫」或於 AI 助手對話中新增。",
+                                    text = stringResource(R.string.memory_s_88257e),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1364,9 +1370,9 @@ internal fun MemoryTab(
                                                     }
                                                     onShowMessage(
                                                         if (nextTier == MemoryEntity.PRIVACY_SENSITIVE) {
-                                                            "已設為「敏感記憶」（僅本機保存，絕不加入 AI prompt）"
+                                                            resCtx.getString(R.string.memory_s_a45e7c)
                                                         } else {
-                                                            "已設為「一般記憶」（允許檢索注入 AI 對話）"
+                                                            resCtx.getString(R.string.memory_s_98da3e)
                                                         }
                                                     )
                                                 }
@@ -1374,7 +1380,7 @@ internal fun MemoryTab(
                                             onArchiveOrRestore = {
                                                 scope.launch {
                                                     MemoryEngine.archiveMemory(db, mem.id)
-                                                    onShowMessage("已封存該筆防詐免疫記憶")
+                                                    onShowMessage(resCtx.getString(R.string.memory_s_cc42c9))
                                                 }
                                             },
                                             onOpenMessageDetail = onOpenMessageDetail
@@ -1390,8 +1396,8 @@ internal fun MemoryTab(
                 if (showLongTerm) {
                     phantomItem(3, key = "section_long_term") {
                         CollapsibleMemorySectionCard(
-                            title = "長期記憶（${longTermMemories.size} 筆）",
-                            subtitle = "持久保存的人物、地點、偏好、習慣與關係（敏感記憶僅本機顯示不外送）",
+                            title = stringResource(R.string.memory_s_c0b1f2, longTermMemories.size),
+                            subtitle = stringResource(R.string.memory_s_946733),
                             expanded = expandLongTerm,
                             glassState = glassState,
                             onToggle = {
@@ -1401,7 +1407,7 @@ internal fun MemoryTab(
                         ) {
                             if (longTermMemories.isEmpty()) {
                                 Text(
-                                    text = "尚無長期記憶。",
+                                    text = stringResource(R.string.memory_s_d31046),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1444,9 +1450,9 @@ internal fun MemoryTab(
                                                     }
                                                     onShowMessage(
                                                         if (nextTier == MemoryEntity.PRIVACY_SENSITIVE) {
-                                                            "已設為「敏感記憶」（僅本機保存，絕不加入 AI prompt）"
+                                                            resCtx.getString(R.string.memory_s_a45e7c)
                                                         } else {
-                                                            "已設為「一般記憶」（允許檢索注入 AI 對話）"
+                                                            resCtx.getString(R.string.memory_s_98da3e)
                                                         }
                                                     )
                                                 }
@@ -1454,7 +1460,7 @@ internal fun MemoryTab(
                                             onArchiveOrRestore = {
                                                 scope.launch {
                                                     MemoryEngine.archiveMemory(db, mem.id)
-                                                    onShowMessage("已封存記憶 #${mem.id}")
+                                                    onShowMessage(resCtx.getString(R.string.memory_s_1be6b0, mem.id))
                                                 }
                                             }
                                         )
@@ -1469,8 +1475,8 @@ internal fun MemoryTab(
                 if (showShortTerm) {
                     phantomItem(4, key = "section_short_term") {
                         CollapsibleMemorySectionCard(
-                            title = "短期記憶（${shortTermMemories.size} 筆）",
-                            subtitle = "具時效性的近期狀態或臨時行程，到期後自動轉入「已封存」",
+                            title = stringResource(R.string.memory_s_5fcf31, shortTermMemories.size),
+                            subtitle = stringResource(R.string.memory_s_0e7d72),
                             expanded = expandShortTerm,
                             glassState = glassState,
                             onToggle = {
@@ -1480,7 +1486,7 @@ internal fun MemoryTab(
                         ) {
                             if (shortTermMemories.isEmpty()) {
                                 Text(
-                                    text = "尚無使用中的短期記憶。",
+                                    text = stringResource(R.string.memory_s_67e20a),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1523,9 +1529,9 @@ internal fun MemoryTab(
                                                     }
                                                     onShowMessage(
                                                         if (nextTier == MemoryEntity.PRIVACY_SENSITIVE) {
-                                                            "已設為「敏感記憶」（僅本機保存，絕不外送）"
+                                                            resCtx.getString(R.string.memory_s_10b460)
                                                         } else {
-                                                            "已設為「一般記憶」"
+                                                            resCtx.getString(R.string.memory_s_524d5f)
                                                         }
                                                     )
                                                 }
@@ -1533,7 +1539,7 @@ internal fun MemoryTab(
                                             onArchiveOrRestore = {
                                                 scope.launch {
                                                     MemoryEngine.archiveMemory(db, mem.id)
-                                                    onShowMessage("已封存短期記憶 #${mem.id}")
+                                                    onShowMessage(resCtx.getString(R.string.memory_s_38c5e8, mem.id))
                                                 }
                                             }
                                         )
@@ -1548,8 +1554,8 @@ internal fun MemoryTab(
                 if (showArchived) {
                     phantomItem(5, key = "section_archived") {
                         CollapsibleMemorySectionCard(
-                            title = "已封存（${archivedMemories.size} 筆）",
-                            subtitle = "已過期的短期記憶或衝突裁定後封存的歷史紀錄，不會注入 AI 對話，可隨時恢復",
+                            title = stringResource(R.string.memory_s_993844, archivedMemories.size),
+                            subtitle = stringResource(R.string.memory_s_cdc4f6),
                             expanded = expandArchived,
                             glassState = glassState,
                             onToggle = {
@@ -1559,7 +1565,7 @@ internal fun MemoryTab(
                         ) {
                             if (archivedMemories.isEmpty()) {
                                 Text(
-                                    text = "目前沒有已封存的記憶。",
+                                    text = stringResource(R.string.memory_s_492ab9),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1600,13 +1606,13 @@ internal fun MemoryTab(
                                                             )
                                                         )
                                                     }
-                                                    onShowMessage("已更新隱私分級")
+                                                    onShowMessage(resCtx.getString(R.string.memory_s_de02c0))
                                                 }
                                             },
                                             onArchiveOrRestore = {
                                                 scope.launch {
                                                     MemoryEngine.restoreArchivedMemory(db, mem.id)
-                                                    onShowMessage("已恢復記憶 #${mem.id} 至使用中")
+                                                    onShowMessage(resCtx.getString(R.string.memory_s_9059d6, mem.id))
                                                 }
                                             }
                                         )
@@ -1621,8 +1627,8 @@ internal fun MemoryTab(
                 if (showAutoMemo) {
                     phantomItem(6, key = "section_auto_memo") {
                         CollapsibleMemorySectionCard(
-                            title = "自動備忘錄（${autoNotes.size} 筆）",
-                            subtitle = "AI 分析新通知時自動擷取的備忘紀錄（與「記事」分頁同步）",
+                            title = stringResource(R.string.memory_s_e89522, autoNotes.size),
+                            subtitle = stringResource(R.string.memory_s_45932b),
                             expanded = expandAutoMemo,
                             glassState = glassState,
                             onToggle = {
@@ -1632,7 +1638,7 @@ internal fun MemoryTab(
                         ) {
                             if (autoNotes.isEmpty()) {
                                 Text(
-                                    text = "尚無自動備忘錄。",
+                                    text = stringResource(R.string.memory_s_54ea4b),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1661,7 +1667,7 @@ internal fun MemoryTab(
                                                         verticalAlignment = Alignment.CenterVertically
                                                     ) {
                                                         MemoryBadge(
-                                                            text = note.relatedAppLabel?.takeIf { it.isNotBlank() } ?: "自動備忘",
+                                                            text = note.relatedAppLabel?.takeIf { it.isNotBlank() } ?: resCtx.getString(R.string.memory_s_761057),
                                                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                                                         )
@@ -1681,14 +1687,14 @@ internal fun MemoryTab(
                                                     onClick = {
                                                         scope.launch {
                                                             MemoryEngine.deleteAutoNote(appCtx, db, note.id)
-                                                            onShowMessage("已刪除自動備忘錄")
+                                                            onShowMessage(resCtx.getString(R.string.memory_s_66f694))
                                                         }
                                                     },
                                                     modifier = Modifier.size(48.dp)
                                                 ) {
                                                     Icon(
                                                         imageVector = Icons.Default.Delete,
-                                                        contentDescription = "刪除自動備忘錄",
+                                                        contentDescription = resCtx.getString(R.string.memory_s_7abc5d),
                                                         tint = MaterialTheme.colorScheme.error
                                                     )
                                                 }
@@ -1705,8 +1711,8 @@ internal fun MemoryTab(
                 if (showWhitelist) {
                     phantomItem(7, key = "section_whitelist") {
                         CollapsibleMemorySectionCard(
-                            title = "白名單規則（${filteredWhitelists.size} 筆）",
-                            subtitle = "信任的寄件者或通知規則（命中時優先標為安全並跳過防詐情報預查）",
+                            title = stringResource(R.string.memory_s_afe465, filteredWhitelists.size),
+                            subtitle = stringResource(R.string.memory_s_eb5395),
                             expanded = expandWhitelist,
                             glassState = glassState,
                             onToggle = {
@@ -1724,13 +1730,13 @@ internal fun MemoryTab(
                                     },
                                     modifier = Modifier.pressableScale()
                                 ) {
-                                    Text("開啟完整白名單管理頁")
+                                    Text(stringResource(R.string.memory_s_e22fb6))
                                 }
                             }
                             if (filteredWhitelists.isEmpty()) {
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    text = "尚無白名單規則。",
+                                    text = stringResource(R.string.memory_s_6d3b11),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1753,8 +1759,8 @@ internal fun MemoryTab(
                                                 Column(modifier = Modifier.weight(1f)) {
                                                     val scopeText = listOfNotNull(
                                                         rule.packageName?.takeIf { it.isNotBlank() },
-                                                        rule.sender?.takeIf { it.isNotBlank() }?.let { "寄件者：$it" }
-                                                    ).joinToString(" · ").ifBlank { "全域白名單" }
+                                                        rule.sender?.takeIf { it.isNotBlank() }?.let { resCtx.getString(R.string.common_s_c9cc80, it) }
+                                                    ).joinToString(" · ").ifBlank { resCtx.getString(R.string.memory_s_4f3911) }
                                                     Text(
                                                         text = scopeText,
                                                         style = MaterialTheme.typography.labelSmall,
@@ -1781,14 +1787,14 @@ internal fun MemoryTab(
                                                         scope.launch {
                                                             MemoryEngine.deleteAiRule(db, rule.id)
                                                             reloadRulesTick++
-                                                            onShowMessage("已刪除白名單規則")
+                                                            onShowMessage(resCtx.getString(R.string.memory_s_8a6eb8))
                                                         }
                                                     },
                                                     modifier = Modifier.size(48.dp)
                                                 ) {
                                                     Icon(
                                                         imageVector = Icons.Default.Delete,
-                                                        contentDescription = "刪除白名單規則",
+                                                        contentDescription = resCtx.getString(R.string.memory_s_feb352),
                                                         tint = MaterialTheme.colorScheme.error
                                                     )
                                                 }
@@ -1806,8 +1812,8 @@ internal fun MemoryTab(
                     phantomItem(8, key = "section_tag_rules") {
                         val totalTagRules = filteredUserTagRules.size + filteredAiTagRules.size
                         CollapsibleMemorySectionCard(
-                            title = "標籤規則（$totalTagRules 筆）",
-                            subtitle = "使用者標籤記憶規則與 AI 自動標籤規則",
+                            title = stringResource(R.string.memory_s_d242f3, totalTagRules),
+                            subtitle = stringResource(R.string.memory_s_1bf5ca),
                             expanded = expandTagRules,
                             glassState = glassState,
                             onToggle = {
@@ -1825,13 +1831,13 @@ internal fun MemoryTab(
                                     },
                                     modifier = Modifier.pressableScale()
                                 ) {
-                                    Text("開啟完整標籤與規則管理頁")
+                                    Text(stringResource(R.string.memory_s_203f13))
                                 }
                             }
                             if (totalTagRules == 0) {
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    text = "尚無自訂標籤規則。",
+                                    text = stringResource(R.string.memory_s_381431),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1839,7 +1845,7 @@ internal fun MemoryTab(
                                 Spacer(Modifier.height(6.dp))
                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     filteredUserTagRules.take(15).forEach { ur ->
-                                        val tagName = tagsById[ur.targetTagId]?.name ?: "未知標籤"
+                                        val tagName = tagsById[ur.targetTagId]?.name ?: resCtx.getString(R.string.tag_mgmt_s_1a24b4)
                                         val condStr = TagRuleEngine.formatRuleConditions(ur)
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
@@ -1860,7 +1866,7 @@ internal fun MemoryTab(
                                                         fontWeight = FontWeight.SemiBold
                                                     )
                                                     Text(
-                                                        text = "確定性條件：$condStr",
+                                                        text = resCtx.getString(R.string.memory_s_db15e0, condStr),
                                                         style = MaterialTheme.typography.labelSmall,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                                     )
@@ -1879,14 +1885,14 @@ internal fun MemoryTab(
                                                         scope.launch {
                                                             MemoryEngine.deleteUserTagRule(db, ur.id)
                                                             reloadRulesTick++
-                                                            onShowMessage("已刪除標籤記憶規則")
+                                                            onShowMessage(resCtx.getString(R.string.tag_mgmt_s_412fe2))
                                                         }
                                                     },
                                                     modifier = Modifier.size(48.dp)
                                                 ) {
                                                     Icon(
                                                         imageVector = Icons.Default.Delete,
-                                                        contentDescription = "刪除標籤規則",
+                                                        contentDescription = resCtx.getString(R.string.memory_s_e93e63),
                                                         tint = MaterialTheme.colorScheme.error
                                                     )
                                                 }
@@ -1894,7 +1900,7 @@ internal fun MemoryTab(
                                         }
                                     }
                                     filteredAiTagRules.take(15).forEach { ar ->
-                                        val tagName = ar.targetTagId?.let { tagsById[it]?.name } ?: "AI 標籤"
+                                        val tagName = ar.targetTagId?.let { tagsById[it]?.name } ?: resCtx.getString(R.string.memory_s_374cb6)
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
                                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -1909,7 +1915,7 @@ internal fun MemoryTab(
                                             ) {
                                                 Column(modifier = Modifier.weight(1f)) {
                                                     Text(
-                                                        text = "[$tagName · AI 語意] ${ar.ruleText}",
+                                                        text = resCtx.getString(R.string.memory_s_11cb0e, tagName, ar.ruleText),
                                                         style = MaterialTheme.typography.bodySmall
                                                     )
                                                 }
@@ -1927,14 +1933,14 @@ internal fun MemoryTab(
                                                         scope.launch {
                                                             MemoryEngine.deleteAiRule(db, ar.id)
                                                             reloadRulesTick++
-                                                            onShowMessage("已刪除 AI 標籤規則")
+                                                            onShowMessage(resCtx.getString(R.string.memory_s_fee080))
                                                         }
                                                     },
                                                     modifier = Modifier.size(48.dp)
                                                 ) {
                                                     Icon(
                                                         imageVector = Icons.Default.Delete,
-                                                        contentDescription = "刪除 AI 標籤規則",
+                                                        contentDescription = resCtx.getString(R.string.memory_s_5cf15f),
                                                         tint = MaterialTheme.colorScheme.error
                                                     )
                                                 }
@@ -1951,8 +1957,8 @@ internal fun MemoryTab(
                 if (showMemoRules) {
                     phantomItem(9, key = "section_memo_rules") {
                         CollapsibleMemorySectionCard(
-                            title = "備忘規則（${filteredMemoRules.size} 筆）",
-                            subtitle = "控制特定 App／寄件者／關鍵字「一律記事、一律待辦或永不記事」",
+                            title = stringResource(R.string.memory_s_2dce73, filteredMemoRules.size),
+                            subtitle = stringResource(R.string.memory_s_665dbf),
                             expanded = expandMemoRules,
                             glassState = glassState,
                             onToggle = {
@@ -1962,7 +1968,7 @@ internal fun MemoryTab(
                         ) {
                             if (filteredMemoRules.isEmpty()) {
                                 Text(
-                                    text = "尚無備忘規則。",
+                                    text = stringResource(R.string.memory_s_65b0f5),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1971,9 +1977,9 @@ internal fun MemoryTab(
                                     filteredMemoRules.take(20).forEach { mr ->
                                         val condParts = listOfNotNull(
                                             mr.packageName?.takeIf { it.isNotBlank() }?.let { "App: $it" },
-                                            mr.sender?.takeIf { it.isNotBlank() }?.let { "寄件者: $it" },
-                                            mr.keyword?.takeIf { it.isNotBlank() }?.let { "關鍵字: $it" }
-                                        ).joinToString(" · ").ifBlank { "未指定條件" }
+                                            mr.sender?.takeIf { it.isNotBlank() }?.let { resCtx.getString(R.string.memory_s_3f8e80, it) },
+                                            mr.keyword?.takeIf { it.isNotBlank() }?.let { resCtx.getString(R.string.memory_s_cb200f, it) }
+                                        ).joinToString(" · ").ifBlank { resCtx.getString(R.string.memory_s_b32463) }
                                         val actLbl = MemoRuleEngine.actionLabel(mr.action)
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
@@ -2011,14 +2017,14 @@ internal fun MemoryTab(
                                                     onClick = {
                                                         scope.launch {
                                                             MemoryEngine.deleteMemoRule(db, mr.id)
-                                                            onShowMessage("已刪除備忘規則")
+                                                            onShowMessage(resCtx.getString(R.string.memory_s_86389e))
                                                         }
                                                     },
                                                     modifier = Modifier.size(48.dp)
                                                 ) {
                                                     Icon(
                                                         imageVector = Icons.Default.Delete,
-                                                        contentDescription = "刪除備忘規則",
+                                                        contentDescription = resCtx.getString(R.string.memory_s_46350d),
                                                         tint = MaterialTheme.colorScheme.error
                                                     )
                                                 }
@@ -2078,7 +2084,7 @@ private fun CollapsibleMemorySectionCard(
             }
             PhantomChevron(
  expanded = expanded,
-                contentDescription = if (expanded) "收合區塊" else "展開區塊",
+                contentDescription = if (expanded) stringResource(R.string.memory_s_1d0dcf) else stringResource(R.string.memory_s_658e4c),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -2132,7 +2138,7 @@ private fun MemoryItemCard(
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                 modifier = Modifier.heightIn(min = 40.dp)
             ) {
-                Text(if (isArchived) "恢復" else "封存", style = MaterialTheme.typography.labelSmall)
+                Text(if (isArchived) stringResource(R.string.memory_s_ca3365) else stringResource(R.string.memory_s_24892b), style = MaterialTheme.typography.labelSmall)
             }
             Button(
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
@@ -2143,7 +2149,7 @@ private fun MemoryItemCard(
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                 modifier = Modifier.heightIn(min = 40.dp)
             ) {
-                Text("刪除", style = MaterialTheme.typography.labelSmall)
+                Text(stringResource(R.string.common_delete), style = MaterialTheme.typography.labelSmall)
             }
         }
     ) {
@@ -2193,7 +2199,7 @@ private fun MemoryItemCard(
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         MemoryBadge(
-                            text = if (isConfirmed) "✓ 已確認" else "✨ AI 推測",
+                            text = if (isConfirmed) stringResource(R.string.memory_s_3d9f2b) else stringResource(R.string.memory_s_da98d7),
                             containerColor = if (isConfirmed) {
                                 MaterialTheme.colorScheme.secondaryContainer
                             } else {
@@ -2206,13 +2212,13 @@ private fun MemoryItemCard(
                             }
                         )
                         MemoryBadge(
-                            text = if (isShortTerm) "短期" else "長期",
+                            text = if (isShortTerm) stringResource(R.string.memory_s_7a478f) else stringResource(R.string.memory_s_a1c618),
                             containerColor = MaterialTheme.colorScheme.surface,
                             contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         if (isSensitive) {
                             MemoryBadge(
-                                text = "🔒 敏感（僅本機）",
+                                text = stringResource(R.string.memory_s_f5a7d1),
                                 containerColor = MaterialTheme.colorScheme.errorContainer,
                                 contentColor = MaterialTheme.colorScheme.onErrorContainer
                             )
@@ -2231,7 +2237,7 @@ private fun MemoryItemCard(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Edit,
-                                    contentDescription = "編輯記憶",
+                                    contentDescription = stringResource(R.string.memory_s_23f5e1),
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -2241,7 +2247,7 @@ private fun MemoryItemCard(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,
-                                    contentDescription = "刪除記憶",
+                                    contentDescription = stringResource(R.string.memory_s_d3761e),
                                     tint = MaterialTheme.colorScheme.error,
                                     modifier = Modifier.size(18.dp)
                                 )
@@ -2265,16 +2271,16 @@ private fun MemoryItemCard(
                 val metaLines = buildList {
                     if (isShortTerm && memory.expiresAt != null) {
                         val expText = PhantomPrefs.formatMessageTime(ctx, memory.expiresAt, includeDate = true)
-                        add("⏰ 到期日：$expText")
+                        add(stringResource(R.string.memory_s_e4b765, expText))
                     }
                     if (!memory.sourceRef.isNullOrBlank()) {
-                        add("來源：${memory.sourceRef}")
+                        add(stringResource(R.string.chat_s_c7cde7, memory.sourceRef))
                     } else {
-                        add("來源：${MemoryEngine.sourceTypeLabel(memory.sourceType)}")
+                        add(stringResource(R.string.chat_s_c7cde7, MemoryEngine.sourceTypeLabel(memory.sourceType)))
                     }
                     val updatedStr = PhantomPrefs.formatMessageTime(ctx, memory.updatedAt, includeDate = true)
-                    val usagePart = if (memory.useCount > 0) " · 已注入引用 ${memory.useCount} 次" else ""
-                    add("更新於 $updatedStr$usagePart")
+                    val usagePart = if (memory.useCount > 0) stringResource(R.string.memory_s_fc989b, memory.useCount) else ""
+                    add(stringResource(R.string.memory_s_372fb9, updatedStr, usagePart))
                 }
                 metaLines.forEach { line ->
                     Text(
@@ -2295,7 +2301,7 @@ private fun MemoryItemCard(
                         modifier = Modifier.heightIn(min = 32.dp)
                     ) {
                         Text(
-                            text = "查看來源訊息 #$relatedMsgId →",
+                            text = stringResource(R.string.memory_s_1ebf21, relatedMsgId),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Medium
                         )
@@ -2314,7 +2320,7 @@ private fun MemoryItemCard(
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = if (isSensitive) "改為一般（允許注入 AI）" else "設為敏感（禁止外送 AI）",
+                                text = if (isSensitive) stringResource(R.string.memory_s_ae837e) else stringResource(R.string.memory_s_d87b70),
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
@@ -2324,7 +2330,7 @@ private fun MemoryItemCard(
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = if (isArchived) "恢復至使用中" else "封存",
+                                text = if (isArchived) stringResource(R.string.memory_s_6e5089) else stringResource(R.string.memory_s_24892b),
                                 style = MaterialTheme.typography.labelSmall
                             )
                         }
@@ -2400,7 +2406,7 @@ private fun MemoryEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "新增記憶" else "編輯記憶 #${initial.id}") },
+        title = { Text(if (initial == null) stringResource(R.string.memory_s_9a8905) else stringResource(R.string.memory_s_62db20, initial.id)) },
         text = {
             Column(
                 modifier = Modifier
@@ -2408,7 +2414,7 @@ private fun MemoryEditorDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("分類", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.memory_s_7c6fd7), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -2425,8 +2431,8 @@ private fun MemoryEditorDialog(
                 OutlinedTextField(
                     value = subject,
                     onValueChange = { subject = it },
-                    label = { Text("主題鍵（如人物名、地點、事項）") },
-                    placeholder = { Text("例如：媽媽、常去健身房、飲食偏好") },
+                    label = { Text(stringResource(R.string.memory_s_6041e6)) },
+                    placeholder = { Text(stringResource(R.string.memory_s_bc05af)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -2434,65 +2440,65 @@ private fun MemoryEditorDialog(
                 OutlinedTextField(
                     value = content,
                     onValueChange = { content = it },
-                    label = { Text("記憶內容") },
-                    placeholder = { Text("例如：不吃香菜，咖啡習慣喝無糖冰美式") },
+                    label = { Text(stringResource(R.string.memory_s_d819af)) },
+                    placeholder = { Text(stringResource(R.string.memory_s_ca060f)) },
                     minLines = 2,
                     maxLines = 5,
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Text("記憶層級", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.memory_s_9baee1), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = layer == MemoryEntity.LAYER_LONG_TERM,
                         onClick = { layer = MemoryEntity.LAYER_LONG_TERM },
-                        label = { Text("長期記憶（永久有效）") }
+                        label = { Text(stringResource(R.string.memory_s_3a22d8)) }
                     )
                     FilterChip(
                         selected = layer == MemoryEntity.LAYER_SHORT_TERM,
                         onClick = { layer = MemoryEntity.LAYER_SHORT_TERM },
-                        label = { Text("短期記憶（定期自動封存）") }
+                        label = { Text(stringResource(R.string.memory_s_8f6020)) }
                     )
                 }
 
                 if (layer == MemoryEntity.LAYER_SHORT_TERM) {
-                    Text("短期記憶有效天數", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.memory_s_a3c783), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(1, 3, 7, 14, 30).forEach { d ->
                             FilterChip(
                                 selected = expireDays == d,
                                 onClick = { expireDays = d },
-                                label = { Text("$d 天") }
+                                label = { Text(stringResource(R.string.memory_s_5d45fa, d)) }
                             )
                         }
                     }
                 }
 
-                Text("隱私分級", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.memory_s_7de78c), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = privacyTier == MemoryEntity.PRIVACY_NORMAL,
                         onClick = { privacyTier = MemoryEntity.PRIVACY_NORMAL },
-                        label = { Text("一般（可檢索注入 AI）") }
+                        label = { Text(stringResource(R.string.memory_s_911e24)) }
                     )
                     FilterChip(
                         selected = privacyTier == MemoryEntity.PRIVACY_SENSITIVE,
                         onClick = { privacyTier = MemoryEntity.PRIVACY_SENSITIVE },
-                        label = { Text("🔒 敏感（僅本機、絕不外送）") }
+                        label = { Text(stringResource(R.string.memory_s_a988b8)) }
                     )
                 }
 
-                Text("確認狀態", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.memory_s_4feb65), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = confidence == MemoryEntity.CONFIDENCE_CONFIRMED,
                         onClick = { confidence = MemoryEntity.CONFIDENCE_CONFIRMED },
-                        label = { Text("✓ 已確認（檢索加權）") }
+                        label = { Text(stringResource(R.string.memory_s_be8066)) }
                     )
                     FilterChip(
                         selected = confidence == MemoryEntity.CONFIDENCE_INFERRED,
                         onClick = { confidence = MemoryEntity.CONFIDENCE_INFERRED },
-                        label = { Text("✨ AI 推測") }
+                        label = { Text(stringResource(R.string.memory_s_da98d7)) }
                     )
                 }
             }
@@ -2509,12 +2515,12 @@ private fun MemoryEditorDialog(
                     onSave(category, cleanSubj, cleanContent, layer, expiresAt, privacyTier, confidence)
                 }
             ) {
-                Text("儲存")
+                Text(stringResource(R.string.common_save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消")
+                Text(stringResource(R.string.common_cancel))
             }
         }
     )
