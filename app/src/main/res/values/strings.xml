@@ -1143,7 +1143,7 @@
     <string name="catalog_chat_bubble_corner_dp_desc">調整 AI 聊天室對話氣泡的圓角弧度（8–24 dp，預設 18 dp）</string>
     <string name="catalog_chat_bubble_corner_dp_aliases">氣泡|圓角|對話框|bubble|外觀|弧度|方角氣泡|圓弧度</string>
     <string name="catalog_chat_bubble_width_ratio_title">聊天氣泡寬度比例</string>
-    <string name="catalog_chat_bubble_width_ratio_desc">調整 AI 聊天室對話氣泡的最大寬度比例（70%–95%，預設 82%）</string>
+    <string name="catalog_chat_bubble_width_ratio_desc" formatted="false">調整 AI 聊天室對話氣泡的最大寬度比例（70%–95%，預設 82%）</string>
     <string name="catalog_chat_bubble_width_ratio_aliases">氣泡寬度|對話寬度|bubble|排版|聊天寬度|對話框太窄|氣泡太寬|訊息框寬度</string>
     <string name="catalog_favorite_apps_max_visible_title">首頁我的最愛 App 顯示上限</string>
     <string name="catalog_favorite_apps_max_visible_desc">限制首頁「我的最愛 App」橫列顯示的卡片數量（全部／4／6／8）</string>
@@ -2417,7 +2417,7 @@
     <string name="stats_s_6e428a">未授權</string>
     <string name="stats_s_343e92">%.1f 小時</string>
     <string name="stats_s_2f7adc">無紀錄</string>
-    <string name="stats_s_efd1c8">%,d 步</string>
+    <string name="stats_s_efd1c8">%1$,d 步</string>
     <string name="stats_s_915383">當日健康快照（昨夜睡眠＋昨日活動）</string>
     <string name="stats_s_42866c">昨夜睡眠</string>
     <string name="stats_s_ccf2fb">昨日步數</string>
@@ -2442,7 +2442,7 @@
     <string name="stats_s_aabaa1">正在本機聚合近 30 日健康資料…</string>
     <string name="stats_s_18bf90">近 30 日尚無穿戴裝置或系統健康紀錄（無紀錄）。</string>
     <string name="stats_s_de6736">近 30 日彙總</string>
-    <string name="stats_s_2c740a">%,d 步（日均 %,d）</string>
+    <string name="stats_s_2c740a">%1$,d 步（日均 %2$,d）</string>
     <string name="stats_s_ee02a6">步數 %1$s</string>
     <string name="stats_s_3b4d6c">睡眠 %1$s · 心率 %2$s · 距離 %3$s · 熱量 %4$s</string>
     <string name="stats_s_293e0d">睡眠時數（近 30 日）</string>
