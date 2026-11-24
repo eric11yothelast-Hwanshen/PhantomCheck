@@ -3,6 +3,31 @@
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses Semantic Versioning.
 
+## [4.4.0] - 2026-11-23
+
+- **Tag 對照**：[`v4.3.0...v4.4.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.3.0...v4.4.0)（`versionCode = 52`、`versionName = "4.4.0"`）
+- **發佈資產（雙 APK）**：
+  - `app-release.apk`：正式簽章＋R8 程式碼縮減與資源壓縮（`isMinifyEnabled = true`、`isShrinkResources = true`），供一般使用者安裝與原簽章覆蓋升級。
+  - `app-debug.apk`：除錯建置版本，供開發測試與排錯使用。
+
+### 新增、變更與修正
+- **#447 免費聯網查詢後端與免費 Gemini Key 400 修復（PR #451）**：新增零金鑰 `FreeWebSearchEngine`（依序查詢 DuckDuckGo Instant Answer → DuckDuckGo HTML（含 202/429 5 分鐘負快取）→ Wikipedia API），並針對免費 Gemini key 開啟聯網查詢時觸發的 HTTP 400（不支援 Google Search Grounding）進行偵測、靜默退還該次失敗扣額、快取不支援旗標並自動無縫回退至免費搜尋引擎＋一般模型呼叫；非 Gemini provider 未設 BYOK 搜尋端點時改走免費搜尋引擎（已設 BYOK 則優先 BYOK、失敗再降級免費引擎），全無結果或斷網時誠實回報失敗而不以模型既有知識頂替。
+- **#448 主動通知全天行程附註去重與通知 ID 互蓋修復（PR #451）**：修正 `ProactiveEngine.evaluateLocalFingerprintAndPriority` 全天行程附註跨行程重複附註問題（改以 `allDayNote:$dayKey:<allDayIdsFp>` 寫入 `deliveredMilestones` 去重，僅於同日全天事件集合變動時才允許再次附加），並修正 `postBriefingNotification` 固定通知 ID 互蓋問題（改用獨立 `effectiveNotifId` 範圍 `1090..1099` 搭配 `BigTextStyle`）。
+- **#449 桌面端連線 M1 連線骨架（PR #451）**：新增 `/shared` 跨平台協定模組與 `/desktop` Compose Multiplatform（`1.12.1`）桌面端骨架、手機端內嵌 Ktor WSS 伺服器（software-backed RSA 2048 + BouncyCastle X509v3 + PKCS12 憑證，私鑰存 `filesDir`、密碼存 `EncryptedSharedPreferences`）、mDNS 服務發現與手動 `host:port` 一鍵複製、6 位數單次配對碼（TTL 5 分鐘）＋ QR 配對與已配對裝置 HMAC challenge 重連、閒置 30 分鐘自動停止省電與 `SettingsCatalog` `desktop_link` 條目（零新 Manifest 權限）。
+- **#450 桌面端 M2 雙向操作與連線審計（PR #451）**：`/shared` 擴充白名單 `MessageSummaryDto`（無全文、無敏感記憶、無通訊錄/日曆原始內容）；實作 `messages.list`／`messages.subscribe`（3 秒節流批次推播）／`messages.markRead`、`stats.snapshot`、`chat.send`／`chat.history`、`todos.list`／`todos.toggle`（嚴格單點複用 `ReminderScheduler.completeTodoWithRecurrence`）、`quickReply.send`（複用 `NotificationCollectorService`）與 `whitelist.*`／`tags.*` 雙向操作；加入單客端 `<=5 cmd/s` 限流與 200 筆環形審計紀錄，完成 `DesktopApp` 側邊導覽雙語深色介面並於 `PRIVACY.md` 新增區域網路連線中英雙語章節。
+
+### English
+- **Tag Compare**: [`v4.3.0...v4.4.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.3.0...v4.4.0) (`versionCode = 52`, `versionName = "4.4.0"`)
+- **Release Assets (Dual APKs)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`), for general users and in-place signature upgrades.
+  - `app-debug.apk`: Debug build for development testing and troubleshooting.
+
+**Added, Changed & Fixed**
+- **#447 Free Web Search Backend & Free Gemini Key HTTP 400 Fix (PR #451)**: Added the zero-key `FreeWebSearchEngine` (querying DuckDuckGo Instant Answer -> DuckDuckGo HTML with a 5-minute negative cache on 202/429 -> Wikipedia API). When a free-tier Gemini key hits HTTP 400 (Google Search Grounding unsupported) during web search, `AiClient` detects `isGroundingUnsupported400`, silently refunds the failed quota attempt, caches the unsupported flag, and seamlessly falls back to the free search engine + standard model call. Non-Gemini providers without a BYOK search endpoint now use the free search engine (while configured BYOK endpoints remain primary with free-engine fallback); offline or empty results report failure honestly instead of hallucinating from prior knowledge.
+- **#448 Proactive Notification All-Day Note Dedup & Notification ID Collision Fix (PR #451)**: Fixed `ProactiveEngine.evaluateLocalFingerprintAndPriority` repeatedly appending all-day event notes across different timed events on the same day by deduplicating with `allDayNote:$dayKey:<allDayIdsFp>` in `deliveredMilestones` (only re-appending if the day's all-day event set changes), and fixed `postBriefingNotification` overwriting prior proactive notifications by assigning independent `effectiveNotifId` values (`1090..1099`) with `BigTextStyle`.
+- **#449 Desktop Link M1 Connection Skeleton (PR #451)**: Added the `/shared` multiplatform protocol module and `/desktop` Compose Multiplatform (`1.12.1`) desktop app skeleton, embedded Ktor WSS server on Android (software-backed RSA 2048 + BouncyCastle X509v3 + PKCS12 stored in `filesDir` with passphrase in `EncryptedSharedPreferences`), mDNS discovery with one-tap `host:port` copy fallback, 6-digit single-use pairing code (5-minute TTL) + QR pairing, HMAC challenge reconnect for paired devices, 30-minute idle auto-stop, and `SettingsCatalog` `desktop_link` entry (zero new Manifest permissions).
+- **#450 Desktop Link M2 Two-Way Actions & Connection Audit (PR #451)**: Extended `/shared` with allowlisted `MessageSummaryDto` (no full message bodies, sensitive memories, or raw contacts/calendar data); implemented `messages.list` / `messages.subscribe` (3s throttled batch push) / `messages.markRead`, `stats.snapshot`, `chat.send` / `chat.history`, `todos.list` / `todos.toggle` (strictly reusing `ReminderScheduler.completeTodoWithRecurrence` as single trigger), `quickReply.send` (reusing `NotificationCollectorService`), and `whitelist.*` / `tags.*` management; added per-client `<=5 cmd/s` rate limiting, a 200-entry ring-buffer audit log, `DesktopApp` sidebar navigation with bilingual dark UI, and a bilingual LAN Desktop Link section in `PRIVACY.md`.
+
 ## [4.3.0] - 2026-11-23
 
 - **Tag 對照**：[`v4.2.0...v4.3.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.2.0...v4.3.0)（`versionCode = 51`、`versionName = "4.3.0"`）
