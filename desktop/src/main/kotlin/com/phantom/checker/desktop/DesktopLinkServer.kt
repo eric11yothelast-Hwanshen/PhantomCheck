@@ -90,7 +90,7 @@ data class DesktopLinkUiState(
         ?: pairedPhones.firstOrNull()?.name.orEmpty()
 }
 
-enum class PairCodeStatus { VALID, EXPIRED, INVALID }
+enum class PairCodeStatus { VALID, EXPIRED, INVALID, LOCKED_OUT }
 
 /**
  * #476 桌面端內建 WSS 伺服器（Ktor Netty + sslConnector 自簽 TLS）：
@@ -122,8 +122,11 @@ class DesktopLinkServer(
     @Volatile
     private var serverInstanceId: String = ""
 
-    private data class ActivePairCode(val code: String, val expiresAtMs: Long)
+    private data class ActivePairCode(val code: String, val expiresAtMs: Long, val failedAttempts: Int = 0)
     private val activePairCode = AtomicReference<ActivePairCode?>(null)
+
+    @Volatile
+    private var pairLockoutUntilMs: Long = 0L
 
     private data class PhoneSession(
         val info: ConnectedPhoneSessionInfo,
@@ -137,6 +140,8 @@ class DesktopLinkServer(
 
     companion object {
         private const val MAX_AUDIT_LOGS = 200
+        private const val MAX_PAIR_CODE_ATTEMPTS = 5
+        private const val PAIR_LOCKOUT_MS = 30_000L
     }
 
     init {
@@ -366,7 +371,8 @@ class DesktopLinkServer(
     fun generatePairCode(nowMs: Long = System.currentTimeMillis()): Pair<String, Long> {
         val code = "%06d".format(secureRandom.nextInt(1_000_000))
         val expiresAt = nowMs + LinkProtocol.PAIR_CODE_TTL_MS
-        activePairCode.set(ActivePairCode(code, expiresAt))
+        activePairCode.set(ActivePairCode(code, expiresAt, failedAttempts = 0))
+        pairLockoutUntilMs = 0L
         recordAudit("desktop", "pair.code.generated", true, "ttl=${LinkProtocol.PAIR_CODE_TTL_MS / 1000}s")
         return code to expiresAt
     }
@@ -380,13 +386,25 @@ class DesktopLinkServer(
     fun getOrGeneratePairCode(nowMs: Long = System.currentTimeMillis()): Pair<String, Long> =
         getCurrentPairCode(nowMs) ?: generatePairCode(nowMs)
 
+    @Synchronized
     private fun consumePairCode(inputCode: String, nowMs: Long = System.currentTimeMillis()): PairCodeStatus {
+        if (nowMs < pairLockoutUntilMs) {
+            return PairCodeStatus.LOCKED_OUT
+        }
         val cur = activePairCode.get() ?: return PairCodeStatus.INVALID
         if (nowMs > cur.expiresAtMs) {
             activePairCode.compareAndSet(cur, null)
             return PairCodeStatus.EXPIRED
         }
         if (inputCode.trim() != cur.code) {
+            val nextFails = cur.failedAttempts + 1
+            if (nextFails >= MAX_PAIR_CODE_ATTEMPTS) {
+                activePairCode.set(null)
+                pairLockoutUntilMs = nowMs + PAIR_LOCKOUT_MS
+                DesktopDiagnostics.warn("PairSecurity", "Pair code burned after $nextFails failed attempts; 30s lockout active")
+                return PairCodeStatus.LOCKED_OUT
+            }
+            activePairCode.set(cur.copy(failedAttempts = nextFails))
             return PairCodeStatus.INVALID
         }
         activePairCode.compareAndSet(cur, null)
@@ -543,6 +561,16 @@ class DesktopLinkServer(
                                     )
                                     sendEnvelope(ws, LinkMsgType.PAIR_RESPONSE, env.reqId, PairResponsePayload(ok = false, errorCode = LinkErrorCode.INVALID_PAIR_CODE, errorMessage = "Invalid pairing code"))
                                     ws.close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Invalid code"))
+                                    return
+                                }
+                                PairCodeStatus.LOCKED_OUT -> {
+                                    recordAudit(req.instanceId, "pair.code.lockout", false, "too_many_attempts:$remoteIp")
+                                    _state.value = _state.value.copy(
+                                        lastErrorCode = LinkErrorCode.RATE_LIMIT_EXCEEDED,
+                                        lastError = DesktopStrings.classifiedError(LinkErrorCode.RATE_LIMIT_EXCEEDED)
+                                    )
+                                    sendEnvelope(ws, LinkMsgType.PAIR_RESPONSE, env.reqId, PairResponsePayload(ok = false, errorCode = LinkErrorCode.RATE_LIMIT_EXCEEDED, errorMessage = "Too many invalid pairing attempts; regenerate code after 30s"))
+                                    ws.close(CloseReason(CloseReason.Codes.TRY_AGAIN_LATER, "Pairing locked out"))
                                     return
                                 }
                                 PairCodeStatus.VALID -> Unit

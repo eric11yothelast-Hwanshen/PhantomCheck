@@ -77,6 +77,8 @@ object DesktopPaths {
             if (legacyDir.listFiles()?.isEmpty() == true) {
                 legacyDir.delete()
             }
+        }.onFailure { err ->
+            System.err.println("[DesktopPaths] Legacy link.properties migration failed: ${err.javaClass.simpleName}")
         }
     }
 

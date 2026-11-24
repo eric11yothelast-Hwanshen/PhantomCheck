@@ -86,7 +86,8 @@ object DesktopLinkStore {
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
                 ).also { cachedPrefs = it }
-            } catch (_: Throwable) {
+            } catch (err: Throwable) {
+                android.util.Log.w("DesktopLinkStore", "EncryptedSharedPreferences init failed: ${err.javaClass.simpleName}")
                 null
             }
         }

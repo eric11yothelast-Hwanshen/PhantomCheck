@@ -47,4 +47,6 @@
 4. **Tag release notes 含變更說明**：建立 GitHub Release / tag 時，release notes 須附上完整變更說明（說明書）。
 5. **Release 資產驗證**：確認 CI（`gitleaks` + `build`）全綠燈，並驗證產出之 APK 資產完整可下載。
 6. **依賴版本更新**：依賴版本須檢查並升級至當下最新穩定版（Google Maven / Maven Central 為準）。
+7. **R8 Release 冒煙（#490 E4）**：凡變更 `app/` 或 `app/proguard-rules.pro`，發佈前必須執行 `:app:assembleRelease` 零錯誤，確認 R8 full mode 下無縮減崩潰（含 ML Kit `ComponentRegistrar`、`kotlinx.coroutines` 與 Gson DTO）。
+8. **`mapping.txt` 保留策略（#490 E5 決策）**：本倉庫為公開倉庫，`release.yml` **不上傳** `mapping.txt` 為公開 Release/CI artifact（避免暴露混淆映射表）；需還原 release 堆疊時，請以對應 tag commit 於本機執行 `:app:minifyReleaseWithR8` 取得 `mapping.txt` 並以 Android SDK `retrace` CLI 離線還原。
 

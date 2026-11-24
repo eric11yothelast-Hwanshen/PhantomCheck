@@ -1470,7 +1470,13 @@ object DesktopLinkClient {
         }
     }
 
-    // ---- Android NsdManager LAN Discovery for Desktop WSS Servers ----
+    // ---- Android NsdManager LAN Discovery for Desktop WSS Servers (#490 E1 serialized resolve queue) ----
+
+    private val resolveLock = Any()
+    private val resolveQueue = ArrayDeque<Pair<NsdServiceInfo, Int>>()
+
+    @Volatile
+    private var isResolvingService: Boolean = false
 
     @Synchronized
     fun startDiscovery(ctx: Context) {
@@ -1482,6 +1488,74 @@ object DesktopLinkClient {
         startDiscoveryInternal(appCtx)
     }
 
+    private fun enqueueServiceResolve(appCtx: Context, mgr: NsdManager, serviceInfo: NsdServiceInfo, attempt: Int = 0) {
+        synchronized(resolveLock) {
+            if (resolveQueue.size >= 16) return
+            if (resolveQueue.none { it.first.serviceName == serviceInfo.serviceName }) {
+                resolveQueue.addLast(serviceInfo to attempt)
+            }
+        }
+        drainResolveQueue(appCtx, mgr)
+    }
+
+    private fun drainResolveQueue(appCtx: Context, mgr: NsdManager) {
+        val next: Pair<NsdServiceInfo, Int> = synchronized(resolveLock) {
+            if (isResolvingService || resolveQueue.isEmpty() || discoveryListener == null) return
+            isResolvingService = true
+            resolveQueue.removeFirst()
+        }
+        val (serviceInfo, attempt) = next
+        @Suppress("DEPRECATION")
+        runCatching {
+            mgr.resolveService(serviceInfo, object : NsdManager.ResolveListener {
+                override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
+                    DesktopLinkStore.recordDiagnostic(appCtx, "mDNS", "RESOLVE_FAILED", "code=$errorCode attempt=$attempt")
+                    synchronized(resolveLock) { isResolvingService = false }
+                    if (errorCode == NsdManager.FAILURE_ALREADY_ACTIVE && attempt < 3 && discoveryListener != null) {
+                        val backoffMs = 500L * (1L shl attempt)
+                        scope.launch {
+                            delay(backoffMs)
+                            val curMgr = nsdManager ?: return@launch
+                            if (discoveryListener != null) {
+                                enqueueServiceResolve(appCtx, curMgr, info, attempt + 1)
+                            }
+                        }
+                    } else {
+                        drainResolveQueue(appCtx, mgr)
+                    }
+                }
+
+                override fun onServiceResolved(info: NsdServiceInfo) {
+                    @Suppress("DEPRECATION")
+                    val host = info.host?.hostAddress
+                    if (!host.isNullOrBlank()) {
+                        val port = info.port.takeIf { it in 1024..65535 } ?: LinkProtocol.DEFAULT_PORT
+                        val attrs = info.attributes
+                        val fn = attrs["fn"]?.toString(Charsets.UTF_8).orEmpty().ifBlank { info.serviceName }
+                        val fp = attrs["fp"]?.toString(Charsets.UTF_8).orEmpty()
+                        val ver = attrs["v"]?.toString(Charsets.UTF_8)?.toIntOrNull() ?: 1
+                        val item = DiscoveredDesktop(
+                            serviceName = info.serviceName,
+                            friendlyName = fn,
+                            host = host,
+                            port = port,
+                            fingerprintPrefix = fp,
+                            protocolVersion = ver
+                        )
+                        _discoveredDesktops.value = _discoveredDesktops.value
+                            .filterNot { it.serviceName == item.serviceName } + item
+                    }
+                    synchronized(resolveLock) { isResolvingService = false }
+                    drainResolveQueue(appCtx, mgr)
+                }
+            })
+        }.onFailure { err ->
+            android.util.Log.w("DesktopLinkClient", "NsdManager.resolveService threw: ${err.javaClass.simpleName}")
+            synchronized(resolveLock) { isResolvingService = false }
+            drainResolveQueue(appCtx, mgr)
+        }
+    }
+
     @Synchronized
     private fun startDiscoveryInternal(appCtx: Context) {
         if (discoveryListener != null) return
@@ -1491,33 +1565,7 @@ object DesktopLinkClient {
                 override fun onDiscoveryStarted(regType: String) {}
                 override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                     if (!serviceInfo.serviceType.contains("_phantomcheck", ignoreCase = true)) return
-                    @Suppress("DEPRECATION")
-                    runCatching {
-                        mgr.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-                            override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
-                                DesktopLinkStore.recordDiagnostic(appCtx, "mDNS", "RESOLVE_FAILED", "code=$errorCode")
-                            }
-                            override fun onServiceResolved(info: NsdServiceInfo) {
-                                @Suppress("DEPRECATION")
-                                val host = info.host?.hostAddress ?: return
-                                val port = info.port.takeIf { it in 1024..65535 } ?: LinkProtocol.DEFAULT_PORT
-                                val attrs = info.attributes
-                                val fn = attrs["fn"]?.toString(Charsets.UTF_8).orEmpty().ifBlank { info.serviceName }
-                                val fp = attrs["fp"]?.toString(Charsets.UTF_8).orEmpty()
-                                val ver = attrs["v"]?.toString(Charsets.UTF_8)?.toIntOrNull() ?: 1
-                                val item = DiscoveredDesktop(
-                                    serviceName = info.serviceName,
-                                    friendlyName = fn,
-                                    host = host,
-                                    port = port,
-                                    fingerprintPrefix = fp,
-                                    protocolVersion = ver
-                                )
-                                _discoveredDesktops.value = _discoveredDesktops.value
-                                    .filterNot { it.serviceName == item.serviceName } + item
-                            }
-                        })
-                    }
+                    enqueueServiceResolve(appCtx, mgr, serviceInfo, attempt = 0)
                 }
                 override fun onServiceLost(serviceInfo: NsdServiceInfo) {
                     _discoveredDesktops.value = _discoveredDesktops.value.filterNot { it.serviceName == serviceInfo.serviceName }
@@ -1545,8 +1593,15 @@ object DesktopLinkClient {
         val listener = discoveryListener
         nsdManager = null
         discoveryListener = null
+        synchronized(resolveLock) {
+            resolveQueue.clear()
+            isResolvingService = false
+        }
         if (mgr != null && listener != null) {
             runCatching { mgr.stopServiceDiscovery(listener) }
+                .onFailure { err ->
+                    android.util.Log.w("DesktopLinkClient", "stopServiceDiscovery failed: ${err.javaClass.simpleName}")
+                }
         }
     }
 

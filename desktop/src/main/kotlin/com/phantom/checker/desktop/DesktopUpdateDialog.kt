@@ -142,7 +142,8 @@ fun DesktopUpdateDialog(
                                 DesktopUpdater.downloadInstaller(
                                     url = update.installerUrl,
                                     fileName = update.installerFileName,
-                                    onProgress = { p -> downloadProgress = p }
+                                    onProgress = { p -> downloadProgress = p },
+                                    sha256Url = update.installerSha256Url
                                 ).onSuccess { file ->
                                     downloading = false
                                     downloadedFile = file

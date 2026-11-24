@@ -115,6 +115,8 @@ object DesktopTls {
         if (propsFile.exists()) {
             runCatching {
                 propsFile.bufferedReader(Charsets.UTF_8).use { props.load(it) }
+            }.onFailure { err ->
+                DesktopDiagnostics.warn("TLS", "Failed reading tls.properties: ${err.javaClass.simpleName}")
             }
             val existing = props.getProperty("ksPassword").orEmpty().trim()
             if (existing.isNotBlank()) return existing
@@ -125,6 +127,8 @@ object DesktopTls {
             if (!propsFile.parentFile.exists()) propsFile.parentFile.mkdirs()
             propsFile.bufferedWriter(Charsets.UTF_8).use { props.store(it, "PhantomCheck Desktop TLS") }
             DesktopPaths.restrictOwnerOnlyPermissions(propsFile)
+        }.onFailure { err ->
+            DesktopDiagnostics.warn("TLS", "Failed saving tls.properties: ${err.javaClass.simpleName}")
         }
         return created
     }

@@ -296,11 +296,16 @@ fun DesktopApp(
         if (uiState.connState == LinkConnState.CONNECTED) {
             DesktopDiagnostics.info("Link", "Phone connected: ${uiState.pairedDeviceName}")
             refreshAllOnConnect()
-        } else if (chatSending) {
-            chatTimeoutJob?.cancel()
-            chatTimeoutJob = null
-            chatSending = false
-            actionFeedback = DesktopStrings.chatTimeoutError
+        } else {
+            if (chatSending) {
+                chatTimeoutJob?.cancel()
+                chatTimeoutJob = null
+                chatSending = false
+                actionFeedback = DesktopStrings.chatTimeoutError
+            }
+            if (deepAnalyzingMsgId > 0L) {
+                deepAnalyzingMsgId = -1L
+            }
         }
     }
 
@@ -461,8 +466,15 @@ fun DesktopApp(
                 }
                 LinkMsgType.ERROR -> {
                     val err = runCatching { gson.fromJson(env.payloadJson, ErrorPayload::class.java) }.getOrNull() ?: return@collect
-                    if (err.errorCode == LinkErrorCode.TIMEOUT && err.errorMessage == LinkMsgType.MESSAGE_DEEP_ANALYZE) {
-                        deepAnalyzingMsgId = -1L
+                    if (err.errorCode == LinkErrorCode.TIMEOUT) {
+                        when (err.errorMessage) {
+                            LinkMsgType.MESSAGE_DEEP_ANALYZE -> deepAnalyzingMsgId = -1L
+                            LinkMsgType.CHAT_SEND -> {
+                                chatTimeoutJob?.cancel()
+                                chatTimeoutJob = null
+                                chatSending = false
+                            }
+                        }
                     }
                     actionFeedback = DesktopStrings.classifiedError(err.errorCode)
                 }

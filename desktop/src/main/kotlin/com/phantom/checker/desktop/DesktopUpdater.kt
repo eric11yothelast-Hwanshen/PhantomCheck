@@ -21,7 +21,8 @@ data class DesktopReleaseEntry(
     val body: String,
     val desktopAssetVersion: String?,
     val installerUrl: String?,
-    val installerFileName: String?
+    val installerFileName: String?,
+    val installerSha256Url: String? = null
 )
 
 sealed interface DesktopUpdateOutcome {
@@ -33,7 +34,8 @@ sealed interface DesktopUpdateOutcome {
         val htmlUrl: String,
         val releaseNotes: String,
         val installerUrl: String?,
-        val installerFileName: String?
+        val installerFileName: String?,
+        val installerSha256Url: String? = null
     ) : DesktopUpdateOutcome
 
     data class UpToDate(
@@ -94,7 +96,8 @@ object DesktopUpdater {
                             htmlUrl = candidate.htmlUrl.ifBlank { RELEASES_URL },
                             releaseNotes = candidate.body,
                             installerUrl = candidate.installerUrl,
-                            installerFileName = candidate.installerFileName
+                            installerFileName = candidate.installerFileName,
+                            installerSha256Url = candidate.installerSha256Url
                         )
                     } else {
                         DesktopDiagnostics.info("Updater", "Desktop is up to date ($currentVer >= $remoteVer)")
@@ -151,12 +154,16 @@ object DesktopUpdater {
             var bestVer: String? = null
             var bestUrl: String? = null
             var bestName: String? = null
+            val allAssets = mutableMapOf<String, String>()
             val assets = obj.getAsJsonArray("assets")
             if (assets != null) {
                 for (aElem in assets) {
                     val aObj = aElem.takeIf { it.isJsonObject }?.asJsonObject ?: continue
                     val name = aObj.get("name")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
                     val dlUrl = aObj.get("browser_download_url")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+                    if (name.isNotBlank() && dlUrl.isNotBlank()) {
+                        allAssets[name.lowercase()] = dlUrl
+                    }
                     val m = desktopAssetRegex.find(name) ?: continue
                     val ver = m.groupValues[1]
                     val ext = m.groupValues[2].lowercase()
@@ -168,6 +175,7 @@ object DesktopUpdater {
                     }
                 }
             }
+            val shaUrl = bestName?.let { n -> allAssets["${n.lowercase()}.sha256"] }
             list.add(
                 DesktopReleaseEntry(
                     tagName = tag,
@@ -176,7 +184,8 @@ object DesktopUpdater {
                     body = body,
                     desktopAssetVersion = bestVer,
                     installerUrl = bestUrl,
-                    installerFileName = bestName
+                    installerFileName = bestName,
+                    installerSha256Url = shaUrl
                 )
             )
         }
@@ -199,7 +208,8 @@ object DesktopUpdater {
     suspend fun downloadInstaller(
         url: String,
         fileName: String,
-        onProgress: (Float) -> Unit
+        onProgress: (Float) -> Unit,
+        sha256Url: String? = null
     ): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
             val safeName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
@@ -215,6 +225,7 @@ object DesktopUpdater {
                 throw IllegalStateException("Download failed: HTTP $code")
             }
             val total = conn.contentLengthLong.coerceAtLeast(-1L)
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
             conn.inputStream.use { input ->
                 FileOutputStream(outFile).use { output ->
                     val buf = ByteArray(16 * 1024)
@@ -223,6 +234,7 @@ object DesktopUpdater {
                         val n = input.read(buf)
                         if (n <= 0) break
                         output.write(buf, 0, n)
+                        digest.update(buf, 0, n)
                         readTotal += n
                         if (total > 0L) {
                             onProgress((readTotal.toFloat() / total.toFloat()).coerceIn(0f, 1f))
@@ -233,12 +245,36 @@ object DesktopUpdater {
             if (!outFile.exists() || outFile.length() <= 0L) {
                 throw IllegalStateException("Downloaded installer file is empty")
             }
-            DesktopDiagnostics.info("Updater", "Downloaded installer to ${outFile.absolutePath} (${outFile.length()} bytes)")
+            val actualSha256 = digest.digest().joinToString("") { "%02x".format(it) }
+            if (!sha256Url.isNullOrBlank()) {
+                val expectedSha = fetchExpectedSha256(sha256Url)
+                if (expectedSha != null && !actualSha256.equals(expectedSha, ignoreCase = true)) {
+                    runCatching { outFile.delete() }
+                    DesktopDiagnostics.error("Updater", "SHA-256 mismatch! expected=${expectedSha.take(16)}…, actual=${actualSha256.take(16)}…")
+                    throw IllegalStateException("Installer SHA-256 checksum mismatch (file deleted for safety)")
+                }
+                DesktopDiagnostics.info("Updater", "Verified installer SHA-256=${actualSha256.take(16)}… (${outFile.length()} bytes)")
+            } else {
+                // Honest limitation (#490 E3): GitHub Release does not publish a .sha256 sidecar asset yet; log local digest.
+                DesktopDiagnostics.info("Updater", "Downloaded installer (${outFile.length()} bytes, local SHA-256=${actualSha256.take(16)}…; no remote .sha256 sidecar on release)")
+            }
             outFile
         }.onFailure { err ->
             DesktopDiagnostics.error("Updater", "Installer download failed: ${err.message ?: err.javaClass.simpleName}")
         }
     }
+
+    private fun fetchExpectedSha256(shaUrl: String): String? = runCatching {
+        val conn = (URL(shaUrl).openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = true
+            connectTimeout = 8_000
+            readTimeout = 8_000
+            setRequestProperty("User-Agent", "PhantomCheckDesktop/${DesktopSettingsStore.CURRENT_DESKTOP_VERSION}")
+        }
+        if (conn.responseCode !in 200..299) return@runCatching null
+        val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }.trim()
+        Regex("[0-9a-fA-F]{64}").find(text)?.value?.lowercase()
+    }.getOrNull()
 
     fun launchInstaller(file: File): Result<Unit> = runCatching {
         if (!file.exists()) throw IllegalStateException("Installer file missing: ${file.absolutePath}")
