@@ -201,8 +201,8 @@ internal fun saveWindowGeometry(state: WindowState) {
         cur.copy(
             windowX = if (pos is WindowPosition.Absolute) pos.x.value.toInt() else cur.windowX,
             windowY = if (pos is WindowPosition.Absolute) pos.y.value.toInt() else cur.windowY,
-            windowWidth = size.width.value.toInt().coerceAtLeast(1180),
-            windowHeight = size.height.value.toInt().coerceAtLeast(760)
+            windowWidth = size.width.value.toInt().coerceAtLeast(1024),
+            windowHeight = size.height.value.toInt().coerceAtLeast(680)
         )
     }
 }

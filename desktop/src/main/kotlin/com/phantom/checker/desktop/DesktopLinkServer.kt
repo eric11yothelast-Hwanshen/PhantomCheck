@@ -131,6 +131,7 @@ class DesktopLinkServer(
     )
 
     private val activeSessions = ConcurrentHashMap<String, PhoneSession>()
+    private val pendingTimeouts = ConcurrentHashMap<String, kotlinx.coroutines.Job>()
     private val auditLock = Any()
     private val auditList = mutableListOf<DesktopAuditEntry>()
 
@@ -314,8 +315,15 @@ class DesktopLinkServer(
         start(portOverride = newPort, onErrorNotify = onErrorNotify)
     }
 
+    private fun cancelAllPendingTimeouts() {
+        val jobs = pendingTimeouts.values.toList()
+        pendingTimeouts.clear()
+        jobs.forEach { it.cancel() }
+    }
+
     @Synchronized
     fun stop() {
+        cancelAllPendingTimeouts()
         mdns.stop()
         val sessions = activeSessions.values.toList()
         activeSessions.clear()
@@ -340,6 +348,7 @@ class DesktopLinkServer(
     }
 
     fun disconnectPhones() {
+        cancelAllPendingTimeouts()
         val sessions = activeSessions.values.toList()
         activeSessions.clear()
         scope.launch {
@@ -410,6 +419,28 @@ class DesktopLinkServer(
         return try {
             target.ws.send(Frame.Text(gson.toJson(env)))
             recordAudit(target.info.instanceId, type, true, "sent")
+            if (reqId.isNotBlank()) {
+                val timeoutMs = if (type == LinkMsgType.CHAT_SEND || type == LinkMsgType.MESSAGE_DEEP_ANALYZE) {
+                    LinkProtocol.LONG_AI_COMMAND_TIMEOUT_MS
+                } else {
+                    LinkProtocol.DEFAULT_COMMAND_TIMEOUT_MS
+                }
+                pendingTimeouts.remove(reqId)?.cancel()
+                pendingTimeouts[reqId] = scope.launch {
+                    kotlinx.coroutines.delay(timeoutMs)
+                    if (pendingTimeouts.remove(reqId) != null) {
+                        DesktopDiagnostics.warn("Timeout", "Command $type ($reqId) timed out after ${timeoutMs}ms")
+                        recordAudit(target.info.instanceId, type, false, "timeout_${timeoutMs}ms")
+                        _events.emit(
+                            LinkEnvelope(
+                                type = LinkMsgType.ERROR,
+                                reqId = reqId,
+                                payloadJson = gson.toJson(ErrorPayload(LinkErrorCode.TIMEOUT, type))
+                            )
+                        )
+                    }
+                }
+            }
             true
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -647,6 +678,10 @@ class DesktopLinkServer(
                 consecutiveRateLimitViolations = 0
                 bucketTokens -= 1.0
 
+                if (env.reqId.isNotBlank()) {
+                    pendingTimeouts.remove(env.reqId)?.cancel()
+                }
+
                 when (env.type) {
                     LinkMsgType.PING -> {
                         sendEnvelope(ws, LinkMsgType.PONG, env.reqId, emptyMap<String, String>())
@@ -683,6 +718,9 @@ class DesktopLinkServer(
             val sess = mySession
             if (id != null && sess != null) {
                 if (activeSessions.remove(id, sess)) {
+                    if (activeSessions.isEmpty()) {
+                        cancelAllPendingTimeouts()
+                    }
                     DesktopDiagnostics.info("Link", "Phone '${sess.info.name}' disconnected")
                     refreshSessionsState()
                 }

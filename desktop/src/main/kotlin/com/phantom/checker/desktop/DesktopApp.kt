@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -429,6 +430,13 @@ fun DesktopApp(
                     actionFeedback = res.message
                     scope.launch { server.sendCommand(LinkMsgType.TAGS_LIST, reqId(), emptyMap<String, String>()) }
                 }
+                LinkMsgType.ERROR -> {
+                    val err = runCatching { gson.fromJson(env.payloadJson, ErrorPayload::class.java) }.getOrNull() ?: return@collect
+                    if (err.errorCode == LinkErrorCode.TIMEOUT && err.errorMessage == LinkMsgType.MESSAGE_DEEP_ANALYZE) {
+                        deepAnalyzingMsgId = -1L
+                    }
+                    actionFeedback = DesktopStrings.classifiedError(err.errorCode)
+                }
             }
         }
     }
@@ -494,6 +502,7 @@ fun DesktopApp(
                         ev.key == Key.Escape -> {
                             deepAnalysisResult = null
                             editingTodo = null
+                            pendingUpdateDialog = null
                             mirrorToast = null
                             actionFeedback = null
                             true
@@ -1155,7 +1164,10 @@ fun DesktopApp(
                                                     }
                                                 } else {
                                                     LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                        items(chatBubbles, key = { "${it.id}_${it.role}_${it.createdAt}" }) { b ->
+                                                        itemsIndexed(
+                                                            items = chatBubbles,
+                                                            key = { idx, b -> "${idx}_${b.id}_${b.role}_${b.createdAt}" }
+                                                        ) { _, b ->
                                                             val isUser = b.role == "user"
                                                             Row(
                                                                 modifier = Modifier.fillMaxWidth(),

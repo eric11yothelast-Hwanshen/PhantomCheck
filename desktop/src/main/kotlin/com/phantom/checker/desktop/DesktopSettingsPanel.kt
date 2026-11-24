@@ -124,7 +124,12 @@ fun DesktopSettingsCenter(
     val timeFmt = remember { java.text.SimpleDateFormat("MM/dd HH:mm:ss", java.util.Locale.getDefault()) }
 
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
             FilterChip(
                 selected = subTab == SettingsSubTab.CONNECTION,
                 onClick = { subTab = SettingsSubTab.CONNECTION },
@@ -145,9 +150,8 @@ fun DesktopSettingsCenter(
                 onClick = { subTab = SettingsSubTab.ABOUT },
                 label = { Text(DesktopStrings.settingsTabAbout) }
             )
-            Spacer(Modifier.weight(1f))
-            Text(DesktopStrings.shortcutsHint, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
         }
+        Text(DesktopStrings.shortcutsHint, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
 
         Column(
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
