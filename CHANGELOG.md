@@ -3,6 +3,47 @@
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses Semantic Versioning.
 
+## [4.7.0] - 2026-11-24
+
+- **Tag 對照**：[`v4.6.0...v4.7.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.6.0...v4.7.0)（`versionCode = 55`、`versionName = "4.7.0"`；桌面端 `desktopVersion = "0.4.0"`）
+- **發佈資產（雙 APK ＋ 桌面端 Windows MSI / Inno Setup 安裝檔）**：
+  - `app-release.apk`：正式簽章＋R8 程式碼縮減與資源壓縮（`isMinifyEnabled = true`、`isShrinkResources = true`），供一般使用者安裝與原簽章覆蓋升級。
+  - `app-debug.apk`：除錯建置版本，供開發測試與排錯使用。
+  - `PhantomCheckDesktop-0.4.0.msi` / `PhantomCheckDesktop-0.4.0-setup.exe`：Windows 桌面端連線與訊息管理安裝檔（Compose Multiplatform，`desktopVersion = "0.4.0"`）。
+
+### 行為變更（Behavior Changes）
+- **#476 連線方向反轉與憑證指紋綁定（PR #481）**：桌面端改為內建 Ktor Netty WSS 伺服器（監聽 `wss://0.0.0.0:49515/link`），手機端改為 OkHttp WebSocket 主動連線並驗證 TLS SHA-256 指紋。
+- **#476 / #477 協定升版強制重配對（PR #481）**：`PROTOCOL_VERSION` 由 `1` 升至 `2`，配對碼效期調整為 3 分鐘單次有效；舊版配對資料會安全清除並引導重新配對。
+- **#477 / #478 / #479 桌面端功能與視窗調整（PR #481）**：桌面端新增 QR 配對對話框、啟動單次更新檢查、更新對話框與「關於」分頁；自訂設定由 8 項擴充為 16 項；視窗最小尺寸調整為 `1024x680`（確保 `fontScale=1.25f` 不裁切）。
+- **#476 / #480 限流與指令逾時回饋（PR #481）**：桌面端限流改為超限丟棄並回傳 `ERROR(RATE_LIMIT_EXCEEDED)`，連續 3 次才斷線；一般指令 8.5 秒／AI 長指令 130 秒逾時皆提供 UI 回饋與診斷記錄。
+
+### 新增、變更與修正
+- **#476 桌面連線架構反轉與診斷可視化（PR #481）**：桌面端新增 `DesktopTls.kt`（RSA 2048 自簽 X509v3 PKCS12 KeyStore，密碼存於 owner-only ACL 目錄）、`DesktopLinkServer.kt`（Ktor `3.6.0` Netty＋`sslConnector`，隨系統匣／`--minimized` 常駐，含埠佔用預檢、Token Bucket 限流與桌面審計紀錄）與 `DesktopMdnsBroadcaster.kt`（JmDNS `3.6.5` 廣播 `_phantomcheck._tcp.local.`）；Inno Setup 新增可選防火牆例外任務（解除安裝可逆清除）。手機端新增 `DesktopLinkClient.kt`（OkHttp WSS＋TLS SHA-256 指紋綁定＋指數退避 `1s→30s`＋`NsdManager` 掃描，保留完整 M2／#467 雙向指令與隱私紅線），移除手機端 Ktor/BouncyCastle 伺服器依賴與舊檔，雙端紀錄連線階段（`TCP`/`TLS`/`HANDSHAKE`/`PROTOCOL`）與分類錯誤碼。
+- **#477 手機掃描電腦端 QR Code 配對（PR #481）**：桌面端引入 `com.google.zxing:core:3.5.4` 新增 `DesktopQrDialog.kt`（支援多網卡 IPv4 選擇與 3 分鐘倒數重生）；手機端引入 **bundled** `com.google.mlkit:barcode-scanning:17.3.0`（模型內建於 App，無 Google Play 服務裝置亦可離線掃描）與 CameraX `1.6.2`，新增 `QrPairingParser.kt`（嚴格 JSON/型別/指紋格式防呆）與 `QrScannerOverlay.kt`（離開與 `ON_PAUSE`/`ON_STOP` 立即 `unbindAll()`），掃碼後顯示確認卡並走 TLS 指紋綁定，保留手動輸入電腦區網位址備援與 `CAMERA` 權限引導。
+- **#478 桌面端啟動自動檢查更新、更新提示與關於頁（PR #481）**：新增 `DesktopUpdater.kt`（process 級 `AtomicBoolean` 啟動單次檢查，離線／403／429 靜默記日誌；比對 `PhantomCheckDesktop-<semver>-setup.exe`/`.msi` 資產與 `CURRENT_DESKTOP_VERSION`；每日同版本通知去重且尊重 DND）與 `DesktopUpdateDialog.kt`（`DesktopMarkdownText` 瀏覽更新內容、前往 Release 頁面或下載至暫存並確認啟動安裝器）；設定中心新增「關於」分頁顯示版本、`PROTOCOL_VERSION=2` 相容資訊、專案文件連結與最近 10 個 Releases 瀏覽。
+- **#479 桌面端語言切換即時生效與自訂擴充 8→16（PR #481）**：修復 `DesktopStrings.isZh` 未訂閱 Compose `SnapshotState` 的問題，改由 `mutableStateOf` 驅動並同步 `trayTooltip` 與全設定 enum 在地化，切換語言即刻全視窗／系統匣生效；自訂設定由 8 項擴充為 16 項（新增自訂強調色 HEX、12/24 小時制、訊息卡圓角 12–24dp、玻璃模糊通透強度、AI 聊天字級、通知音效開關、啟動自動接收已配對手機、啟動預設分頁），並升級支援跨日之 DND 起訖時間選擇器。
+- **#480 雙端十項穩定性稽核修復（PR #481）**：完成 10 項稽核修復，包含桌面指令逾時追蹤（8.5s / 130s）與 UI 回報、連線 catch 記錄診斷不吞例外、`RATE_LIMIT_EXCEEDED` 連續 3 次才斷線與首發 11 指令 120ms 間隔防觸發、UTF-8 `Properties` 讀寫與 ISO-8859-1 相容遷移、聊天 `LazyColumn` `itemsIndexed` 複合唯一 key、全分類配對錯誤雙語文案、JmDNS 失敗診斷與 UI 引導、QR JSON 嚴格防呆驗證、設定分頁列改 `FlowRow` 搭配 `1024x680` 最小視窗支援 `125%` 字級縮放，以及 `CAMERA` 全版本相容與非 saveable 掃碼狀態清理。
+
+### English
+- **Tag Compare**: [`v4.6.0...v4.7.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.6.0...v4.7.0) (`versionCode = 55`, `versionName = "4.7.0"`; Desktop `desktopVersion = "0.4.0"`)
+- **Release Assets (Dual APKs + Desktop Windows MSI / Inno Setup Installer)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`), for general users and in-place signature upgrades.
+  - `app-debug.apk`: Debug build for development testing and troubleshooting.
+  - `PhantomCheckDesktop-0.4.0.msi` / `PhantomCheckDesktop-0.4.0-setup.exe`: Windows desktop companion installers (Compose Multiplatform, `desktopVersion = "0.4.0"`).
+
+**Behavior Changes**
+- **#476 Socket Direction Reversal & Certificate Fingerprint Pinning (PR #481)**: Desktop now hosts the embedded Ktor Netty WSS server (`wss://0.0.0.0:49515/link`), while the Android app connects as an OkHttp WebSocket client with TLS SHA-256 fingerprint pinning.
+- **#476 / #477 Protocol Bump & Mandatory Re-Pairing (PR #481)**: `PROTOCOL_VERSION` bumped from `1` to `2` with single-use 3-minute pairing codes; legacy pairing records are safely cleared with re-pairing guidance.
+- **#477 / #478 / #479 Desktop Features & Window Sizing (PR #481)**: Added QR pairing dialog, single launch-time update check, update dialog, and About tab on desktop; expanded customization settings from 8 to 16; adjusted minimum window size to `1024x680` (no clipping at `fontScale=1.25f`).
+- **#476 / #480 Rate Limiting & Command Timeout Feedback (PR #481)**: Desktop rate limiter drops excess commands with `ERROR(RATE_LIMIT_EXCEEDED)` and disconnects only after 3 consecutive violations; 8.5s general / 130s AI command timeouts surface UI feedback and diagnostics.
+
+**Added, Changed & Fixed**
+- **#476 Desktop Link Architecture Reversal & Diagnostics (PR #481)**: Added `DesktopTls.kt` (RSA 2048 self-signed X509v3 PKCS12 KeyStore with passphrase in owner-only ACL storage), `DesktopLinkServer.kt` (Ktor `3.6.0` Netty + `sslConnector`, tray/`--minimized` lifecycle, port-in-use preflight, Token Bucket rate limiting, and desktop audit log), and `DesktopMdnsBroadcaster.kt` (JmDNS `3.6.5` advertising `_phantomcheck._tcp.local.`); Inno Setup adds an optional reversible firewall task. Android adds `DesktopLinkClient.kt` (OkHttp WSS + TLS SHA-256 pinning + `1s→30s` exponential backoff + `NsdManager` discovery while preserving all M2/#467 two-way handlers and privacy boundaries), removes embedded Ktor/BouncyCastle server dependencies, and tracks connection phases (`TCP`/`TLS`/`HANDSHAKE`/`PROTOCOL`) and classified error codes on both ends.
+- **#477 Phone QR Code Scanning for Desktop Pairing (PR #481)**: Desktop integrates `com.google.zxing:core:3.5.4` (`DesktopQrDialog.kt` with site-local IPv4 selector and 3-minute countdown/regeneration); Android integrates **bundled** `com.google.mlkit:barcode-scanning:17.3.0` (works offline without Google Play Services) and CameraX `1.6.2`, adding `QrPairingParser.kt` (strict JSON/type/fingerprint validation) and `QrScannerOverlay.kt` (immediate `unbindAll()` on leave/`ON_PAUSE`/`ON_STOP`) with a pairing confirmation card, manual LAN IP fallback, and `CAMERA` permission guidance.
+- **#478 Desktop Launch Auto-Update Check, Update Dialog & About Tab (PR #481)**: Added `DesktopUpdater.kt` (process-level `AtomicBoolean` single check at launch, silent diagnostic logging on offline/403/429, semver comparison against `PhantomCheckDesktop-<semver>-setup.exe`/`.msi` assets and `CURRENT_DESKTOP_VERSION`, daily per-version notification dedup respecting DND) and `DesktopUpdateDialog.kt` (`DesktopMarkdownText` changelog viewer, browser link to Release page, and temp download + confirmed installer launch); added an "About" tab in Settings showing version, `PROTOCOL_VERSION=2` compatibility, project links, and the latest 10 GitHub Releases.
+- **#479 Instant Desktop Language Switch, Full Localization & 8→16 Customizations (PR #481)**: Fixed `DesktopStrings.isZh` to use Compose `mutableStateOf` so switching language updates all windows, `trayTooltip`, and localized setting enums immediately; expanded customization settings from 8 to 16 (custom accent HEX, 12/24h time, message card corner radius 12–24dp, glass blur intensity, AI chat font size, notification sound toggle, auto-accept paired phones on launch, default startup tab) and upgraded DND to a cross-midnight start/end time picker.
+- **#480 Cross-End 10-Item Stability Audit Fixes (PR #481)**: Resolved 10 audited issues including desktop command timeout tracking (8.5s / 130s) with UI reporting, diagnostic/audit logging instead of swallowed exceptions, 3-strike `RATE_LIMIT_EXCEEDED` disconnect + `120ms` pacing for the 11 initial commands, UTF-8 `Properties` read/write with ISO-8859-1 fallback, composite unique keys in chat `itemsIndexed`, bilingual classified pairing error messages, JmDNS failure diagnostics and UI hints, strict QR JSON validation, `FlowRow` settings tabs with `1024x680` minimum size for `125%` font scaling, and lifecycle-safe `CAMERA` permission/scanner state handling.
+
 ## [4.6.0] - 2026-11-24
 
 - **Tag 對照**：[`v4.5.0...v4.6.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.5.0...v4.6.0)（`versionCode = 54`、`versionName = "4.6.0"`；桌面端 `desktopVersion = "0.3.0"`）

@@ -45,12 +45,21 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 - 📈 **自訂統計儀表板、Health Connect 7 日生理趨勢與每日 App 排行榜**：統計頁支援頂部純本機「本週重點」自然語言摘要條、早晚簡報卡、**Health Connect 7 日睡眠／步數迷你條趨勢圖**（純本機聚合零 AI）、今日 App 訊息量排行榜 Top 5、7 日風險趨勢折線、未讀／已讀比例環形、各 App 佔比橫條與待辦完成率環形，每週 AI 摘要支援錯過補跑、未完句自動續寫、全文展開與失敗重試，並可於設定中心「資料與備份」自訂統計卡顯示與否。
 
 - 🌐 **中英雙語介面、App 內三態語言切換與多語系 AI／防詐功能層（i18n）**：內建繁體中文（`values-zh-rTW`）與英文預設（`values/`，fallback = `en`）雙語資源桶（2,932 條 UI 與 XML `@string` 資源）；設定中心支援**「語言」三態切換（跟隨系統／繁體中文／English；API 33+ 走 `LocaleManager` 與系統 per-app 設定同步，API 26–32 走 `attachBaseContext` 平滑重建）**，通知、桌面小工具、設定搜尋目錄與 AI 自然語言輸出（風險分析、自動備忘錄、每週摘要、深度分析、早晚簡報、回顧註記、主動情報）全面跟隨 App 語言設定，且規則層防詐引擎（`IndicatorExtractor`／`MemoryEngine`／`ContactContext`）同步支援中英文常見詐騙話術離線偵測。
+- 🖥️ **桌面端伴侶（`0.4.0`）與加密區網連線（`PROTOCOL_VERSION = 2`）**：Compose Multiplatform Windows 桌面端（支援 `.msi` / `-setup.exe`、系統匣常駐、10 項系統＋16 項自訂設定、語言切換即時生效、**啟動自動檢查更新、更新提示對話框與「關於」分頁**）。採用**電腦端開啟 WSS 伺服器（`wss://<lan-ip>:49515/link`）、手機端主動連線**的新架構：手機可透過**掃描電腦 QR Code**（內建 ML Kit 模型，無 Google Play 服務亦可離線掃描）或**手動輸入電腦區網位址**進行配對，首次配對須輸入 **6 位數單次配對碼**並綁定 **TLS SHA-256 憑證指紋**，支援雙向訊息同步、星標、標籤、待辦、記事、快速回覆、深度分析與多會話 AI 聊天。
 
 ---
 
 ## 版本紀錄
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
+
+### v4.7.0 更新重點（versionCode 55，桌面端 0.4.0，2026-11-24）
+
+- **#476 連線架構反轉與憑證指紋綁定（PR #481）**：桌面端改為內建 Ktor `3.6.0` Netty WSS 伺服器（`DesktopLinkServer.kt`、`DesktopTls.kt`、`DesktopMdnsBroadcaster.kt`，埠 `49515`），手機端改為 OkHttp WebSocket 主動連線（`DesktopLinkClient.kt`）並驗證 TLS SHA-256 指紋，支援 `1s→30s` 退避、`NsdManager` 掃描與階段／分類錯誤診斷；`PROTOCOL_VERSION` 升至 `2`（需重新配對）。
+- **#477 手機掃描電腦端 QR Code 配對（PR #481）**：桌面端透過 `zxing:core:3.5.4` 生成 3 分鐘單次效期 QR Code（`DesktopQrDialog.kt`）；手機端透過 **bundled** `mlkit:barcode-scanning:17.3.0`（無 Google Play 服務亦可離線掃描）＋ CameraX `1.6.2` 掃碼（`QrScannerOverlay.kt`、`QrPairingParser.kt`），並保留手動輸入電腦區網位址備援。
+- **#478 桌面端啟動自動檢查更新、更新提示與關於頁（PR #481）**：新增 `DesktopUpdater.kt`（啟動單次比對 `PhantomCheckDesktop-<semver>-setup.exe`/`.msi` 資產）、`DesktopUpdateDialog.kt`（Markdown 更新內容＋下載並啟動安裝器）與設定中心「關於」分頁（版本、相容協定、專案連結與最近 10 個 Releases）。
+- **#479 桌面端語言切換即時生效與自訂擴充 8→16（PR #481）**：修正 `DesktopStrings.isZh` 為 Compose `mutableStateOf` 實現全視窗／系統匣即時切換、全面在地化設定 enum，自訂設定擴充至 16 項（自訂 HEX 強調色、12/24h 時間、訊息卡圓角、玻璃模糊強度、聊天字級、通知音效、啟動自動接收已配對手機、啟動預設分頁），並升級支援跨日 DND 時間選擇器。
+- **#480 雙端十項穩定性稽核修復（PR #481）**：補齊 8.5s / 130s 指令逾時回饋、連線例外診斷記錄、`RATE_LIMIT_EXCEEDED` 連續 3 次斷線與首發 11 指令 120ms 間隔、UTF-8 `Properties` 相容遷移、聊天複合唯一 key、全分類配對錯誤雙語文案、JmDNS 失敗診斷、QR JSON 防呆、`1024x680` 最小視窗支援 `125%` 字級縮放與 `CAMERA` 生命週期清理。
 
 ### v4.6.0 更新重點（versionCode 54，桌面端 0.3.0，2026-11-24）
 
