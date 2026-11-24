@@ -1,5 +1,6 @@
 package com.phantom.checker.ui.link
 
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
@@ -45,18 +46,27 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import com.phantom.checker.R
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
+private const val TAG = "QrScannerOverlay"
+
 /**
- * #477 全屏 QR 掃碼器（CameraX Preview + ImageAnalysis + ML Kit bundled FORMAT_QR_CODE）：
+ * #477 / #486 全屏 QR 掃碼器（CameraX Preview + ImageAnalysis + ML Kit bundled FORMAT_QR_CODE）：
  * - 無 Google Play 服務依賴（bundled 模型，離線多廠牌可用）
- * - 離開畫面或 Activity pause/stop/recreate 時立即 unbind 相機、釋放 scanner 與 executor，不洩漏、不殘留狀態
+ * - #486 強化：
+ *   1. BarcodeScanning.getClient 包 runCatching，任何初始化異常降級為 cameraError 絕不閃退
+ *   2. 開相機前檢查 provider.hasCamera(DEFAULT_BACK_CAMERA)，無後鏡頭時顯示誠實文案引導手動輸入
+ *   3. ON_PAUSE/ON_STOP unbind 後於 ON_RESUME 自動 rebind，解決回前景黑屏
+ *   4. analyzer 內 scanner.process() 包 runCatching + imageProxy 必關保證
+ *   5. onDispose 順序：closed flag → unbindAll → executor.shutdownNow + awaitTermination → scanner.close()，消除 close/process 競態
  */
 @OptIn(ExperimentalGetImage::class)
 @Composable
@@ -69,28 +79,134 @@ fun QrScannerDialog(
     var cameraError by remember { mutableStateOf<String?>(null) }
 
     val handled = remember { AtomicBoolean(false) }
+    val closed = remember { AtomicBoolean(false) }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-    val scanner = remember {
-        val opts = BarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-            .build()
-        BarcodeScanning.getClient(opts)
+
+    val scannerResult = remember {
+        runCatching {
+            val opts = BarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                .build()
+            BarcodeScanning.getClient(opts)
+        }
     }
+    val scanner: BarcodeScanner? = scannerResult.getOrNull()
+    if (scanner == null && cameraError == null) {
+        val reason = scannerResult.exceptionOrNull()?.let { it.message ?: it.javaClass.simpleName } ?: "MLKit init error"
+        cameraError = context.getString(R.string.link_hub_camera_init_failed, reason)
+    }
+
     var boundProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var activePreviewView by remember { mutableStateOf<PreviewView?>(null) }
+    var needsRebindOnResume by remember { mutableStateOf(false) }
+
+    fun bindCameraUseCases(provider: ProcessCameraProvider, previewView: PreviewView) {
+        if (closed.get() || handled.get()) return
+        val activeScanner = scanner ?: return
+        runCatching {
+            if (!provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
+                cameraError = context.getString(R.string.link_hub_camera_no_back_camera)
+                return
+            }
+            val preview = Preview.Builder().build().also {
+                it.surfaceProvider = previewView.surfaceProvider
+            }
+            val analysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+            analysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                if (closed.get() || handled.get()) {
+                    runCatching { imageProxy.close() }
+                    return@setAnalyzer
+                }
+                val mediaImage = imageProxy.image
+                if (mediaImage == null) {
+                    runCatching { imageProxy.close() }
+                    return@setAnalyzer
+                }
+                var handedToAsync = false
+                try {
+                    val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+                    val task = activeScanner.process(inputImage)
+                    handedToAsync = true
+                    task.addOnSuccessListener { barcodes ->
+                        if (closed.get()) return@addOnSuccessListener
+                        val raw = barcodes.firstOrNull()?.rawValue?.trim()
+                        if (!raw.isNullOrBlank() && handled.compareAndSet(false, true)) {
+                            ContextCompat.getMainExecutor(context).execute {
+                                if (!closed.get()) {
+                                    onScanned(raw)
+                                }
+                            }
+                        }
+                    }.addOnFailureListener { err ->
+                        if (!closed.get()) {
+                            Log.w(TAG, "ML Kit barcode process failed: ${err.javaClass.simpleName}: ${err.message}")
+                        }
+                    }.addOnCompleteListener {
+                        runCatching { imageProxy.close() }
+                    }
+                } catch (err: Throwable) {
+                    Log.w(TAG, "Analyzer error: ${err.javaClass.simpleName}: ${err.message}")
+                    if (!closed.get()) {
+                        val msg = context.getString(R.string.link_hub_camera_init_failed, err.message ?: err.javaClass.simpleName)
+                        ContextCompat.getMainExecutor(context).execute {
+                            if (!closed.get() && cameraError == null) {
+                                cameraError = msg
+                            }
+                        }
+                    }
+                } finally {
+                    if (!handedToAsync) {
+                        runCatching { imageProxy.close() }
+                    }
+                }
+            }
+            provider.unbindAll()
+            provider.bindToLifecycle(
+                lifecycleOwner,
+                CameraSelector.DEFAULT_BACK_CAMERA,
+                preview,
+                analysis
+            )
+            cameraError = null
+        }.onFailure { err ->
+            Log.w(TAG, "Camera bindToLifecycle failed: ${err.javaClass.simpleName}: ${err.message}")
+            cameraError = context.getString(R.string.link_hub_camera_init_failed, err.message ?: err.javaClass.simpleName)
+        }
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
-                runCatching { boundProvider?.unbindAll() }
+            when (event) {
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> {
+                    needsRebindOnResume = true
+                    runCatching { boundProvider?.unbindAll() }
+                }
+                Lifecycle.Event.ON_RESUME -> {
+                    val provider = boundProvider
+                    val pv = activePreviewView
+                    if (needsRebindOnResume && provider != null && pv != null && !closed.get() && !handled.get()) {
+                        needsRebindOnResume = false
+                        bindCameraUseCases(provider, pv)
+                    }
+                }
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            // #486 嚴格釋放順序：先標記 closed → unbind → 停止 executor 並短等排空 → 最後關閉 ML Kit scanner
+            closed.set(true)
             lifecycleOwner.lifecycle.removeObserver(observer)
             runCatching { boundProvider?.unbindAll() }
             boundProvider = null
-            runCatching { scanner.close() }
-            runCatching { cameraExecutor.shutdownNow() }
+            activePreviewView = null
+            runCatching {
+                cameraExecutor.shutdownNow()
+                cameraExecutor.awaitTermination(300L, TimeUnit.MILLISECONDS)
+            }
+            runCatching { scanner?.close() }
         }
     }
 
@@ -109,51 +225,24 @@ fun QrScannerDialog(
                     val previewView = PreviewView(ctx).apply {
                         scaleType = PreviewView.ScaleType.FILL_CENTER
                     }
-                    val providerFuture = ProcessCameraProvider.getInstance(ctx)
-                    providerFuture.addListener(
-                        {
-                            runCatching {
-                                val provider = providerFuture.get()
-                                boundProvider = provider
-                                val preview = Preview.Builder().build().also {
-                                    it.surfaceProvider = previewView.surfaceProvider
+                    activePreviewView = previewView
+                    if (scanner != null) {
+                        val providerFuture = ProcessCameraProvider.getInstance(ctx)
+                        providerFuture.addListener(
+                            {
+                                if (closed.get()) return@addListener
+                                runCatching {
+                                    val provider = providerFuture.get()
+                                    boundProvider = provider
+                                    bindCameraUseCases(provider, previewView)
+                                }.onFailure { err ->
+                                    Log.w(TAG, "ProcessCameraProvider.getInstance failed: ${err.javaClass.simpleName}")
+                                    cameraError = ctx.getString(R.string.link_hub_camera_init_failed, err.message ?: err.javaClass.simpleName)
                                 }
-                                val analysis = ImageAnalysis.Builder()
-                                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                    .build()
-                                analysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                                    val mediaImage = imageProxy.image
-                                    if (mediaImage == null || handled.get()) {
-                                        imageProxy.close()
-                                        return@setAnalyzer
-                                    }
-                                    val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-                                    scanner.process(inputImage)
-                                        .addOnSuccessListener { barcodes ->
-                                            val raw = barcodes.firstOrNull()?.rawValue?.trim()
-                                            if (!raw.isNullOrBlank() && handled.compareAndSet(false, true)) {
-                                                ContextCompat.getMainExecutor(ctx).execute {
-                                                    onScanned(raw)
-                                                }
-                                            }
-                                        }
-                                        .addOnCompleteListener {
-                                            imageProxy.close()
-                                        }
-                                }
-                                provider.unbindAll()
-                                provider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    CameraSelector.DEFAULT_BACK_CAMERA,
-                                    preview,
-                                    analysis
-                                )
-                            }.onFailure { err ->
-                                cameraError = err.message ?: err.javaClass.simpleName
-                            }
-                        },
-                        ContextCompat.getMainExecutor(ctx)
-                    )
+                            },
+                            ContextCompat.getMainExecutor(ctx)
+                        )
+                    }
                     previewView
                 }
             )

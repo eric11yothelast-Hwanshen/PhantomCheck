@@ -3024,6 +3024,8 @@
     <string name="link_hub_diag_probing">正在探測 TCP %1$s…</string>
     <string name="link_hub_diag_no_target">尚無可探測的電腦位址，請先透過 mDNS 探索或手動輸入 IP:埠。</string>
     <string name="link_hub_probe_cooldown_hint">同目標剛發生連線逾時，冷卻中（剩餘 %1$d 秒）；可點下方「立即診斷」即時測試。</string>
+    <string name="link_hub_camera_no_back_camera">此裝置未偵測到後置鏡頭，請關閉掃碼器並改用下方「手動配對（備援）」。</string>
+    <string name="link_hub_camera_init_failed">相機或 QR 掃碼模組初始化失敗（%1$s），請關閉並改用下方「手動配對（備援）」。</string>
     <string name="common_link">連線</string>
     <string name="chat_smart_search_citation_rule">\n\n【聯網查證模式】請結合上方使用者 RAG 記憶與個人化設定，並【僅依搜尋片段】回答。重要事實請在行內精簡標註來源（如 [1] 或網域名稱），嚴禁貼出整串長網址。若搜尋結果不足，請誠實說明「查無相關最新資料」，絕不以既有知識頂替或編造。</string>
 </resources>

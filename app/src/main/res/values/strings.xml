@@ -3024,6 +3024,8 @@
     <string name="link_hub_diag_probing">Probing TCP %1$s…</string>
     <string name="link_hub_diag_no_target">No desktop IP available yet. Discover via mDNS or enter IP:Port manually first.</string>
     <string name="link_hub_probe_cooldown_hint">Same target recently timed out; cooling down (%1$ds). Tap \"Diagnose Now\" below to test immediately.</string>
+    <string name="link_hub_camera_no_back_camera">No rear camera detected on this device. Please close the scanner and use Manual Pairing below.</string>
+    <string name="link_hub_camera_init_failed">Camera or QR scanner failed to initialize (%1$s). Please close and use Manual Pairing below.</string>
     <string name="common_link">Link</string>
     <string name="chat_smart_search_citation_rule">\n\n[Web Verification Mode] Combine the user\'s RAG memory and persona settings above with the retrieved web snippets. Cite sources inline using [1] or the domain name only — never dump raw long URLs. If search results are insufficient, state honestly that no up-to-date information was found without fabricating.</string>
 </resources>

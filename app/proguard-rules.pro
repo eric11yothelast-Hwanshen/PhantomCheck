@@ -57,3 +57,19 @@
     <init>(...);
     <fields>;
 }
+
+# #486 ML Kit bundled barcode-scanning (17.3.0) + AGP 9+ R8 full mode
+# firebase-components:16.1.0 consumer rules omit <init>(), causing MlKitContext.get(zzg) == null NPE on main thread.
+# Ref: googlesamples/mlkit#1007, googlesamples/mlkit#1018, firebase/firebase-android-sdk#6044
+-dontwarn com.google.firebase.components.Component$Instantiation
+-dontwarn com.google.firebase.components.Component$ComponentType
+-keep class * implements com.google.firebase.components.ComponentRegistrar {
+    void <init>();
+}
+-keep,allowshrinking interface com.google.firebase.components.ComponentRegistrar
+-keepclassmembers,allowoptimization,allowobfuscation public class com.google.mlkit.common.** {
+    public <init>(...);
+}
+-keepclassmembers,allowoptimization,allowobfuscation public class com.google.mlkit.vision.barcode.internal.** {
+    public <init>(...);
+}
