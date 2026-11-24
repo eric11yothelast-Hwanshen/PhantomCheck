@@ -53,14 +53,16 @@ data class DesktopLinkUiState(
     val isPaired: Boolean = false,
     val pairedDeviceName: String = "",
     val savedWssUrl: String = "",
-    val lastError: String? = null
+    val lastError: String? = null,
+    val reconnectRemainingSec: Int = 0,
+    val reconnectTotalSec: Int = 0
 )
 
 /**
- * #449 / #450 Desktop 端 Ktor CIO wss 客戶端：
+ * #449 / #450 / #457 Desktop 端 Ktor CIO wss 客戶端：
  * - 自簽憑證 SHA-256 指紋驗證（配對後嚴格 pinning）
  * - HMAC challenge-response 重連
- * - 指數退避重連（1s..30s）
+ * - 指數退避重連（1s..30s，含倒數秒數回報）
  */
 class DesktopLinkClient {
 
@@ -198,7 +200,11 @@ class DesktopLinkClient {
         connectJob?.cancel()
         connectJob = null
         activeWs = null
-        _state.value = _state.value.copy(connState = LinkConnState.DISCONNECTED)
+        _state.value = _state.value.copy(
+            connState = LinkConnState.DISCONNECTED,
+            reconnectRemainingSec = 0,
+            reconnectTotalSec = 0
+        )
     }
 
     suspend fun sendCommand(type: String, reqId: String, payload: Any) {
@@ -217,8 +223,16 @@ class DesktopLinkClient {
             )
             if (!shouldKeepConnected) break
             backoffMs = if (ok) 1000L else (backoffMs * 2).coerceAtMost(30_000L)
-            _state.value = _state.value.copy(connState = LinkConnState.RECONNECTING)
-            delay(backoffMs)
+            val totalSec = (backoffMs / 1000L).toInt().coerceIn(1, 30)
+            for (rem in totalSec downTo 1) {
+                if (!shouldKeepConnected) break
+                _state.value = _state.value.copy(
+                    connState = LinkConnState.RECONNECTING,
+                    reconnectRemainingSec = rem,
+                    reconnectTotalSec = totalSec
+                )
+                delay(1000L)
+            }
         }
     }
 
@@ -227,7 +241,12 @@ class DesktopLinkClient {
         pairCode: String?,
         expectedFingerprint: String
     ): Boolean {
-        _state.value = _state.value.copy(connState = LinkConnState.CONNECTING, lastError = null)
+        _state.value = _state.value.copy(
+            connState = LinkConnState.CONNECTING,
+            lastError = null,
+            reconnectRemainingSec = 0,
+            reconnectTotalSec = 0
+        )
         lastObservedCertFingerprint = ""
         val client = buildPinningClient()
         var sessionSucceeded = false

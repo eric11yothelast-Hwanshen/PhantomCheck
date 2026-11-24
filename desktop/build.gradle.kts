@@ -1,3 +1,5 @@
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+
 plugins {
     id("org.jetbrains.kotlin.jvm")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -5,7 +7,7 @@ plugins {
 }
 
 group = "com.phantom.checker.desktop"
-version = "d0.1.0"
+version = "0.2.0"
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -32,8 +34,19 @@ compose.desktop {
     application {
         mainClass = "com.phantom.checker.desktop.MainKt"
         nativeDistributions {
+            targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "PhantomCheckDesktop"
-            packageVersion = "1.0.0"
+            packageVersion = "0.2.0"
+            description = "PhantomCheck Desktop - Encrypted LAN Link & Message Manager"
+            vendor = "PhantomCheck"
+            includeAllModules = true
+            windows {
+                iconFile.set(project.file("src/main/resources/icon.ico"))
+                menuGroup = "PhantomCheck"
+                dirChooser = true
+                perUserInstall = true
+                upgradeUuid = "9B7E3C4A-6F1D-4E2A-9D8C-5A1B2C3D4E5F"
+            }
         }
     }
 }

@@ -71,4 +71,26 @@ object DesktopStrings {
     val tagsTitle get() = t("標籤管理", "Tags")
     val tagNameHint get() = t("新標籤名稱", "New tag name")
     val notConnectedHint get() = t("請先於「連線設定」配對並連線手機", "Please pair and connect your phone in Connection first")
+
+    // #457 補齊微標籤與狀態文案
+    val selectDevice get() = t("選擇", "Select")
+    val dismiss get() = t("關閉", "Dismiss")
+    val ok get() = t("好", "OK")
+    val replySent get() = t("回覆已送出", "Reply sent")
+    val connectingPulse get() = t("正在建立加密連線…", "Establishing encrypted link…")
+    val fingerprintPrefix get() = t("指紋：", "FP: ")
+    val emptyMessages get() = t("目前無符合條件的訊息", "No messages match this filter")
+    val emptyChat get() = t("開始與手機端 AI 夥伴對話", "Start chatting with your AI Assistant")
+    val emptyWhitelist get() = t("尚未設定白名單規則", "No whitelist rules yet")
+    val emptyTags get() = t("尚未建立標籤", "No tags yet")
+    val versionLabel get() = t("桌面端 v0.2.0", "Desktop v0.2.0")
+
+    fun reconnectingCountdown(remSec: Int, totalSec: Int): String =
+        t("將於 ${remSec}s 後重連（退避 ${totalSec}s）", "Reconnecting in ${remSec}s (backoff ${totalSec}s)")
+
+    fun riskLabelText(raw: String): String = when (raw.lowercase()) {
+        "scam" -> t("詐騙", "SCAM")
+        "suspicious" -> t("可疑", "SUSPICIOUS")
+        else -> t("安全", "SAFE")
+    }
 }
