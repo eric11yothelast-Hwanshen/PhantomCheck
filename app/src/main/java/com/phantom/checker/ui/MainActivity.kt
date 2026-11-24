@@ -403,13 +403,57 @@ private fun isPostNotificationsGranted(context: Context): Boolean {
     }
 }
 
-/** D1：底部導覽 6 → 5（統計併入夥伴，改名「洞察」） */
+/** #466 桌面端連線分頁專屬圖示（Material Devices 風格純向量，無需額外 icons-extended 依賴） */
+internal val LinkDevicesIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "LinkDevices",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(4f, 6f)
+            horizontalLineToRelative(18f)
+            verticalLineTo(4f)
+            horizontalLineTo(4f)
+            curveToRelative(-1.1f, 0f, -2f, 0.9f, -2f, 2f)
+            verticalLineToRelative(11f)
+            horizontalLineTo(0f)
+            verticalLineToRelative(3f)
+            horizontalLineToRelative(14f)
+            verticalLineToRelative(-3f)
+            horizontalLineTo(4f)
+            verticalLineTo(6f)
+            close()
+            moveTo(23f, 8f)
+            horizontalLineToRelative(-6f)
+            curveToRelative(-0.55f, 0f, -1f, 0.45f, -1f, 1f)
+            verticalLineToRelative(10f)
+            curveToRelative(0f, 0.55f, 0.45f, 1f, 1f, 1f)
+            horizontalLineToRelative(6f)
+            curveToRelative(0.55f, 0f, 1f, -0.45f, 1f, -1f)
+            verticalLineTo(9f)
+            curveToRelative(0f, -0.55f, -0.45f, -1f, -1f, -1f)
+            close()
+            moveTo(22f, 17f)
+            horizontalLineToRelative(-4f)
+            verticalLineToRelative(-7f)
+            horizontalLineToRelative(4f)
+            verticalLineToRelative(7f)
+            close()
+        }
+    }.build()
+}
+
+/** #466 底部導覽 5 → 6（新增桌面端「連線」分頁） */
 private enum class MainTab(@StringRes val titleRes: Int) {
     MESSAGES(R.string.common_messages),
     ASSISTANT(R.string.common_assistant),
     NOTES(R.string.common_notes),
     MEMORY(R.string.common_memory),
-    INSIGHT(R.string.common_insight)
+    INSIGHT(R.string.common_insight),
+    LINK(R.string.common_link)
 }
 
 private enum class InsightSubTab(@StringRes val titleRes: Int) {
@@ -780,6 +824,7 @@ private fun PhantomCheckApp(
                     MainTab.ASSISTANT -> Unit
                     MainTab.MEMORY -> Unit
                     MainTab.NOTES -> Unit
+                    MainTab.LINK -> Unit
                     MainTab.INSIGHT -> if (insightSubTab == InsightSubTab.STATS) {
                         val summary = db.aiSummaryDao().latest()
                         val cal = Calendar.getInstance().apply {
@@ -1556,6 +1601,7 @@ private fun PhantomCheckApp(
                                         MainTab.NOTES -> Icons.Default.Edit
                                         MainTab.MEMORY -> MemoryIcon
                                         MainTab.INSIGHT -> Icons.Default.Person
+                                        MainTab.LINK -> LinkDevicesIcon
                                     }
                                     val tabLabel = stringResource(tab.titleRes)
                                     val itemModifier = Modifier
@@ -1570,6 +1616,7 @@ private fun PhantomCheckApp(
                                                     (OnboardingTargets.PARTNER_TAB to rect) +
                                                     (OnboardingTargets.STATS_TAB to rect)
                                                 MainTab.MESSAGES -> Unit
+                                                MainTab.LINK -> Unit
                                             }
                                         }
                                     val customIcon: (@Composable () -> Unit)? = if (tab == MainTab.INSIGHT && partnerAvatarBitmap != null) {
@@ -1655,6 +1702,7 @@ private fun PhantomCheckApp(
                             MainTab.NOTES -> Icons.Default.Edit
                             MainTab.MEMORY -> MemoryIcon
                             MainTab.INSIGHT -> Icons.Default.Person
+                            MainTab.LINK -> LinkDevicesIcon
                         }
                         NavigationRailItem(
                             selected = selectedTab == tab,
@@ -2097,6 +2145,10 @@ private fun PhantomCheckApp(
                             }
                         }
                     }
+                    MainTab.LINK -> com.phantom.checker.ui.link.LinkHubContent(
+                        contentPadding = PaddingValues(vertical = 8.dp),
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
               }
             }
@@ -2120,6 +2172,7 @@ private fun PhantomCheckApp(
             MainTab.MEMORY -> GlobalSearchScope.MEMORY
             MainTab.INSIGHT -> GlobalSearchScope.ALL
             MainTab.ASSISTANT -> GlobalSearchScope.ALL
+            MainTab.LINK -> GlobalSearchScope.ALL
         }
         PhantomGlobalSearchOverlay(
             visible = showSearchBar,
