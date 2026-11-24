@@ -1,13 +1,22 @@
 package com.phantom.checker.desktop
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import java.util.Locale
 
 /**
- * #468 雙語文案中心（即時讀取 DesktopSettingsStore 語言設定，支援 auto / zh-TW / en 即時切換）。
+ * #468 / #479 雙語文案中心（以 Compose SnapshotState 驅動，切換 auto / zh-TW / en 時全視窗與系統匣即時重組生效）。
  */
 object DesktopStrings {
+    private var languageState by mutableStateOf(DesktopSettingsStore.state.value.language)
+
+    fun syncLanguage(lang: String) {
+        languageState = lang
+    }
+
     private val isZh: Boolean
-        get() = when (DesktopSettingsStore.state.value.language) {
+        get() = when (languageState) {
             "zh-TW" -> true
             "en" -> false
             else -> Locale.getDefault().language.startsWith("zh", ignoreCase = true)
@@ -276,4 +285,77 @@ object DesktopStrings {
     fun updateDownloading(pct: Int): String = t("正在下載安裝檔… $pct%", "Downloading installer… $pct%")
     fun updateReadyToLaunch(name: String): String = t("已下載至暫存：$name，點擊「啟動安裝程式」繼續。", "Downloaded to temp: $name. Click 'Launch Installer' to continue.")
     fun updateNotifBody(ver: String): String = t("桌面端 v$ver 已發佈，開啟設定中心即可檢視更新內容並下載。", "Desktop v$ver is available. Open Settings to view notes and install.")
+
+    // #479 Full Localization & 16 Custom Settings + DND Picker
+    val settingsTabCustom16 get() = t("介面自訂 (16)", "Customize (16)")
+    val langAuto get() = t("跟隨系統 (Auto)", "Follow System (Auto)")
+    val feedbackSettingsReset get() = t("已還原為預設設定", "Settings reset to defaults")
+    val feedbackOpenFailed get() = t("開啟資料夾失敗", "Failed to open folder")
+    val feedbackExportFailed get() = t("匯出診斷報告失敗", "Failed to export diagnostics")
+    fun feedbackAutoStart(enabled: Boolean): String =
+        if (enabled) t("已啟用開機自動啟動", "Windows auto-start enabled") else t("已停用開機自動啟動", "Windows auto-start disabled")
+    fun feedbackExported(path: String): String = t("已匯出診斷報告：$path", "Exported diagnostics: $path")
+
+    val dndStartLabel get() = t("開始時間", "Start Hour")
+    val dndEndLabel get() = t("結束時間", "End Hour")
+    val dndCrossDayHint get() = t("（跨日）", "(overnight)")
+
+    val custCustomHexTitle get() = t("9. 自訂強調色 HEX（留空沿用上方預設）", "9. Custom Accent HEX (blank = preset)")
+    val custCustomHexHint get() = t("例如 #FF6B6B", "e.g. #FF6B6B")
+    val custCustomHexInvalid get() = t("格式須為 #RRGGBB", "Must be #RRGGBB")
+    val custTimeFormatTitle get() = t("10. 時間顯示格式", "10. Time Format")
+    val time24h get() = t("24 小時制", "24-hour")
+    val time12h get() = t("12 小時制 (AM/PM)", "12-hour (AM/PM)")
+    val custCardCornerTitle get() = t("11. 訊息卡圓角", "11. Message Card Corner Radius")
+    val custGlassBlurTitle get() = t("12. 玻璃模糊通透強度", "12. Glass Blur / Translucency")
+    val custChatFontSizeTitle get() = t("13. AI 聊天字級", "13. AI Chat Font Size")
+    val custNotifSoundTitle get() = t("14. 新訊息通知音效", "14. Notification Sound")
+    val custAutoConnectTitle get() = t("15. 啟動時自動啟動伺服器接收已配對手機", "15. Auto-start Server for Paired Phone on Launch")
+    val custDefaultTabTitle get() = t("16. 啟動預設分頁", "16. Default Startup Tab")
+
+    fun densityLabel(d: UiDensity): String = when (d) {
+        UiDensity.COMPACT -> t("緊湊 (Compact)", "Compact")
+        UiDensity.STANDARD -> t("標準 (Standard)", "Standard")
+        UiDensity.COMFORTABLE -> t("舒適 (Comfortable)", "Comfortable")
+    }
+
+    fun cardStyleLabel(s: MessageCardStyle): String = when (s) {
+        MessageCardStyle.CARD -> t("卡片 (Card)", "Card")
+        MessageCardStyle.COMPACT_LIST -> t("精簡列表 (Compact List)", "Compact List")
+    }
+
+    fun mirrorModeLabel(m: MirrorDisplayMode): String = when (m) {
+        MirrorDisplayMode.BANNER -> t("視窗橫幅 (Banner)", "In-App Banner")
+        MirrorDisplayMode.NATIVE -> t("系統通知 (Native)", "System Notification")
+        MirrorDisplayMode.BOTH -> t("兩者皆開 (Both)", "Both")
+    }
+
+    fun bgThemeLabel(b: BgThemePreset): String = when (b) {
+        BgThemePreset.MIDNIGHT -> t("午夜藍 (Midnight)", "Midnight")
+        BgThemePreset.AURORA -> t("極光紫 (Aurora)", "Aurora")
+        BgThemePreset.OBSIDIAN -> t("黑曜石 (Obsidian)", "Obsidian")
+        BgThemePreset.DEEP_OCEAN -> t("深海藍 (Deep Ocean)", "Deep Ocean")
+    }
+
+    fun glassBlurLabel(g: GlassBlurLevel): String = when (g) {
+        GlassBlurLevel.LOW -> t("低 (Low)", "Low")
+        GlassBlurLevel.MEDIUM -> t("中 (Medium)", "Medium")
+        GlassBlurLevel.HIGH -> t("高 (High)", "High")
+    }
+
+    fun chatFontSizeLabel(c: ChatFontSize): String = when (c) {
+        ChatFontSize.SMALL -> t("小 (Small)", "Small")
+        ChatFontSize.STANDARD -> t("標準 (Standard)", "Standard")
+        ChatFontSize.LARGE -> t("大 (Large)", "Large")
+    }
+
+    fun startupTabLabel(key: String): String = when (key) {
+        "MESSAGES" -> navMessages
+        "STATS" -> navStats
+        "TODOS" -> navTodos
+        "CHAT" -> navChat
+        "RULES" -> navRules
+        "SETTINGS" -> navSettings
+        else -> navMessages
+    }
 }

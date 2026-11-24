@@ -16,6 +16,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -54,6 +55,28 @@ object DesktopPalette {
         AccentPreset.ORANGE -> Color(0xFFFB923C)
         AccentPreset.PINK -> Color(0xFFF472B6)
         AccentPreset.CYAN -> Color(0xFF22D3EE)
+    }
+
+    fun parseHexColor(hex: String): Color? {
+        val clean = hex.trim().removePrefix("#")
+        if (clean.length != 6) return null
+        val rgb = clean.toLongOrNull(16) ?: return null
+        return Color(0xFF000000L or rgb)
+    }
+
+    fun resolveAccentColor(preset: AccentPreset, customHex: String): Color =
+        parseHexColor(customHex) ?: accentColor(preset)
+
+    fun glassSurface(level: GlassBlurLevel): Color = when (level) {
+        GlassBlurLevel.LOW -> Color(0xFF182032).copy(alpha = 0.88f)
+        GlassBlurLevel.MEDIUM -> Color(0xFF182032).copy(alpha = 0.74f)
+        GlassBlurLevel.HIGH -> Color(0xFF182032).copy(alpha = 0.56f)
+    }
+
+    fun glassSurfaceElevated(level: GlassBlurLevel): Color = when (level) {
+        GlassBlurLevel.LOW -> Color(0xFF202A40).copy(alpha = 0.92f)
+        GlassBlurLevel.MEDIUM -> Color(0xFF202A40).copy(alpha = 0.82f)
+        GlassBlurLevel.HIGH -> Color(0xFF202A40).copy(alpha = 0.66f)
     }
 
     fun bgGradientColors(preset: BgThemePreset): Pair<Color, Color> = when (preset) {
@@ -110,13 +133,17 @@ val DesktopSpringOffset = spring<IntOffset>(
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
-    containerColor: Color = DesktopPalette.GlassSurface,
+    containerColor: Color? = null,
+    cornerDp: Dp? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val s by DesktopSettingsStore.state.collectAsState()
+    val resolvedBg = containerColor ?: DesktopPalette.glassSurface(s.glassBlurLevel)
+    val resolvedCorner = cornerDp ?: s.messageCardCornerDp.dp
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
+        shape = RoundedCornerShape(resolvedCorner),
+        colors = CardDefaults.cardColors(containerColor = resolvedBg),
         border = BorderStroke(1.dp, DesktopPalette.GlassBorder),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         content = content

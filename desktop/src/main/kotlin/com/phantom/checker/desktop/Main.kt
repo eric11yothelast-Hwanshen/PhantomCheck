@@ -60,22 +60,24 @@ fun main(args: Array<String>) = application {
 
     // 生命週期拉升至 application 層，隱藏視窗至系統匣（含 --minimized）時 WSS 伺服器與 mDNS 廣播持續常駐
     LaunchedEffect(Unit) {
-        DesktopDiagnostics.info("App", "Started (traySupported=$traySupported, startMinimized=$startMinimized)")
-        server.start(
-            onErrorNotify = { errMsg ->
-                if (traySupported) {
-                    runCatching {
-                        trayState.sendNotification(
-                            Notification(
-                                title = DesktopStrings.statusServerError,
-                                message = errMsg,
-                                type = Notification.Type.Error
+        DesktopDiagnostics.info("App", "Started (traySupported=$traySupported, startMinimized=$startMinimized, autoConnect=${settings.autoConnectOnStartup})")
+        if (settings.autoConnectOnStartup) {
+            server.start(
+                onErrorNotify = { errMsg ->
+                    if (traySupported) {
+                        runCatching {
+                            trayState.sendNotification(
+                                Notification(
+                                    title = DesktopStrings.statusServerError,
+                                    message = errMsg,
+                                    type = Notification.Type.Error
+                                )
                             )
-                        )
+                        }
                     }
                 }
-            }
-        )
+            )
+        }
         if (!traySupported && settings.closeBehavior == CloseBehavior.MINIMIZE_TO_TRAY && !unsupportedNoticeShown) {
             unsupportedNoticeShown = true
             DesktopDiagnostics.warn("Tray", DesktopStrings.trayUnsupportedNotice)
@@ -95,7 +97,7 @@ fun main(args: Array<String>) = application {
         exitApplication()
     }
 
-    val trayTooltip = remember(serverState.connState, serverState.port, serverState.connectedPhones.size, serverState.lastError) {
+    val trayTooltip = remember(settings.language, serverState.connState, serverState.port, serverState.connectedPhones.size, serverState.lastError) {
         when (serverState.connState) {
             LinkConnState.ERROR -> "${DesktopStrings.appTitle} — ${DesktopStrings.statusServerError}: ${serverState.lastError.orEmpty()}"
             LinkConnState.CONNECTED -> "${DesktopStrings.appTitle} — ${DesktopStrings.statusConnected}${serverState.pairedDeviceName}"

@@ -18,9 +18,11 @@ enum class UiDensity(val key: String) { COMPACT("compact"), STANDARD("standard")
 enum class MessageCardStyle(val key: String) { CARD("card"), COMPACT_LIST("compact_list") }
 enum class MirrorDisplayMode(val key: String) { BANNER("banner"), NATIVE("native"), BOTH("both") }
 enum class BgThemePreset(val key: String) { MIDNIGHT("midnight"), AURORA("aurora"), OBSIDIAN("obsidian"), DEEP_OCEAN("deep_ocean") }
+enum class GlassBlurLevel(val key: String) { LOW("low"), MEDIUM("medium"), HIGH("high") }
+enum class ChatFontSize(val key: String, val multiplier: Float) { SMALL("small", 0.9f), STANDARD("standard", 1.0f), LARGE("large", 1.18f) }
 
 /**
- * #468 桌機端設定資料模型（10 系統設定＋8 自訂設定＋視窗位置記憶）。
+ * #468 / #479 桌機端設定資料模型（10 系統設定＋16 自訂設定＋視窗位置記憶）。
  */
 data class DesktopSettings(
     // 10 System settings
@@ -35,8 +37,9 @@ data class DesktopSettings(
     val pingIntervalSec: Int = 15, // 10 | 15 | 30
     val previewLength: Int = 200, // 90 | 200 | 500
     val serverPort: Int = com.phantom.checker.shared.LinkProtocol.DEFAULT_PORT,
-    // 8 Custom settings
+    // 16 Custom settings (original 8 + #479 new 8)
     val accentPreset: AccentPreset = AccentPreset.BLUE,
+    val customAccentHex: String = "", // #RRGGBB (optional override)
     val density: UiDensity = UiDensity.STANDARD,
     val fontScale: Float = 1.0f, // 0.9 | 1.0 | 1.1 | 1.25
     val sidebarWidthDp: Int = 244, // 210 | 244 | 280
@@ -46,6 +49,13 @@ data class DesktopSettings(
     val bgTheme: BgThemePreset = BgThemePreset.MIDNIGHT,
     val customBgImagePath: String = "",
     val animationsEnabled: Boolean = true,
+    val use24HourTime: Boolean = true,
+    val messageCardCornerDp: Int = 16, // 12 | 16 | 20 | 24
+    val glassBlurLevel: GlassBlurLevel = GlassBlurLevel.MEDIUM,
+    val chatFontSize: ChatFontSize = ChatFontSize.STANDARD,
+    val notificationSoundEnabled: Boolean = true,
+    val autoConnectOnStartup: Boolean = true,
+    val defaultStartupTab: String = "MESSAGES", // MESSAGES | STATS | TODOS | CHAT | RULES | SETTINGS
     // Window geometry persistence
     val windowX: Int = Int.MIN_VALUE,
     val windowY: Int = Int.MIN_VALUE,
@@ -75,6 +85,7 @@ object DesktopSettingsStore {
     const val CURRENT_DESKTOP_VERSION = "0.3.0"
     private const val WIN_RUN_REG_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
     private const val WIN_RUN_VALUE_NAME = "PhantomCheckDesktop"
+    private val validStartupTabs = setOf("MESSAGES", "STATS", "TODOS", "CHAT", "RULES", "SETTINGS")
 
     private val _state = MutableStateFlow(loadFromDisk())
     val state: StateFlow<DesktopSettings> = _state.asStateFlow()
@@ -83,7 +94,10 @@ object DesktopSettingsStore {
         val file = DesktopPaths.settingsPropertiesFile
         if (!file.exists()) return DesktopSettings()
         val p = Properties()
-        runCatching { file.inputStream().use { p.load(it) } }
+        runCatching { file.bufferedReader(Charsets.UTF_8).use { p.load(it) } }
+            .onFailure {
+                runCatching { file.inputStream().use { p.load(it) } }
+            }
         return DesktopSettings(
             language = p.getProperty("language", "auto"),
             autoStart = p.getProperty("autoStart", "false").toBoolean(),
@@ -97,6 +111,7 @@ object DesktopSettingsStore {
             previewLength = p.getProperty("previewLength", "200").toIntOrNull()?.takeIf { it in listOf(90, 200, 500) } ?: 200,
             serverPort = p.getProperty("serverPort", com.phantom.checker.shared.LinkProtocol.DEFAULT_PORT.toString()).toIntOrNull()?.coerceIn(1024, 65535) ?: com.phantom.checker.shared.LinkProtocol.DEFAULT_PORT,
             accentPreset = AccentPreset.entries.firstOrNull { it.key == p.getProperty("accentPreset", "blue") } ?: AccentPreset.BLUE,
+            customAccentHex = p.getProperty("customAccentHex", "").trim(),
             density = UiDensity.entries.firstOrNull { it.key == p.getProperty("density", "standard") } ?: UiDensity.STANDARD,
             fontScale = p.getProperty("fontScale", "1.0").toFloatOrNull()?.coerceIn(0.9f, 1.25f) ?: 1.0f,
             sidebarWidthDp = p.getProperty("sidebarWidthDp", "244").toIntOrNull()?.coerceIn(190, 320) ?: 244,
@@ -106,10 +121,17 @@ object DesktopSettingsStore {
             bgTheme = BgThemePreset.entries.firstOrNull { it.key == p.getProperty("bgTheme", "midnight") } ?: BgThemePreset.MIDNIGHT,
             customBgImagePath = p.getProperty("customBgImagePath", ""),
             animationsEnabled = p.getProperty("animationsEnabled", "true").toBoolean(),
+            use24HourTime = p.getProperty("use24HourTime", "true").toBoolean(),
+            messageCardCornerDp = p.getProperty("messageCardCornerDp", "16").toIntOrNull()?.takeIf { it in listOf(12, 16, 20, 24) } ?: 16,
+            glassBlurLevel = GlassBlurLevel.entries.firstOrNull { it.key == p.getProperty("glassBlurLevel", "medium") } ?: GlassBlurLevel.MEDIUM,
+            chatFontSize = ChatFontSize.entries.firstOrNull { it.key == p.getProperty("chatFontSize", "standard") } ?: ChatFontSize.STANDARD,
+            notificationSoundEnabled = p.getProperty("notificationSoundEnabled", "true").toBoolean(),
+            autoConnectOnStartup = p.getProperty("autoConnectOnStartup", "true").toBoolean(),
+            defaultStartupTab = p.getProperty("defaultStartupTab", "MESSAGES").takeIf { it in validStartupTabs } ?: "MESSAGES",
             windowX = p.getProperty("windowX", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowY = p.getProperty("windowY", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
-            windowWidth = p.getProperty("windowWidth", "1280").toIntOrNull()?.coerceAtLeast(1180) ?: 1280,
-            windowHeight = p.getProperty("windowHeight", "820").toIntOrNull()?.coerceAtLeast(760) ?: 820
+            windowWidth = p.getProperty("windowWidth", "1280").toIntOrNull()?.coerceAtLeast(1024) ?: 1280,
+            windowHeight = p.getProperty("windowHeight", "820").toIntOrNull()?.coerceAtLeast(680) ?: 820
         )
     }
 
@@ -117,6 +139,7 @@ object DesktopSettingsStore {
     fun update(transform: (DesktopSettings) -> DesktopSettings) {
         val next = transform(_state.value)
         _state.value = next
+        DesktopStrings.syncLanguage(next.language)
         saveToDisk(next)
     }
 
@@ -137,6 +160,7 @@ object DesktopSettingsStore {
             p.setProperty("previewLength", s.previewLength.toString())
             p.setProperty("serverPort", s.serverPort.toString())
             p.setProperty("accentPreset", s.accentPreset.key)
+            p.setProperty("customAccentHex", s.customAccentHex)
             p.setProperty("density", s.density.key)
             p.setProperty("fontScale", s.fontScale.toString())
             p.setProperty("sidebarWidthDp", s.sidebarWidthDp.toString())
@@ -146,17 +170,27 @@ object DesktopSettingsStore {
             p.setProperty("bgTheme", s.bgTheme.key)
             p.setProperty("customBgImagePath", s.customBgImagePath)
             p.setProperty("animationsEnabled", s.animationsEnabled.toString())
+            p.setProperty("use24HourTime", s.use24HourTime.toString())
+            p.setProperty("messageCardCornerDp", s.messageCardCornerDp.toString())
+            p.setProperty("glassBlurLevel", s.glassBlurLevel.key)
+            p.setProperty("chatFontSize", s.chatFontSize.key)
+            p.setProperty("notificationSoundEnabled", s.notificationSoundEnabled.toString())
+            p.setProperty("autoConnectOnStartup", s.autoConnectOnStartup.toString())
+            p.setProperty("defaultStartupTab", s.defaultStartupTab)
             p.setProperty("windowX", s.windowX.toString())
             p.setProperty("windowY", s.windowY.toString())
             p.setProperty("windowWidth", s.windowWidth.toString())
             p.setProperty("windowHeight", s.windowHeight.toString())
-            file.outputStream().use { p.store(it, "PhantomCheck Desktop Settings") }
+            file.bufferedWriter(Charsets.UTF_8).use { p.store(it, "PhantomCheck Desktop Settings") }
+        }.onFailure { err ->
+            DesktopDiagnostics.error("Settings", "Failed saving settings: ${err.javaClass.simpleName}: ${err.message}")
         }
     }
 
     fun resetSettingsToDefaults() {
         val defaults = DesktopSettings()
         _state.value = defaults
+        DesktopStrings.syncLanguage(defaults.language)
         saveToDisk(defaults)
         DesktopDiagnostics.info("Settings", "Settings reset to defaults")
     }

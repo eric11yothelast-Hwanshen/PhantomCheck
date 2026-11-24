@@ -115,14 +115,19 @@ fun DesktopApp(
     val uiState by server.state.collectAsState()
     val mdnsStatus by server.mdnsStatus.collectAsState()
 
-    val accentColor = remember(settings.accentPreset) { DesktopPalette.accentColor(settings.accentPreset) }
+    val accentColor = remember(settings.accentPreset, settings.customAccentHex) {
+        DesktopPalette.resolveAccentColor(settings.accentPreset, settings.customAccentHex)
+    }
     val (bgTop, bgBottom) = remember(settings.bgTheme) { DesktopPalette.bgGradientColors(settings.bgTheme) }
     val customBgBitmap = remember(settings.customBgImagePath) { DesktopPalette.loadBackgroundImage(settings.customBgImagePath) }
     val cardPad = DesktopPalette.cardPadding(settings.density)
     val listSpace = DesktopPalette.listSpacing(settings.density)
     val typography = remember(settings.fontScale) { DesktopPalette.typography(settings.fontScale) }
 
-    var activeTab by remember { mutableStateOf(DesktopTab.MESSAGES) }
+    var activeTab by remember {
+        val initial = runCatching { DesktopTab.valueOf(settings.defaultStartupTab) }.getOrDefault(DesktopTab.MESSAGES)
+        mutableStateOf(if (uiState.isPaired) initial else DesktopTab.SETTINGS)
+    }
 
     // Messages Master-Detail state
     var msgFilter by remember { mutableStateOf("all") }
@@ -296,6 +301,9 @@ fun DesktopApp(
                         ) {
                             onMirrorNotification(newest.sender, preview)
                         }
+                        if (curSettings.notificationSoundEnabled && !curSettings.isInDndWindow()) {
+                            runCatching { Toolkit.getDefaultToolkit().beep() }
+                        }
                     }
                 }
                 LinkMsgType.MESSAGE_READ_SYNC -> {
@@ -433,7 +441,9 @@ fun DesktopApp(
         }
     }
 
-    val timeFmt = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+    val timeFmt = remember(settings.use24HourTime) {
+        SimpleDateFormat(if (settings.use24HourTime) "HH:mm:ss" else "hh:mm:ss a", Locale.getDefault())
+    }
 
     val pulseTransition = rememberInfiniteTransition(label = "conn_pulse")
     val pulseAlpha by pulseTransition.animateFloat(
@@ -783,15 +793,20 @@ fun DesktopApp(
                                                         LazyColumn(verticalArrangement = Arrangement.spacedBy(if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST) 4.dp else listSpace)) {
                                                             items(visibleMessages, key = { it.id }) { m ->
                                                                 val isSelected = m.id == selectedMsgId
-                                                                val cardBg = if (isSelected) accentColor.copy(alpha = 0.16f) else DesktopPalette.GlassSurface
+                                                                val cardBg = if (isSelected) accentColor.copy(alpha = 0.16f) else DesktopPalette.glassSurface(settings.glassBlurLevel)
+                                                                val corner = if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST) {
+                                                                    (settings.messageCardCornerDp - 4).coerceAtLeast(8).dp
+                                                                } else {
+                                                                    settings.messageCardCornerDp.dp
+                                                                }
                                                                 val cardModifier = Modifier
                                                                     .fillMaxWidth()
-                                                                    .clip(RoundedCornerShape(if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST) 10.dp else 16.dp))
+                                                                    .clip(RoundedCornerShape(corner))
                                                                     .background(cardBg)
                                                                     .border(
                                                                         1.dp,
                                                                         if (isSelected) accentColor.copy(alpha = 0.5f) else DesktopPalette.GlassBorder,
-                                                                        RoundedCornerShape(if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST) 10.dp else 16.dp)
+                                                                        RoundedCornerShape(corner)
                                                                     )
                                                                     .clickable { selectedMsgId = m.id }
                                                                     .padding(if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST) 10.dp else cardPad)
@@ -1146,17 +1161,23 @@ fun DesktopApp(
                                                                 modifier = Modifier.fillMaxWidth(),
                                                                 horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
                                                             ) {
+                                                                val chatCorner = settings.messageCardCornerDp.dp
+                                                                val chatTextStyle = MaterialTheme.typography.bodyMedium.copy(
+                                                                    fontSize = MaterialTheme.typography.bodyMedium.fontSize * settings.chatFontSize.multiplier
+                                                                )
                                                                 Column(
                                                                     modifier = Modifier
-                                                                        .clip(RoundedCornerShape(16.dp))
-                                                                        .background(if (isUser) accentColor.copy(alpha = 0.22f) else DesktopPalette.GlassSurface)
-                                                                        .border(1.dp, if (isUser) accentColor.copy(alpha = 0.35f) else DesktopPalette.GlassBorder, RoundedCornerShape(16.dp))
+                                                                        .clip(RoundedCornerShape(chatCorner))
+                                                                        .background(if (isUser) accentColor.copy(alpha = 0.22f) else DesktopPalette.glassSurface(settings.glassBlurLevel))
+                                                                        .border(1.dp, if (isUser) accentColor.copy(alpha = 0.35f) else DesktopPalette.GlassBorder, RoundedCornerShape(chatCorner))
                                                                         .padding(horizontal = 14.dp, vertical = 12.dp)
                                                                 ) {
                                                                     if (isUser) {
-                                                                        Text(b.content, style = MaterialTheme.typography.bodyMedium, color = DesktopPalette.TextPrimary)
+                                                                        Text(b.content, style = chatTextStyle, color = DesktopPalette.TextPrimary)
                                                                     } else {
-                                                                        DesktopMarkdownText(markdown = b.content, accentColor = accentColor)
+                                                                        androidx.compose.material3.ProvideTextStyle(chatTextStyle) {
+                                                                            DesktopMarkdownText(markdown = b.content, accentColor = accentColor)
+                                                                        }
                                                                         Row(modifier = Modifier.align(Alignment.End)) {
                                                                             TextButton(onClick = { copyToClipboard(b.content) }) {
                                                                                 Text(DesktopStrings.chatCopy, style = MaterialTheme.typography.labelSmall)

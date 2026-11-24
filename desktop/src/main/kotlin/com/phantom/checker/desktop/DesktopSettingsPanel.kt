@@ -138,7 +138,7 @@ fun DesktopSettingsCenter(
             FilterChip(
                 selected = subTab == SettingsSubTab.CUSTOMIZE,
                 onClick = { subTab = SettingsSubTab.CUSTOMIZE },
-                label = { Text(DesktopStrings.settingsTabCustom) }
+                label = { Text(DesktopStrings.settingsTabCustom16) }
             )
             FilterChip(
                 selected = subTab == SettingsSubTab.ABOUT,
@@ -361,8 +361,9 @@ fun DesktopSettingsCenter(
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(DesktopStrings.sysLangTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                listOf("auto" to "Auto", "zh-TW" to "繁體中文", "en" to "English").forEach { (code, label) ->
+                            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf("auto" to DesktopStrings.langAuto, "zh-TW" to "繁體中文", "en" to "English").forEach { (code, label) ->
                                     FilterChip(
                                         selected = settings.language == code,
                                         onClick = { DesktopSettingsStore.update { it.copy(language = code) } },
@@ -382,14 +383,15 @@ fun DesktopSettingsCenter(
                                     checked = settings.autoStart,
                                     onCheckedChange = { enable ->
                                         DesktopSettingsStore.applyWindowsAutoStart(enable)
-                                            .onSuccess { onFeedback("Auto-start: $it") }
+                                            .onSuccess { onFeedback(DesktopStrings.feedbackAutoStart(enable)) }
                                             .onFailure { onFeedback(it.message ?: it.javaClass.simpleName) }
                                     }
                                 )
                             }
                             HorizontalDivider(color = DesktopPalette.GlassBorder)
                             Text(DesktopStrings.sysCloseBehaviorTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 FilterChip(
                                     selected = settings.closeBehavior == CloseBehavior.MINIMIZE_TO_TRAY,
                                     onClick = { DesktopSettingsStore.update { it.copy(closeBehavior = CloseBehavior.MINIMIZE_TO_TRAY) } },
@@ -404,7 +406,7 @@ fun DesktopSettingsCenter(
                         }
                     }
 
-                    // 4. Native Notifications & DND
+                    // 4. Native Notifications & DND (with Start/End Hour Picker supporting overnight window)
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(DesktopStrings.sysNativeNotifTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
@@ -415,12 +417,49 @@ fun DesktopSettingsCenter(
                                     onCheckedChange = { v -> DesktopSettingsStore.update { it.copy(nativeNotifications = v) } }
                                 )
                             }
+                            val crossDayTag = if (settings.dndStartHour > settings.dndEndHour) " ${DesktopStrings.dndCrossDayHint}" else ""
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("${DesktopStrings.enableDnd} (${"%02d:00–%02d:00".format(settings.dndStartHour, settings.dndEndHour)})", style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextSecondary)
+                                Text(
+                                    text = "${DesktopStrings.enableDnd} (${"%02d:00–%02d:00".format(settings.dndStartHour, settings.dndEndHour)}$crossDayTag)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = DesktopPalette.TextSecondary
+                                )
                                 Switch(
                                     checked = settings.dndEnabled,
                                     onCheckedChange = { v -> DesktopSettingsStore.update { it.copy(dndEnabled = v) } }
                                 )
+                            }
+                            if (settings.dndEnabled) {
+                                @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                                androidx.compose.foundation.layout.FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(DesktopStrings.dndStartLabel, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
+                                        SpringOutlinedButton(
+                                            onClick = { DesktopSettingsStore.update { it.copy(dndStartHour = (it.dndStartHour + 23) % 24) } },
+                                            animationsEnabled = settings.animationsEnabled
+                                        ) { Text("-") }
+                                        Text("%02d:00".format(settings.dndStartHour), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = DesktopPalette.TextPrimary)
+                                        SpringOutlinedButton(
+                                            onClick = { DesktopSettingsStore.update { it.copy(dndStartHour = (it.dndStartHour + 1) % 24) } },
+                                            animationsEnabled = settings.animationsEnabled
+                                        ) { Text("+") }
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(DesktopStrings.dndEndLabel, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
+                                        SpringOutlinedButton(
+                                            onClick = { DesktopSettingsStore.update { it.copy(dndEndHour = (it.dndEndHour + 23) % 24) } },
+                                            animationsEnabled = settings.animationsEnabled
+                                        ) { Text("-") }
+                                        Text("%02d:00".format(settings.dndEndHour), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = DesktopPalette.TextPrimary)
+                                        SpringOutlinedButton(
+                                            onClick = { DesktopSettingsStore.update { it.copy(dndEndHour = (it.dndEndHour + 1) % 24) } },
+                                            animationsEnabled = settings.animationsEnabled
+                                        ) { Text("+") }
+                                    }
+                                }
                             }
                         }
                     }
@@ -470,11 +509,11 @@ fun DesktopSettingsCenter(
                             Text(DesktopPaths.configDir.absolutePath, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, color = DesktopPalette.TextMuted)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 SpringOutlinedButton(onClick = {
-                                    DesktopDiagnostics.openConfigFolder().onFailure { onFeedback(it.message ?: "Open failed") }
+                                    DesktopDiagnostics.openConfigFolder().onFailure { onFeedback(it.message ?: DesktopStrings.feedbackOpenFailed) }
                                 }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.openConfigFolder) }
                                 SpringOutlinedButton(onClick = {
                                     DesktopSettingsStore.resetSettingsToDefaults()
-                                    onFeedback("Settings reset")
+                                    onFeedback(DesktopStrings.feedbackSettingsReset)
                                 }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.resetSettingsBtn) }
                             }
                             HorizontalDivider(color = DesktopPalette.GlassBorder)
@@ -493,12 +532,12 @@ fun DesktopSettingsCenter(
                             Text(DesktopStrings.sysDiagTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 SpringOutlinedButton(onClick = {
-                                    DesktopDiagnostics.openLogsFolder().onFailure { onFeedback(it.message ?: "Open failed") }
+                                    DesktopDiagnostics.openLogsFolder().onFailure { onFeedback(it.message ?: DesktopStrings.feedbackOpenFailed) }
                                 }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.openLogsFolder) }
                                 SpringOutlinedButton(onClick = {
                                     DesktopDiagnostics.exportDiagnosticBundle()
-                                        .onSuccess { onFeedback("Exported: ${it.absolutePath}") }
-                                        .onFailure { onFeedback(it.message ?: "Export failed") }
+                                        .onSuccess { onFeedback(DesktopStrings.feedbackExported(it.absolutePath)) }
+                                        .onFailure { onFeedback(it.message ?: DesktopStrings.feedbackExportFailed) }
                                 }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.exportDiagBtn) }
                             }
                         }
@@ -506,48 +545,132 @@ fun DesktopSettingsCenter(
                 }
 
                 SettingsSubTab.CUSTOMIZE -> {
-                    // 1. Accent Color (6 presets)
+                    var customHexInput by remember(settings.customAccentHex) { mutableStateOf(settings.customAccentHex) }
+                    val hexInvalid = customHexInput.isNotBlank() && DesktopPalette.parseHexColor(customHexInput) == null
+
+                    // 1. Accent Color (6 presets) + 9. Custom Accent HEX
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(DesktopStrings.custAccentTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 AccentPreset.entries.forEach { preset ->
                                     val c = DesktopPalette.accentColor(preset)
-                                    val selected = settings.accentPreset == preset
+                                    val selected = settings.accentPreset == preset && settings.customAccentHex.isBlank()
                                     Box(
                                         modifier = Modifier
                                             .size(if (selected) 34.dp else 28.dp)
                                             .clip(CircleShape)
                                             .background(c)
                                             .border(if (selected) 2.5.dp else 1.dp, if (selected) Color.White else DesktopPalette.GlassBorder, CircleShape)
-                                            .clickable { DesktopSettingsStore.update { it.copy(accentPreset = preset) } }
+                                            .clickable {
+                                                customHexInput = ""
+                                                DesktopSettingsStore.update { it.copy(accentPreset = preset, customAccentHex = "") }
+                                            }
                                     )
                                 }
+                            }
+                            HorizontalDivider(color = DesktopPalette.GlassBorder)
+                            Text(DesktopStrings.custCustomHexTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = customHexInput,
+                                    onValueChange = { customHexInput = it.take(7) },
+                                    label = { Text(DesktopStrings.custCustomHexHint) },
+                                    isError = hexInvalid,
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                SpringButton(
+                                    enabled = customHexInput.isBlank() || !hexInvalid,
+                                    onClick = {
+                                        val normalized = if (customHexInput.isBlank()) "" else {
+                                            val raw = customHexInput.trim().removePrefix("#").uppercase()
+                                            "#$raw"
+                                        }
+                                        DesktopSettingsStore.update { it.copy(customAccentHex = normalized) }
+                                    },
+                                    animationsEnabled = settings.animationsEnabled,
+                                    containerColor = accentColor
+                                ) { Text(DesktopStrings.todoSave) }
+                            }
+                            if (hexInvalid) {
+                                Text(DesktopStrings.custCustomHexInvalid, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.GlassError)
                             }
                         }
                     }
 
-                    // 2. Density + 3. Font Scale
+                    // 2. Density + 3. Font Scale + 10. Time Format + 11. Card Corner + 12. Glass Blur + 13. Chat Font Size
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(DesktopStrings.custDensityTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 UiDensity.entries.forEach { d ->
                                     FilterChip(
                                         selected = settings.density == d,
                                         onClick = { DesktopSettingsStore.update { it.copy(density = d) } },
-                                        label = { Text(d.name) }
+                                        label = { Text(DesktopStrings.densityLabel(d)) }
                                     )
                                 }
                             }
                             HorizontalDivider(color = DesktopPalette.GlassBorder)
                             Text(DesktopStrings.custFontScaleTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 listOf(0.9f to "90%", 1.0f to "100%", 1.1f to "110%", 1.25f to "125%").forEach { (sc, lbl) ->
                                     FilterChip(
                                         selected = kotlin.math.abs(settings.fontScale - sc) < 0.01f,
                                         onClick = { DesktopSettingsStore.update { it.copy(fontScale = sc) } },
                                         label = { Text(lbl) }
+                                    )
+                                }
+                            }
+                            HorizontalDivider(color = DesktopPalette.GlassBorder)
+                            Text(DesktopStrings.custTimeFormatTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = settings.use24HourTime,
+                                    onClick = { DesktopSettingsStore.update { it.copy(use24HourTime = true) } },
+                                    label = { Text(DesktopStrings.time24h) }
+                                )
+                                FilterChip(
+                                    selected = !settings.use24HourTime,
+                                    onClick = { DesktopSettingsStore.update { it.copy(use24HourTime = false) } },
+                                    label = { Text(DesktopStrings.time12h) }
+                                )
+                            }
+                            HorizontalDivider(color = DesktopPalette.GlassBorder)
+                            Text(DesktopStrings.custCardCornerTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(12, 16, 20, 24).forEach { dpVal ->
+                                    FilterChip(
+                                        selected = settings.messageCardCornerDp == dpVal,
+                                        onClick = { DesktopSettingsStore.update { it.copy(messageCardCornerDp = dpVal) } },
+                                        label = { Text("${dpVal}dp") }
+                                    )
+                                }
+                            }
+                            HorizontalDivider(color = DesktopPalette.GlassBorder)
+                            Text(DesktopStrings.custGlassBlurTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                GlassBlurLevel.entries.forEach { lvl ->
+                                    FilterChip(
+                                        selected = settings.glassBlurLevel == lvl,
+                                        onClick = { DesktopSettingsStore.update { it.copy(glassBlurLevel = lvl) } },
+                                        label = { Text(DesktopStrings.glassBlurLabel(lvl)) }
+                                    )
+                                }
+                            }
+                            HorizontalDivider(color = DesktopPalette.GlassBorder)
+                            Text(DesktopStrings.custChatFontSizeTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                ChatFontSize.entries.forEach { sz ->
+                                    FilterChip(
+                                        selected = settings.chatFontSize == sz,
+                                        onClick = { DesktopSettingsStore.update { it.copy(chatFontSize = sz) } },
+                                        label = { Text(DesktopStrings.chatFontSizeLabel(sz)) }
                                     )
                                 }
                             }
@@ -575,39 +698,42 @@ fun DesktopSettingsCenter(
                             }
                             HorizontalDivider(color = DesktopPalette.GlassBorder)
                             Text(DesktopStrings.custCardStyleTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 MessageCardStyle.entries.forEach { st ->
                                     FilterChip(
                                         selected = settings.messageCardStyle == st,
                                         onClick = { DesktopSettingsStore.update { it.copy(messageCardStyle = st) } },
-                                        label = { Text(st.name) }
+                                        label = { Text(DesktopStrings.cardStyleLabel(st)) }
                                     )
                                 }
                             }
                             HorizontalDivider(color = DesktopPalette.GlassBorder)
                             Text(DesktopStrings.custMirrorModeTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 MirrorDisplayMode.entries.forEach { mode ->
                                     FilterChip(
                                         selected = settings.mirrorMode == mode,
                                         onClick = { DesktopSettingsStore.update { it.copy(mirrorMode = mode) } },
-                                        label = { Text(mode.name) }
+                                        label = { Text(DesktopStrings.mirrorModeLabel(mode)) }
                                     )
                                 }
                             }
                         }
                     }
 
-                    // 7. Background Theme (4 Gradients + Custom Image) + 8. Animations
+                    // 7. Background Theme + 8. Animations + 14. Notif Sound + 15. Auto-Connect + 16. Default Startup Tab
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(DesktopStrings.custBgThemeTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 BgThemePreset.entries.forEach { bg ->
                                     FilterChip(
                                         selected = settings.bgTheme == bg,
                                         onClick = { DesktopSettingsStore.update { it.copy(bgTheme = bg) } },
-                                        label = { Text(bg.name) }
+                                        label = { Text(DesktopStrings.bgThemeLabel(bg)) }
                                     )
                                 }
                             }
@@ -636,11 +762,39 @@ fun DesktopSettingsCenter(
                             }
                             HorizontalDivider(color = DesktopPalette.GlassBorder)
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text(DesktopStrings.custAnimTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                                Text(DesktopStrings.custAnimTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary, modifier = Modifier.weight(1f))
                                 Switch(
                                     checked = settings.animationsEnabled,
                                     onCheckedChange = { a -> DesktopSettingsStore.update { it.copy(animationsEnabled = a) } }
                                 )
+                            }
+                            HorizontalDivider(color = DesktopPalette.GlassBorder)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(DesktopStrings.custNotifSoundTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary, modifier = Modifier.weight(1f))
+                                Switch(
+                                    checked = settings.notificationSoundEnabled,
+                                    onCheckedChange = { v -> DesktopSettingsStore.update { it.copy(notificationSoundEnabled = v) } }
+                                )
+                            }
+                            HorizontalDivider(color = DesktopPalette.GlassBorder)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(DesktopStrings.custAutoConnectTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary, modifier = Modifier.weight(1f))
+                                Switch(
+                                    checked = settings.autoConnectOnStartup,
+                                    onCheckedChange = { v -> DesktopSettingsStore.update { it.copy(autoConnectOnStartup = v) } }
+                                )
+                            }
+                            HorizontalDivider(color = DesktopPalette.GlassBorder)
+                            Text(DesktopStrings.custDefaultTabTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                listOf("MESSAGES", "STATS", "TODOS", "CHAT", "RULES", "SETTINGS").forEach { tabKey ->
+                                    FilterChip(
+                                        selected = settings.defaultStartupTab == tabKey,
+                                        onClick = { DesktopSettingsStore.update { it.copy(defaultStartupTab = tabKey) } },
+                                        label = { Text(DesktopStrings.startupTabLabel(tabKey)) }
+                                    )
+                                }
                             }
                         }
                     }
