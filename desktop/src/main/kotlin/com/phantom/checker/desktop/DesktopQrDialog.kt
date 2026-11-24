@@ -63,6 +63,7 @@ fun DesktopQrPairingDialog(
     animationsEnabled: Boolean,
     onDismiss: () -> Unit
 ) {
+    val tokens = LocalDesktopTokens.current
     val gson = remember { Gson() }
     val ips = remember(uiState.localIps) {
         uiState.localIps.ifEmpty { DesktopMdnsBroadcaster.listSiteLocalIpv4Addresses() }
@@ -105,7 +106,7 @@ fun DesktopQrPairingDialog(
         onDismissRequest = onDismiss,
         containerColor = containerColor,
         title = {
-            Text(DesktopStrings.qrDialogTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+            Text(DesktopStrings.qrDialogTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
         },
         text = {
             Column(
@@ -118,7 +119,7 @@ fun DesktopQrPairingDialog(
                 Text(
                     text = DesktopStrings.qrDialogHint,
                     style = MaterialTheme.typography.bodySmall,
-                    color = DesktopPalette.TextSecondary,
+                    color = tokens.textSecondary,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -126,7 +127,7 @@ fun DesktopQrPairingDialog(
                     Text(
                         text = DesktopStrings.qrSelectNicLabel,
                         style = MaterialTheme.typography.labelSmall,
-                        color = DesktopPalette.TextMuted,
+                        color = tokens.textMuted,
                         modifier = Modifier.fillMaxWidth()
                     )
                     FlowRow(
@@ -155,7 +156,7 @@ fun DesktopQrPairingDialog(
                     modifier = Modifier
                         .size(224.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(if (qrBitmap != null) Color.White else DesktopPalette.GlassSurfaceElevated)
+                        .background(if (qrBitmap != null) Color.White else tokens.surfaceElevated)
                         .padding(10.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -189,7 +190,7 @@ fun DesktopQrPairingDialog(
                         DesktopStrings.pairCodeExpired
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (isExpired) DesktopPalette.GlassError else DesktopPalette.TextSecondary
+                    color = if (isExpired) DesktopPalette.GlassError else tokens.textSecondary
                 )
 
                 if (selectedIp.isNotBlank()) {
@@ -197,7 +198,7 @@ fun DesktopQrPairingDialog(
                         text = "$selectedIp:${uiState.port} · ${DesktopStrings.fingerprintPrefix}${uiState.certFingerprint.take(8)}…",
                         style = MaterialTheme.typography.labelSmall,
                         fontFamily = FontFamily.Monospace,
-                        color = DesktopPalette.TextMuted
+                        color = tokens.textMuted
                     )
                 }
 

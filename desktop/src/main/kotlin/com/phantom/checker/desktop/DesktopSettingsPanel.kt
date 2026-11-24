@@ -1,5 +1,6 @@
 package com.phantom.checker.desktop
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,6 +21,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,7 +41,7 @@ import kotlinx.coroutines.launch
 private enum class SettingsSubTab { CONNECTION, SYSTEM, CUSTOMIZE, ABOUT }
 
 /**
- * #468 / #478 桌面端設定中心（連線配對＋系統設定＋介面自訂＋關於頁）。
+ * #468 / #478 / #488 桌面端設定中心（連線配對＋系統設定＋介面自訂與深淺/動畫＋關於頁）。
  */
 @Composable
 fun DesktopSettingsCenter(
@@ -51,8 +53,13 @@ fun DesktopSettingsCenter(
     onUpdateAvailable: (DesktopUpdateOutcome.UpdateAvailable) -> Unit = {},
     onFeedback: (String) -> Unit
 ) {
+    val tokens = LocalDesktopTokens.current
     val scope = rememberCoroutineScope()
     var subTab by remember { mutableStateOf(SettingsSubTab.CONNECTION) }
+    val connScroll = rememberScrollState()
+    val sysScroll = rememberScrollState()
+    val custScroll = rememberScrollState()
+    val aboutScroll = rememberScrollState()
     var checkingUpdate by remember { mutableStateOf(false) }
     var updateStatus by remember { mutableStateOf<String?>(null) }
     var customBgInput by remember(settings.customBgImagePath) { mutableStateOf(settings.customBgImagePath) }
@@ -168,18 +175,26 @@ fun DesktopSettingsCenter(
                 label = { Text(DesktopStrings.settingsTabAbout) }
             )
         }
-        Text(DesktopStrings.shortcutsHint, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
+        Text(DesktopStrings.shortcutsHint, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
 
-        Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            when (subTab) {
+        val effectiveTransition = if (settings.animationsEnabled) settings.pageTransitionStyle else PageTransitionStyle.NONE
+        val renderSubTab: @Composable (SettingsSubTab) -> Unit = { activeSub ->
+            val scrollState = when (activeSub) {
+                SettingsSubTab.CONNECTION -> connScroll
+                SettingsSubTab.SYSTEM -> sysScroll
+                SettingsSubTab.CUSTOMIZE -> custScroll
+                SettingsSubTab.ABOUT -> aboutScroll
+            }
+            Column(
+                modifier = Modifier.fillMaxSize().verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+            when (activeSub) {
                 SettingsSubTab.CONNECTION -> {
                     // 1. Desktop WSS Server Status + Port + mDNS + Firewall hint
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(DesktopStrings.serverStatusTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                            Text(DesktopStrings.serverStatusTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
                             Text(
                                 text = when (uiState.connState) {
                                     LinkConnState.CONNECTED, LinkConnState.WAITING_FOR_PHONE ->
@@ -190,14 +205,14 @@ fun DesktopSettingsCenter(
                                         DesktopStrings.statusServerStopped
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = if (uiState.connState == LinkConnState.ERROR) DesktopPalette.GlassError else DesktopPalette.TextPrimary
+                                color = if (uiState.connState == LinkConnState.ERROR) DesktopPalette.GlassError else tokens.textPrimary
                             )
                             if (uiState.certFingerprint.isNotBlank()) {
                                 Text(
                                     text = "${DesktopStrings.fingerprintPrefix}${uiState.certFingerprint.take(16)}…",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = FontFamily.Monospace,
-                                    color = DesktopPalette.TextMuted
+                                    color = tokens.textMuted
                                 )
                             }
                             Text(
@@ -216,7 +231,7 @@ fun DesktopSettingsCenter(
                                     text = "${DesktopStrings.serverLanIpsLabel}: ${uiState.localIps.joinToString("  |  ") { "$it:${uiState.port}" }}",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontFamily = FontFamily.Monospace,
-                                    color = DesktopPalette.TextSecondary
+                                    color = tokens.textSecondary
                                 )
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -249,23 +264,23 @@ fun DesktopSettingsCenter(
                                     ) { Text(DesktopStrings.disconnectBtn) }
                                 }
                             }
-                            Text(DesktopStrings.serverFirewallHint, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
+                            Text(DesktopStrings.serverFirewallHint, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
                         }
                     }
 
                     // 1.5 #487 Windows Firewall Self-Check & One-Click Allow
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(DesktopStrings.firewallSectionTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                            Text(DesktopStrings.firewallSectionTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
                             val fw = firewallResult
                             if (fw == null) {
                                 Text(
                                     text = if (checkingFirewall) DesktopStrings.firewallChecking else DesktopStrings.firewallSafetyNote,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = DesktopPalette.TextSecondary
+                                    color = tokens.textSecondary
                                 )
                             } else if (!fw.isWindows) {
-                                Text(DesktopStrings.firewallNonWindows, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextSecondary)
+                                Text(DesktopStrings.firewallNonWindows, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
                             } else {
                                 if (!fw.error.isNullOrBlank()) {
                                     Text(fw.error, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.GlassError)
@@ -278,7 +293,7 @@ fun DesktopSettingsCenter(
                                     Text(
                                         text = if (fw.programRulePresent) DesktopStrings.firewallProgRuleOk else DesktopStrings.firewallProgRuleMissing,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (fw.programRulePresent) DesktopPalette.GlassSuccess else DesktopPalette.TextMuted
+                                        color = if (fw.programRulePresent) DesktopPalette.GlassSuccess else tokens.textMuted
                                     )
                                     if (fw.profiles.isNotEmpty()) {
                                         val profText = fw.profiles.joinToString("  |  ") { p ->
@@ -289,7 +304,7 @@ fun DesktopSettingsCenter(
                                             text = "${DesktopStrings.firewallProfilesLabel} $profText",
                                             style = MaterialTheme.typography.labelSmall,
                                             fontFamily = FontFamily.Monospace,
-                                            color = DesktopPalette.TextSecondary
+                                            color = tokens.textSecondary
                                         )
                                     }
                                     if (fw.hasPublicProfile && !fw.portRulePresent) {
@@ -333,7 +348,7 @@ fun DesktopSettingsCenter(
                                     }
                                 }
                             }
-                            Text(DesktopStrings.firewallSafetyNote, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
+                            Text(DesktopStrings.firewallSafetyNote, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
                         }
                     }
 
@@ -346,7 +361,7 @@ fun DesktopSettingsCenter(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(DesktopStrings.pairNewPhoneTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary, modifier = Modifier.weight(1f))
+                                Text(DesktopStrings.pairNewPhoneTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary, modifier = Modifier.weight(1f))
                                 SpringButton(
                                     enabled = uiState.isServerRunning && uiState.certFingerprint.length == 64,
                                     onClick = { showQrDialog = true },
@@ -369,7 +384,7 @@ fun DesktopSettingsCenter(
                                         DesktopStrings.pairCodeExpired
                                     },
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = if (remSec > 0L) DesktopPalette.TextSecondary else DesktopPalette.GlassError
+                                    color = if (remSec > 0L) tokens.textSecondary else DesktopPalette.GlassError
                                 )
                                 Spacer(Modifier.weight(1f))
                                 SpringOutlinedButton(
@@ -395,7 +410,7 @@ fun DesktopSettingsCenter(
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text(DesktopStrings.pairedPhonesTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                                Text(DesktopStrings.pairedPhonesTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
                                 if (uiState.pairedPhones.isNotEmpty()) {
                                     SpringOutlinedButton(
                                         onClick = { server.clearAllPairings() },
@@ -404,23 +419,23 @@ fun DesktopSettingsCenter(
                                 }
                             }
                             if (uiState.pairedPhones.isEmpty()) {
-                                Text(DesktopStrings.pairedPhonesEmpty, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
+                                Text(DesktopStrings.pairedPhonesEmpty, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
                             } else {
                                 uiState.pairedPhones.forEach { phone ->
-                                    HorizontalDivider(color = DesktopPalette.GlassBorder)
+                                    HorizontalDivider(color = tokens.border)
                                     val isOnline = uiState.connectedPhones.any { it.instanceId == phone.instanceId }
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
                                                 text = "${if (isOnline) "● " else ""}${phone.name}",
                                                 style = MaterialTheme.typography.bodyMedium,
-                                                color = if (isOnline) DesktopPalette.GlassSuccess else DesktopPalette.TextPrimary
+                                                color = if (isOnline) DesktopPalette.GlassSuccess else tokens.textPrimary
                                             )
                                             Text(
                                                 text = "${phone.instanceId.take(8)}… · ${timeFmt.format(java.util.Date(phone.lastSeenAt))}",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 fontFamily = FontFamily.Monospace,
-                                                color = DesktopPalette.TextMuted
+                                                color = tokens.textMuted
                                             )
                                         }
                                         SpringOutlinedButton(
@@ -437,7 +452,7 @@ fun DesktopSettingsCenter(
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text(DesktopStrings.serverAuditTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                                Text(DesktopStrings.serverAuditTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                                 if (uiState.auditLogs.isNotEmpty()) {
                                     androidx.compose.material3.TextButton(onClick = { server.clearAuditLogs() }) {
                                         Text(DesktopStrings.clearLogsBtn)
@@ -445,7 +460,7 @@ fun DesktopSettingsCenter(
                                 }
                             }
                             if (uiState.auditLogs.isEmpty()) {
-                                Text(DesktopStrings.serverAuditEmpty, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
+                                Text(DesktopStrings.serverAuditEmpty, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
                             } else {
                                 uiState.auditLogs.take(20).forEach { entry ->
                                     val mark = if (entry.ok) "✓" else "✕"
@@ -453,7 +468,7 @@ fun DesktopSettingsCenter(
                                         text = "${timeFmt.format(java.util.Date(entry.timestamp))} · $mark ${entry.event} ${entry.detail}".trim(),
                                         style = MaterialTheme.typography.labelSmall,
                                         fontFamily = FontFamily.Monospace,
-                                        color = if (entry.ok) DesktopPalette.TextSecondary else DesktopPalette.GlassError
+                                        color = if (entry.ok) tokens.textSecondary else DesktopPalette.GlassError
                                     )
                                 }
                             }
@@ -465,7 +480,7 @@ fun DesktopSettingsCenter(
                     // 1. Language
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(DesktopStrings.sysLangTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            Text(DesktopStrings.sysLangTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
                             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 listOf("auto" to DesktopStrings.langAuto, "zh-TW" to "繁體中文", "en" to "English").forEach { (code, label) ->
@@ -483,7 +498,7 @@ fun DesktopSettingsCenter(
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text(DesktopStrings.sysAutoStartTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary, modifier = Modifier.weight(1f))
+                                Text(DesktopStrings.sysAutoStartTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary, modifier = Modifier.weight(1f))
                                 Switch(
                                     checked = settings.autoStart,
                                     onCheckedChange = { enable ->
@@ -493,8 +508,8 @@ fun DesktopSettingsCenter(
                                     }
                                 )
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                            Text(DesktopStrings.sysCloseBehaviorTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            HorizontalDivider(color = tokens.border)
+                            Text(DesktopStrings.sysCloseBehaviorTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
                             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 FilterChip(
@@ -514,9 +529,9 @@ fun DesktopSettingsCenter(
                     // 4. Native Notifications & DND (with Start/End Hour Picker supporting overnight window)
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(DesktopStrings.sysNativeNotifTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            Text(DesktopStrings.sysNativeNotifTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text(DesktopStrings.enableNativeNotif, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextSecondary)
+                                Text(DesktopStrings.enableNativeNotif, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
                                 Switch(
                                     checked = settings.nativeNotifications,
                                     onCheckedChange = { v -> DesktopSettingsStore.update { it.copy(nativeNotifications = v) } }
@@ -527,7 +542,7 @@ fun DesktopSettingsCenter(
                                 Text(
                                     text = "${DesktopStrings.enableDnd} (${"%02d:00–%02d:00".format(settings.dndStartHour, settings.dndEndHour)}$crossDayTag)",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = DesktopPalette.TextSecondary
+                                    color = tokens.textSecondary
                                 )
                                 Switch(
                                     checked = settings.dndEnabled,
@@ -541,24 +556,24 @@ fun DesktopSettingsCenter(
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(DesktopStrings.dndStartLabel, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
+                                        Text(DesktopStrings.dndStartLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
                                         SpringOutlinedButton(
                                             onClick = { DesktopSettingsStore.update { it.copy(dndStartHour = (it.dndStartHour + 23) % 24) } },
                                             animationsEnabled = settings.animationsEnabled
                                         ) { Text("-") }
-                                        Text("%02d:00".format(settings.dndStartHour), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = DesktopPalette.TextPrimary)
+                                        Text("%02d:00".format(settings.dndStartHour), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = tokens.textPrimary)
                                         SpringOutlinedButton(
                                             onClick = { DesktopSettingsStore.update { it.copy(dndStartHour = (it.dndStartHour + 1) % 24) } },
                                             animationsEnabled = settings.animationsEnabled
                                         ) { Text("+") }
                                     }
                                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(DesktopStrings.dndEndLabel, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
+                                        Text(DesktopStrings.dndEndLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
                                         SpringOutlinedButton(
                                             onClick = { DesktopSettingsStore.update { it.copy(dndEndHour = (it.dndEndHour + 23) % 24) } },
                                             animationsEnabled = settings.animationsEnabled
                                         ) { Text("-") }
-                                        Text("%02d:00".format(settings.dndEndHour), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = DesktopPalette.TextPrimary)
+                                        Text("%02d:00".format(settings.dndEndHour), style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = tokens.textPrimary)
                                         SpringOutlinedButton(
                                             onClick = { DesktopSettingsStore.update { it.copy(dndEndHour = (it.dndEndHour + 1) % 24) } },
                                             animationsEnabled = settings.animationsEnabled
@@ -572,7 +587,7 @@ fun DesktopSettingsCenter(
                     // 5. Backoff + 6. Ping + 7. Preview Length
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(DesktopStrings.sysBackoffTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            Text(DesktopStrings.sysBackoffTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf(15, 30, 60).forEach { sec ->
                                     FilterChip(
@@ -582,8 +597,8 @@ fun DesktopSettingsCenter(
                                     )
                                 }
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                            Text(DesktopStrings.sysPingTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            HorizontalDivider(color = tokens.border)
+                            Text(DesktopStrings.sysPingTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf(10, 15, 30).forEach { sec ->
                                     FilterChip(
@@ -593,8 +608,8 @@ fun DesktopSettingsCenter(
                                     )
                                 }
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                            Text(DesktopStrings.sysPreviewLenTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            HorizontalDivider(color = tokens.border)
+                            Text(DesktopStrings.sysPreviewLenTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf(90, 200, 500).forEach { len ->
                                     FilterChip(
@@ -610,8 +625,8 @@ fun DesktopSettingsCenter(
                     // 8. Config/Cache + 9. Manual Update Check + 10. Diagnostics
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(DesktopStrings.sysConfigTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
-                            Text(DesktopPaths.configDir.absolutePath, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, color = DesktopPalette.TextMuted)
+                            Text(DesktopStrings.sysConfigTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
+                            Text(DesktopPaths.configDir.absolutePath, style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, color = tokens.textMuted)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 SpringOutlinedButton(onClick = {
                                     DesktopDiagnostics.openConfigFolder().onFailure { onFeedback(it.message ?: DesktopStrings.feedbackOpenFailed) }
@@ -621,8 +636,8 @@ fun DesktopSettingsCenter(
                                     onFeedback(DesktopStrings.feedbackSettingsReset)
                                 }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.resetSettingsBtn) }
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                            Text(DesktopStrings.sysUpdateTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            HorizontalDivider(color = tokens.border)
+                            Text(DesktopStrings.sysUpdateTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                 SpringButton(
                                     enabled = !checkingUpdate,
@@ -630,11 +645,11 @@ fun DesktopSettingsCenter(
                                     onClick = { triggerManualUpdateCheck() }
                                 ) { Text(if (checkingUpdate) DesktopStrings.checkingUpdate else DesktopStrings.checkUpdateBtn) }
                                 updateStatus?.let { st ->
-                                    Text(st, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextSecondary)
+                                    Text(st, style = MaterialTheme.typography.labelSmall, color = tokens.textSecondary)
                                 }
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                            Text(DesktopStrings.sysDiagTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            HorizontalDivider(color = tokens.border)
+                            Text(DesktopStrings.sysDiagTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 SpringOutlinedButton(onClick = {
                                     DesktopDiagnostics.openLogsFolder().onFailure { onFeedback(it.message ?: DesktopStrings.feedbackOpenFailed) }
@@ -656,7 +671,7 @@ fun DesktopSettingsCenter(
                     // 1. Accent Color (6 presets) + 9. Custom Accent HEX
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(DesktopStrings.custAccentTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            Text(DesktopStrings.custAccentTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 AccentPreset.entries.forEach { preset ->
                                     val c = DesktopPalette.accentColor(preset)
@@ -666,7 +681,7 @@ fun DesktopSettingsCenter(
                                             .size(if (selected) 34.dp else 28.dp)
                                             .clip(CircleShape)
                                             .background(c)
-                                            .border(if (selected) 2.5.dp else 1.dp, if (selected) Color.White else DesktopPalette.GlassBorder, CircleShape)
+                                            .border(if (selected) 2.5.dp else 1.dp, if (selected) Color.White else tokens.border, CircleShape)
                                             .clickable {
                                                 customHexInput = ""
                                                 DesktopSettingsStore.update { it.copy(accentPreset = preset, customAccentHex = "") }
@@ -674,8 +689,8 @@ fun DesktopSettingsCenter(
                                     )
                                 }
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                            Text(DesktopStrings.custCustomHexTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            HorizontalDivider(color = tokens.border)
+                            Text(DesktopStrings.custCustomHexTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 OutlinedTextField(
                                     value = customHexInput,
@@ -707,7 +722,7 @@ fun DesktopSettingsCenter(
                     // 2. Density + 3. Font Scale + 10. Time Format + 11. Card Corner + 12. Glass Blur + 13. Chat Font Size
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(DesktopStrings.custDensityTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            Text(DesktopStrings.custDensityTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
                             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 UiDensity.entries.forEach { d ->
@@ -718,8 +733,8 @@ fun DesktopSettingsCenter(
                                     )
                                 }
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                            Text(DesktopStrings.custFontScaleTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            HorizontalDivider(color = tokens.border)
+                            Text(DesktopStrings.custFontScaleTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
                             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 listOf(0.9f to "90%", 1.0f to "100%", 1.1f to "110%", 1.25f to "125%").forEach { (sc, lbl) ->
@@ -730,8 +745,8 @@ fun DesktopSettingsCenter(
                                     )
                                 }
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                            Text(DesktopStrings.custTimeFormatTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            HorizontalDivider(color = tokens.border)
+                            Text(DesktopStrings.custTimeFormatTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilterChip(
                                     selected = settings.use24HourTime,
@@ -744,8 +759,8 @@ fun DesktopSettingsCenter(
                                     label = { Text(DesktopStrings.time12h) }
                                 )
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                            Text(DesktopStrings.custCardCornerTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            HorizontalDivider(color = tokens.border)
+                            Text(DesktopStrings.custCardCornerTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf(12, 16, 20, 24).forEach { dpVal ->
                                     FilterChip(
@@ -755,20 +770,27 @@ fun DesktopSettingsCenter(
                                     )
                                 }
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                            Text(DesktopStrings.custGlassBlurTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            HorizontalDivider(color = tokens.border)
+                            Text(DesktopStrings.custGlassBlurTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
                             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 GlassBlurLevel.entries.forEach { lvl ->
                                     FilterChip(
                                         selected = settings.glassBlurLevel == lvl,
-                                        onClick = { DesktopSettingsStore.update { it.copy(glassBlurLevel = lvl) } },
+                                        onClick = {
+                                            val mappedOpacity = when (lvl) {
+                                                GlassBlurLevel.LOW -> 0.88f
+                                                GlassBlurLevel.MEDIUM -> 0.74f
+                                                GlassBlurLevel.HIGH -> 0.56f
+                                            }
+                                            DesktopSettingsStore.update { it.copy(glassBlurLevel = lvl, surfaceOpacity = mappedOpacity) }
+                                        },
                                         label = { Text(DesktopStrings.glassBlurLabel(lvl)) }
                                     )
                                 }
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                            Text(DesktopStrings.custChatFontSizeTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            HorizontalDivider(color = tokens.border)
+                            Text(DesktopStrings.custChatFontSizeTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
                             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 ChatFontSize.entries.forEach { sz ->
@@ -785,7 +807,7 @@ fun DesktopSettingsCenter(
                     // 4. Sidebar Width & Collapse + 5. Message Card Style + 6. Mirror Display Mode
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(DesktopStrings.custSidebarTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            Text(DesktopStrings.custSidebarTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 listOf(210, 244, 280).forEach { w ->
                                     FilterChip(
@@ -795,14 +817,14 @@ fun DesktopSettingsCenter(
                                     )
                                 }
                                 Spacer(Modifier.weight(1f))
-                                Text(DesktopStrings.collapseSidebar, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextSecondary)
+                                Text(DesktopStrings.collapseSidebar, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
                                 Switch(
                                     checked = settings.sidebarCollapsed,
                                     onCheckedChange = { c -> DesktopSettingsStore.update { it.copy(sidebarCollapsed = c) } }
                                 )
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                            Text(DesktopStrings.custCardStyleTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            HorizontalDivider(color = tokens.border)
+                            Text(DesktopStrings.custCardStyleTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
                             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 MessageCardStyle.entries.forEach { st ->
@@ -813,8 +835,8 @@ fun DesktopSettingsCenter(
                                     )
                                 }
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                            Text(DesktopStrings.custMirrorModeTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            HorizontalDivider(color = tokens.border)
+                            Text(DesktopStrings.custMirrorModeTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
                             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 MirrorDisplayMode.entries.forEach { mode ->
@@ -831,7 +853,7 @@ fun DesktopSettingsCenter(
                     // 7. Background Theme + 8. Animations + 14. Notif Sound + 15. Auto-Connect + 16. Default Startup Tab
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(DesktopStrings.custBgThemeTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            Text(DesktopStrings.custBgThemeTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
                             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 BgThemePreset.entries.forEach { bg ->
@@ -850,47 +872,122 @@ fun DesktopSettingsCenter(
                                     singleLine = true,
                                     modifier = Modifier.weight(1f)
                                 )
+                                SpringOutlinedButton(
+                                    onClick = {
+                                        scope.launch {
+                                            DesktopBackgroundHelper.pickAndCopyBackgroundImage()
+                                                .onSuccess { copiedPath ->
+                                                    if (!copiedPath.isNullOrBlank()) {
+                                                        customBgInput = copiedPath
+                                                        DesktopSettingsStore.update { it.copy(customBgImagePath = copiedPath) }
+                                                        onFeedback(DesktopStrings.bgPickerSaved)
+                                                    }
+                                                }
+                                                .onFailure { err ->
+                                                    onFeedback(DesktopStrings.bgPickerFailed(err.message ?: err.javaClass.simpleName))
+                                                }
+                                        }
+                                    },
+                                    animationsEnabled = settings.animationsEnabled
+                                ) { Text(DesktopStrings.bgPickerBtn) }
                                 SpringButton(
-                                    onClick = { DesktopSettingsStore.update { it.copy(customBgImagePath = customBgInput.trim()) } },
+                                    onClick = {
+                                        val trimmed = customBgInput.trim()
+                                        if (trimmed.isBlank()) {
+                                            DesktopBackgroundHelper.removeManagedBackground(settings.customBgImagePath)
+                                            DesktopSettingsStore.update { it.copy(customBgImagePath = "") }
+                                            onFeedback(DesktopStrings.bgRemoved)
+                                        } else {
+                                            DesktopSettingsStore.update { it.copy(customBgImagePath = trimmed) }
+                                        }
+                                    },
                                     animationsEnabled = settings.animationsEnabled,
                                     containerColor = accentColor
                                 ) { Text(DesktopStrings.todoSave) }
                                 if (settings.customBgImagePath.isNotBlank()) {
                                     SpringOutlinedButton(
                                         onClick = {
+                                            DesktopBackgroundHelper.removeManagedBackground(settings.customBgImagePath)
                                             customBgInput = ""
                                             DesktopSettingsStore.update { it.copy(customBgImagePath = "") }
+                                            onFeedback(DesktopStrings.bgRemoved)
                                         },
                                         animationsEnabled = settings.animationsEnabled
                                     ) { Text(DesktopStrings.clearBgImage) }
                                 }
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
+                            HorizontalDivider(color = tokens.border)
+                            // #488 Surface Opacity Slider (0.55..0.96)
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text(DesktopStrings.custAnimTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary, modifier = Modifier.weight(1f))
+                                Text(DesktopStrings.custSurfaceOpacityTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary, modifier = Modifier.weight(1f))
+                                Text("${(settings.surfaceOpacity * 100f).toInt()}%", style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace, color = accentColor)
+                            }
+                            Slider(
+                                value = settings.surfaceOpacity,
+                                onValueChange = { v -> DesktopSettingsStore.update { it.copy(surfaceOpacity = v.coerceIn(0.55f, 0.96f)) } },
+                                valueRange = 0.55f..0.96f,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            HorizontalDivider(color = tokens.border)
+                            // #488 Background Dim / Scrim Depth Slider (0.15..0.85)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(DesktopStrings.custBgScrimTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary, modifier = Modifier.weight(1f))
+                                Text("${(settings.bgScrimAlpha * 100f).toInt()}%", style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace, color = accentColor)
+                            }
+                            Slider(
+                                value = settings.bgScrimAlpha,
+                                onValueChange = { v -> DesktopSettingsStore.update { it.copy(bgScrimAlpha = v.coerceIn(0.15f, 0.85f)) } },
+                                valueRange = 0.15f..0.85f,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            HorizontalDivider(color = tokens.border)
+                            // #488 High-Contrast Text Toggle
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(DesktopStrings.custHighContrastTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary, modifier = Modifier.weight(1f))
+                                Switch(
+                                    checked = settings.highContrastText,
+                                    onCheckedChange = { hc -> DesktopSettingsStore.update { it.copy(highContrastText = hc) } }
+                                )
+                            }
+                            HorizontalDivider(color = tokens.border)
+                            // #488 Page Transition Style Selector (4+ styles + Off)
+                            Text(DesktopStrings.custTransitionTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
+                            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                PageTransitionStyle.entries.forEach { style ->
+                                    FilterChip(
+                                        selected = settings.pageTransitionStyle == style,
+                                        onClick = { DesktopSettingsStore.update { it.copy(pageTransitionStyle = style) } },
+                                        label = { Text(DesktopStrings.transitionStyleLabel(style)) }
+                                    )
+                                }
+                            }
+                            HorizontalDivider(color = tokens.border)
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(DesktopStrings.custAnimTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary, modifier = Modifier.weight(1f))
                                 Switch(
                                     checked = settings.animationsEnabled,
                                     onCheckedChange = { a -> DesktopSettingsStore.update { it.copy(animationsEnabled = a) } }
                                 )
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
+                            HorizontalDivider(color = tokens.border)
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text(DesktopStrings.custNotifSoundTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary, modifier = Modifier.weight(1f))
+                                Text(DesktopStrings.custNotifSoundTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary, modifier = Modifier.weight(1f))
                                 Switch(
                                     checked = settings.notificationSoundEnabled,
                                     onCheckedChange = { v -> DesktopSettingsStore.update { it.copy(notificationSoundEnabled = v) } }
                                 )
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
+                            HorizontalDivider(color = tokens.border)
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text(DesktopStrings.custAutoConnectTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary, modifier = Modifier.weight(1f))
+                                Text(DesktopStrings.custAutoConnectTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary, modifier = Modifier.weight(1f))
                                 Switch(
                                     checked = settings.autoConnectOnStartup,
                                     onCheckedChange = { v -> DesktopSettingsStore.update { it.copy(autoConnectOnStartup = v) } }
                                 )
                             }
-                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                            Text(DesktopStrings.custDefaultTabTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            HorizontalDivider(color = tokens.border)
+                            Text(DesktopStrings.custDefaultTabTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
                             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 listOf("MESSAGES", "STATS", "TODOS", "CHAT", "RULES", "SETTINGS").forEach { tabKey ->
@@ -909,9 +1006,9 @@ fun DesktopSettingsCenter(
                     // 1. Version & Protocol Compatibility + Manual Update Check
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(DesktopStrings.aboutTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                            Text(DesktopStrings.aboutTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
                             Text(DesktopStrings.versionLabel, style = MaterialTheme.typography.bodyMedium, color = accentColor)
-                            Text(DesktopStrings.aboutProtocolCompat, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextSecondary)
+                            Text(DesktopStrings.aboutProtocolCompat, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                 SpringButton(
                                     enabled = !checkingUpdate,
@@ -920,7 +1017,7 @@ fun DesktopSettingsCenter(
                                     onClick = { triggerManualUpdateCheck() }
                                 ) { Text(if (checkingUpdate) DesktopStrings.checkingUpdate else DesktopStrings.checkUpdateBtn) }
                                 updateStatus?.let { st ->
-                                    Text(st, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextSecondary)
+                                    Text(st, style = MaterialTheme.typography.labelSmall, color = tokens.textSecondary)
                                 }
                             }
                         }
@@ -929,7 +1026,7 @@ fun DesktopSettingsCenter(
                     // 2. Project Links (Repo / Releases / LICENSE / PRIVACY / DISCLAIMER)
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(DesktopStrings.aboutLinksTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            Text(DesktopStrings.aboutLinksTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
                             androidx.compose.foundation.layout.FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -958,7 +1055,7 @@ fun DesktopSettingsCenter(
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text(DesktopStrings.aboutReleaseNotesTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                                Text(DesktopStrings.aboutReleaseNotesTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                                 SpringOutlinedButton(
                                     enabled = !loadingReleases,
                                     onClick = { loadRecentReleases() },
@@ -966,14 +1063,14 @@ fun DesktopSettingsCenter(
                                 ) { Text(DesktopStrings.refresh) }
                             }
                             if (loadingReleases) {
-                                Text(DesktopStrings.aboutLoadingNotes, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
+                                Text(DesktopStrings.aboutLoadingNotes, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
                             } else if (!releasesError.isNullOrBlank()) {
                                 Text(releasesError.orEmpty(), style = MaterialTheme.typography.bodySmall, color = DesktopPalette.GlassError)
                             } else if (recentReleases.isEmpty()) {
-                                Text(DesktopStrings.updateNoNotes, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
+                                Text(DesktopStrings.updateNoNotes, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
                             } else {
                                 recentReleases.forEachIndexed { idx, rel ->
-                                    if (idx > 0) HorizontalDivider(color = DesktopPalette.GlassBorder, modifier = Modifier.padding(vertical = 6.dp))
+                                    if (idx > 0) HorizontalDivider(color = tokens.border, modifier = Modifier.padding(vertical = 6.dp))
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         Text(
                                             text = "${rel.tagName}  (${rel.publishedDate})",
@@ -985,7 +1082,7 @@ fun DesktopSettingsCenter(
                                                 text = "Desktop v$ver",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 fontFamily = FontFamily.Monospace,
-                                                color = DesktopPalette.TextMuted
+                                                color = tokens.textMuted
                                             )
                                         }
                                     }
@@ -1000,6 +1097,20 @@ fun DesktopSettingsCenter(
                 }
             }
             Spacer(Modifier.height(12.dp))
+        }
+        }
+        if (effectiveTransition != PageTransitionStyle.NONE) {
+            AnimatedContent(
+                targetState = subTab,
+                transitionSpec = {
+                    val forward = targetState.ordinal >= initialState.ordinal
+                    DesktopMotion.pageTransition(effectiveTransition, forward)
+                },
+                label = "settings_subtab_content",
+                modifier = Modifier.fillMaxSize()
+            ) { activeSub -> renderSubTab(activeSub) }
+        } else {
+            Box(modifier = Modifier.fillMaxSize()) { renderSubTab(subTab) }
         }
     }
 }

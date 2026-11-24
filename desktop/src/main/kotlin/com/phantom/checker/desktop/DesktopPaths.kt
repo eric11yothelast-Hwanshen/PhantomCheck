@@ -60,6 +60,10 @@ object DesktopPaths {
         File(configDir, "logs").also { runCatching { if (!it.exists()) it.mkdirs() } }
     }
 
+    val backgroundsDir: File by lazy {
+        File(configDir, "backgrounds").also { runCatching { if (!it.exists()) it.mkdirs() } }
+    }
+
     private fun migrateLegacyLinkPropertiesIfNeeded(target: File) {
         if (target.exists()) return
         val legacyDir = File(System.getProperty("user.home").orEmpty(), ".phantomcheck-desktop")

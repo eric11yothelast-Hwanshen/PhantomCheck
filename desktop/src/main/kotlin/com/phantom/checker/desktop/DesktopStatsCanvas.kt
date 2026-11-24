@@ -40,6 +40,7 @@ fun DesktopStatsCharts(
     accentColor: Color,
     modifier: Modifier = Modifier
 ) {
+    val tokens = LocalDesktopTokens.current
     var showHourly by remember { mutableStateOf(false) }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -54,7 +55,7 @@ fun DesktopStatsCharts(
                     Text(
                         text = if (showHourly) DesktopStrings.statsHourlyChart else DesktopStrings.stats7DayChart,
                         style = MaterialTheme.typography.titleSmall,
-                        color = DesktopPalette.TextPrimary
+                        color = tokens.textPrimary
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
@@ -70,21 +71,23 @@ fun DesktopStatsCharts(
                     }
                 }
 
-                val barValues: List<Pair<String, Int>> = if (showHourly) {
-                    if (stats.hourlyCounts.isNotEmpty()) {
-                        stats.hourlyCounts.map { "${it.hour}" to it.count }
+                val barValues: List<Pair<String, Int>> = remember(stats.hourlyCounts, stats.dailyCounts, showHourly) {
+                    if (showHourly) {
+                        if (stats.hourlyCounts.isNotEmpty()) {
+                            stats.hourlyCounts.map { "${it.hour}" to it.count }
+                        } else {
+                            (0..23).map { "$it" to 0 }
+                        }
                     } else {
-                        (0..23).map { "$it" to 0 }
-                    }
-                } else {
-                    if (stats.dailyCounts.isNotEmpty()) {
-                        stats.dailyCounts.map { it.label to it.count }
-                    } else {
-                        listOf("D-6", "D-5", "D-4", "D-3", "D-2", "D-1", "Today").map { it to 0 }
+                        if (stats.dailyCounts.isNotEmpty()) {
+                            stats.dailyCounts.map { it.label to it.count }
+                        } else {
+                            listOf("D-6", "D-5", "D-4", "D-3", "D-2", "D-1", "Today").map { it to 0 }
+                        }
                     }
                 }
 
-                val maxVal = (barValues.maxOfOrNull { it.second } ?: 1).coerceAtLeast(1)
+                val maxVal = remember(barValues) { (barValues.maxOfOrNull { it.second } ?: 1).coerceAtLeast(1) }
 
                 Canvas(
                     modifier = Modifier
@@ -102,7 +105,7 @@ fun DesktopStatsCharts(
                     for (step in 0..3) {
                         val y = chartH * (step / 3f)
                         drawLine(
-                            color = DesktopPalette.GlassBorder,
+                            color = tokens.chartGridLine,
                             start = Offset(0f, y),
                             end = Offset(size.width, y),
                             strokeWidth = 1f
@@ -115,7 +118,7 @@ fun DesktopStatsCharts(
                         val x = idx * (barW + gap)
                         val y = chartH - h
                         drawRoundRect(
-                            color = if (value > 0) accentColor else DesktopPalette.GlassBorder,
+                            color = if (value > 0) accentColor else tokens.chartGridLine,
                             topLeft = Offset(x, y),
                             size = Size(barW, h),
                             cornerRadius = CornerRadius(6f, 6f)
@@ -130,13 +133,13 @@ fun DesktopStatsCharts(
                 ) {
                     if (showHourly) {
                         listOf("00:00", "06:00", "12:00", "18:00", "23:00").forEach { lbl ->
-                            Text(lbl, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
+                            Text(lbl, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
                         }
                     } else {
                         barValues.forEach { (lbl, cnt) ->
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(cnt.toString(), style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextSecondary)
-                                Text(lbl, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
+                                Text(cnt.toString(), style = MaterialTheme.typography.labelSmall, color = tokens.textSecondary)
+                                Text(lbl, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
                             }
                         }
                     }
@@ -147,7 +150,7 @@ fun DesktopStatsCharts(
         // 2. 風險分布橫條
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(DesktopStrings.statsRiskDist, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                Text(DesktopStrings.statsRiskDist, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                 val scam = stats.scam.coerceAtLeast(0)
                 val susp = stats.suspicious.coerceAtLeast(0)
                 val safe = (stats.total - scam - susp).coerceAtLeast(0)
@@ -179,8 +182,9 @@ fun DesktopStatsCharts(
 
 @Composable
 private fun RiskLegendDot(color: Color, text: String) {
+    val tokens = LocalDesktopTokens.current
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(modifier = Modifier.size(9.dp).clip(CircleShape).background(color))
-        Text(text, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextSecondary)
+        Text(text, style = MaterialTheme.typography.labelSmall, color = tokens.textSecondary)
     }
 }

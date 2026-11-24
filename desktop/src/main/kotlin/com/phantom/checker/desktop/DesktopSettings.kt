@@ -20,9 +20,16 @@ enum class MirrorDisplayMode(val key: String) { BANNER("banner"), NATIVE("native
 enum class BgThemePreset(val key: String) { MIDNIGHT("midnight"), AURORA("aurora"), OBSIDIAN("obsidian"), DEEP_OCEAN("deep_ocean") }
 enum class GlassBlurLevel(val key: String) { LOW("low"), MEDIUM("medium"), HIGH("high") }
 enum class ChatFontSize(val key: String, val multiplier: Float) { SMALL("small", 0.9f), STANDARD("standard", 1.0f), LARGE("large", 1.18f) }
+enum class PageTransitionStyle(val key: String) {
+    FADE("fade"),
+    SLIDE_HORIZONTAL("slide_horizontal"),
+    SLIDE_FADE("slide_fade"),
+    SCALE_FADE("scale_fade"),
+    NONE("none")
+}
 
 /**
- * #468 / #479 桌機端設定資料模型（10 系統設定＋16 自訂設定＋視窗位置記憶）。
+ * #468 / #479 / #488 桌機端設定資料模型（10 系統設定＋16 既有自訂設定＋#488 轉場動畫與深淺自訂＋視窗位置記憶）。
  */
 data class DesktopSettings(
     // 10 System settings
@@ -37,7 +44,7 @@ data class DesktopSettings(
     val pingIntervalSec: Int = 15, // 10 | 15 | 30
     val previewLength: Int = 200, // 90 | 200 | 500
     val serverPort: Int = com.phantom.checker.shared.LinkProtocol.DEFAULT_PORT,
-    // 16 Custom settings (original 8 + #479 new 8)
+    // 16 Custom settings (original 8 + #479 new 8 — keys preserved for 0.4.0 upgrade compatibility)
     val accentPreset: AccentPreset = AccentPreset.BLUE,
     val customAccentHex: String = "", // #RRGGBB (optional override)
     val density: UiDensity = UiDensity.STANDARD,
@@ -56,6 +63,11 @@ data class DesktopSettings(
     val notificationSoundEnabled: Boolean = true,
     val autoConnectOnStartup: Boolean = true,
     val defaultStartupTab: String = "MESSAGES", // MESSAGES | STATS | TODOS | CHAT | RULES | SETTINGS
+    // #488 Page transition & surface depth / background emergence settings
+    val pageTransitionStyle: PageTransitionStyle = PageTransitionStyle.SLIDE_FADE,
+    val surfaceOpacity: Float = 0.74f, // 0.55f..0.96f (default matches existing MEDIUM glass alpha)
+    val bgScrimAlpha: Float = 0.56f, // 0.15f..0.85f (controls custom background emergence)
+    val highContrastText: Boolean = false,
     // Window geometry persistence
     val windowX: Int = Int.MIN_VALUE,
     val windowY: Int = Int.MIN_VALUE,
@@ -128,6 +140,10 @@ object DesktopSettingsStore {
             notificationSoundEnabled = p.getProperty("notificationSoundEnabled", "true").toBoolean(),
             autoConnectOnStartup = p.getProperty("autoConnectOnStartup", "true").toBoolean(),
             defaultStartupTab = p.getProperty("defaultStartupTab", "MESSAGES").takeIf { it in validStartupTabs } ?: "MESSAGES",
+            pageTransitionStyle = PageTransitionStyle.entries.firstOrNull { it.key == p.getProperty("pageTransitionStyle", "slide_fade") } ?: PageTransitionStyle.SLIDE_FADE,
+            surfaceOpacity = p.getProperty("surfaceOpacity", "0.74").toFloatOrNull()?.coerceIn(0.55f, 0.96f) ?: 0.74f,
+            bgScrimAlpha = p.getProperty("bgScrimAlpha", "0.56").toFloatOrNull()?.coerceIn(0.15f, 0.85f) ?: 0.56f,
+            highContrastText = p.getProperty("highContrastText", "false").toBoolean(),
             windowX = p.getProperty("windowX", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowY = p.getProperty("windowY", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowWidth = p.getProperty("windowWidth", "1280").toIntOrNull()?.coerceAtLeast(1024) ?: 1280,
@@ -177,6 +193,10 @@ object DesktopSettingsStore {
             p.setProperty("notificationSoundEnabled", s.notificationSoundEnabled.toString())
             p.setProperty("autoConnectOnStartup", s.autoConnectOnStartup.toString())
             p.setProperty("defaultStartupTab", s.defaultStartupTab)
+            p.setProperty("pageTransitionStyle", s.pageTransitionStyle.key)
+            p.setProperty("surfaceOpacity", "%.2f".format(java.util.Locale.US, s.surfaceOpacity.coerceIn(0.55f, 0.96f)))
+            p.setProperty("bgScrimAlpha", "%.2f".format(java.util.Locale.US, s.bgScrimAlpha.coerceIn(0.15f, 0.85f)))
+            p.setProperty("highContrastText", s.highContrastText.toString())
             p.setProperty("windowX", s.windowX.toString())
             p.setProperty("windowY", s.windowY.toString())
             p.setProperty("windowWidth", s.windowWidth.toString())

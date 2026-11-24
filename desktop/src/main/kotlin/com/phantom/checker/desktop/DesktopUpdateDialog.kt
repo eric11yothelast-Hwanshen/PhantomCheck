@@ -41,6 +41,7 @@ fun DesktopUpdateDialog(
     onDismiss: () -> Unit,
     onFeedback: (String) -> Unit
 ) {
+    val tokens = LocalDesktopTokens.current
     val scope = rememberCoroutineScope()
     var downloading by remember { mutableStateOf(false) }
     var downloadProgress by remember { mutableFloatStateOf(0f) }
@@ -52,7 +53,7 @@ fun DesktopUpdateDialog(
         containerColor = containerColor,
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(DesktopStrings.updateDialogTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                Text(DesktopStrings.updateDialogTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
                 Text(
                     text = "${update.currentVersion} → ${update.latestVersion} (${update.tagName} · ${update.publishedDate})",
                     style = MaterialTheme.typography.labelSmall,
@@ -78,22 +79,22 @@ fun DesktopUpdateDialog(
                 }
 
                 if (downloading) {
-                    HorizontalDivider(color = DesktopPalette.GlassBorder)
+                    HorizontalDivider(color = tokens.border)
                     Text(
                         text = DesktopStrings.updateDownloading((downloadProgress * 100f).toInt()),
                         style = MaterialTheme.typography.labelSmall,
-                        color = DesktopPalette.TextSecondary
+                        color = tokens.textSecondary
                     )
                     LinearProgressIndicator(
                         progress = { downloadProgress },
                         modifier = Modifier.fillMaxWidth(),
                         color = accentColor,
-                        trackColor = DesktopPalette.GlassBorder
+                        trackColor = tokens.border
                     )
                 }
 
                 downloadedFile?.let { f ->
-                    HorizontalDivider(color = DesktopPalette.GlassBorder)
+                    HorizontalDivider(color = tokens.border)
                     Text(
                         text = DesktopStrings.updateReadyToLaunch(f.name),
                         style = MaterialTheme.typography.bodySmall,

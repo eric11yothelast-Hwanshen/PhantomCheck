@@ -32,10 +32,12 @@ import androidx.compose.ui.unit.dp
 fun DesktopMarkdownText(
     markdown: String,
     accentColor: Color,
-    textColor: Color = DesktopPalette.TextPrimary,
+    textColor: Color? = null,
     modifier: Modifier = Modifier
 ) {
-    val blocks = parseMarkdownBlocks(markdown)
+    val tokens = LocalDesktopTokens.current
+    val resolvedText = textColor ?: tokens.textPrimary
+    val blocks = androidx.compose.runtime.remember(markdown) { parseMarkdownBlocks(markdown) }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         blocks.forEach { block ->
             when (block) {
@@ -46,10 +48,10 @@ fun DesktopMarkdownText(
                         else -> MaterialTheme.typography.bodyMedium
                     }
                     Text(
-                        text = renderInlineMarkdown(block.text, accentColor),
+                        text = renderInlineMarkdown(block.text, accentColor, tokens.codeBg),
                         style = style,
                         fontWeight = FontWeight.Bold,
-                        color = if (block.level <= 2) accentColor else textColor
+                        color = if (block.level <= 2) accentColor else resolvedText
                     )
                 }
                 is MdBlock.CodeBlock -> {
@@ -57,22 +59,22 @@ fun DesktopMarkdownText(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
-                            .background(Color.Black.copy(alpha = 0.38f))
-                            .border(1.dp, DesktopPalette.GlassBorder, RoundedCornerShape(10.dp))
+                            .background(tokens.codeBg)
+                            .border(1.dp, tokens.border, RoundedCornerShape(10.dp))
                             .padding(10.dp)
                     ) {
                         Text(
                             text = block.code,
                             style = MaterialTheme.typography.bodySmall,
                             fontFamily = FontFamily.Monospace,
-                            color = DesktopPalette.TextSecondary
+                            color = tokens.textSecondary
                         )
                     }
                 }
                 is MdBlock.Bullet -> {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(block.marker, style = MaterialTheme.typography.bodyMedium, color = accentColor, fontWeight = FontWeight.Bold)
-                        Text(renderInlineMarkdown(block.text, accentColor), style = MaterialTheme.typography.bodyMedium, color = textColor)
+                        Text(renderInlineMarkdown(block.text, accentColor, tokens.codeBg), style = MaterialTheme.typography.bodyMedium, color = resolvedText)
                     }
                 }
                 is MdBlock.Table -> {
@@ -80,10 +82,10 @@ fun DesktopMarkdownText(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .border(1.dp, DesktopPalette.GlassBorder, RoundedCornerShape(8.dp))
+                            .border(1.dp, tokens.border, RoundedCornerShape(8.dp))
                     ) {
                         block.rows.forEachIndexed { rowIdx, cells ->
-                            if (rowIdx > 0) HorizontalDivider(color = DesktopPalette.GlassBorder)
+                            if (rowIdx > 0) HorizontalDivider(color = tokens.border)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -93,10 +95,10 @@ fun DesktopMarkdownText(
                             ) {
                                 cells.forEach { cell ->
                                     Text(
-                                        text = renderInlineMarkdown(cell, accentColor),
+                                        text = renderInlineMarkdown(cell, accentColor, tokens.codeBg),
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = if (rowIdx == 0) FontWeight.SemiBold else FontWeight.Normal,
-                                        color = textColor,
+                                        color = resolvedText,
                                         modifier = Modifier.weight(1f)
                                     )
                                 }
@@ -106,9 +108,9 @@ fun DesktopMarkdownText(
                 }
                 is MdBlock.Paragraph -> {
                     Text(
-                        text = renderInlineMarkdown(block.text, accentColor),
+                        text = renderInlineMarkdown(block.text, accentColor, tokens.codeBg),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = textColor
+                        color = resolvedText
                     )
                 }
             }
@@ -185,7 +187,7 @@ private fun parseMarkdownBlocks(raw: String): List<MdBlock> {
     return result
 }
 
-private fun renderInlineMarkdown(text: String, accentColor: Color): AnnotatedString = buildAnnotatedString {
+private fun renderInlineMarkdown(text: String, accentColor: Color, codeBg: Color): AnnotatedString = buildAnnotatedString {
     var i = 0
     while (i < text.length) {
         when {
@@ -201,7 +203,7 @@ private fun renderInlineMarkdown(text: String, accentColor: Color): AnnotatedStr
             text[i] == '`' -> {
                 val end = text.indexOf('`', i + 1)
                 if (end > i + 1) {
-                    withStyle(SpanStyle(fontFamily = FontFamily.Monospace, color = accentColor, background = Color.Black.copy(alpha = 0.3f))) {
+                    withStyle(SpanStyle(fontFamily = FontFamily.Monospace, color = accentColor, background = codeBg)) {
                         append(text.substring(i + 1, end))
                     }
                     i = end + 1

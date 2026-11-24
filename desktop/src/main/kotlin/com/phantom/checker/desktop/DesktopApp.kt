@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -56,6 +57,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -68,6 +70,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
@@ -116,6 +119,9 @@ fun DesktopApp(
     val uiState by server.state.collectAsState()
     val mdnsStatus by server.mdnsStatus.collectAsState()
 
+    val tokens = remember(settings.surfaceOpacity, settings.bgScrimAlpha, settings.highContrastText, settings.bgTheme) {
+        DesktopThemeTokens.from(settings)
+    }
     val accentColor = remember(settings.accentPreset, settings.customAccentHex) {
         DesktopPalette.resolveAccentColor(settings.accentPreset, settings.customAccentHex)
     }
@@ -124,6 +130,14 @@ fun DesktopApp(
     val cardPad = DesktopPalette.cardPadding(settings.density)
     val listSpace = DesktopPalette.listSpacing(settings.density)
     val typography = remember(settings.fontScale) { DesktopPalette.typography(settings.fontScale) }
+
+    // #488 Preserve scroll states across AnimatedContent tab transitions
+    val messagesListState = rememberLazyListState()
+    val todosListState = rememberLazyListState()
+    val notesListState = rememberLazyListState()
+    val chatListState = rememberLazyListState()
+    val statsScrollState = rememberScrollState()
+    val rulesScrollState = rememberScrollState()
 
     var activeTab by remember {
         val initial = runCatching { DesktopTab.valueOf(settings.defaultStartupTab) }.getOrDefault(DesktopTab.MESSAGES)
@@ -479,16 +493,17 @@ fun DesktopApp(
         }
     }
 
+    CompositionLocalProvider(LocalDesktopTokens provides tokens) {
     MaterialTheme(
         colorScheme = darkColorScheme(
             background = bgTop,
-            surface = DesktopPalette.GlassSurface,
-            surfaceVariant = DesktopPalette.GlassSurfaceElevated,
+            surface = tokens.surface,
+            surfaceVariant = tokens.surfaceElevated,
             primary = accentColor,
             onPrimary = Color(0xFF0A0E17),
-            onBackground = DesktopPalette.TextPrimary,
-            onSurface = DesktopPalette.TextPrimary,
-            onSurfaceVariant = DesktopPalette.TextSecondary,
+            onBackground = tokens.textPrimary,
+            onSurface = tokens.textPrimary,
+            onSurfaceVariant = tokens.textSecondary,
             error = DesktopPalette.GlassError
         ),
         typography = typography
@@ -524,7 +539,7 @@ fun DesktopApp(
             color = bgTop
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
-                // Background: Custom image + readability scrim OR 4 preset gradients
+                // Background: Custom image (cover semantics) + draw-phase readability scrim OR 4 preset gradients
                 if (customBgBitmap != null) {
                     Image(
                         bitmap = customBgBitmap,
@@ -532,7 +547,7 @@ fun DesktopApp(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
-                    Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.64f)))
+                    Box(modifier = Modifier.fillMaxSize().drawBehind { drawRect(tokens.scrimColor) })
                 } else {
                     Box(
                         modifier = Modifier
@@ -548,8 +563,8 @@ fun DesktopApp(
                         modifier = Modifier
                             .width(sidebarW)
                             .fillMaxHeight()
-                            .background(DesktopPalette.GlassSidebarBg)
-                            .border(width = 1.dp, color = DesktopPalette.GlassBorder)
+                            .background(tokens.sidebarBg)
+                            .border(width = 1.dp, color = tokens.border)
                             .padding(horizontal = if (settings.sidebarCollapsed) 10.dp else 16.dp, vertical = 20.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -563,14 +578,14 @@ fun DesktopApp(
                                     Text(
                                         text = DesktopStrings.appTitle,
                                         style = MaterialTheme.typography.titleMedium,
-                                        color = DesktopPalette.TextPrimary,
+                                        color = tokens.textPrimary,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
                                         text = DesktopStrings.versionLabel,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = DesktopPalette.TextMuted
+                                        color = tokens.textMuted
                                     )
                                 }
                             }
@@ -581,7 +596,7 @@ fun DesktopApp(
                             }
                         }
 
-                        HorizontalDivider(color = DesktopPalette.GlassBorder, modifier = Modifier.padding(vertical = 4.dp))
+                        HorizontalDivider(color = tokens.border, modifier = Modifier.padding(vertical = 4.dp))
 
                         val navItems = listOf(
                             Triple(DesktopTab.MESSAGES, DesktopStrings.navMessages, "1"),
@@ -625,7 +640,7 @@ fun DesktopApp(
                                     text = if (settings.sidebarCollapsed) shortBadge else label,
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (selected) accentColor else DesktopPalette.TextSecondary,
+                                    color = if (selected) accentColor else tokens.textSecondary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -640,7 +655,7 @@ fun DesktopApp(
                             LinkConnState.CONNECTED -> DesktopPalette.GlassSuccess
                             LinkConnState.WAITING_FOR_PHONE -> accentColor
                             LinkConnState.ERROR -> DesktopPalette.GlassError
-                            LinkConnState.STOPPED -> DesktopPalette.TextMuted
+                            LinkConnState.STOPPED -> tokens.textMuted
                         }
                         val statusText = when (uiState.connState) {
                             LinkConnState.CONNECTED -> DesktopStrings.statusConnected + uiState.pairedDeviceName
@@ -648,7 +663,7 @@ fun DesktopApp(
                             LinkConnState.ERROR -> DesktopStrings.statusServerError
                             LinkConnState.STOPPED -> DesktopStrings.statusServerStopped
                         }
-                        GlassCard(modifier = Modifier.fillMaxWidth(), containerColor = DesktopPalette.GlassSurfaceElevated) {
+                        GlassCard(modifier = Modifier.fillMaxWidth(), containerColor = tokens.surfaceElevated) {
                             Column(
                                 modifier = Modifier.fillMaxWidth().padding(if (settings.sidebarCollapsed) 8.dp else 12.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -663,7 +678,7 @@ fun DesktopApp(
                                             .background(dotColor)
                                     )
                                     if (!settings.sidebarCollapsed) {
-                                        Text(statusText, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Text(statusText, style = MaterialTheme.typography.labelSmall, color = tokens.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                                 if (!settings.sidebarCollapsed) {
@@ -698,7 +713,7 @@ fun DesktopApp(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(toast, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextPrimary, modifier = Modifier.weight(1f))
+                                        Text(toast, style = MaterialTheme.typography.bodySmall, color = tokens.textPrimary, modifier = Modifier.weight(1f))
                                         TextButton(onClick = { mirrorToast = null }) { Text(DesktopStrings.dismiss) }
                                     }
                                 }
@@ -712,13 +727,13 @@ fun DesktopApp(
                             exit = fadeOut(tween(120)) + shrinkVertically()
                         ) {
                             actionFeedback?.let { fb ->
-                                GlassCard(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), containerColor = DesktopPalette.GlassSurfaceElevated) {
+                                GlassCard(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), containerColor = tokens.surfaceElevated) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(fb, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextSecondary, modifier = Modifier.weight(1f))
+                                        Text(fb, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary, modifier = Modifier.weight(1f))
                                         TextButton(onClick = { actionFeedback = null }) { Text(DesktopStrings.ok) }
                                     }
                                 }
@@ -733,7 +748,7 @@ fun DesktopApp(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         verticalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
-                                        Text(DesktopStrings.notConnectedHint, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                                        Text(DesktopStrings.notConnectedHint, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
                                         SpringButton(onClick = { activeTab = DesktopTab.SETTINGS }, animationsEnabled = settings.animationsEnabled) {
                                             Text(DesktopStrings.navSettings)
                                         }
@@ -779,7 +794,7 @@ fun DesktopApp(
                                                     animationsEnabled = settings.animationsEnabled
                                                 ) { Text(DesktopStrings.refresh) }
                                             }
-                                            Text(DesktopStrings.markReadNote, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
+                                            Text(DesktopStrings.markReadNote, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
 
                                             val visibleMessages = remember(messages, msgSearch) {
                                                 val q = msgSearch.trim()
@@ -796,13 +811,13 @@ fun DesktopApp(
                                                 Box(modifier = Modifier.weight(0.46f).fillMaxHeight()) {
                                                     if (visibleMessages.isEmpty()) {
                                                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                            Text(DesktopStrings.emptyMessages, color = DesktopPalette.TextMuted)
+                                                            Text(DesktopStrings.emptyMessages, color = tokens.textMuted)
                                                         }
                                                     } else {
-                                                        LazyColumn(verticalArrangement = Arrangement.spacedBy(if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST) 4.dp else listSpace)) {
+                                                        LazyColumn(state = messagesListState, verticalArrangement = Arrangement.spacedBy(if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST) 4.dp else listSpace)) {
                                                             items(visibleMessages, key = { it.id }) { m ->
                                                                 val isSelected = m.id == selectedMsgId
-                                                                val cardBg = if (isSelected) accentColor.copy(alpha = 0.16f) else DesktopPalette.glassSurface(settings.glassBlurLevel)
+                                                                val cardBg = if (isSelected) accentColor.copy(alpha = 0.16f) else tokens.surface
                                                                 val corner = if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST) {
                                                                     (settings.messageCardCornerDp - 4).coerceAtLeast(8).dp
                                                                 } else {
@@ -814,7 +829,7 @@ fun DesktopApp(
                                                                     .background(cardBg)
                                                                     .border(
                                                                         1.dp,
-                                                                        if (isSelected) accentColor.copy(alpha = 0.5f) else DesktopPalette.GlassBorder,
+                                                                        if (isSelected) accentColor.copy(alpha = 0.5f) else tokens.border,
                                                                         RoundedCornerShape(corner)
                                                                     )
                                                                     .clickable { selectedMsgId = m.id }
@@ -825,7 +840,7 @@ fun DesktopApp(
                                                                             text = "${if (m.isRead) "" else "● "}${if (m.isStarred) "★ " else ""}${m.sender}",
                                                                             fontWeight = if (m.isRead) FontWeight.Normal else FontWeight.Bold,
                                                                             style = MaterialTheme.typography.bodyMedium,
-                                                                            color = DesktopPalette.TextPrimary,
+                                                                            color = tokens.textPrimary,
                                                                             maxLines = 1,
                                                                             overflow = TextOverflow.Ellipsis,
                                                                             modifier = Modifier.weight(1f)
@@ -833,14 +848,14 @@ fun DesktopApp(
                                                                         Text(
                                                                             text = "${DesktopStrings.riskLabelText(m.riskLabel)} · ${timeFmt.format(Date(m.timestamp))}",
                                                                             style = MaterialTheme.typography.labelSmall,
-                                                                            color = if (m.riskLabel.equals("scam", ignoreCase = true)) DesktopPalette.GlassError else DesktopPalette.TextMuted
+                                                                            color = if (m.riskLabel.equals("scam", ignoreCase = true)) DesktopPalette.GlassError else tokens.textMuted
                                                                         )
                                                                     }
                                                                     Spacer(Modifier.height(4.dp))
                                                                     Text(
                                                                         text = m.preview.take(settings.previewLength),
                                                                         style = MaterialTheme.typography.bodySmall,
-                                                                        color = DesktopPalette.TextSecondary,
+                                                                        color = tokens.textSecondary,
                                                                         maxLines = if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST) 1 else 2,
                                                                         overflow = TextOverflow.Ellipsis
                                                                     )
@@ -855,7 +870,7 @@ fun DesktopApp(
                                                     val detail = selectedMsg
                                                     if (detail == null) {
                                                         Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                                                            Text(DesktopStrings.selectMessageHint, color = DesktopPalette.TextMuted)
+                                                            Text(DesktopStrings.selectMessageHint, color = tokens.textMuted)
                                                         }
                                                     } else {
                                                         Column(
@@ -864,8 +879,8 @@ fun DesktopApp(
                                                         ) {
                                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                                 Column(modifier = Modifier.weight(1f)) {
-                                                                    Text(detail.sender, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
-                                                                    Text("${detail.packageName} · ${timeFmt.format(Date(detail.timestamp))}", style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
+                                                                    Text(detail.sender, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
+                                                                    Text("${detail.packageName} · ${timeFmt.format(Date(detail.timestamp))}", style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
                                                                 }
                                                                 Text(
                                                                     text = DesktopStrings.riskLabelText(detail.riskLabel),
@@ -877,7 +892,7 @@ fun DesktopApp(
                                                                     }
                                                                 )
                                                             }
-                                                            Text(detail.preview.take(settings.previewLength), style = MaterialTheme.typography.bodyMedium, color = DesktopPalette.TextSecondary)
+                                                            Text(detail.preview.take(settings.previewLength), style = MaterialTheme.typography.bodyMedium, color = tokens.textSecondary)
 
                                                             // Action Row
                                                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -923,12 +938,12 @@ fun DesktopApp(
                                                                 }
                                                             }
 
-                                                            HorizontalDivider(color = DesktopPalette.GlassBorder)
-                                                            Text(DesktopStrings.conversationTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                                                            HorizontalDivider(color = tokens.border)
+                                                            Text(DesktopStrings.conversationTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                                                             val thread = conversationThread
                                                             if (thread == null || thread.items.isEmpty()) {
                                                                 Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                                                    Text(DesktopStrings.conversationEmpty, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
+                                                                    Text(DesktopStrings.conversationEmpty, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
                                                                 }
                                                             } else {
                                                                 LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -937,12 +952,12 @@ fun DesktopApp(
                                                                             modifier = Modifier
                                                                                 .fillMaxWidth()
                                                                                 .clip(RoundedCornerShape(10.dp))
-                                                                                .background(DesktopPalette.GlassSurfaceElevated.copy(alpha = 0.65f))
+                                                                                .background(tokens.surfaceElevated.copy(alpha = 0.65f))
                                                                                 .padding(10.dp)
                                                                         ) {
                                                                             Text("${item.sender} · ${timeFmt.format(Date(item.timestamp))}", style = MaterialTheme.typography.labelSmall, color = accentColor)
                                                                             Spacer(Modifier.height(2.dp))
-                                                                            Text(item.preview, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextSecondary)
+                                                                            Text(item.preview, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
                                                                         }
                                                                     }
                                                                 }
@@ -990,7 +1005,7 @@ fun DesktopApp(
 
                                     DesktopTab.STATS -> {
                                         Column(
-                                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                                            modifier = Modifier.fillMaxSize().verticalScroll(statsScrollState),
                                             verticalArrangement = Arrangement.spacedBy(14.dp)
                                         ) {
                                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
@@ -1002,9 +1017,9 @@ fun DesktopApp(
                                             DesktopStatsCharts(stats = stats, accentColor = accentColor)
                                             GlassCard(modifier = Modifier.fillMaxWidth()) {
                                                 Column(modifier = Modifier.fillMaxWidth().padding(18.dp)) {
-                                                    Text(DesktopStrings.statsRecentApps, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                                                    Text(DesktopStrings.statsRecentApps, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                                                     Spacer(Modifier.height(8.dp))
-                                                    Text(stats.recentPackages.joinToString(" · ").ifBlank { "-" }, style = MaterialTheme.typography.bodyMedium, color = DesktopPalette.TextSecondary)
+                                                    Text(stats.recentPackages.joinToString(" · ").ifBlank { "-" }, style = MaterialTheme.typography.bodyMedium, color = tokens.textSecondary)
                                                 }
                                             }
                                         }
@@ -1033,10 +1048,10 @@ fun DesktopApp(
                                                 }
                                                 if (todos.isEmpty()) {
                                                     Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                                        Text(DesktopStrings.todosEmpty, color = DesktopPalette.TextMuted)
+                                                        Text(DesktopStrings.todosEmpty, color = tokens.textMuted)
                                                     }
                                                 } else {
-                                                    LazyColumn(verticalArrangement = Arrangement.spacedBy(listSpace), modifier = Modifier.weight(1f)) {
+                                                    LazyColumn(state = todosListState, verticalArrangement = Arrangement.spacedBy(listSpace), modifier = Modifier.weight(1f)) {
                                                         items(todos, key = { it.id }) { t ->
                                                             GlassCard(modifier = Modifier.fillMaxWidth()) {
                                                                 Row(modifier = Modifier.fillMaxWidth().padding(cardPad), verticalAlignment = Alignment.CenterVertically) {
@@ -1047,9 +1062,9 @@ fun DesktopApp(
                                                                         }
                                                                     )
                                                                     Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                                                                        Text(t.title, style = MaterialTheme.typography.bodyMedium, color = DesktopPalette.TextPrimary)
+                                                                        Text(t.title, style = MaterialTheme.typography.bodyMedium, color = tokens.textPrimary)
                                                                         if (t.repeatRule.isNotBlank()) {
-                                                                            Text(t.repeatRule, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
+                                                                            Text(t.repeatRule, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
                                                                         }
                                                                     }
                                                                     TextButton(onClick = { editingTodo = t; editTodoTitle = t.title }) { Text(DesktopStrings.todoEdit) }
@@ -1066,7 +1081,7 @@ fun DesktopApp(
                                             // Right: Notes Panel
                                             GlassCard(modifier = Modifier.weight(0.45f).fillMaxHeight()) {
                                                 Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                    Text(DesktopStrings.notesTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                                                    Text(DesktopStrings.notesTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
                                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                                         OutlinedTextField(
                                                             value = newNoteContent,
@@ -1086,22 +1101,22 @@ fun DesktopApp(
                                                     }
                                                     if (notes.isEmpty()) {
                                                         Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                                            Text(DesktopStrings.notesEmpty, color = DesktopPalette.TextMuted)
+                                                            Text(DesktopStrings.notesEmpty, color = tokens.textMuted)
                                                         }
                                                     } else {
-                                                        LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        LazyColumn(state = notesListState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                                             items(notes, key = { it.id }) { n ->
                                                                 Column(
                                                                     modifier = Modifier
                                                                         .fillMaxWidth()
                                                                         .clip(RoundedCornerShape(10.dp))
-                                                                        .background(DesktopPalette.GlassSurfaceElevated.copy(alpha = 0.6f))
+                                                                        .background(tokens.surfaceElevated.copy(alpha = 0.6f))
                                                                         .padding(10.dp)
                                                                 ) {
                                                                     if (n.relatedAppLabel.isNotBlank()) {
                                                                         Text(n.relatedAppLabel, style = MaterialTheme.typography.labelSmall, color = accentColor)
                                                                     }
-                                                                    Text(n.content, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextSecondary)
+                                                                    Text(n.content, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
                                                                 }
                                                             }
                                                         }
@@ -1118,12 +1133,12 @@ fun DesktopApp(
                                             GlassCard(modifier = Modifier.width(220.dp).fillMaxHeight()) {
                                                 Column(modifier = Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                        Text(DesktopStrings.chatSessionsTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                                                        Text(DesktopStrings.chatSessionsTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                                                         TextButton(onClick = {
                                                             scope.launch { sendOrNotify(LinkMsgType.CHAT_SESSION_NEW, ChatSessionNewReq(title = "Desktop Chat")) }
                                                         }) { Text(DesktopStrings.chatNewSession, color = accentColor) }
                                                     }
-                                                    HorizontalDivider(color = DesktopPalette.GlassBorder)
+                                                    HorizontalDivider(color = tokens.border)
                                                     LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                                         items(chatSessions, key = { it.id }) { s ->
                                                             val sel = s.id == chatSessionId
@@ -1138,7 +1153,7 @@ fun DesktopApp(
                                                                     }
                                                                     .padding(horizontal = 10.dp, vertical = 8.dp)
                                                             ) {
-                                                                Text(s.title, style = MaterialTheme.typography.bodySmall, color = if (sel) accentColor else DesktopPalette.TextSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                                Text(s.title, style = MaterialTheme.typography.bodySmall, color = if (sel) accentColor else tokens.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                             }
                                                         }
                                                     }
@@ -1160,10 +1175,10 @@ fun DesktopApp(
 
                                                 if (chatBubbles.isEmpty()) {
                                                     Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                                        Text(DesktopStrings.emptyChat, color = DesktopPalette.TextMuted, style = MaterialTheme.typography.bodyMedium)
+                                                        Text(DesktopStrings.emptyChat, color = tokens.textMuted, style = MaterialTheme.typography.bodyMedium)
                                                     }
                                                 } else {
-                                                    LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                    LazyColumn(state = chatListState, modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                                         itemsIndexed(
                                                             items = chatBubbles,
                                                             key = { idx, b -> "${idx}_${b.id}_${b.role}_${b.createdAt}" }
@@ -1180,12 +1195,12 @@ fun DesktopApp(
                                                                 Column(
                                                                     modifier = Modifier
                                                                         .clip(RoundedCornerShape(chatCorner))
-                                                                        .background(if (isUser) accentColor.copy(alpha = 0.22f) else DesktopPalette.glassSurface(settings.glassBlurLevel))
-                                                                        .border(1.dp, if (isUser) accentColor.copy(alpha = 0.35f) else DesktopPalette.GlassBorder, RoundedCornerShape(chatCorner))
+                                                                        .background(if (isUser) accentColor.copy(alpha = 0.22f) else tokens.surface)
+                                                                        .border(1.dp, if (isUser) accentColor.copy(alpha = 0.35f) else tokens.border, RoundedCornerShape(chatCorner))
                                                                         .padding(horizontal = 14.dp, vertical = 12.dp)
                                                                 ) {
                                                                     if (isUser) {
-                                                                        Text(b.content, style = chatTextStyle, color = DesktopPalette.TextPrimary)
+                                                                        Text(b.content, style = chatTextStyle, color = tokens.textPrimary)
                                                                     } else {
                                                                         androidx.compose.material3.ProvideTextStyle(chatTextStyle) {
                                                                             DesktopMarkdownText(markdown = b.content, accentColor = accentColor)
@@ -1242,12 +1257,12 @@ fun DesktopApp(
 
                                     DesktopTab.RULES -> {
                                         Column(
-                                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+                                            modifier = Modifier.fillMaxSize().verticalScroll(rulesScrollState),
                                             verticalArrangement = Arrangement.spacedBy(16.dp)
                                         ) {
                                             GlassCard(modifier = Modifier.fillMaxWidth()) {
                                                 Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                    Text(DesktopStrings.whitelistTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                                                    Text(DesktopStrings.whitelistTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
                                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                                         OutlinedTextField(value = newRuleSender, onValueChange = { newRuleSender = it }, label = { Text(DesktopStrings.whitelistSenderHint) }, modifier = Modifier.weight(1f), singleLine = true)
                                                         OutlinedTextField(value = newRulePkg, onValueChange = { newRulePkg = it }, label = { Text(DesktopStrings.whitelistPkgHint) }, modifier = Modifier.weight(1f), singleLine = true)
@@ -1263,12 +1278,12 @@ fun DesktopApp(
                                                         }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.add) }
                                                     }
                                                     if (whitelistRules.isEmpty()) {
-                                                        Text(DesktopStrings.emptyWhitelist, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
+                                                        Text(DesktopStrings.emptyWhitelist, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
                                                     } else {
                                                         whitelistRules.forEach { r ->
-                                                            HorizontalDivider(color = DesktopPalette.GlassBorder)
+                                                            HorizontalDivider(color = tokens.border)
                                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                                Text("${r.ruleText} ${if (r.packageName.isNotBlank()) "(${r.packageName})" else ""}", style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextSecondary)
+                                                                Text("${r.ruleText} ${if (r.packageName.isNotBlank()) "(${r.packageName})" else ""}", style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
                                                                 TextButton(onClick = { scope.launch { sendOrNotify(LinkMsgType.WHITELIST_REMOVE, RuleRemoveReq(r.id)) } }) {
                                                                     Text(DesktopStrings.remove, color = DesktopPalette.GlassError)
                                                                 }
@@ -1280,7 +1295,7 @@ fun DesktopApp(
 
                                             GlassCard(modifier = Modifier.fillMaxWidth()) {
                                                 Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                    Text(DesktopStrings.tagsTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                                                    Text(DesktopStrings.tagsTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
                                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                                         OutlinedTextField(value = newTagName, onValueChange = { newTagName = it }, label = { Text(DesktopStrings.tagNameHint) }, modifier = Modifier.weight(1f), singleLine = true)
                                                         SpringButton(onClick = {
@@ -1292,12 +1307,12 @@ fun DesktopApp(
                                                         }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.add) }
                                                     }
                                                     if (tags.isEmpty()) {
-                                                        Text(DesktopStrings.emptyTags, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
+                                                        Text(DesktopStrings.emptyTags, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
                                                     } else {
                                                         tags.forEach { t ->
-                                                            HorizontalDivider(color = DesktopPalette.GlassBorder)
+                                                            HorizontalDivider(color = tokens.border)
                                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                                Text(t.name, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextSecondary)
+                                                                Text(t.name, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
                                                                 TextButton(onClick = { scope.launch { sendOrNotify(LinkMsgType.TAGS_REMOVE, TagRemoveReq(t.id)) } }) {
                                                                     Text(DesktopStrings.remove, color = DesktopPalette.GlassError)
                                                                 }
@@ -1309,16 +1324,16 @@ fun DesktopApp(
 
                                             GlassCard(modifier = Modifier.fillMaxWidth()) {
                                                 Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                    Text(DesktopStrings.mutedAppsTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                                                    Text(DesktopStrings.mutedAppsTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
                                                     if (mutedApps.isEmpty()) {
-                                                        Text(DesktopStrings.mutedAppsEmpty, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
+                                                        Text(DesktopStrings.mutedAppsEmpty, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
                                                     } else {
                                                         mutedApps.forEach { app ->
-                                                            HorizontalDivider(color = DesktopPalette.GlassBorder)
+                                                            HorizontalDivider(color = tokens.border)
                                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                                 Column(modifier = Modifier.weight(1f)) {
-                                                                    Text(app.appLabel, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextPrimary)
-                                                                    Text(app.packageName, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted, fontFamily = FontFamily.Monospace)
+                                                                    Text(app.appLabel, style = MaterialTheme.typography.bodySmall, color = tokens.textPrimary)
+                                                                    Text(app.packageName, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted, fontFamily = FontFamily.Monospace)
                                                                 }
                                                                 Switch(
                                                                     checked = app.muted,
@@ -1348,12 +1363,13 @@ fun DesktopApp(
                                 }
                             }
 
-                            if (settings.animationsEnabled) {
+                            val effectiveTransition = if (settings.animationsEnabled) settings.pageTransitionStyle else PageTransitionStyle.NONE
+                            if (effectiveTransition != PageTransitionStyle.NONE) {
                                 AnimatedContent(
                                     targetState = activeTab,
                                     transitionSpec = {
-                                        (fadeIn(tween(180)) + slideInHorizontally(tween(200)) { it / 16 }) togetherWith
-                                            (fadeOut(tween(120)) + slideOutHorizontally(tween(140)) { -it / 16 })
+                                        val forward = targetState.ordinal >= initialState.ordinal
+                                        DesktopMotion.pageTransition(effectiveTransition, forward)
                                     },
                                     label = "desktop_tab_content",
                                     modifier = Modifier.fillMaxSize()
@@ -1369,7 +1385,7 @@ fun DesktopApp(
                 deepAnalysisResult?.let { (_, markdown) ->
                     AlertDialog(
                         onDismissRequest = { deepAnalysisResult = null },
-                        title = { Text(DesktopStrings.deepAnalysisTitle, color = DesktopPalette.TextPrimary) },
+                        title = { Text(DesktopStrings.deepAnalysisTitle, color = tokens.textPrimary) },
                         text = {
                             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                                 DesktopMarkdownText(markdown = markdown, accentColor = accentColor)
@@ -1378,7 +1394,7 @@ fun DesktopApp(
                         confirmButton = {
                             TextButton(onClick = { deepAnalysisResult = null }) { Text(DesktopStrings.ok) }
                         },
-                        containerColor = bgBottom
+                        containerColor = tokens.dialogContainer
                     )
                 }
 
@@ -1386,7 +1402,7 @@ fun DesktopApp(
                 editingTodo?.let { target ->
                     AlertDialog(
                         onDismissRequest = { editingTodo = null },
-                        title = { Text(DesktopStrings.todoEdit, color = DesktopPalette.TextPrimary) },
+                        title = { Text(DesktopStrings.todoEdit, color = tokens.textPrimary) },
                         text = {
                             OutlinedTextField(
                                 value = editTodoTitle,
@@ -1410,7 +1426,7 @@ fun DesktopApp(
                         dismissButton = {
                             TextButton(onClick = { editingTodo = null }) { Text(DesktopStrings.dismiss) }
                         },
-                        containerColor = bgBottom
+                        containerColor = tokens.dialogContainer
                     )
                 }
 
@@ -1419,7 +1435,7 @@ fun DesktopApp(
                     DesktopUpdateDialog(
                         update = upd,
                         accentColor = accentColor,
-                        containerColor = bgBottom,
+                        containerColor = tokens.dialogContainer,
                         animationsEnabled = settings.animationsEnabled,
                         onDismiss = { pendingUpdateDialog = null },
                         onFeedback = { actionFeedback = it }
@@ -1428,15 +1444,17 @@ fun DesktopApp(
             }
         }
     }
+    }
 }
 
 @Composable
 private fun StatBox(label: String, value: String, modifier: Modifier = Modifier) {
+    val tokens = LocalDesktopTokens.current
     GlassCard(modifier = modifier) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
             Spacer(Modifier.height(6.dp))
-            Text(value, style = MaterialTheme.typography.headlineSmall, color = DesktopPalette.TextPrimary)
+            Text(value, style = MaterialTheme.typography.headlineSmall, color = tokens.textPrimary)
         }
     }
 }

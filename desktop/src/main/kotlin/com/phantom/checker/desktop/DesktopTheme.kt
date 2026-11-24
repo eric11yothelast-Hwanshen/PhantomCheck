@@ -1,8 +1,20 @@
 package com.phantom.checker.desktop
 
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -16,9 +28,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -34,7 +48,93 @@ import org.jetbrains.skia.Image as SkiaImage
 import java.io.File
 
 /**
- * #468 桌面端深色玻璃設計系統（支援 6 種強調色、4 種預設漸層、自訂背景圖、密度與字級縮放、動畫開關）。
+ * #488 桌面端深淺維度設計 Token（單一色彩來源）：
+ * - 由 surfaceOpacity (0.55..0.96)、bgScrimAlpha (0.15..0.85)、highContrastText 驅動
+ * - 所有卡片、側欄、對話框、Canvas 圖表、Markdown 區塊皆透過 LocalDesktopTokens.current 取色
+ */
+@Immutable
+data class DesktopThemeTokens(
+    val sidebarBg: Color,
+    val surface: Color,
+    val surfaceElevated: Color,
+    val border: Color,
+    val textPrimary: Color,
+    val textSecondary: Color,
+    val textMuted: Color,
+    val codeBg: Color,
+    val scrimColor: Color,
+    val dialogContainer: Color,
+    val chartGridLine: Color
+) {
+    companion object {
+        val Default = from(DesktopSettings())
+
+        fun from(settings: DesktopSettings): DesktopThemeTokens {
+            val opacity = settings.surfaceOpacity.coerceIn(0.55f, 0.96f)
+            val scrim = settings.bgScrimAlpha.coerceIn(0.15f, 0.85f)
+            val hc = settings.highContrastText
+            val (_, bgBottom) = DesktopPalette.bgGradientColors(settings.bgTheme)
+            val elevatedAlpha = (opacity + 0.08f).coerceAtMost(0.98f)
+            val sidebarAlpha = (opacity + 0.10f).coerceAtMost(0.96f)
+            return DesktopThemeTokens(
+                sidebarBg = Color(0xFF121826).copy(alpha = sidebarAlpha),
+                surface = Color(0xFF182032).copy(alpha = opacity),
+                surfaceElevated = Color(0xFF202A40).copy(alpha = elevatedAlpha),
+                border = Color.White.copy(alpha = if (hc) 0.20f else 0.09f),
+                textPrimary = if (hc) Color(0xFFFFFFFF) else Color(0xFFEBF1F8),
+                textSecondary = if (hc) Color(0xFFDDE7F5) else Color(0xFFB4C0D3),
+                textMuted = if (hc) Color(0xFFAAB8CE) else Color(0xFF7D8AA1),
+                codeBg = Color.Black.copy(alpha = if (hc) 0.54f else 0.38f),
+                scrimColor = Color.Black.copy(alpha = scrim),
+                dialogContainer = bgBottom.copy(alpha = 0.97f),
+                chartGridLine = Color.White.copy(alpha = if (hc) 0.22f else 0.11f)
+            )
+        }
+    }
+}
+
+val LocalDesktopTokens = staticCompositionLocalOf { DesktopThemeTokens.Default }
+
+/**
+ * #488 桌面端頁面切換動效常數（draw-phase 友善、全常數化、無布林階躍切換參數）。
+ */
+object DesktopMotion {
+    const val FADE_IN_MS = 180
+    const val FADE_OUT_MS = 130
+    const val SLIDE_IN_MS = 220
+    const val SLIDE_OUT_MS = 160
+    const val SCALE_IN_MS = 200
+    const val SCALE_OUT_MS = 140
+    const val SCALE_INITIAL = 0.96f
+    const val SCALE_TARGET_EXIT = 0.98f
+    const val SLIDE_DIVISOR = 12
+
+    fun pageTransition(style: PageTransitionStyle, forward: Boolean): ContentTransform {
+        val dir = if (forward) 1 else -1
+        return when (style) {
+            PageTransitionStyle.NONE -> EnterTransition.None togetherWith ExitTransition.None
+            PageTransitionStyle.FADE ->
+                fadeIn(tween(FADE_IN_MS, easing = FastOutSlowInEasing)) togetherWith
+                    fadeOut(tween(FADE_OUT_MS, easing = FastOutSlowInEasing))
+            PageTransitionStyle.SLIDE_HORIZONTAL ->
+                slideInHorizontally(tween(SLIDE_IN_MS, easing = FastOutSlowInEasing)) { fullWidth -> dir * (fullWidth / SLIDE_DIVISOR) } togetherWith
+                    slideOutHorizontally(tween(SLIDE_OUT_MS, easing = FastOutSlowInEasing)) { fullWidth -> -dir * (fullWidth / SLIDE_DIVISOR) }
+            PageTransitionStyle.SLIDE_FADE ->
+                (fadeIn(tween(FADE_IN_MS, easing = FastOutSlowInEasing)) +
+                    slideInHorizontally(tween(SLIDE_IN_MS, easing = FastOutSlowInEasing)) { fullWidth -> dir * (fullWidth / SLIDE_DIVISOR) }) togetherWith
+                    (fadeOut(tween(FADE_OUT_MS, easing = FastOutSlowInEasing)) +
+                        slideOutHorizontally(tween(SLIDE_OUT_MS, easing = FastOutSlowInEasing)) { fullWidth -> -dir * (fullWidth / SLIDE_DIVISOR) })
+            PageTransitionStyle.SCALE_FADE ->
+                (fadeIn(tween(SCALE_IN_MS, easing = FastOutSlowInEasing)) +
+                    scaleIn(tween(SCALE_IN_MS, easing = FastOutSlowInEasing), initialScale = SCALE_INITIAL)) togetherWith
+                    (fadeOut(tween(SCALE_OUT_MS, easing = FastOutSlowInEasing)) +
+                        scaleOut(tween(SCALE_OUT_MS, easing = FastOutSlowInEasing), targetScale = SCALE_TARGET_EXIT))
+        }
+    }
+}
+
+/**
+ * #468 / #488 桌面端深色玻璃設計系統（支援 6 種強調色、4 種預設漸層、自訂背景圖、深淺 token、密度與字級縮放、動畫開關）。
  */
 object DesktopPalette {
     val GlassSidebarBg = Color(0xFF121826).copy(alpha = 0.86f)
@@ -138,13 +238,14 @@ fun GlassCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val s by DesktopSettingsStore.state.collectAsState()
-    val resolvedBg = containerColor ?: DesktopPalette.glassSurface(s.glassBlurLevel)
+    val tokens = LocalDesktopTokens.current
+    val resolvedBg = containerColor ?: tokens.surface
     val resolvedCorner = cornerDp ?: s.messageCardCornerDp.dp
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(resolvedCorner),
         colors = CardDefaults.cardColors(containerColor = resolvedBg),
-        border = BorderStroke(1.dp, DesktopPalette.GlassBorder),
+        border = BorderStroke(1.dp, tokens.border),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         content = content
     )
@@ -188,6 +289,7 @@ fun SpringOutlinedButton(
     animationsEnabled: Boolean = true,
     content: @Composable RowScope.() -> Unit
 ) {
+    val tokens = LocalDesktopTokens.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
@@ -200,7 +302,7 @@ fun SpringOutlinedButton(
         enabled = enabled,
         interactionSource = interactionSource,
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, DesktopPalette.GlassBorder),
+        border = BorderStroke(1.dp, tokens.border),
         modifier = modifier.graphicsLayer {
             scaleX = scale
             scaleY = scale

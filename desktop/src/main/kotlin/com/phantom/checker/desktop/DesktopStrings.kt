@@ -381,4 +381,22 @@ object DesktopStrings {
     )
     fun firewallAllowSuccess(port: Int): String = t("已新增 PhantomCheck 防火牆允許規則（TCP $port，全設定檔）", "Added PhantomCheck Firewall allow rule (TCP $port, Profile: Any)")
     fun firewallAllowFailed(err: String): String = t("防火牆設定未完成（可能取消 UAC）：$err", "Firewall update not completed (UAC may have been cancelled): $err")
+
+    // #488 Page Transitions, Surface Depth/Opacity & Custom Background Emergence
+    val custTransitionTitle get() = t("頁面切換動畫樣式（支援關閉動畫退場）", "Page Transition Animation Style")
+    fun transitionStyleLabel(style: PageTransitionStyle): String = when (style) {
+        PageTransitionStyle.FADE -> t("淡入淡出 (Fade)", "Fade")
+        PageTransitionStyle.SLIDE_HORIZONTAL -> t("水平滑動 (Slide)", "Horizontal Slide")
+        PageTransitionStyle.SLIDE_FADE -> t("滑動＋淡入 (Slide+Fade)", "Slide + Fade")
+        PageTransitionStyle.SCALE_FADE -> t("微縮放＋淡入 (Scale+Fade)", "Scale + Fade")
+        PageTransitionStyle.NONE -> t("關閉動畫 (Off)", "Off (No Animation)")
+    }
+    val custSurfaceOpacityTitle get() = t("玻璃卡片不透明度（讓自訂背景浮現）", "Glass Card Opacity (Background Emergence)")
+    val custBgScrimTitle get() = t("背景遮罩深淺（數值越低背景越清晰）", "Background Dim / Scrim Depth (Lower = Clearer Background)")
+    val custHighContrastTitle get() = t("文字對比強化（高亮度背景時提升可讀性）", "High-Contrast Text (Boost readability over custom backgrounds)")
+    val bgPickerBtn get() = t("選擇圖片…", "Choose Image…")
+    val bgPickerTitle get() = t("選擇桌面背景圖片", "Choose Desktop Background Image")
+    val bgPickerSaved get() = t("已套用並複製背景圖片至本機配置目錄", "Background image applied & copied to config folder")
+    fun bgPickerFailed(err: String): String = t("載入背景圖片失敗：$err", "Failed to load background image: $err")
+    val bgRemoved get() = t("已移除自訂背景圖並還原漸層", "Custom background removed; gradient restored")
 }
