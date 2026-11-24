@@ -65,6 +65,15 @@ jobs:
       - name: Build shared, desktop & Windows installers (MSI + EXE)
         run: .\gradlew.bat :shared:build :desktop:build :desktop:packageDistributionForCurrentOS --no-daemon
 
+      - name: Dump jpackage logs on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path desktop/build/compose/logs -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "=== $($_.FullName) ==="
+            Get-Content $_.FullName
+          }
+
       - name: Upload Desktop Installers
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

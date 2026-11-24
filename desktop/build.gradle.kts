@@ -37,7 +37,7 @@ compose.desktop {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
             packageName = "PhantomCheckDesktop"
             packageVersion = "0.2.0"
-            description = "PhantomCheck 桌面端（區網加密連線與訊息管理）"
+            description = "PhantomCheck Desktop - Encrypted LAN Link & Message Manager"
             vendor = "PhantomCheck"
             includeAllModules = true
             windows {
