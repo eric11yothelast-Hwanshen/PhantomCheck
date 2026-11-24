@@ -40,6 +40,24 @@
     <fields>;
 }
 
+# #454 DesktopLinkStore 序列化 data class（Gson 反射保留欄位與建構子）
+-keep class com.phantom.checker.util.PairedDesktop {
+    <init>(...);
+    <fields>;
+}
+-keep class com.phantom.checker.util.UnknownAttempt {
+    <init>(...);
+    <fields>;
+}
+-keep class com.phantom.checker.util.CommandAuditEntry {
+    <init>(...);
+    <fields>;
+}
+
+# #454 qrcode-kotlin QR 生成保護
+-keep class qrcode.** { *; }
+-dontwarn qrcode.**
+
 # #449 Ktor 3.6.0 server/CIO/WebSockets 與 BouncyCastle R8 規則（KTOR-7539 自補）
 -keep class io.ktor.** { *; }
 -keep class kotlinx.coroutines.** { *; }

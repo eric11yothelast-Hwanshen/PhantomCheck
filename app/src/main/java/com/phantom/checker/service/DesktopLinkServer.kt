@@ -161,30 +161,31 @@ object DesktopLinkServer {
             return
         }
 
-        val engine = embeddedServer(CIO, configure = {
-            sslConnector(
-                keyStore = tls.keyStore,
-                keyAlias = DesktopLinkTls.KEY_ALIAS,
-                keyStorePassword = { tls.keyPassword.toCharArray() },
-                privateKeyPassword = { tls.keyPassword.toCharArray() }
-            ) {
-                this.host = "0.0.0.0"
-                this.port = port
-            }
-        }) {
-            install(WebSockets) {
-                pingPeriod = 15.seconds
-                timeout = 30.seconds
-                maxFrameSize = 256 * 1024L
-            }
-            routing {
-                webSocket(LinkProtocol.WS_PATH) {
-                    handleClientConnection(appCtx, tls.certFingerprintSha256, this)
+        var createdEngine: EmbeddedServer<*, *>? = null
+        runCatching {
+            val engine = embeddedServer(CIO, configure = {
+                sslConnector(
+                    keyStore = tls.keyStore,
+                    keyAlias = DesktopLinkTls.KEY_ALIAS,
+                    keyStorePassword = { tls.keyPassword.toCharArray() },
+                    privateKeyPassword = { tls.keyPassword.toCharArray() }
+                ) {
+                    this.host = "0.0.0.0"
+                    this.port = port
+                }
+            }) {
+                install(WebSockets) {
+                    pingPeriod = 15.seconds
+                    timeout = 30.seconds
+                    maxFrameSize = 256 * 1024L
+                }
+                routing {
+                    webSocket(LinkProtocol.WS_PATH) {
+                        handleClientConnection(appCtx, tls.certFingerprintSha256, this)
+                    }
                 }
             }
-        }
-
-        runCatching {
+            createdEngine = engine
             engine.start(wait = false)
             server = engine
             lastActivityMs = System.currentTimeMillis()
@@ -199,13 +200,13 @@ object DesktopLinkServer {
             registerNsd(appCtx, port, tls.certFingerprintSha256)
             startIdleWatcher(appCtx)
         }.onFailure { err ->
-            runCatching { engine.stop(200, 500) }
+            runCatching { createdEngine?.stop(200, 500) }
             server = null
             _status.value = LinkServerStatus(
                 isRunning = false,
                 port = port,
                 localIp = localIp,
-                lastError = err.message ?: "Server start failed"
+                lastError = err.message ?: err.javaClass.simpleName
             )
         }
     }

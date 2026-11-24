@@ -83,14 +83,19 @@ class LinkHubActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        if (DesktopLinkStore.isLinkEnabled(applicationContext)) {
-            DesktopLinkServer.start(applicationContext)
+        enableEdgeToEdge()
+        var initError: String? = null
+        runCatching {
+            if (DesktopLinkStore.isLinkEnabled(applicationContext)) {
+                DesktopLinkServer.start(applicationContext)
+            }
+        }.onFailure { err ->
+            initError = err.message ?: err.javaClass.simpleName
         }
         setContent {
             PhantomCheckTheme {
-                LinkHubScreen(onBack = { finish() })
+                LinkHubScreen(initialError = initError, onBack = { finish() })
             }
         }
     }
@@ -98,30 +103,63 @@ class LinkHubActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LinkHubScreen(onBack: () -> Unit) {
+private fun LinkHubScreen(initialError: String? = null, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val serverStatus by DesktopLinkServer.status.collectAsState()
 
-    var linkEnabled by remember { mutableStateOf(DesktopLinkStore.isLinkEnabled(appCtx)) }
-    var pairCodePair by remember { mutableStateOf(DesktopLinkStore.getOrGeneratePairCode()) }
+    var localError by remember { mutableStateOf(initialError) }
+    var linkEnabled by remember {
+        mutableStateOf(
+            runCatching { DesktopLinkStore.isLinkEnabled(appCtx) }
+                .onFailure { if (localError.isNullOrBlank()) localError = it.message ?: it.javaClass.simpleName }
+                .getOrDefault(false)
+        )
+    }
+    var pairCodePair by remember {
+        mutableStateOf(
+            runCatching { DesktopLinkStore.getOrGeneratePairCode() }
+                .onFailure { if (localError.isNullOrBlank()) localError = it.message ?: it.javaClass.simpleName }
+                .getOrDefault("------" to 0L)
+        )
+    }
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    var pairedDevices by remember { mutableStateOf(DesktopLinkStore.getPairedDevices(appCtx)) }
-    var unknownAttempts by remember { mutableStateOf(DesktopLinkStore.getUnknownAttempts(appCtx)) }
-    var auditLogs by remember { mutableStateOf(DesktopLinkStore.getAuditLogs(appCtx)) }
+    var pairedDevices by remember {
+        mutableStateOf(
+            runCatching { DesktopLinkStore.getPairedDevices(appCtx) }
+                .onFailure { if (localError.isNullOrBlank()) localError = it.message ?: it.javaClass.simpleName }
+                .getOrDefault(emptyList())
+        )
+    }
+    var unknownAttempts by remember {
+        mutableStateOf(
+            runCatching { DesktopLinkStore.getUnknownAttempts(appCtx) }
+                .onFailure { if (localError.isNullOrBlank()) localError = it.message ?: it.javaClass.simpleName }
+                .getOrDefault(emptyList())
+        )
+    }
+    var auditLogs by remember {
+        mutableStateOf(
+            runCatching { DesktopLinkStore.getAuditLogs(appCtx) }
+                .onFailure { if (localError.isNullOrBlank()) localError = it.message ?: it.javaClass.simpleName }
+                .getOrDefault(emptyList())
+        )
+    }
 
     LaunchedEffect(Unit) {
         while (true) {
             delay(1000L)
             nowMs = System.currentTimeMillis()
-            pairedDevices = DesktopLinkStore.getPairedDevices(appCtx)
-            unknownAttempts = DesktopLinkStore.getUnknownAttempts(appCtx)
-            auditLogs = DesktopLinkStore.getAuditLogs(appCtx)
+            pairedDevices = runCatching { DesktopLinkStore.getPairedDevices(appCtx) }.getOrDefault(pairedDevices)
+            unknownAttempts = runCatching { DesktopLinkStore.getUnknownAttempts(appCtx) }.getOrDefault(unknownAttempts)
+            auditLogs = runCatching { DesktopLinkStore.getAuditLogs(appCtx) }.getOrDefault(auditLogs)
         }
     }
 
     val remainingSec = ((pairCodePair.second - nowMs) / 1000L).coerceAtLeast(0L)
-    val hostIp = serverStatus.localIp.ifBlank { DesktopLinkServer.getLocalWifiIpAddress().orEmpty() }
+    val hostIp = serverStatus.localIp.ifBlank {
+        runCatching { DesktopLinkServer.getLocalWifiIpAddress().orEmpty() }.getOrDefault("")
+    }
     val hostPortText = if (hostIp.isNotBlank()) "$hostIp:${serverStatus.port}" else ":${serverStatus.port}"
     val wssUrl = if (hostIp.isNotBlank()) "wss://$hostIp:${serverStatus.port}${LinkProtocol.WS_PATH}" else ""
 
@@ -143,6 +181,7 @@ private fun LinkHubScreen(onBack: () -> Unit) {
     }
 
     val timeFmt = remember { SimpleDateFormat("MM/dd HH:mm:ss", Locale.getDefault()) }
+    val displayError = serverStatus.lastError?.takeIf { it.isNotBlank() } ?: localError?.takeIf { it.isNotBlank() }
 
     Scaffold(
         topBar = {
@@ -196,11 +235,16 @@ private fun LinkHubScreen(onBack: () -> Unit) {
                             checked = linkEnabled,
                             onCheckedChange = { checked ->
                                 linkEnabled = checked
-                                DesktopLinkStore.setLinkEnabled(appCtx, checked)
-                                if (checked) {
-                                    DesktopLinkServer.start(appCtx)
-                                } else {
-                                    DesktopLinkServer.stop(appCtx)
+                                runCatching {
+                                    DesktopLinkStore.setLinkEnabled(appCtx, checked)
+                                    if (checked) {
+                                        DesktopLinkServer.start(appCtx)
+                                    } else {
+                                        DesktopLinkServer.stop(appCtx)
+                                    }
+                                    localError = null
+                                }.onFailure { err ->
+                                    localError = err.message ?: err.javaClass.simpleName
                                 }
                             }
                         )
@@ -229,10 +273,10 @@ private fun LinkHubScreen(onBack: () -> Unit) {
                             },
                             style = MaterialTheme.typography.bodyMedium
                         )
-                        if (!serverStatus.lastError.isNullOrBlank()) {
+                        if (!displayError.isNullOrBlank()) {
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                text = serverStatus.lastError.orEmpty(),
+                                text = stringResource(R.string.link_hub_init_error, displayError),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error
                             )
@@ -257,9 +301,11 @@ private fun LinkHubScreen(onBack: () -> Unit) {
                             }
                             OutlinedButton(
                                 onClick = {
-                                    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                                    cm?.setPrimaryClip(ClipData.newPlainText("PhantomCheck Host", hostPortText))
-                                    Toast.makeText(ctx, ctx.getString(R.string.link_hub_copied_toast), Toast.LENGTH_SHORT).show()
+                                    runCatching {
+                                        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                        cm?.setPrimaryClip(ClipData.newPlainText("PhantomCheck Host", hostPortText))
+                                        Toast.makeText(ctx, ctx.getString(R.string.link_hub_copied_toast), Toast.LENGTH_SHORT).show()
+                                    }
                                 }
                             ) {
                                 Text(stringResource(R.string.link_hub_copy_address))
@@ -312,6 +358,65 @@ private fun LinkHubScreen(onBack: () -> Unit) {
                                     )
                                 }
                                 Spacer(Modifier.height(10.dp))
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.link_hub_qr_fallback_hint),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    val copyTargetUrl = wssUrl.ifBlank { hostPortText }
+                                    Text(
+                                        text = copyTargetUrl,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    if (serverStatus.fingerprint.isNotBlank()) {
+                                        Text(
+                                            text = serverStatus.fingerprint,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                runCatching {
+                                                    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                                    cm?.setPrimaryClip(ClipData.newPlainText("PhantomCheck WSS", copyTargetUrl))
+                                                    Toast.makeText(ctx, ctx.getString(R.string.link_hub_copied_toast), Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        ) {
+                                            Text(stringResource(R.string.link_hub_copy_wss))
+                                        }
+                                        if (serverStatus.fingerprint.isNotBlank()) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    runCatching {
+                                                        val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                                        cm?.setPrimaryClip(ClipData.newPlainText("PhantomCheck Fingerprint", serverStatus.fingerprint))
+                                                        Toast.makeText(ctx, ctx.getString(R.string.link_hub_fingerprint_copied_toast), Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            ) {
+                                                Text(stringResource(R.string.link_hub_copy_fingerprint))
+                                            }
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(10.dp))
                             }
                             Text(
                                 text = pairCodePair.first,
@@ -334,7 +439,9 @@ private fun LinkHubScreen(onBack: () -> Unit) {
                             Spacer(Modifier.height(8.dp))
                             Button(
                                 onClick = {
-                                    pairCodePair = DesktopLinkStore.generatePairCode()
+                                    runCatching { DesktopLinkStore.generatePairCode() }
+                                        .onSuccess { pairCodePair = it }
+                                        .onFailure { localError = it.message ?: it.javaClass.simpleName }
                                 }
                             ) {
                                 Text(stringResource(R.string.link_hub_regenerate_code))
@@ -381,8 +488,12 @@ private fun LinkHubScreen(onBack: () -> Unit) {
                                     }
                                     TextButton(
                                         onClick = {
-                                            DesktopLinkServer.revokeDevice(appCtx, dev.instanceId)
-                                            pairedDevices = DesktopLinkStore.getPairedDevices(appCtx)
+                                            runCatching {
+                                                DesktopLinkServer.revokeDevice(appCtx, dev.instanceId)
+                                                pairedDevices = DesktopLinkStore.getPairedDevices(appCtx)
+                                            }.onFailure { err ->
+                                                localError = err.message ?: err.javaClass.simpleName
+                                            }
                                         }
                                     ) {
                                         Text(stringResource(R.string.link_hub_unpair), color = MaterialTheme.colorScheme.error)
@@ -413,7 +524,7 @@ private fun LinkHubScreen(onBack: () -> Unit) {
                             )
                             if (unknownAttempts.isNotEmpty()) {
                                 TextButton(onClick = {
-                                    DesktopLinkStore.clearUnknownAttempts(appCtx)
+                                    runCatching { DesktopLinkStore.clearUnknownAttempts(appCtx) }
                                     unknownAttempts = emptyList()
                                 }) {
                                     Text(stringResource(R.string.link_hub_clear))
@@ -461,7 +572,7 @@ private fun LinkHubScreen(onBack: () -> Unit) {
                             )
                             if (auditLogs.isNotEmpty()) {
                                 TextButton(onClick = {
-                                    DesktopLinkStore.clearAuditLogs(appCtx)
+                                    runCatching { DesktopLinkStore.clearAuditLogs(appCtx) }
                                     auditLogs = emptyList()
                                 }) {
                                     Text(stringResource(R.string.link_hub_clear))
@@ -493,8 +604,8 @@ private fun LinkHubScreen(onBack: () -> Unit) {
 
             // 6. Doze 與電池最佳化豁免引導
             item {
-                val pm = remember { ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager }
-                val isIgnoringBattery = pm?.isIgnoringBatteryOptimizations(ctx.packageName) == true
+                val pm = remember { runCatching { ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager }.getOrNull() }
+                val isIgnoringBattery = runCatching { pm?.isIgnoringBatteryOptimizations(ctx.packageName) == true }.getOrDefault(false)
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
                     shape = RoundedCornerShape(16.dp)

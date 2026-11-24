@@ -2967,4 +2967,9 @@
     <string name="link_hub_battery_exempt_btn">電池最佳化豁免設定</string>
     <string name="link_hub_audit_title">指令審計紀錄（上限 200 筆）</string>
     <string name="link_hub_audit_empty">尚無桌面端操作紀錄</string>
+    <string name="link_hub_qr_fallback_hint">無法產生 QR 預覽，請改複製下方連線位址與憑證指紋：</string>
+    <string name="link_hub_copy_wss">複製 wss://</string>
+    <string name="link_hub_copy_fingerprint">複製指紋</string>
+    <string name="link_hub_fingerprint_copied_toast">已複製憑證指紋</string>
+    <string name="link_hub_init_error">桌面端連線異常：%1$s</string>
 </resources>

@@ -2967,4 +2967,9 @@
     <string name="link_hub_battery_exempt_btn">Battery Optimization Exemption</string>
     <string name="link_hub_audit_title">Command Audit Log (max 200)</string>
     <string name="link_hub_audit_empty">No desktop commands recorded yet</string>
+    <string name="link_hub_qr_fallback_hint">QR preview unavailable. Copy the connection address and certificate fingerprint below:</string>
+    <string name="link_hub_copy_wss">Copy wss://</string>
+    <string name="link_hub_copy_fingerprint">Copy Fingerprint</string>
+    <string name="link_hub_fingerprint_copied_toast">Fingerprint copied</string>
+    <string name="link_hub_init_error">Desktop Link warning: %1$s</string>
 </resources>

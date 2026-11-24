@@ -82,42 +82,49 @@ object DesktopLinkStore {
                     EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
                 ).also { cachedPrefs = it }
-            } catch (_: Exception) {
+            } catch (_: Throwable) {
                 null
             }
         }
     }
 
     fun isLinkEnabled(ctx: Context): Boolean =
-        securePrefs(ctx)?.getBoolean(KEY_ENABLED, false) ?: false
+        runCatching { securePrefs(ctx)?.getBoolean(KEY_ENABLED, false) ?: false }.getOrDefault(false)
 
     fun setLinkEnabled(ctx: Context, enabled: Boolean) {
-        securePrefs(ctx)?.edit()?.putBoolean(KEY_ENABLED, enabled)?.apply()
+        runCatching { securePrefs(ctx)?.edit()?.putBoolean(KEY_ENABLED, enabled)?.apply() }
     }
 
     fun getServerPort(ctx: Context): Int =
-        (securePrefs(ctx)?.getInt(KEY_PORT, LinkProtocol.DEFAULT_PORT) ?: LinkProtocol.DEFAULT_PORT)
-            .coerceIn(1024, 65535)
+        runCatching {
+            (securePrefs(ctx)?.getInt(KEY_PORT, LinkProtocol.DEFAULT_PORT) ?: LinkProtocol.DEFAULT_PORT)
+                .coerceIn(1024, 65535)
+        }.getOrDefault(LinkProtocol.DEFAULT_PORT)
 
     fun setServerPort(ctx: Context, port: Int) {
-        securePrefs(ctx)?.edit()?.putInt(KEY_PORT, port.coerceIn(1024, 65535))?.apply()
+        runCatching { securePrefs(ctx)?.edit()?.putInt(KEY_PORT, port.coerceIn(1024, 65535))?.apply() }
     }
 
     fun getOrCreateKeystorePassword(ctx: Context): String {
-        val prefs = securePrefs(ctx) ?: return randomHex(24)
-        val existing = prefs.getString(KEY_KS_PASSWORD, null)
-        if (!existing.isNullOrBlank()) return existing
-        val created = randomHex(24)
-        prefs.edit().putString(KEY_KS_PASSWORD, created).apply()
-        return created
+        return runCatching {
+            val prefs = securePrefs(ctx) ?: return@runCatching randomHex(24)
+            val existing = prefs.getString(KEY_KS_PASSWORD, null)
+            if (!existing.isNullOrBlank()) return@runCatching existing
+            val created = randomHex(24)
+            prefs.edit().putString(KEY_KS_PASSWORD, created).apply()
+            created
+        }.getOrElse { randomHex(24) }
     }
 
     fun getPairedDevices(ctx: Context): List<PairedDesktop> {
-        val raw = securePrefs(ctx)?.getString(KEY_PAIRED_DEVICES, null).orEmpty()
-        if (raw.isBlank()) return emptyList()
         return runCatching {
-            val type = object : TypeToken<List<PairedDesktop>>() {}.type
-            gson.fromJson<List<PairedDesktop>>(raw, type).orEmpty()
+            val raw = securePrefs(ctx)?.getString(KEY_PAIRED_DEVICES, null).orEmpty()
+            if (raw.isBlank()) return@runCatching emptyList()
+            val type = object : TypeToken<List<PairedDesktop?>>() {}.type
+            gson.fromJson<List<PairedDesktop?>>(raw, type)
+                .orEmpty()
+                .filterNotNull()
+                .filter { !it.instanceId.isNullOrBlank() }
         }.getOrDefault(emptyList())
     }
 
@@ -126,40 +133,46 @@ object DesktopLinkStore {
 
     @Synchronized
     fun upsertPairedDevice(ctx: Context, device: PairedDesktop) {
-        val list = getPairedDevices(ctx).toMutableList()
-        val idx = list.indexOfFirst { it.instanceId == device.instanceId }
-        if (idx >= 0) {
-            list[idx] = device
-        } else {
-            list.add(0, device)
+        runCatching {
+            val list = getPairedDevices(ctx).toMutableList()
+            val idx = list.indexOfFirst { it.instanceId == device.instanceId }
+            if (idx >= 0) {
+                list[idx] = device
+            } else {
+                list.add(0, device)
+            }
+            securePrefs(ctx)?.edit()?.putString(KEY_PAIRED_DEVICES, gson.toJson(list))?.apply()
         }
-        securePrefs(ctx)?.edit()?.putString(KEY_PAIRED_DEVICES, gson.toJson(list))?.apply()
     }
 
     @Synchronized
     fun updateLastSeen(ctx: Context, instanceId: String, nowMs: Long = System.currentTimeMillis()) {
-        val list = getPairedDevices(ctx).map {
-            if (it.instanceId == instanceId) it.copy(lastSeenAt = nowMs) else it
+        runCatching {
+            val list = getPairedDevices(ctx).map {
+                if (it.instanceId == instanceId) it.copy(lastSeenAt = nowMs) else it
+            }
+            securePrefs(ctx)?.edit()?.putString(KEY_PAIRED_DEVICES, gson.toJson(list))?.apply()
         }
-        securePrefs(ctx)?.edit()?.putString(KEY_PAIRED_DEVICES, gson.toJson(list))?.apply()
     }
 
     @Synchronized
     fun removePairedDevice(ctx: Context, instanceId: String) {
-        val list = getPairedDevices(ctx).filterNot { it.instanceId == instanceId }
-        val filteredAudit = getAuditLogs(ctx).filterNot { it.instanceId == instanceId }
-        securePrefs(ctx)?.edit()
-            ?.putString(KEY_PAIRED_DEVICES, gson.toJson(list))
-            ?.putString(KEY_AUDIT_LOGS, gson.toJson(filteredAudit))
-            ?.apply()
+        runCatching {
+            val list = getPairedDevices(ctx).filterNot { it.instanceId == instanceId }
+            val filteredAudit = getAuditLogs(ctx).filterNot { it.instanceId == instanceId }
+            securePrefs(ctx)?.edit()
+                ?.putString(KEY_PAIRED_DEVICES, gson.toJson(list))
+                ?.putString(KEY_AUDIT_LOGS, gson.toJson(filteredAudit))
+                ?.apply()
+        }
     }
 
     fun getAuditLogs(ctx: Context): List<CommandAuditEntry> {
-        val raw = securePrefs(ctx)?.getString(KEY_AUDIT_LOGS, null).orEmpty()
-        if (raw.isBlank()) return emptyList()
         return runCatching {
-            val type = object : TypeToken<List<CommandAuditEntry>>() {}.type
-            gson.fromJson<List<CommandAuditEntry>>(raw, type).orEmpty()
+            val raw = securePrefs(ctx)?.getString(KEY_AUDIT_LOGS, null).orEmpty()
+            if (raw.isBlank()) return@runCatching emptyList()
+            val type = object : TypeToken<List<CommandAuditEntry?>>() {}.type
+            gson.fromJson<List<CommandAuditEntry?>>(raw, type).orEmpty().filterNotNull()
         }.getOrDefault(emptyList())
     }
 
@@ -172,23 +185,25 @@ object DesktopLinkStore {
         detail: String = "",
         nowMs: Long = System.currentTimeMillis()
     ) {
-        val list = getAuditLogs(ctx).toMutableList()
-        list.add(0, CommandAuditEntry(nowMs, instanceId, command, ok, detail.take(80)))
-        val trimmed = list.take(MAX_AUDIT_LOGS)
-        securePrefs(ctx)?.edit()?.putString(KEY_AUDIT_LOGS, gson.toJson(trimmed))?.apply()
+        runCatching {
+            val list = getAuditLogs(ctx).toMutableList()
+            list.add(0, CommandAuditEntry(nowMs, instanceId, command, ok, detail.take(80)))
+            val trimmed = list.take(MAX_AUDIT_LOGS)
+            securePrefs(ctx)?.edit()?.putString(KEY_AUDIT_LOGS, gson.toJson(trimmed))?.apply()
+        }
     }
 
     @Synchronized
     fun clearAuditLogs(ctx: Context) {
-        securePrefs(ctx)?.edit()?.remove(KEY_AUDIT_LOGS)?.apply()
+        runCatching { securePrefs(ctx)?.edit()?.remove(KEY_AUDIT_LOGS)?.apply() }
     }
 
     fun getUnknownAttempts(ctx: Context): List<UnknownAttempt> {
-        val raw = securePrefs(ctx)?.getString(KEY_UNKNOWN_ATTEMPTS, null).orEmpty()
-        if (raw.isBlank()) return emptyList()
         return runCatching {
-            val type = object : TypeToken<List<UnknownAttempt>>() {}.type
-            gson.fromJson<List<UnknownAttempt>>(raw, type).orEmpty()
+            val raw = securePrefs(ctx)?.getString(KEY_UNKNOWN_ATTEMPTS, null).orEmpty()
+            if (raw.isBlank()) return@runCatching emptyList()
+            val type = object : TypeToken<List<UnknownAttempt?>>() {}.type
+            gson.fromJson<List<UnknownAttempt?>>(raw, type).orEmpty().filterNotNull()
         }.getOrDefault(emptyList())
     }
 
@@ -200,15 +215,17 @@ object DesktopLinkStore {
         instanceId: String = "",
         nowMs: Long = System.currentTimeMillis()
     ) {
-        val list = getUnknownAttempts(ctx).toMutableList()
-        list.add(0, UnknownAttempt(nowMs, remoteIp, reason, instanceId))
-        val trimmed = list.take(MAX_UNKNOWN_ATTEMPTS)
-        securePrefs(ctx)?.edit()?.putString(KEY_UNKNOWN_ATTEMPTS, gson.toJson(trimmed))?.apply()
+        runCatching {
+            val list = getUnknownAttempts(ctx).toMutableList()
+            list.add(0, UnknownAttempt(nowMs, remoteIp, reason, instanceId))
+            val trimmed = list.take(MAX_UNKNOWN_ATTEMPTS)
+            securePrefs(ctx)?.edit()?.putString(KEY_UNKNOWN_ATTEMPTS, gson.toJson(trimmed))?.apply()
+        }
     }
 
     @Synchronized
     fun clearUnknownAttempts(ctx: Context) {
-        securePrefs(ctx)?.edit()?.remove(KEY_UNKNOWN_ATTEMPTS)?.apply()
+        runCatching { securePrefs(ctx)?.edit()?.remove(KEY_UNKNOWN_ATTEMPTS)?.apply() }
     }
 
     fun generatePairCode(nowMs: Long = System.currentTimeMillis()): Pair<String, Long> {
