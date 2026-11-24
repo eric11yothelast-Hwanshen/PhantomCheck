@@ -52,6 +52,13 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
 
+### v4.5.0 更新重點（versionCode 53，2026-11-23）
+
+- **#454 LinkHubActivity 桌面端設定頁閃退修復（PR #459 / #463）**：調整 `enableEdgeToEdge()` 至 `super.onCreate()` 之後、補齊 `PairedDesktop`/`UnknownAttempt`/`CommandAuditEntry` 與 `qrcode.**` R8 keep 規則，並為 `LinkHubActivity`/`DesktopLinkStore`/`DesktopLinkServer` 全路徑加上 `runCatching` 容錯與 `wss://`/SHA-256 文字備援。
+- **#455 聯網搜尋智慧化（PR #460 / #463）**：新增 `AiClient.decideSearchNecessityAndRewrite` 前置搜尋必要性判斷與查詢重寫（融合 RAG 記憶與近 12 則歷史，省 Token 退回規則路由）、同網域去重最多 3 筆乾淨來源顯示，以及 `FreeWebSearchEngine` HTML／編碼淨化、可讀度／長度過濾與網域品質分級。
+- **#456 主動情報中樞 v2（PR #461 / #463）**：`WatchTopicEngine` 融合非敏感記憶、授權日曆未來 7 日要點與高階健康趨勢組出 ≤100 字個人化查詢；`DigestComposer` 新增推播前 AI 相關性過濾（`RELEVANCE_JUDGE_PROMPT`）與 3–5 句精簡摘要（最多 2 筆乾淨來源）。
+- **#457 桌面端 Windows MSI/EXE 安裝檔管線與深色玻璃 UI（PR #462 / #463）**：桌面端 `version`／`packageVersion` 統一為 `0.2.0` 並設定 `TargetFormat.Msi`／`TargetFormat.Exe` 與 `windows-latest` CI/Release 產出管線；`DesktopApp` 升級深色玻璃介面、Spring 動畫與重連倒數進度條。
+
 ### v4.4.0 更新重點（versionCode 52，2026-11-23）
 
 - **#447 免費聯網查詢後端與免費 Gemini Key 400 修復（PR #451）**：新增零金鑰 `FreeWebSearchEngine`（依序查詢 DuckDuckGo Instant Answer → DuckDuckGo HTML 含 202/429 5 分鐘負快取 → Wikipedia API）；免費 Gemini key 開啟聯網查詢遇 HTTP 400（不支援 Google Search Grounding）時，偵測 `isGroundingUnsupported400` 並靜默退還該次失敗扣額、快取旗標後自動回退至免費搜尋引擎＋一般呼叫；非 Gemini provider 未設 BYOK 搜尋端點時改走免費搜尋引擎（已設 BYOK 優先 BYOK、失敗降級免費引擎），全無結果或斷網時誠實回報失敗不幻覺頂替。

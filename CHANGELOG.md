@@ -3,6 +3,33 @@
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses Semantic Versioning.
 
+## [4.5.0] - 2026-11-23
+
+- **Tag 對照**：[`v4.4.0...v4.5.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.4.0...v4.5.0)（`versionCode = 53`、`versionName = "4.5.0"`；桌面端 `packageVersion = "0.2.0"`）
+- **發佈資產（雙 APK ＋ 桌面端 Windows 安裝檔）**：
+  - `app-release.apk`：正式簽章＋R8 程式碼縮減與資源壓縮（`isMinifyEnabled = true`、`isShrinkResources = true`），供一般使用者安裝與原簽章覆蓋升級。
+  - `app-debug.apk`：除錯建置版本，供開發測試與排錯使用。
+  - `PhantomCheckDesktop` `.msi` / `.exe`：Windows 桌面端連線與訊息管理安裝檔（Compose Multiplatform，`packageVersion = "0.2.0"`）。
+
+### 新增、變更與修正
+- **#454 LinkHubActivity 桌面端設定頁閃退修復（PR #459 / #463）**：將 `enableEdgeToEdge()` 移至 `super.onCreate(savedInstanceState)` 之後以符合 Jetpack Compose 生命週期慣例；補齊 `PairedDesktop`、`UnknownAttempt`、`CommandAuditEntry` 與 `qrcode.**` 精準 R8/ProGuard keep 規則防止混淆反序列化異常；為 `LinkHubActivity`、`LinkHubScreen`、`DesktopLinkStore`（`securePrefs` 改捕獲 `Throwable`）與 `DesktopLinkServer.start()` 補齊全路徑 `runCatching` 容錯與降級顯示，並在 QR 預覽失敗時提供可複製的 `wss://` 位址與憑證 SHA-256 文字備援。
+- **#455 聯網搜尋智慧化（PR #460 / #463）**：新增前置搜尋必要性判斷與查詢重寫路由器（`AiClient.decideSearchNecessityAndRewrite`），先融合 RAG 記憶與近 12 則歷史判斷是否需聯網並重寫查詢（免搜問題直走既有對話路徑，省 Token 模式或無額度／無金鑰時退回純規則 `ruleBasedSearchDecision`）；`runGroundedQuery` 結合記憶、歷史與淨化後搜尋片段生成回覆並引導行內引用，來源清單收斂為同網域去重最多 3 筆乾淨網域名稱；`FreeWebSearchEngine` 新增 `<script>`/`<style>`/`<noscript>`/`<meta>` 剝除、HTML 實體與 percent-encoding 解碼、可讀字元比例（`<60%` 丟棄）與長度過濾（`<40` 或 `>600` 丟棄）、網域品質分級（官方與權威來源優先、內容農場丟棄）與查詢結果快取。
+- **#456 主動情報中樞 v2（PR #461 / #463）**：`WatchTopicEngine` 於查詢前融合非敏感記憶（`PRIVACY_SENSITIVE` 雙層硬排除）、授權勾選之本機日曆未來 7 日要點與 `HealthObservationPolicy` 高階健康趨勢摘要組出個人化查詢（嚴格 ≤100 字元，原始生理序列不出本機）；`DigestComposer` 新增推播前 AI 相關性與實質新訊審查（≤150 token `RELEVANCE_JUDGE_PROMPT`，未通過或無額度即靜默丟棄），通過者生成 3–5 句精簡摘要並附同網域去重最多 2 筆乾淨來源；複用 `#455` 搜尋品質治理與既有 12h 快取／SHA-256 去重／勿擾／每日上限防護。
+- **#457 桌面端 Windows MSI/EXE 安裝檔管線與深色玻璃 UI（PR #462 / #463）**：`desktop/build.gradle.kts` 統一 `version` 與 `packageVersion` 為 `0.2.0`、`nativeDistributions` 設定 `TargetFormat.Msi` / `TargetFormat.Exe`、`includeAllModules = true`、正式多解析度 `icon.ico` 與 Windows 安裝選項；`build.yml` 與 `release.yml` 新增 `windows-latest` `desktop-build` 與 `desktop-release` 管線產出 `.msi`＋`.exe`；`DesktopApp`／`DesktopLinkClient`／`DesktopStrings` 升級 16dp 圓角深色玻璃 UI、Spring（`0.85f` / `StiffnessMediumLow`）轉場與按壓動畫、連線／重連 pulse 狀態點與倒數進度條，並維持既有通訊協定與雙向功能完全相容。
+
+### English
+- **Tag Compare**: [`v4.4.0...v4.5.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.4.0...v4.5.0) (`versionCode = 53`, `versionName = "4.5.0"`; Desktop `packageVersion = "0.2.0"`)
+- **Release Assets (Dual APKs + Desktop Windows Installers)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`), for general users and in-place signature upgrades.
+  - `app-debug.apk`: Debug build for development testing and troubleshooting.
+  - `PhantomCheckDesktop` `.msi` / `.exe`: Windows desktop companion installers (Compose Multiplatform, `packageVersion = "0.2.0"`).
+
+**Added, Changed & Fixed**
+- **#454 LinkHubActivity Desktop Settings Crash Fix (PR #459 / #463)**: Moved `enableEdgeToEdge()` after `super.onCreate(savedInstanceState)` to align with Jetpack Compose lifecycle conventions; added targeted R8/ProGuard keep rules for `PairedDesktop`, `UnknownAttempt`, `CommandAuditEntry`, and `qrcode.**` to prevent obfuscation deserialization failures; wrapped all code paths in `LinkHubActivity`, `LinkHubScreen`, `DesktopLinkStore` (`securePrefs` catching `Throwable`), and `DesktopLinkServer.start()` with `runCatching` and graceful status fallbacks, plus copyable `wss://` address and certificate SHA-256 text fallback when QR preview fails.
+- **#455 Smart Web Search Routing, RAG Integration & Source Quality Governance (PR #460 / #463)**: Added pre-flight search necessity routing and query rewriting (`AiClient.decideSearchNecessityAndRewrite`) combining RAG memory and the last 12 chat turns (non-search queries route directly to standard chat; Token Saver or zero-quota/key-free states fall back to rule-based `ruleBasedSearchDecision`); `runGroundedQuery` fuses RAG memory, history, and sanitized search snippets with inline citation guidance and caps displayed sources to at most 3 domain-deduplicated clean domain names; `FreeWebSearchEngine` adds `<script>`/`<style>`/`<noscript>`/`<meta>` stripping, HTML entity & percent-encoding decoding, readability (`<60%` dropped) and length (`<40` or `>600` chars dropped) filtering, domain quality tiering (prioritizing official/authoritative sources and dropping content farms), and query caching.
+- **#456 Proactive Intel Hub v2 (PR #461 / #463)**: `WatchTopicEngine` enriches watch-topic queries on `Dispatchers.IO` with non-sensitive memories (double-enforced `PRIVACY_SENSITIVE` exclusion), authorized 7-day local calendar highlights, and high-level `HealthObservationPolicy` trend labels (strictly `<=100` chars; raw physiological series never leave the device); `DigestComposer` adds a pre-push AI relevance and novelty gate (`<=150` tokens via `RELEVANCE_JUDGE_PROMPT`, silently dropping irrelevant or unverified items), generating concise 3–5 sentence digests with at most 2 domain-deduplicated clean sources while reusing `#455` search quality governance and existing 12h cache / SHA-256 dedup / DND / daily cap protections.
+- **#457 Desktop Windows MSI/EXE Installer Pipeline & Dark Glass UI (PR #462 / #463)**: Unified `version` and `packageVersion` to `0.2.0` in `desktop/build.gradle.kts`, configured `nativeDistributions` (`TargetFormat.Msi`, `TargetFormat.Exe`, `includeAllModules = true`, multi-resolution `icon.ico`), and added `windows-latest` `desktop-build` / `desktop-release` jobs in `.github/workflows/build.yml` and `release.yml`; upgraded `DesktopApp`, `DesktopLinkClient`, and `DesktopStrings` with 16dp dark-glass cards, `spring(0.85f, MediumLow)` transitions and pressable buttons, pulsing connection/reconnection indicators with countdown progress bars, and full backward compatibility with the existing LAN link protocol.
+
 ## [4.4.0] - 2026-11-23
 
 - **Tag 對照**：[`v4.3.0...v4.4.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.3.0...v4.4.0)（`versionCode = 52`、`versionName = "4.4.0"`）

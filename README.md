@@ -50,6 +50,13 @@ Before use, please read the [Privacy Policy (PRIVACY.md)](PRIVACY.md) and [Discl
 
 For the complete changelog, see [CHANGELOG.md](CHANGELOG.md).
 
+### v4.5.0 Release Highlights (versionCode 53, 2026-11-23)
+
+- **#454 LinkHubActivity Desktop Settings Crash Fix (PR #459 / #463)**: Moved `enableEdgeToEdge()` after `super.onCreate()`, added targeted R8 keep rules for `PairedDesktop`/`UnknownAttempt`/`CommandAuditEntry` and `qrcode.**`, and wrapped all `LinkHubActivity`/`DesktopLinkStore`/`DesktopLinkServer` paths with `runCatching` and copyable `wss://`/SHA-256 text fallbacks.
+- **#455 Smart Web Search Routing, RAG Integration & Source Quality Governance (PR #460 / #463)**: Added `AiClient.decideSearchNecessityAndRewrite` (combining RAG memory + last 12 turns, falling back to `ruleBasedSearchDecision` in Token Saver), domain-deduplicated clean source lists (max 3), and `FreeWebSearchEngine` HTML/encoding sanitization, readability/length filtering, and domain quality tiering.
+- **#456 Proactive Intel Hub v2 (PR #461 / #463)**: `WatchTopicEngine` builds `<=100`-char personalized queries from non-sensitive memories, authorized 7-day calendar highlights, and high-level health trends; `DigestComposer` adds pre-push AI relevance filtering (`RELEVANCE_JUDGE_PROMPT`) and 3–5 sentence digests with up to 2 clean sources.
+- **#457 Desktop Windows MSI/EXE Installer Pipeline & Dark Glass UI (PR #462 / #463)**: Unified desktop `version` / `packageVersion` to `0.2.0` with `TargetFormat.Msi` / `TargetFormat.Exe` and `windows-latest` CI/Release jobs, and upgraded `DesktopApp` with dark-glass cards, `spring` animations, and reconnection countdown progress.
+
 ### v4.3.0 Release Highlights (versionCode 51, 2026-11-23)
 
 - **#437 AI Transport Layer Hardening (PR #442, Behavior Change)**: GitHub Models was fully retired on 2026-07-30; `AiClient` now blocks retired hosts (`models.github.ai`, `models.inference.ai.azure.com`) before sending invalid requests and throws an exception with the retirement notice URL and migration guidance; unifies `Accept: application/json`; non-JSON responses throw explicit exceptions preserving HTTP status code, `Content-Type`, and the first 300 characters of the body; `testConnection` payload shape is unchanged.
