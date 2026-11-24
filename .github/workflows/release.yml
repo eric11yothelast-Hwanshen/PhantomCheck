@@ -89,12 +89,25 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
 
-      - name: Build Windows Desktop Installers (MSI + EXE)
-        run: .\gradlew.bat :desktop:packageDistributionForCurrentOS --no-daemon
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y
+
+      - name: Build Windows Desktop MSI & app-image
+        run: .\gradlew.bat :desktop:packageMsi :desktop:createDistributable --no-daemon
+
+      - name: Build Inno Setup Installer (setup.exe)
+        shell: pwsh
+        run: |
+          $match = Select-String -Path desktop/build.gradle.kts -Pattern 'val desktopVersion\s*=\s*"([^"]+)"'
+          $ver = if ($match) { $match.Matches[0].Groups[1].Value } else { "0.3.0" }
+          Write-Host "Building Inno Setup release installer for version $ver"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$ver" "desktop\packaging\windows\PhantomCheckDesktop.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Attach Desktop Installers to GitHub Release
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           files: |
             desktop/build/compose/binaries/main/msi/*.msi
-            desktop/build/compose/binaries/main/exe/*.exe
+            desktop/build/compose/binaries/main/inno/*-setup.exe

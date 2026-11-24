@@ -6,8 +6,10 @@ plugins {
     id("org.jetbrains.compose")
 }
 
+val desktopVersion = "0.3.0"
+
 group = "com.phantom.checker.desktop"
-version = "0.2.0"
+version = desktopVersion
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17
@@ -34,9 +36,9 @@ compose.desktop {
     application {
         mainClass = "com.phantom.checker.desktop.MainKt"
         nativeDistributions {
-            targetFormats(TargetFormat.Msi, TargetFormat.Exe)
+            targetFormats(TargetFormat.Msi)
             packageName = "PhantomCheckDesktop"
-            packageVersion = "0.2.0"
+            packageVersion = desktopVersion
             description = "PhantomCheck Desktop - Encrypted LAN Link & Message Manager"
             vendor = "PhantomCheck"
             includeAllModules = true

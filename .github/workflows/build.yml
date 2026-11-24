@@ -62,8 +62,21 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
 
-      - name: Build shared, desktop & Windows installers (MSI + EXE)
-        run: .\gradlew.bat :shared:build :desktop:build :desktop:packageDistributionForCurrentOS --no-daemon
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y
+
+      - name: Build shared, desktop, MSI & app-image
+        run: .\gradlew.bat :shared:build :desktop:build :desktop:packageMsi :desktop:createDistributable --no-daemon
+
+      - name: Build Inno Setup Installer (setup.exe)
+        shell: pwsh
+        run: |
+          $match = Select-String -Path desktop/build.gradle.kts -Pattern 'val desktopVersion\s*=\s*"([^"]+)"'
+          $ver = if ($match) { $match.Matches[0].Groups[1].Value } else { "0.3.0" }
+          Write-Host "Building Inno Setup installer for version $ver"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$ver" "desktop\packaging\windows\PhantomCheckDesktop.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Dump jpackage logs on failure
         if: failure()
@@ -80,6 +93,6 @@ jobs:
           name: phantomcheck-desktop-windows-${{ github.run_number }}
           path: |
             desktop/build/compose/binaries/main/msi/*.msi
-            desktop/build/compose/binaries/main/exe/*.exe
+            desktop/build/compose/binaries/main/inno/*-setup.exe
           if-no-files-found: error
 
