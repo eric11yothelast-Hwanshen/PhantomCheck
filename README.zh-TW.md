@@ -52,6 +52,16 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
 
+### v4.6.0 更新重點（versionCode 54，桌面端 0.3.0，2026-11-24）
+
+- **#465 Netty 修復桌面連線閃退（PR #473）**：手機端 WSS 伺服器由 `ktor-server-cio` 改為 `ktor-server-netty` `3.6.0`（`1/2/4` 執行緒池）、指令限流改 Token Bucket（5/秒＋突發 12）搭配桌機初始 100ms 間隔、新增埠佔用預檢、`markRead` 專用 DAO 與 ProGuard/packaging 規則。
+- **#466 手機底部欄「連線」分頁（PR #474）**：`MainTab` 由 5 欄擴充為 6 欄新增「連線」分頁，抽出共用 `LinkHubContent.kt` 與 `LinkHubActivity` 共用 `DesktopLinkServer` singleton 並定時 `touchActivity()` 防閒置誤停。
+- **#467 7 項雙向同步擴充（PR #474）**：新增星標雙向、訊息標籤套用/移除、待辦完整 CRUD（同步 `ReminderScheduler`）、記事清單與新增、單則深度分析（計額度與失敗退款）、靜音 App 管理、對話串檢視（上限 200 字預覽）＋手機電量/狀態＋多會話聊天（`PROTOCOL_VERSION` 維持 1）。
+- **#468 桌面設定中心（10 系統＋8 自訂）與玻璃 UI／圖表／Markdown 渲染（PR #474）**：新增 10 項系統設定（語言、Windows 開機自啟 `--minimized`、關閉行為、勿擾原生通知、退避/心跳/預覽長度、配置管理、手動檢查更新、3 份旋轉日誌）＋8 項自訂設定（強調色、密度、字級、側欄、卡片/鏡射模式、背景圖、動畫）；支援 `1180x760` Master-Detail、Canvas 7 日／24 小時圖表、Markdown 渲染 AI 助手與鍵盤捷徑。
+- **#469 桌面系統匣常駐（預設縮匣，PR #474）**：以 Compose `Tray` API 將 `DesktopLinkClient` 與 `MdnsScanner` 生命週期拉升至 `application {}`，關閉視窗預設縮至系統匣維持連線與原生通知（支援 `--minimized`/`--tray`）。
+- **#470 Inno Setup 安裝器與雙資產發布（PR #474）**：新增 `desktop/packaging/windows/PhantomCheckDesktop.iss`（per-user `%LOCALAPPDATA%` 免管理員、預設勾選桌面捷徑與安裝後立即開啟），`desktopVersion = "0.3.0"` 單一來源，同步產出 `PhantomCheckDesktop-0.3.0.msi` 與 `PhantomCheckDesktop-0.3.0-setup.exe`。
+- **#471 兩端穩定性稽核修復（PR #474）**：`DesktopPaths.kt` 將 `link.properties`（`hmacSecret`）遷至 per-user ACL 目錄、`sendCommand` 回傳 `Boolean` 斷線提示、`CHAT_SEND` 130 秒逾時、per-client `clientCursors`、`activeSessions.remove(id, sess)`、移出 EDT 關閉 `JmDNS`、`gson.fromJson` 容錯與正確重拋 `CancellationException`。
+
 ### v4.5.0 更新重點（versionCode 53，2026-11-23）
 
 - **#454 LinkHubActivity 桌面端設定頁閃退修復（PR #459 / #463）**：調整 `enableEdgeToEdge()` 至 `super.onCreate()` 之後、補齊 `PairedDesktop`/`UnknownAttempt`/`CommandAuditEntry` 與 `qrcode.**` R8 keep 規則，並為 `LinkHubActivity`/`DesktopLinkStore`/`DesktopLinkServer` 全路徑加上 `runCatching` 容錯與 `wss://`/SHA-256 文字備援。

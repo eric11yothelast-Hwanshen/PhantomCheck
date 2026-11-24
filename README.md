@@ -50,6 +50,16 @@ Before use, please read the [Privacy Policy (PRIVACY.md)](PRIVACY.md) and [Discl
 
 For the complete changelog, see [CHANGELOG.md](CHANGELOG.md).
 
+### v4.6.0 Release Highlights (versionCode 54, Desktop 0.3.0, 2026-11-24)
+
+- **#465 Netty WSS Engine & Burst Rate-Limiting Fix (PR #473)**: Switched Android's embedded WSS server from `ktor-server-cio` to `ktor-server-netty` `3.6.0` (`1/2/4` thread pools), upgraded rate limiting to Token Bucket (`5/s` + burst `12`) with `100ms` desktop startup pacing, added port-in-use preflight, dedicated `markRead` DAO, and Netty ProGuard/packaging rules.
+- **#466 Phone Bottom Bar "Link" Tab (PR #474)**: Expanded `MainTab` from 5 to 6 tabs with `LINK` ("Link" / "連線"), extracted shared `LinkHubContent.kt` backed by the `DesktopLinkServer` singleton with foreground `touchActivity()` keepalive.
+- **#467 7 New Two-Way Sync Capabilities (PR #474)**: Added two-way starring, message tag apply/remove, full to-do CRUD (`ReminderScheduler` sync), note listing/creation, single-message deep analysis (quota-tracked with refund on failure), muted app management, conversation thread preview (200-char cap) + phone battery/status + multi-session chat (`PROTOCOL_VERSION = 1`).
+- **#468 Desktop Settings Hub, Glass Design System, Charts & Markdown (PR #474)**: Added 10 system settings (language, Windows startup `--minimized`, close behavior, DND notifications, backoff/heartbeat/preview tuning, profile manager, GitHub release check, 3 rotating logs) + 8 customization settings (accents, density, font scale, sidebar, card/mirror modes, backgrounds, animations), `1180x760` Master-Detail layout, Canvas 7-day/24h charts, Markdown-rendered AI Assistant, and keyboard shortcuts.
+- **#469 Desktop System Tray Resident Mode (PR #474)**: Hoisted `DesktopLinkClient` and `MdnsScanner` to `application {}` using Compose `Tray` API; closing the window minimizes to tray by default while preserving LAN sync and native notifications (`--minimized`/`--tray` supported).
+- **#470 Inno Setup Installer & Dual Desktop Assets (PR #474)**: Added `desktop/packaging/windows/PhantomCheckDesktop.iss` (per-user `%LOCALAPPDATA%`, desktop shortcut + post-install launch checked by default) alongside `.msi`, unified `desktopVersion = "0.3.0"`, producing both `PhantomCheckDesktop-0.3.0.msi` and `PhantomCheckDesktop-0.3.0-setup.exe`.
+- **#471 Cross-End Stability Audit Fixes (PR #474)**: Migrated `link.properties` (`hmacSecret`) to per-user ACL directories (`DesktopPaths.kt`), added `sendCommand` boolean feedback, 130s `CHAT_SEND` timeout, per-client `clientCursors`, safe `activeSessions.remove(id, sess)`, off-EDT `JmDNS.close()`, `runCatching` around Gson, and proper `CancellationException` rethrowing.
+
 ### v4.5.0 Release Highlights (versionCode 53, 2026-11-23)
 
 - **#454 LinkHubActivity Desktop Settings Crash Fix (PR #459 / #463)**: Moved `enableEdgeToEdge()` after `super.onCreate()`, added targeted R8 keep rules for `PairedDesktop`/`UnknownAttempt`/`CommandAuditEntry` and `qrcode.**`, and wrapped all `LinkHubActivity`/`DesktopLinkStore`/`DesktopLinkServer` paths with `runCatching` and copyable `wss://`/SHA-256 text fallbacks.
