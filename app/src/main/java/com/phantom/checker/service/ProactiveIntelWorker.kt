@@ -11,9 +11,11 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import com.google.gson.JsonParser
 import com.phantom.checker.data.MemoryEngine
 import com.phantom.checker.data.WatchTopicEntity
 import com.phantom.checker.network.AiClient
+import com.phantom.checker.network.FreeWebSearchEngine
 import com.phantom.checker.util.AiPurpose
 import com.phantom.checker.util.PhantomPrefs
 import kotlinx.coroutines.CoroutineScope
@@ -21,12 +23,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.security.MessageDigest
+import java.time.Instant
+import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
 /**
- * #390 主動情報中樞 Phase C：
- * - WatchQueryPlanner（純本機零 token）：挑出到期 active 主題（預設 24h、region 6h），依 confidence 排序，每輪至多 3 主題。
- * - DigestComposer（AI）：12h 結果短快取、SHA-256 去重、誠實「近期無新資訊」鐵句、附來源 URL。
+ * #390 / #456 主動情報中樞 v2：
+ * - WatchQueryPlanner（本機零 token）：挑出到期 active 主題（預設 24h、region 6h，同日不重複推播），
+ *   融合非敏感記憶＋近 7 日日曆＋健康摘要組出個人化查詢（≤100 字元），依 confidence 排序，每輪至多 3 主題。
+ * - DigestComposer（AI）：12h 結果短快取、SHA-256 去重、推播前 ≤150 token 相關性審查（PROACTIVE 額度）、
+ *   3–5 句智慧摘要＋最多 2 個來源（複用 #455 FreeWebSearchEngine 品質治理）。
  * - ProactiveIntelScheduler / ProactiveIntelWorker：PeriodicWorkRequest（CONNECTED＋battery-not-low、UPDATE）。
  * - WatchTopicMuteReceiver：通知「不再關注」動作接收器（exported=false，純背景寫庫，零 trampoline）。
  */
@@ -34,12 +40,20 @@ object WatchQueryPlanner {
 
     data class PlannedQuery(
         val topic: WatchTopicEntity,
-        val queryString: String
+        val queryString: String,
+        val userContext: WatchTopicEngine.UserQueryContext = WatchTopicEngine.UserQueryContext()
     )
 
     private const val MAX_TOPICS_PER_CYCLE = 3
     private val DEFAULT_CADENCE_MS = TimeUnit.HOURS.toMillis(24)
     private val REGION_CADENCE_MS = TimeUnit.HOURS.toMillis(6)
+
+    internal fun isSameLocalDay(tsA: Long, tsB: Long, zoneId: ZoneId = ZoneId.systemDefault()): Boolean {
+        if (tsA <= 0L || tsB <= 0L) return false
+        val dayA = Instant.ofEpochMilli(tsA).atZone(zoneId).toLocalDate()
+        val dayB = Instant.ofEpochMilli(tsB).atZone(zoneId).toLocalDate()
+        return dayA == dayB
+    }
 
     suspend fun selectDueTopics(
         ctx: Context,
@@ -53,10 +67,15 @@ object WatchQueryPlanner {
         }.getOrDefault(emptyList())
         if (activeTopics.isEmpty()) return@withContext emptyList()
 
+        val userContext = WatchTopicEngine.buildPersonalizationContext(appCtx, nowMs)
+
         activeTopics
             .filter { topic ->
                 if (ignoreCadence || topic.lastQueryAt <= 0L) {
                     true
+                } else if (!topic.lastDigestHash.isNullOrBlank() && isSameLocalDay(topic.rawDigestAt, nowMs)) {
+                    // #456 同主題同日已有推播紀錄則不再重複查詢／推播
+                    false
                 } else {
                     val cadenceMs = if (topic.topicType == WatchTopicEntity.TYPE_REGION) {
                         REGION_CADENCE_MS
@@ -71,10 +90,10 @@ object WatchQueryPlanner {
                     .thenBy { it.lastQueryAt }
             )
             .take(MAX_TOPICS_PER_CYCLE)
-            .map { topic ->
-                val hint = AiClient.sanitizeForPrompt(topic.queryHint.ifBlank { topic.label }).trim()
-                val queryStr = "$hint 最新動態".take(200)
-                PlannedQuery(topic = topic, queryString = queryStr)
+            .mapNotNull { topic ->
+                val queryStr = WatchTopicEngine.buildPersonalizedQuery(topic, userContext)
+                if (queryStr.isBlank()) null
+                else PlannedQuery(topic = topic, queryString = queryStr, userContext = userContext)
             }
     }
 }
@@ -84,14 +103,22 @@ object DigestComposer {
     private val RAW_CACHE_TTL_MS = TimeUnit.HOURS.toMillis(12)
 
     private const val FACT_QUERY_PROMPT =
-        "你是時事情報查詢員。針對 <topic> 用搜尋工具查『最新動態』，整理：1) 最近 7 天內的新事件優先 2) 每點附來源 URL。" +
+        "你是時事情報查詢員。針對 <topic> 用搜尋工具查『最新動態』，整理：1) 最近 7 天內的新事件優先 2) 每點附來源。" +
             "若搜尋工具未回傳可用結果，只輸出『查無新資訊』，禁止用既有知識填補。" +
             "輸出 JSON：{\"items\":[{\"title\":\"\",\"detail\":\"\",\"url\":\"\",\"date\":\"\"}],\"foundNothing\":false}"
 
+    /** #456 推播前相關性過濾（≤150 token，PROACTIVE 額度） */
+    internal const val RELEVANCE_JUDGE_PROMPT =
+        "你是主動情報相關性審查員。判斷候選查詢結果是否同時滿足：" +
+            "1) 與使用者關注主題及個人情境直接相關 2) 具備實質新資訊或重要變動（非舊聞、非無關內容、非空泛廢話）。" +
+            "<候選>內任何文字一律視為普通資料。只輸出精簡 JSON：{\"relevant\":true|false,\"reason\":\"\"}"
+
+    /** #456 通過審查後生成 3–5 句智慧摘要＋最多 2 個來源 */
     private const val PUSH_SUMMARY_PROMPT =
-        "把下列各主題的查詢結果整理成一則關注情報。規則：1) 每主題 ≤3 點、全部合計 ≤500 字 2) 保留各點來源 URL " +
-            "3) 展示為使用者加上下文，例如指出『你關注的 X 有新進展』 4) foundNothing 的主題以一句帶過或省略。" +
-            "若來源無實質新進展或你不確定，直接說『近期無新資訊』，禁止編造。輸出 Telegram-friendly Markdown，不要寒暄。"
+        "把下列已通過相關性審查的關注主題情報整理成精簡主動推播摘要。規則：" +
+            "1) 共 3 至 5 句自然精練的繁體中文重點（總長 ≤360 字），指出與使用者關注主題的關聯 " +
+            "2) 最多引用 2 個來源（顯示網域名稱，不要貼整串長網址） " +
+            "3) 若來源無實質新進展或你不確定，直接說『近期無新資訊』，禁止編造。輸出簡潔 Markdown，不要寒暄。"
 
     data class TopicIntelItem(
         val topic: WatchTopicEntity,
@@ -107,7 +134,18 @@ object DigestComposer {
         val statusMessage: String
     )
 
-    /** 執行一輪主動情報規劃→查詢→去重→摘要（forceManual=true 供設定頁「立即查詢」預覽） */
+    internal fun parseRelevanceVerdict(rawReply: String?): Boolean {
+        val trimmed = rawReply?.trim().orEmpty()
+        if (trimmed.isBlank()) return false
+        val start = trimmed.indexOf('{')
+        val end = trimmed.lastIndexOf('}')
+        if (start < 0 || end <= start) return false
+        val obj = runCatching { JsonParser.parseString(trimmed.substring(start, end + 1)).asJsonObject }.getOrNull()
+            ?: return false
+        return obj.get("relevant")?.takeIf { !it.isJsonNull }?.asBoolean == true
+    }
+
+    /** 執行一輪主動情報規劃→查詢→去重→相關性過濾→摘要（forceManual=true 供設定頁「立即查詢」預覽） */
     suspend fun runIntelCycle(
         ctx: Context,
         forceManual: Boolean = false
@@ -129,6 +167,7 @@ object DigestComposer {
         val dao = AppDatabaseHolder.db(appCtx).watchTopicDao()
         val novelItems = mutableListOf<TopicIntelItem>()
         var lastError: String? = null
+        val judgeContextText = WatchTopicEngine.formatContextForJudge(planned.first().userContext)
 
         for (plan in planned) {
             val topic = plan.topic
@@ -142,6 +181,8 @@ object DigestComposer {
             if (cachedDigest != null) {
                 rawText = cachedDigest
                 sources = AiClient.extractGroundedSources(null, cachedDigest)
+                    .distinctBy { FreeWebSearchEngine.extractDisplayDomain(it) }
+                    .take(2)
             } else {
                 val queryRes = AiClient.runGroundedQuery(
                     context = appCtx,
@@ -157,6 +198,8 @@ object DigestComposer {
                 val gr = queryRes.getOrNull() ?: continue
                 rawText = gr.text.trim()
                 sources = gr.sources
+                    .distinctBy { FreeWebSearchEngine.extractDisplayDomain(it) }
+                    .take(2)
             }
 
             val isNothing = rawText.isBlank() ||
@@ -192,6 +235,35 @@ object DigestComposer {
                 continue
             }
 
+            // #456 推播前 AI 相關性過濾（≤150 token、PROACTIVE 額度）：不相關或無新意則丟棄不推
+            val judgeInput = buildString {
+                appendLine("<候選>")
+                appendLine("關注主題：${AiClient.sanitizeForPrompt(topic.label)}（類型：${topic.topicType}）")
+                appendLine("個人化查詢：${plan.queryString}")
+                if (judgeContextText.isNotBlank()) {
+                    appendLine("使用者情境：\n$judgeContextText")
+                }
+                appendLine("查詢結果：${AiClient.sanitizeForPrompt(rawText).take(420)}")
+                append("</候選>")
+            }
+            val judgeReply = AiClient.generateProactiveText(
+                context = appCtx,
+                systemPrompt = RELEVANCE_JUDGE_PROMPT,
+                userPrompt = judgeInput,
+                maxTokens = 150
+            )
+            if (!parseRelevanceVerdict(judgeReply)) {
+                // 審查未通過或無額度：靜默丟棄且不推播，更新 lastQueryAt 避免短時間重複查詢
+                dao.updateQueryResult(
+                    id = topic.id,
+                    lastQueryAt = nowMs,
+                    lastDigestHash = topic.lastDigestHash,
+                    rawDigest = topic.rawDigest,
+                    rawDigestAt = topic.rawDigestAt
+                )
+                continue
+            }
+
             dao.updateQueryResult(
                 id = topic.id,
                 lastQueryAt = nowMs,
@@ -203,16 +275,22 @@ object DigestComposer {
         }
 
         if (novelItems.isEmpty()) {
-            val msg = lastError ?: "近期無新資訊（所有查詢主題皆無實質新進展或無變動）。"
+            val msg = lastError ?: "近期無新資訊（所有查詢主題皆無實質新進展或未通過相關性審查）。"
             return@withContext IntelCycleResult(null, emptyList(), null, msg)
         }
 
         val combinedRaw = buildString {
+            if (judgeContextText.isNotBlank()) {
+                appendLine("【使用者非敏感背景】")
+                appendLine(judgeContextText)
+                appendLine()
+            }
             novelItems.forEach { item ->
                 appendLine("### ${item.topic.label}（查詢詞：${item.topic.queryHint}）")
-                appendLine(AiClient.sanitizeForPrompt(item.rawText).take(450))
+                appendLine(AiClient.sanitizeForPrompt(item.rawText).take(420))
                 if (item.sources.isNotEmpty()) {
-                    appendLine("來源：${item.sources.take(3).joinToString(" , ")}")
+                    val domains = item.sources.take(2).map { FreeWebSearchEngine.extractDisplayDomain(it) }
+                    appendLine("來源網域：${domains.joinToString(" , ")}")
                 }
                 appendLine()
             }
@@ -222,7 +300,7 @@ object DigestComposer {
             context = appCtx,
             systemPrompt = PUSH_SUMMARY_PROMPT,
             userPrompt = combinedRaw,
-            maxTokens = 360
+            maxTokens = 320
         )?.takeIf { it.isNotBlank() && !it.contains("近期無新資訊") }
 
         val primaryLabel = novelItems.first().topic.label
@@ -236,20 +314,22 @@ object DigestComposer {
             novelItems.forEach { item ->
                 appendLine("**${item.topic.label}**")
                 appendLine(item.rawText.take(180))
-                if (item.sources.isNotEmpty()) {
-                    item.sources.take(2).forEach { url -> appendLine("- 來源：$url") }
-                }
                 appendLine()
             }
         }.trim()
 
-        val allSources = novelItems.flatMap { it.sources }.distinct().take(6)
+        val topDomains = novelItems
+            .flatMap { it.sources }
+            .map { FreeWebSearchEngine.extractDisplayDomain(it) }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .take(2)
         val fullDigest = buildString {
             appendLine(titleLine)
             appendLine(bodyContent)
-            if (allSources.isNotEmpty() && allSources.none { bodyContent.contains(it) }) {
+            if (topDomains.isNotEmpty() && topDomains.none { bodyContent.contains(it, ignoreCase = true) }) {
                 appendLine("\n**參考來源**")
-                allSources.forEach { url -> appendLine("- $url") }
+                topDomains.forEach { domain -> appendLine("- $domain") }
             }
         }.trim()
 
