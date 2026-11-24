@@ -115,6 +115,7 @@ import com.phantom.checker.shared.TodosListRes
 import com.phantom.checker.shared.TodosToggleReq
 import com.phantom.checker.shared.TodosToggleRes
 import com.phantom.checker.shared.WhitelistAddReq
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -280,16 +281,20 @@ fun DesktopApp() {
         }
     }
 
-    fun refreshAllOnConnect() {
-        scope.launch {
-            client.sendCommand(LinkMsgType.MESSAGES_SUBSCRIBE, reqId(), emptyMap<String, String>())
-            client.sendCommand(LinkMsgType.MESSAGES_LIST, reqId(), MessagesListReq(filter = msgFilter, offset = 0, limit = 40, sinceCursor = latestCursor))
-            client.sendCommand(LinkMsgType.STATS_SNAPSHOT, reqId(), emptyMap<String, String>())
-            client.sendCommand(LinkMsgType.TODOS_LIST, reqId(), TodosListReq())
-            client.sendCommand(LinkMsgType.CHAT_HISTORY, reqId(), ChatHistoryReq(chatSessionId))
-            client.sendCommand(LinkMsgType.WHITELIST_LIST, reqId(), emptyMap<String, String>())
-            client.sendCommand(LinkMsgType.TAGS_LIST, reqId(), emptyMap<String, String>())
-        }
+    suspend fun refreshAllOnConnect() {
+        client.sendCommand(LinkMsgType.MESSAGES_SUBSCRIBE, reqId(), emptyMap<String, String>())
+        delay(100L)
+        client.sendCommand(LinkMsgType.MESSAGES_LIST, reqId(), MessagesListReq(filter = msgFilter, offset = 0, limit = 40, sinceCursor = latestCursor))
+        delay(100L)
+        client.sendCommand(LinkMsgType.STATS_SNAPSHOT, reqId(), emptyMap<String, String>())
+        delay(100L)
+        client.sendCommand(LinkMsgType.TODOS_LIST, reqId(), TodosListReq())
+        delay(100L)
+        client.sendCommand(LinkMsgType.CHAT_HISTORY, reqId(), ChatHistoryReq(chatSessionId))
+        delay(100L)
+        client.sendCommand(LinkMsgType.WHITELIST_LIST, reqId(), emptyMap<String, String>())
+        delay(100L)
+        client.sendCommand(LinkMsgType.TAGS_LIST, reqId(), emptyMap<String, String>())
     }
 
     LaunchedEffect(Unit) {

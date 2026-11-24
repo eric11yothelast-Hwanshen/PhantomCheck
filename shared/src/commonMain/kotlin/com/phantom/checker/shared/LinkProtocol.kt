@@ -12,6 +12,7 @@ object LinkProtocol {
     const val PAIR_CODE_TTL_MS = 5L * 60L * 1000L
     const val MAX_PAIRED_CLIENTS = 2
     const val MAX_COMMANDS_PER_SEC = 5
+    const val MAX_COMMAND_BURST = 12
 }
 
 object LinkErrorCode {

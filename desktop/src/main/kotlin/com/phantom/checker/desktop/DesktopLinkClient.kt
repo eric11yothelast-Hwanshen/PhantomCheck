@@ -210,7 +210,13 @@ class DesktopLinkClient {
     suspend fun sendCommand(type: String, reqId: String, payload: Any) {
         val ws = activeWs ?: return
         val env = LinkEnvelope(type = type, reqId = reqId, payloadJson = gson.toJson(payload))
-        ws.send(Frame.Text(gson.toJson(env)))
+        try {
+            ws.send(Frame.Text(gson.toJson(env)))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // 斷線瞬間送出失敗交由重連迴圈處理，不拋出未捕捉例外造成桌面端閃退
+        }
     }
 
     private suspend fun reconnectLoop() {

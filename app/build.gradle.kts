@@ -83,6 +83,10 @@ android {
                 "META-INF/LICENSE-notice.md",
                 "META-INF/NOTICE.md",
                 "META-INF/INDEX.LIST",
+                "META-INF/io.netty.versions.properties",
+                "META-INF/license/**",
+                "META-INF/native/**",
+                "META-INF/native-image/**",
                 "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
             )
         }
@@ -120,7 +124,7 @@ dependencies {
     // #449 桌面端區網連線（M1）
     implementation(project(":shared"))
     implementation("io.ktor:ktor-server-core:3.6.0")
-    implementation("io.ktor:ktor-server-cio:3.6.0")
+    implementation("io.ktor:ktor-server-netty:3.6.0")
     implementation("io.ktor:ktor-server-websockets:3.6.0")
     implementation("org.bouncycastle:bcprov-jdk18on:1.87")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.87")

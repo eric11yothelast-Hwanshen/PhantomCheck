@@ -52,14 +52,16 @@ import com.phantom.checker.shared.TodosListRes
 import com.phantom.checker.shared.TodosToggleReq
 import com.phantom.checker.shared.TodosToggleRes
 import com.phantom.checker.shared.WhitelistAddReq
+import com.phantom.checker.R
 import com.phantom.checker.util.DesktopLinkStore
 import com.phantom.checker.util.PairCodeCheckResult
 import com.phantom.checker.util.PairedDesktop
 import io.ktor.server.application.install
-import io.ktor.server.cio.CIO
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.engine.sslConnector
+import io.ktor.server.netty.Netty
+import io.ktor.server.plugins.origin
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.pingPeriod
@@ -79,8 +81,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.net.BindException
 import java.net.Inet4Address
+import java.net.InetSocketAddress
 import java.net.NetworkInterface
+import java.net.ServerSocket
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.seconds
 
@@ -101,7 +106,7 @@ data class LinkServerStatus(
 )
 
 /**
- * #449 / #450 手機端區域網路 WebSocket 伺服器（wss-only，CIO engine + 自簽 PKCS12 + NsdManager）。
+ * #449 / #450 / #465 手機端區域網路 WebSocket 伺服器（wss-only，Netty engine + 自簽 PKCS12 + NsdManager）。
  */
 object DesktopLinkServer {
 
@@ -161,9 +166,35 @@ object DesktopLinkServer {
             return
         }
 
+        try {
+            ServerSocket().use { sock ->
+                sock.reuseAddress = true
+                sock.bind(InetSocketAddress("0.0.0.0", port))
+            }
+        } catch (_: BindException) {
+            _status.value = LinkServerStatus(
+                isRunning = false,
+                port = port,
+                localIp = localIp,
+                lastError = appCtx.getString(R.string.link_hub_port_in_use, port)
+            )
+            return
+        } catch (err: Exception) {
+            _status.value = LinkServerStatus(
+                isRunning = false,
+                port = port,
+                localIp = localIp,
+                lastError = err.message ?: err.javaClass.simpleName
+            )
+            return
+        }
+
         var createdEngine: EmbeddedServer<*, *>? = null
         runCatching {
-            val engine = embeddedServer(CIO, configure = {
+            val engine = embeddedServer(Netty, configure = {
+                connectionGroupSize = 1
+                workerGroupSize = 2
+                callGroupSize = 4
                 sslConnector(
                     keyStore = tls.keyStore,
                     keyAlias = DesktopLinkTls.KEY_ALIAS,
@@ -181,7 +212,11 @@ object DesktopLinkServer {
                 }
                 routing {
                     webSocket(LinkProtocol.WS_PATH) {
-                        handleClientConnection(appCtx, tls.certFingerprintSha256, this)
+                        val remoteIp = runCatching { call.request.origin.remoteAddress }
+                            .getOrNull()
+                            ?.takeIf { it.isNotBlank() }
+                            ?: "unknown"
+                        handleClientConnection(appCtx, tls.certFingerprintSha256, remoteIp, this)
                     }
                 }
             }
@@ -202,11 +237,16 @@ object DesktopLinkServer {
         }.onFailure { err ->
             runCatching { createdEngine?.stop(200, 500) }
             server = null
+            val errMsg = if (err is BindException || err.cause is BindException) {
+                appCtx.getString(R.string.link_hub_port_in_use, port)
+            } else {
+                err.message ?: err.javaClass.simpleName
+            }
             _status.value = LinkServerStatus(
                 isRunning = false,
                 port = port,
                 localIp = localIp,
-                lastError = err.message ?: err.javaClass.simpleName
+                lastError = errMsg
             )
         }
     }
@@ -276,9 +316,9 @@ object DesktopLinkServer {
     private suspend fun handleClientConnection(
         appCtx: Context,
         certFingerprint: String,
+        remoteIp: String,
         ws: WebSocketSession
     ) {
-        val remoteIp = "LAN"
         val challenge = DesktopLinkStore.randomHex(24)
         val deviceName = Build.MODEL.ifBlank { "Android" }
 
@@ -297,7 +337,8 @@ object DesktopLinkServer {
         }.onFailure { return }
 
         var authedInstanceId: String? = null
-        val cmdTimestamps = ArrayDeque<Long>()
+        var bucketTokens = LinkProtocol.MAX_COMMAND_BURST.toDouble()
+        var lastRefillMs = System.currentTimeMillis()
 
         try {
             for (frame in ws.incoming) {
@@ -441,18 +482,21 @@ object DesktopLinkServer {
                     continue
                 }
 
-                // 已驗證階段：速率限制（≤5 指令/秒，超限斷線）
+                // 已驗證階段：速率限制（持續 5 指令/秒＋突發桶 12，超限斷線）
                 val now = System.currentTimeMillis()
-                while (cmdTimestamps.isNotEmpty() && (now - cmdTimestamps.first()) > 1000L) {
-                    cmdTimestamps.removeFirst()
+                val elapsedSec = (now - lastRefillMs).coerceAtLeast(0L) / 1000.0
+                if (elapsedSec > 0.0) {
+                    bucketTokens = (bucketTokens + elapsedSec * LinkProtocol.MAX_COMMANDS_PER_SEC)
+                        .coerceAtMost(LinkProtocol.MAX_COMMAND_BURST.toDouble())
+                    lastRefillMs = now
                 }
-                if (cmdTimestamps.size >= LinkProtocol.MAX_COMMANDS_PER_SEC) {
+                if (bucketTokens < 1.0) {
                     DesktopLinkStore.recordAuditLog(appCtx, authedInstanceId, env.type, false, "rate_limit_exceeded")
                     sendEnvelope(ws, LinkMsgType.ERROR, env.reqId, ErrorPayload(LinkErrorCode.RATE_LIMIT_EXCEEDED, "Rate limit exceeded"))
                     ws.close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Rate limit exceeded"))
                     return
                 }
-                cmdTimestamps.addLast(now)
+                bucketTokens -= 1.0
 
                 if (env.type == LinkMsgType.PING) {
                     sendEnvelope(ws, LinkMsgType.PONG, env.reqId, emptyMap<String, String>())
@@ -532,12 +576,9 @@ object DesktopLinkServer {
                     updated = req.ids.size
                     broadcastToAll(LinkMsgType.MESSAGE_READ_SYNC, MessageReadSyncPush(ids = req.ids))
                 } else if (req.packageName.isNotBlank() && req.conversationKey.isNotBlank()) {
-                    val ids = db.messageDao().paged(200, 0)
-                        .filter { it.packageName == req.packageName && it.conversationKey == req.conversationKey && !it.isRead }
-                        .map { it.id }
+                    val ids = db.messageDao().unreadIdsByConversation(req.packageName, req.conversationKey)
+                    updated = db.messageDao().markReadByConversation(req.packageName, req.conversationKey)
                     if (ids.isNotEmpty()) {
-                        db.messageDao().markReadByIds(ids)
-                        updated = ids.size
                         broadcastToAll(LinkMsgType.MESSAGE_READ_SYNC, MessageReadSyncPush(ids = ids))
                     }
                 }

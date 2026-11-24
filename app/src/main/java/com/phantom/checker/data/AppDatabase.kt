@@ -450,6 +450,12 @@ interface MessageDao {
     @Query("UPDATE messages SET isRead = 1 WHERE id IN (:ids)")
     suspend fun markReadByIds(ids: List<Long>)
 
+    @Query("SELECT id FROM messages WHERE packageName = :packageName AND conversationKey = :conversationKey AND isRead = 0")
+    suspend fun unreadIdsByConversation(packageName: String, conversationKey: String): List<Long>
+
+    @Query("UPDATE messages SET isRead = 1 WHERE packageName = :packageName AND conversationKey = :conversationKey AND isRead = 0")
+    suspend fun markReadByConversation(packageName: String, conversationKey: String): Int
+
     @Query("UPDATE messages SET isStarred = :starred WHERE id = :id")
     suspend fun setStarred(id: Long, starred: Boolean)
 

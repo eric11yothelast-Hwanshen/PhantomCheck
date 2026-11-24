@@ -58,13 +58,14 @@
 -keep class qrcode.** { *; }
 -dontwarn qrcode.**
 
-# #449 Ktor 3.6.0 server/CIO/WebSockets 與 BouncyCastle R8 規則（KTOR-7539 自補）
+# #449 / #465 Ktor 3.6.0 server/Netty/WebSockets 與 BouncyCastle R8 規則（KTOR-7539 自補）
 -keep class io.ktor.** { *; }
+-keep class io.netty.** { *; }
 -keep class kotlinx.coroutines.** { *; }
 -keep class org.bouncycastle.** { *; }
 -dontwarn io.ktor.**
+-dontwarn io.netty.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.slf4j.**
 -dontwarn java.lang.instrument.**
--dontwarn sun.misc.**
-
+-dontwarn sun.**
