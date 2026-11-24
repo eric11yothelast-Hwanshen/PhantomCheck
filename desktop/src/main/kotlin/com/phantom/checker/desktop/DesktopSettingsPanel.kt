@@ -36,10 +36,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
-private enum class SettingsSubTab { CONNECTION, SYSTEM, CUSTOMIZE }
+private enum class SettingsSubTab { CONNECTION, SYSTEM, CUSTOMIZE, ABOUT }
 
 /**
- * #468 桌面端設定中心（連線配對＋10 項系統設定＋8 項自訂設定）。
+ * #468 / #478 桌面端設定中心（連線配對＋系統設定＋介面自訂＋關於頁）。
  */
 @Composable
 fun DesktopSettingsCenter(
@@ -48,6 +48,7 @@ fun DesktopSettingsCenter(
     uiState: DesktopLinkUiState,
     mdnsStatus: MdnsBroadcastStatus,
     server: DesktopLinkServer,
+    onUpdateAvailable: (DesktopUpdateOutcome.UpdateAvailable) -> Unit = {},
     onFeedback: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -59,6 +60,54 @@ fun DesktopSettingsCenter(
     var pairCodePair by remember { mutableStateOf(server.getOrGeneratePairCode()) }
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
 
+    // #478 About tab recent 10 releases state
+    var recentReleases by remember { mutableStateOf<List<DesktopReleaseEntry>>(emptyList()) }
+    var loadingReleases by remember { mutableStateOf(false) }
+    var releasesError by remember { mutableStateOf<String?>(null) }
+
+    fun loadRecentReleases() {
+        if (loadingReleases) return
+        loadingReleases = true
+        releasesError = null
+        scope.launch {
+            DesktopUpdater.fetchRecentReleases()
+                .onSuccess { list ->
+                    recentReleases = list
+                    loadingReleases = false
+                }
+                .onFailure { err ->
+                    releasesError = err.message ?: err.javaClass.simpleName
+                    loadingReleases = false
+                }
+        }
+    }
+
+    fun triggerManualUpdateCheck() {
+        if (checkingUpdate) return
+        checkingUpdate = true
+        updateStatus = null
+        scope.launch {
+            when (val res = DesktopUpdater.checkForUpdate(isAutoStartup = false)) {
+                is DesktopUpdateOutcome.UpdateAvailable -> {
+                    checkingUpdate = false
+                    updateStatus = "${res.currentVersion} → ${res.latestVersion} (${res.tagName})"
+                    onUpdateAvailable(res)
+                }
+                is DesktopUpdateOutcome.UpToDate -> {
+                    checkingUpdate = false
+                    updateStatus = "${DesktopStrings.updateUpToDate} (v${res.currentVersion})"
+                }
+                is DesktopUpdateOutcome.Error -> {
+                    checkingUpdate = false
+                    updateStatus = res.message
+                }
+                is DesktopUpdateOutcome.SilentSkipped -> {
+                    checkingUpdate = false
+                }
+            }
+        }
+    }
+
     androidx.compose.runtime.LaunchedEffect(subTab) {
         if (subTab == SettingsSubTab.CONNECTION) {
             server.refreshLocalIps()
@@ -67,6 +116,8 @@ fun DesktopSettingsCenter(
                 nowMs = System.currentTimeMillis()
                 server.getCurrentPairCode(nowMs)?.let { pairCodePair = it }
             }
+        } else if (subTab == SettingsSubTab.ABOUT && recentReleases.isEmpty() && !loadingReleases) {
+            loadRecentReleases()
         }
     }
 
@@ -88,6 +139,11 @@ fun DesktopSettingsCenter(
                 selected = subTab == SettingsSubTab.CUSTOMIZE,
                 onClick = { subTab = SettingsSubTab.CUSTOMIZE },
                 label = { Text(DesktopStrings.settingsTabCustom) }
+            )
+            FilterChip(
+                selected = subTab == SettingsSubTab.ABOUT,
+                onClick = { subTab = SettingsSubTab.ABOUT },
+                label = { Text(DesktopStrings.settingsTabAbout) }
             )
             Spacer(Modifier.weight(1f))
             Text(DesktopStrings.shortcutsHint, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
@@ -427,15 +483,7 @@ fun DesktopSettingsCenter(
                                 SpringButton(
                                     enabled = !checkingUpdate,
                                     animationsEnabled = settings.animationsEnabled,
-                                    onClick = {
-                                        checkingUpdate = true
-                                        updateStatus = null
-                                        scope.launch {
-                                            val res = DesktopSettingsStore.checkLatestRelease()
-                                            checkingUpdate = false
-                                            updateStatus = if (res.ok) "Latest: ${res.latestTag} (${res.htmlUrl})" else "Error: ${res.errorMessage}"
-                                        }
-                                    }
+                                    onClick = { triggerManualUpdateCheck() }
                                 ) { Text(if (checkingUpdate) DesktopStrings.checkingUpdate else DesktopStrings.checkUpdateBtn) }
                                 updateStatus?.let { st ->
                                     Text(st, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextSecondary)
@@ -593,6 +641,100 @@ fun DesktopSettingsCenter(
                                     checked = settings.animationsEnabled,
                                     onCheckedChange = { a -> DesktopSettingsStore.update { it.copy(animationsEnabled = a) } }
                                 )
+                            }
+                        }
+                    }
+                }
+
+                SettingsSubTab.ABOUT -> {
+                    // 1. Version & Protocol Compatibility + Manual Update Check
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(DesktopStrings.aboutTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                            Text(DesktopStrings.versionLabel, style = MaterialTheme.typography.bodyMedium, color = accentColor)
+                            Text(DesktopStrings.aboutProtocolCompat, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextSecondary)
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                SpringButton(
+                                    enabled = !checkingUpdate,
+                                    animationsEnabled = settings.animationsEnabled,
+                                    containerColor = accentColor,
+                                    onClick = { triggerManualUpdateCheck() }
+                                ) { Text(if (checkingUpdate) DesktopStrings.checkingUpdate else DesktopStrings.checkUpdateBtn) }
+                                updateStatus?.let { st ->
+                                    Text(st, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextSecondary)
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. Project Links (Repo / Releases / LICENSE / PRIVACY / DISCLAIMER)
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(DesktopStrings.aboutLinksTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                            androidx.compose.foundation.layout.FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(
+                                    DesktopStrings.aboutRepoBtn to DesktopUpdater.REPO_URL,
+                                    DesktopStrings.aboutReleasesBtn to DesktopUpdater.RELEASES_URL,
+                                    DesktopStrings.aboutLicenseBtn to DesktopUpdater.LICENSE_URL,
+                                    DesktopStrings.aboutPrivacyBtn to DesktopUpdater.PRIVACY_URL,
+                                    DesktopStrings.aboutDisclaimerBtn to DesktopUpdater.DISCLAIMER_URL
+                                ).forEach { (label, url) ->
+                                    SpringOutlinedButton(
+                                        onClick = {
+                                            DesktopUpdater.openExternalUrl(url)
+                                                .onFailure { onFeedback(it.message ?: DesktopStrings.openLinkFailed) }
+                                        },
+                                        animationsEnabled = settings.animationsEnabled
+                                    ) { Text(label) }
+                                }
+                            }
+                        }
+                    }
+
+                    // 3. Recent 10 Releases Markdown Changelog Viewer
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(DesktopStrings.aboutReleaseNotesTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                                SpringOutlinedButton(
+                                    enabled = !loadingReleases,
+                                    onClick = { loadRecentReleases() },
+                                    animationsEnabled = settings.animationsEnabled
+                                ) { Text(DesktopStrings.refresh) }
+                            }
+                            if (loadingReleases) {
+                                Text(DesktopStrings.aboutLoadingNotes, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
+                            } else if (!releasesError.isNullOrBlank()) {
+                                Text(releasesError.orEmpty(), style = MaterialTheme.typography.bodySmall, color = DesktopPalette.GlassError)
+                            } else if (recentReleases.isEmpty()) {
+                                Text(DesktopStrings.updateNoNotes, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
+                            } else {
+                                recentReleases.forEachIndexed { idx, rel ->
+                                    if (idx > 0) HorizontalDivider(color = DesktopPalette.GlassBorder, modifier = Modifier.padding(vertical = 6.dp))
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "${rel.tagName}  (${rel.publishedDate})",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = accentColor
+                                        )
+                                        rel.desktopAssetVersion?.let { ver ->
+                                            Text(
+                                                text = "Desktop v$ver",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = DesktopPalette.TextMuted
+                                            )
+                                        }
+                                    }
+                                    DesktopMarkdownText(
+                                        markdown = rel.body.ifBlank { DesktopStrings.updateNoNotes },
+                                        accentColor = accentColor
+                                    )
+                                }
                             }
                         }
                     }

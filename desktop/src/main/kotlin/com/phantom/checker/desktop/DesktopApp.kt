@@ -162,6 +162,7 @@ fun DesktopApp(
     var deepAnalyzingMsgId by remember { mutableLongStateOf(-1L) }
     var deepAnalysisResult by remember { mutableStateOf<Pair<Long, String>?>(null) }
     var conversationThread by remember { mutableStateOf<ConversationRes?>(null) }
+    var pendingUpdateDialog by remember { mutableStateOf<DesktopUpdateOutcome.UpdateAvailable?>(null) }
 
     fun reqId() = UUID.randomUUID().toString()
 
@@ -239,6 +240,23 @@ fun DesktopApp(
         }
         if (!uiState.isPaired) {
             activeTab = DesktopTab.SETTINGS
+        }
+        // #478 Process-once startup auto update check (silent on offline / 403 / 429, no background polling)
+        scope.launch {
+            val outcome = DesktopUpdater.checkForUpdate(isAutoStartup = true)
+            if (outcome is DesktopUpdateOutcome.UpdateAvailable) {
+                pendingUpdateDialog = outcome
+                val curSettings = DesktopSettingsStore.state.value
+                if (curSettings.nativeNotifications &&
+                    !curSettings.isInDndWindow() &&
+                    DesktopUpdater.shouldSendDailyUpdateNotification(outcome.latestVersion)
+                ) {
+                    onMirrorNotification(
+                        DesktopStrings.updateNotifTitle,
+                        DesktopStrings.updateNotifBody(outcome.latestVersion)
+                    )
+                }
+            }
         }
     }
 
@@ -1290,6 +1308,7 @@ fun DesktopApp(
                                             uiState = uiState,
                                             mdnsStatus = mdnsStatus,
                                             server = server,
+                                            onUpdateAvailable = { pendingUpdateDialog = it },
                                             onFeedback = { actionFeedback = it }
                                         )
                                     }
@@ -1359,6 +1378,18 @@ fun DesktopApp(
                             TextButton(onClick = { editingTodo = null }) { Text(DesktopStrings.dismiss) }
                         },
                         containerColor = bgBottom
+                    )
+                }
+
+                // #478 Desktop Update Available Dialog
+                pendingUpdateDialog?.let { upd ->
+                    DesktopUpdateDialog(
+                        update = upd,
+                        accentColor = accentColor,
+                        containerColor = bgBottom,
+                        animationsEnabled = settings.animationsEnabled,
+                        onDismiss = { pendingUpdateDialog = null },
+                        onFeedback = { actionFeedback = it }
                     )
                 }
             }
