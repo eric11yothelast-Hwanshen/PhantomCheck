@@ -2,9 +2,16 @@ package com.phantom.checker.desktop
 
 import java.util.Locale
 
+/**
+ * #468 雙語文案中心（即時讀取 DesktopSettingsStore 語言設定，支援 auto / zh-TW / en 即時切換）。
+ */
 object DesktopStrings {
     private val isZh: Boolean
-        get() = Locale.getDefault().language.startsWith("zh", ignoreCase = true)
+        get() = when (DesktopSettingsStore.state.value.language) {
+            "zh-TW" -> true
+            "en" -> false
+            else -> Locale.getDefault().language.startsWith("zh", ignoreCase = true)
+        }
 
     fun t(zh: String, en: String): String = if (isZh) zh else en
 
@@ -29,10 +36,10 @@ object DesktopStrings {
     // Navigation
     val navMessages get() = t("訊息", "Messages")
     val navStats get() = t("統計", "Stats")
-    val navTodos get() = t("待辦", "Todos")
+    val navTodos get() = t("待辦與記事", "Todos & Notes")
     val navChat get() = t("AI 助手", "AI Assistant")
-    val navRules get() = t("白名單與標籤", "Whitelist & Tags")
-    val navSettings get() = t("連線設定", "Connection")
+    val navRules get() = t("規則與靜音", "Rules & Mute")
+    val navSettings get() = t("設定中心", "Settings")
 
     // Messages
     val filterAll get() = t("全部", "All")
@@ -46,6 +53,8 @@ object DesktopStrings {
     val sendReply get() = t("回覆", "Reply")
     val newMessageMirror get() = t("新訊息鏡射：", "New message: ")
     val refresh get() = t("重新整理", "Refresh")
+    val searchMessagesHint get() = t("搜尋寄件者或預覽內容 (Ctrl+F)…", "Search sender or preview (Ctrl+F)…")
+    val selectMessageHint get() = t("請在左側點選一則訊息檢視詳情與對話串", "Select a message on the left to view details & thread")
 
     // Stats
     val statsTotal get() = t("總訊息", "Total")
@@ -53,14 +62,26 @@ object DesktopStrings {
     val statsUnread get() = t("未讀數", "Unread")
     val statsScam get() = t("詐騙攔截", "Scam")
     val statsRecentApps get() = t("今日活躍來源 App", "Active Apps Today")
+    val stats7DayChart get() = t("近 7 日訊息趨勢", "7-Day Message Volume")
+    val statsHourlyChart get() = t("今日 24 小時分佈", "Today's Hourly Volume")
+    val stats7DayMode get() = t("7 日", "7 Days")
+    val statsHourlyMode get() = t("每小時", "Hourly")
+    val statsRiskDist get() = t("風險分類分佈", "Risk Distribution")
 
     // Todos
     val todosEmpty get() = t("目前無待辦事項", "No todos")
 
     // Chat
-    val chatInputPlaceholder get() = t("輸入訊息給 AI 夥伴…", "Message AI Assistant…")
+    val chatInputPlaceholder get() = t("輸入訊息給 AI 夥伴（Ctrl+Enter 送出）…", "Message AI Assistant (Ctrl+Enter to send)…")
     val chatSend get() = t("送出", "Send")
     val chatThinking get() = t("AI 思考中…", "Thinking…")
+    val chatSessionsTitle get() = t("對話列表", "Sessions")
+    val chatNewSession get() = t("+ 新對話", "+ New Chat")
+    val chatCopy get() = t("複製", "Copy")
+    val chatCopied get() = t("已複製到剪貼簿", "Copied to clipboard")
+    val quickPromptSummary get() = t("摘要今日重要訊息", "Summarize today's key messages")
+    val quickPromptScam get() = t("幫我檢查近期可疑詐騙", "Check recent suspicious scams")
+    val quickPromptTodos get() = t("整理未完成待辦", "Review pending todos")
 
     // Whitelist & Tags
     val whitelistTitle get() = t("白名單規則", "Whitelist Rules")
@@ -70,9 +91,9 @@ object DesktopStrings {
     val remove get() = t("移除", "Remove")
     val tagsTitle get() = t("標籤管理", "Tags")
     val tagNameHint get() = t("新標籤名稱", "New tag name")
-    val notConnectedHint get() = t("請先於「連線設定」配對並連線手機", "Please pair and connect your phone in Connection first")
+    val notConnectedHint get() = t("請先於「設定中心」配對並連線手機", "Please pair and connect your phone in Settings first")
 
-    // #457 補齊微標籤與狀態文案
+    // Micro labels & #471
     val selectDevice get() = t("選擇", "Select")
     val dismiss get() = t("關閉", "Dismiss")
     val ok get() = t("好", "OK")
@@ -83,11 +104,11 @@ object DesktopStrings {
     val emptyChat get() = t("開始與手機端 AI 夥伴對話", "Start chatting with your AI Assistant")
     val emptyWhitelist get() = t("尚未設定白名單規則", "No whitelist rules yet")
     val emptyTags get() = t("尚未建立標籤", "No tags yet")
-    val versionLabel get() = t("桌面端 v0.2.0", "Desktop v0.2.0")
+    val versionLabel get() = t("桌面端 v${DesktopSettingsStore.CURRENT_DESKTOP_VERSION}", "Desktop v${DesktopSettingsStore.CURRENT_DESKTOP_VERSION}")
     val commandNotSentDisconnected get() = t("目前未連線手機，操作未送出", "Not connected to phone — action not sent")
     val chatTimeoutError get() = t("AI 回覆逾時（130 秒）或連線中斷，請稍後重試", "AI reply timed out (130s) or connection dropped. Please retry.")
 
-    // #467 雙向互動擴充
+    // #467 Bidirectional Sync
     val star get() = t("星標", "Star")
     val unstar get() = t("取消星標", "Unstar")
     val deepAnalyze get() = t("深度分析", "Deep Analyze")
@@ -104,14 +125,55 @@ object DesktopStrings {
     val todoDelete get() = t("刪除", "Delete")
     val mutedAppsTitle get() = t("靜音 App 管理", "Muted Apps")
     val mutedAppsEmpty get() = t("尚無可管理的 App", "No apps to manage yet")
-    val mutedLabel get() = t("已靜音", "Muted")
-    val unmutedLabel get() = t("正常通知", "Active")
     val conversationBtn get() = t("對話串", "Thread")
     val conversationTitle get() = t("對話串檢視（上限 200 字預覽）", "Conversation Thread (200-char preview)")
     val conversationEmpty get() = t("尚無同對話訊息", "No messages in this thread")
     val phoneBattery get() = t("手機電量", "Phone Battery")
     val charging get() = t("充電中", "Charging")
     val applyTags get() = t("標籤", "Tags")
+
+    // #468 Settings Center (10 System + 8 Custom)
+    val settingsTabConn get() = t("連線配對", "Connection")
+    val settingsTabSystem get() = t("系統設定 (10)", "System (10)")
+    val settingsTabCustom get() = t("介面自訂 (8)", "Customize (8)")
+    val sysLangTitle get() = t("1. 界面語言（即時生效）", "1. Interface Language (Instant)")
+    val sysAutoStartTitle get() = t("2. 開機自動啟動（Windows HKCU\\Run，啟動縮至系統匣）", "2. Launch at Windows Startup (starts in tray)")
+    val sysCloseBehaviorTitle get() = t("3. 關閉視窗行為", "3. Window Close Behavior")
+    val closeMinimizeTray get() = t("縮到系統匣背景運行（預設）", "Minimize to System Tray (Default)")
+    val closeExitApp get() = t("直接結束程式", "Exit Application")
+    val sysNativeNotifTitle get() = t("4. 系統原生通知與勿擾時段（預設 00:00–07:00）", "4. Native Notifications & DND (00:00–07:00)")
+    val enableNativeNotif get() = t("啟用系統原生通知", "Enable Native Notifications")
+    val enableDnd get() = t("啟用勿擾時段", "Enable Do Not Disturb")
+    val sysBackoffTitle get() = t("5. 自動重連退避上限（秒）", "5. Max Reconnect Backoff (sec)")
+    val sysPingTitle get() = t("6. WebSocket 心跳間隔（秒）", "6. WebSocket Ping Interval (sec)")
+    val sysPreviewLenTitle get() = t("7. 訊息預覽顯示上限（字數）", "7. Message Preview Display Limit (chars)")
+    val sysConfigTitle get() = t("8. 快取與配置管理", "8. Cache & Configuration")
+    val openConfigFolder get() = t("開啟配置資料夾", "Open Config Folder")
+    val resetSettingsBtn get() = t("還原預設設定", "Reset Settings")
+    val sysUpdateTitle get() = t("9. 檢查更新（手動觸發）", "9. Check for Updates (Manual)")
+    val checkUpdateBtn get() = t("立即檢查 GitHub Releases", "Check GitHub Releases")
+    val checkingUpdate get() = t("檢查中…", "Checking…")
+    val sysDiagTitle get() = t("10. 診斷紀錄（3 份旋轉日誌）", "10. Diagnostics (3-File Rotating Log)")
+    val openLogsFolder get() = t("開啟日誌資料夾", "Open Logs Folder")
+    val exportDiagBtn get() = t("匯出診斷報告", "Export Diagnostics")
+
+    val custAccentTitle get() = t("1. 強調色（6 色）", "1. Accent Color (6 Presets)")
+    val custDensityTitle get() = t("2. 介面密度", "2. UI Density")
+    val custFontScaleTitle get() = t("3. 字級縮放", "3. Font Scale")
+    val custSidebarTitle get() = t("4. 側欄寬度與折疊", "4. Sidebar Width & Collapse")
+    val collapseSidebar get() = t("折疊側欄", "Collapse Sidebar")
+    val custCardStyleTitle get() = t("5. 訊息卡樣式", "5. Message Card Style")
+    val custMirrorModeTitle get() = t("6. 新訊息鏡射顯示方式", "6. New Message Mirror Display")
+    val custBgThemeTitle get() = t("7. 背景主題（4 預設漸層＋自訂背景圖）", "7. Background Theme (4 Gradients + Custom Image)")
+    val customBgPathHint get() = t("自訂本機背景圖絕對路徑（留空使用漸層）", "Local image path (leave blank for gradient)")
+    val clearBgImage get() = t("清除背景圖", "Clear Image")
+    val custAnimTitle get() = t("8. 動畫效果（低階機可關閉以提升效能）", "8. Animations (Disable for performance mode)")
+    val shortcutsHint get() = t("捷徑：Ctrl+1..6 切換分頁 · Ctrl+F 搜尋訊息 · Esc 關閉彈窗", "Shortcuts: Ctrl+1..6 switch tabs · Ctrl+F search · Esc close dialogs")
+
+    // #469 Tray strings
+    val trayOpen get() = t("開啟 PhantomCheck", "Open PhantomCheck")
+    val trayExit get() = t("結束程式", "Exit")
+    val trayUnsupportedNotice get() = t("此系統環境不支援系統匣（SystemTray），關閉視窗將直接結束程式。", "SystemTray is not supported in this environment; closing will exit the app.")
 
     fun reconnectingCountdown(remSec: Int, totalSec: Int): String =
         t("將於 ${remSec}s 後重連（退避 ${totalSec}s）", "Reconnecting in ${remSec}s (backoff ${totalSec}s)")

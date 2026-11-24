@@ -237,8 +237,9 @@ class DesktopLinkClient {
                 expectedFingerprint = savedFingerprint
             )
             if (!shouldKeepConnected) break
-            backoffMs = if (ok) 1000L else (backoffMs * 2).coerceAtMost(30_000L)
-            val totalSec = (backoffMs / 1000L).toInt().coerceIn(1, 30)
+            val maxBackoffMs = DesktopSettingsStore.state.value.maxReconnectBackoffSec * 1000L
+            backoffMs = if (ok) 1000L else (backoffMs * 2).coerceAtMost(maxBackoffMs)
+            val totalSec = (backoffMs / 1000L).toInt().coerceIn(1, DesktopSettingsStore.state.value.maxReconnectBackoffSec)
             for (rem in totalSec downTo 1) {
                 if (!shouldKeepConnected) break
                 _state.value = _state.value.copy(
@@ -405,9 +406,10 @@ class DesktopLinkClient {
     }
 
     private fun buildPinningClient(): HttpClient {
+        val pingMs = DesktopSettingsStore.state.value.pingIntervalSec * 1000L
         return HttpClient(CIO) {
             install(WebSockets) {
-                pingIntervalMillis = 15_000L
+                pingIntervalMillis = pingMs
             }
             engine {
                 https {
