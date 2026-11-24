@@ -138,16 +138,19 @@ object DesktopLinkServer {
 
     private val activeSessions = ConcurrentHashMap<String, ClientSession>()
     private val subscribedClients = ConcurrentHashMap.newKeySet<String>()
+    private val clientCursors = ConcurrentHashMap<String, Long>()
 
     @Volatile
     private var messagePushJob: Job? = null
 
-    @Volatile
-    private var lastPushedMsgId: Long = 0L
-
     /** M2 可掛載的斷線/連線事件回呼 */
     @Volatile
     var onSessionChanged: ((Context, Int) -> Unit)? = null
+
+    /** #466 / #471 前景停留於連線頁時刷新活動時間，避免誤觸 30 分鐘閒置停置 */
+    fun touchActivity() {
+        lastActivityMs = System.currentTimeMillis()
+    }
 
     @Synchronized
     fun start(ctx: Context) {
@@ -258,6 +261,7 @@ object DesktopLinkServer {
         messagePushJob?.cancel()
         messagePushJob = null
         subscribedClients.clear()
+        clientCursors.clear()
         unregisterNsd()
         val sessions = activeSessions.values.toList()
         activeSessions.clear()
@@ -284,6 +288,7 @@ object DesktopLinkServer {
         val appCtx = ctx.applicationContext
         DesktopLinkStore.removePairedDevice(appCtx, instanceId)
         subscribedClients.remove(instanceId)
+        clientCursors.remove(instanceId)
         val session = activeSessions.remove(instanceId)
         if (session != null) {
             refreshConnectedClients(appCtx)
@@ -337,6 +342,7 @@ object DesktopLinkServer {
         }.onFailure { return }
 
         var authedInstanceId: String? = null
+        var mySession: ClientSession? = null
         var bucketTokens = LinkProtocol.MAX_COMMAND_BURST.toDouble()
         var lastRefillMs = System.currentTimeMillis()
 
@@ -405,8 +411,9 @@ object DesktopLinkServer {
                             )
                             authedInstanceId = req.instanceId
                             val info = ConnectedClientInfo(req.instanceId, req.desktopName.ifBlank { "Desktop" }, remoteIp, now)
-                            activeSessions[req.instanceId]?.ws?.let { old -> runCatching { old.close() } }
-                            activeSessions[req.instanceId] = ClientSession(info, ws)
+                            val newSession = ClientSession(info, ws)
+                            mySession = newSession
+                            activeSessions.put(req.instanceId, newSession)?.ws?.let { old -> runCatching { old.close() } }
                             refreshConnectedClients(appCtx)
                             sendEnvelope(
                                 ws,
@@ -466,8 +473,9 @@ object DesktopLinkServer {
                             DesktopLinkStore.updateLastSeen(appCtx, req.instanceId, now)
                             authedInstanceId = req.instanceId
                             val info = ConnectedClientInfo(req.instanceId, paired.name, remoteIp, now)
-                            activeSessions[req.instanceId]?.ws?.let { old -> runCatching { old.close() } }
-                            activeSessions[req.instanceId] = ClientSession(info, ws)
+                            val newSession = ClientSession(info, ws)
+                            mySession = newSession
+                            activeSessions.put(req.instanceId, newSession)?.ws?.let { old -> runCatching { old.close() } }
                             refreshConnectedClients(appCtx)
                             sendEnvelope(ws, LinkMsgType.AUTH_RESPONSE, env.reqId, AuthResponsePayload(ok = true, deviceName = deviceName))
                         }
@@ -508,10 +516,13 @@ object DesktopLinkServer {
         } catch (_: Exception) {
         } finally {
             val id = authedInstanceId
-            if (id != null) {
-                subscribedClients.remove(id)
-                activeSessions.remove(id)
-                refreshConnectedClients(appCtx)
+            val sess = mySession
+            if (id != null && sess != null) {
+                if (activeSessions.remove(id, sess)) {
+                    subscribedClients.remove(id)
+                    clientCursors.remove(id)
+                    refreshConnectedClients(appCtx)
+                }
             }
         }
     }
@@ -559,9 +570,11 @@ object DesktopLinkServer {
             LinkMsgType.MESSAGES_SUBSCRIBE -> {
                 subscribedClients.add(instanceId)
                 val latest = db.messageDao().paged(1, 0).firstOrNull()?.id ?: 0L
-                if (latest > lastPushedMsgId) lastPushedMsgId = latest
+                val cursor = clientCursors.compute(instanceId) { _, prev ->
+                    maxOf(prev ?: 0L, latest)
+                } ?: latest
                 ensureMessagePushLoop(appCtx)
-                sendEnvelope(ws, LinkMsgType.MESSAGES_SUBSCRIBE_RES, env.reqId, mapOf("subscribed" to true, "cursor" to lastPushedMsgId))
+                sendEnvelope(ws, LinkMsgType.MESSAGES_SUBSCRIBE_RES, env.reqId, mapOf("subscribed" to true, "cursor" to cursor))
             }
 
             LinkMsgType.MESSAGES_MARK_READ -> {
@@ -823,9 +836,13 @@ object DesktopLinkServer {
                 delay(3_000L)
                 if (subscribedClients.isEmpty()) break
                 val recent = runCatching { db.messageDao().paged(20, 0) }.getOrDefault(emptyList())
-                val newItems = recent.filter { it.id > lastPushedMsgId }.sortedBy { it.id }
-                if (newItems.isNotEmpty()) {
-                    lastPushedMsgId = newItems.maxOf { it.id }
+                if (recent.isEmpty()) continue
+                subscribedClients.toList().forEach { id ->
+                    val ws = activeSessions[id]?.ws ?: return@forEach
+                    val prevCursor = clientCursors[id] ?: 0L
+                    val newItems = recent.filter { it.id > prevCursor }.sortedBy { it.id }
+                    if (newItems.isEmpty()) return@forEach
+                    val nextCursor = newItems.maxOf { it.id }
                     val dtos = newItems.map { m ->
                         MessageSummaryDto(
                             id = m.id,
@@ -841,13 +858,11 @@ object DesktopLinkServer {
                     val env = LinkEnvelope(
                         type = LinkMsgType.MESSAGE_NEW,
                         reqId = "",
-                        payloadJson = gson.toJson(MessageNewPush(items = dtos, latestCursor = lastPushedMsgId))
+                        payloadJson = gson.toJson(MessageNewPush(items = dtos, latestCursor = nextCursor))
                     )
-                    val text = gson.toJson(env)
-                    subscribedClients.forEach { id ->
-                        activeSessions[id]?.ws?.let { ws ->
-                            runCatching { ws.send(Frame.Text(text)) }
-                        }
+                    val sent = runCatching { ws.send(Frame.Text(gson.toJson(env))) }.isSuccess
+                    if (sent) {
+                        clientCursors[id] = nextCursor
                     }
                 }
             }
@@ -891,13 +906,24 @@ object DesktopLinkServer {
             }
             val listener = object : NsdManager.RegistrationListener {
                 override fun onServiceRegistered(serviceInfo: NsdServiceInfo) {}
-                override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
+                override fun onRegistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                    android.util.Log.w("DesktopLinkServer", "NSD registration failed: errorCode=$errorCode")
+                    if (server != null) {
+                        _status.value = _status.value.copy(
+                            lastError = appCtx.getString(R.string.link_hub_nsd_failed, errorCode)
+                        )
+                    }
+                }
                 override fun onServiceUnregistered(serviceInfo: NsdServiceInfo) {}
-                override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
+                override fun onUnregistrationFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                    android.util.Log.w("DesktopLinkServer", "NSD unregistration failed: errorCode=$errorCode")
+                }
             }
             mgr.registerService(info, NsdManager.PROTOCOL_DNS_SD, listener)
             nsdManager = mgr
             nsdListener = listener
+        }.onFailure { err ->
+            android.util.Log.w("DesktopLinkServer", "NSD registerService threw: ${err.javaClass.simpleName}")
         }
     }
 

@@ -84,6 +84,8 @@ object DesktopStrings {
     val emptyWhitelist get() = t("尚未設定白名單規則", "No whitelist rules yet")
     val emptyTags get() = t("尚未建立標籤", "No tags yet")
     val versionLabel get() = t("桌面端 v0.2.0", "Desktop v0.2.0")
+    val commandNotSentDisconnected get() = t("目前未連線手機，操作未送出", "Not connected to phone — action not sent")
+    val chatTimeoutError get() = t("AI 回覆逾時（130 秒）或連線中斷，請稍後重試", "AI reply timed out (130s) or connection dropped. Please retry.")
 
     fun reconnectingCountdown(remSec: Int, totalSec: Int): String =
         t("將於 ${remSec}s 後重連（退避 ${totalSec}s）", "Reconnecting in ${remSec}s (backoff ${totalSec}s)")

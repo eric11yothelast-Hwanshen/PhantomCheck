@@ -272,12 +272,22 @@ fun DesktopApp() {
     var tags by remember { mutableStateOf<List<TagItemDto>>(emptyList()) }
     var newTagName by remember { mutableStateOf("") }
 
+    var chatTimeoutJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
     fun reqId() = UUID.randomUUID().toString()
+
+    suspend fun sendOrNotify(type: String, payload: Any): Boolean {
+        val ok = client.sendCommand(type, reqId(), payload)
+        if (!ok) {
+            actionFeedback = DesktopStrings.commandNotSentDisconnected
+        }
+        return ok
+    }
 
     fun refreshMessages(useCursor: Boolean = false) {
         scope.launch {
             val cursor = if (useCursor) latestCursor else 0L
-            client.sendCommand(LinkMsgType.MESSAGES_LIST, reqId(), MessagesListReq(filter = msgFilter, offset = 0, limit = 40, sinceCursor = cursor))
+            sendOrNotify(LinkMsgType.MESSAGES_LIST, MessagesListReq(filter = msgFilter, offset = 0, limit = 40, sinceCursor = cursor))
         }
     }
 
@@ -309,6 +319,11 @@ fun DesktopApp() {
     LaunchedEffect(uiState.connState) {
         if (uiState.connState == LinkConnState.CONNECTED) {
             refreshAllOnConnect()
+        } else if (chatSending) {
+            chatTimeoutJob?.cancel()
+            chatTimeoutJob = null
+            chatSending = false
+            actionFeedback = DesktopStrings.chatTimeoutError
         }
     }
 
@@ -358,6 +373,8 @@ fun DesktopApp() {
                     chatBubbles = res.messages
                 }
                 LinkMsgType.CHAT_REPLY -> {
+                    chatTimeoutJob?.cancel()
+                    chatTimeoutJob = null
                     chatSending = false
                     val res = runCatching { gson.fromJson(env.payloadJson, ChatReplyRes::class.java) }.getOrNull() ?: return@collect
                     if (res.sessionId > 0L) chatSessionId = res.sessionId
@@ -689,7 +706,7 @@ fun DesktopApp() {
                                             Spacer(Modifier.weight(1f))
                                             SpringOutlinedButton(onClick = {
                                                 scope.launch {
-                                                    client.sendCommand(LinkMsgType.MESSAGES_MARK_READ, reqId(), MarkReadReq(all = true))
+                                                    sendOrNotify(LinkMsgType.MESSAGES_MARK_READ, MarkReadReq(all = true))
                                                 }
                                             }) {
                                                 Text(DesktopStrings.markAllRead)
@@ -754,7 +771,7 @@ fun DesktopApp() {
                                                                 if (!m.isRead) {
                                                                     TextButton(onClick = {
                                                                         scope.launch {
-                                                                            client.sendCommand(LinkMsgType.MESSAGES_MARK_READ, reqId(), MarkReadReq(ids = listOf(m.id)))
+                                                                            sendOrNotify(LinkMsgType.MESSAGES_MARK_READ, MarkReadReq(ids = listOf(m.id)))
                                                                         }
                                                                     }) { Text(DesktopStrings.markRead) }
                                                                 }
@@ -783,13 +800,14 @@ fun DesktopApp() {
                                                                     SpringButton(onClick = {
                                                                         if (replyText.isNotBlank()) {
                                                                             scope.launch {
-                                                                                client.sendCommand(
-                                                                                    LinkMsgType.QUICK_REPLY_SEND,
-                                                                                    reqId(),
-                                                                                    QuickReplySendReq(packageName = m.packageName, sender = m.sender, text = replyText)
-                                                                                )
-                                                                                replyTargetId = -1L
-                                                                                replyText = ""
+                                                                                if (sendOrNotify(
+                                                                                        LinkMsgType.QUICK_REPLY_SEND,
+                                                                                        QuickReplySendReq(packageName = m.packageName, sender = m.sender, text = replyText)
+                                                                                    )
+                                                                                ) {
+                                                                                    replyTargetId = -1L
+                                                                                    replyText = ""
+                                                                                }
                                                                             }
                                                                         }
                                                                     }) { Text(DesktopStrings.sendReply) }
@@ -845,7 +863,7 @@ fun DesktopApp() {
                                                             checked = t.isDone,
                                                             onCheckedChange = { checked ->
                                                                 scope.launch {
-                                                                    client.sendCommand(LinkMsgType.TODOS_TOGGLE, reqId(), TodosToggleReq(id = t.id, done = checked))
+                                                                    sendOrNotify(LinkMsgType.TODOS_TOGGLE, TodosToggleReq(id = t.id, done = checked))
                                                                 }
                                                             }
                                                         )
@@ -873,7 +891,7 @@ fun DesktopApp() {
                                                 modifier = Modifier.weight(1f).fillMaxWidth(),
                                                 verticalArrangement = Arrangement.spacedBy(10.dp)
                                             ) {
-                                                items(chatBubbles) { b ->
+                                                items(chatBubbles, key = { "${it.id}_${it.role}_${it.createdAt}" }) { b ->
                                                     val isUser = b.role == "user"
                                                     Row(
                                                         modifier = Modifier
@@ -926,11 +944,22 @@ fun DesktopApp() {
                                                 onClick = {
                                                     val msg = chatInput.trim()
                                                     if (msg.isNotBlank()) {
-                                                        chatInput = ""
-                                                        chatSending = true
-                                                        chatBubbles = chatBubbles + ChatBubbleDto(System.currentTimeMillis(), "user", msg, System.currentTimeMillis())
                                                         scope.launch {
-                                                            client.sendCommand(LinkMsgType.CHAT_SEND, reqId(), ChatSendReq(text = msg, sessionId = chatSessionId))
+                                                            val sent = sendOrNotify(LinkMsgType.CHAT_SEND, ChatSendReq(text = msg, sessionId = chatSessionId))
+                                                            if (sent) {
+                                                                chatInput = ""
+                                                                chatSending = true
+                                                                val nowTs = System.currentTimeMillis()
+                                                                chatBubbles = chatBubbles + ChatBubbleDto(nowTs, "user", msg, nowTs)
+                                                                chatTimeoutJob?.cancel()
+                                                                chatTimeoutJob = scope.launch {
+                                                                    delay(130_000L)
+                                                                    if (chatSending) {
+                                                                        chatSending = false
+                                                                        actionFeedback = DesktopStrings.chatTimeoutError
+                                                                    }
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                 },
@@ -956,9 +985,10 @@ fun DesktopApp() {
                                                     SpringButton(onClick = {
                                                         if (newRuleSender.isNotBlank()) {
                                                             scope.launch {
-                                                                client.sendCommand(LinkMsgType.WHITELIST_ADD, reqId(), WhitelistAddReq(sender = newRuleSender, packageName = newRulePkg, ruleText = newRuleSender))
-                                                                newRuleSender = ""
-                                                                newRulePkg = ""
+                                                                if (sendOrNotify(LinkMsgType.WHITELIST_ADD, WhitelistAddReq(sender = newRuleSender, packageName = newRulePkg, ruleText = newRuleSender))) {
+                                                                    newRuleSender = ""
+                                                                    newRulePkg = ""
+                                                                }
                                                             }
                                                         }
                                                     }) { Text(DesktopStrings.add) }
@@ -971,7 +1001,7 @@ fun DesktopApp() {
                                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                             Text("${r.ruleText} ${if (r.packageName.isNotBlank()) "(${r.packageName})" else ""}", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                                                             TextButton(onClick = {
-                                                                scope.launch { client.sendCommand(LinkMsgType.WHITELIST_REMOVE, reqId(), RuleRemoveReq(r.id)) }
+                                                                scope.launch { sendOrNotify(LinkMsgType.WHITELIST_REMOVE, RuleRemoveReq(r.id)) }
                                                             }) { Text(DesktopStrings.remove, color = GlassError) }
                                                         }
                                                     }
@@ -987,8 +1017,9 @@ fun DesktopApp() {
                                                     SpringButton(onClick = {
                                                         if (newTagName.isNotBlank()) {
                                                             scope.launch {
-                                                                client.sendCommand(LinkMsgType.TAGS_ADD, reqId(), TagAddReq(name = newTagName))
-                                                                newTagName = ""
+                                                                if (sendOrNotify(LinkMsgType.TAGS_ADD, TagAddReq(name = newTagName))) {
+                                                                    newTagName = ""
+                                                                }
                                                             }
                                                         }
                                                     }) { Text(DesktopStrings.add) }
@@ -1001,7 +1032,7 @@ fun DesktopApp() {
                                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                                             Text(t.name, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                                                             TextButton(onClick = {
-                                                                scope.launch { client.sendCommand(LinkMsgType.TAGS_REMOVE, reqId(), TagRemoveReq(t.id)) }
+                                                                scope.launch { sendOrNotify(LinkMsgType.TAGS_REMOVE, TagRemoveReq(t.id)) }
                                                             }) { Text(DesktopStrings.remove, color = GlassError) }
                                                         }
                                                     }

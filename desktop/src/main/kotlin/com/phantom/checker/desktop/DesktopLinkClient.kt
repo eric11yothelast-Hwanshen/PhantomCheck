@@ -17,6 +17,7 @@ import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.websocket.Frame
 import io.ktor.websocket.WebSocketSession
+import io.ktor.websocket.close
 import io.ktor.websocket.readText
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,8 +70,8 @@ class DesktopLinkClient {
     private val gson = Gson()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val configDir = File(System.getProperty("user.home"), ".phantomcheck-desktop")
-    private val configFile = File(configDir, "link.properties")
+    private val configDir get() = DesktopPaths.configDir
+    private val configFile get() = DesktopPaths.linkPropertiesFile
 
     private val _state = MutableStateFlow(DesktopLinkUiState())
     val state: StateFlow<DesktopLinkUiState> = _state.asStateFlow()
@@ -128,6 +129,7 @@ class DesktopLinkClient {
             if (configFile.exists()) configFile.inputStream().use { props.load(it) }
             props.setProperty(key, value)
             configFile.outputStream().use { props.store(it, "PhantomCheck Desktop Link") }
+            DesktopPaths.restrictOwnerOnlyPermissions(configFile)
         }
     }
 
@@ -146,6 +148,7 @@ class DesktopLinkClient {
             props.setProperty("fingerprint", fingerprint)
             props.setProperty("deviceName", deviceName)
             configFile.outputStream().use { props.store(it, "PhantomCheck Desktop Link") }
+            DesktopPaths.restrictOwnerOnlyPermissions(configFile)
         }
     }
 
@@ -164,6 +167,7 @@ class DesktopLinkClient {
                 props.remove("fingerprint")
                 props.remove("deviceName")
                 configFile.outputStream().use { props.store(it, "PhantomCheck Desktop Link") }
+                DesktopPaths.restrictOwnerOnlyPermissions(configFile)
             }
         }
         _state.value = DesktopLinkUiState(connState = LinkConnState.DISCONNECTED, isPaired = false)
@@ -197,9 +201,13 @@ class DesktopLinkClient {
 
     fun disconnect() {
         shouldKeepConnected = false
+        val ws = activeWs
+        activeWs = null
         connectJob?.cancel()
         connectJob = null
-        activeWs = null
+        if (ws != null) {
+            scope.launch { runCatching { ws.close() } }
+        }
         _state.value = _state.value.copy(
             connState = LinkConnState.DISCONNECTED,
             reconnectRemainingSec = 0,
@@ -207,15 +215,16 @@ class DesktopLinkClient {
         )
     }
 
-    suspend fun sendCommand(type: String, reqId: String, payload: Any) {
-        val ws = activeWs ?: return
+    suspend fun sendCommand(type: String, reqId: String, payload: Any): Boolean {
+        val ws = activeWs ?: return false
         val env = LinkEnvelope(type = type, reqId = reqId, payloadJson = gson.toJson(payload))
-        try {
+        return try {
             ws.send(Frame.Text(gson.toJson(env)))
+            true
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (_: Exception) {
-            // 斷線瞬間送出失敗交由重連迴圈處理，不拋出未捕捉例外造成桌面端閃退
+            false
         }
     }
 
@@ -267,7 +276,8 @@ class DesktopLinkClient {
 
                     when (env.type) {
                         LinkMsgType.HELLO -> {
-                            val hello = gson.fromJson(env.payloadJson, HelloPayload::class.java)
+                            val hello = runCatching { gson.fromJson(env.payloadJson, HelloPayload::class.java) }.getOrNull()
+                                ?: continue
                             if (hello.protocolVersion != LinkProtocol.PROTOCOL_VERSION) {
                                 _state.value = _state.value.copy(
                                     connState = LinkConnState.DISCONNECTED,
@@ -315,7 +325,8 @@ class DesktopLinkClient {
                         }
 
                         LinkMsgType.PAIR_RESPONSE -> {
-                            val resp = gson.fromJson(env.payloadJson, PairResponsePayload::class.java)
+                            val resp = runCatching { gson.fromJson(env.payloadJson, PairResponsePayload::class.java) }.getOrNull()
+                                ?: continue
                             if (resp.ok) {
                                 savePairing(wssUrl, resp.certFingerprint, resp.hmacSecret, resp.deviceName)
                                 sessionSucceeded = true
@@ -337,7 +348,8 @@ class DesktopLinkClient {
                         }
 
                         LinkMsgType.AUTH_RESPONSE -> {
-                            val resp = gson.fromJson(env.payloadJson, AuthResponsePayload::class.java)
+                            val resp = runCatching { gson.fromJson(env.payloadJson, AuthResponsePayload::class.java) }.getOrNull()
+                                ?: continue
                             if (resp.ok) {
                                 sessionSucceeded = true
                                 _state.value = _state.value.copy(
@@ -362,7 +374,8 @@ class DesktopLinkClient {
                         }
 
                         LinkMsgType.ERROR -> {
-                            val err = gson.fromJson(env.payloadJson, ErrorPayload::class.java)
+                            val err = runCatching { gson.fromJson(env.payloadJson, ErrorPayload::class.java) }.getOrNull()
+                                ?: continue
                             _state.value = _state.value.copy(lastError = "${err.errorCode}: ${err.errorMessage}")
                         }
 
@@ -372,6 +385,8 @@ class DesktopLinkClient {
                     }
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             _state.value = _state.value.copy(
                 connState = LinkConnState.DISCONNECTED,

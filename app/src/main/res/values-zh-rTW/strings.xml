@@ -2973,5 +2973,6 @@
     <string name="link_hub_fingerprint_copied_toast">已複製憑證指紋</string>
     <string name="link_hub_init_error">桌面端連線異常：%1$s</string>
     <string name="link_hub_port_in_use">埠 %1$d 已被佔用</string>
+    <string name="link_hub_nsd_failed">mDNS 區網廣播註冊失敗（代碼 %1$d），請改用手動位址連線</string>
     <string name="chat_smart_search_citation_rule">\n\n【聯網查證模式】請結合上方使用者 RAG 記憶與個人化設定，並【僅依搜尋片段】回答。重要事實請在行內精簡標註來源（如 [1] 或網域名稱），嚴禁貼出整串長網址。若搜尋結果不足，請誠實說明「查無相關最新資料」，絕不以既有知識頂替或編造。</string>
 </resources>

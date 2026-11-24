@@ -29,16 +29,26 @@ class MdnsScanner {
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
+    @Volatile
     private var jmdns: JmDNS? = null
+
+    @Volatile
+    private var stopped = false
+
     private val serviceType = "${LinkProtocol.MDNS_SERVICE_TYPE}local."
 
     fun start() {
         if (jmdns != null) return
+        stopped = false
         _isScanning.value = true
         Thread {
             runCatching {
                 val bindAddr = findSiteLocalIpv4()
                 val instance = if (bindAddr != null) JmDNS.create(bindAddr) else JmDNS.create()
+                if (stopped) {
+                    runCatching { instance.close() }
+                    return@runCatching
+                }
                 jmdns = instance
                 instance.addServiceListener(serviceType, object : ServiceListener {
                     override fun serviceAdded(event: ServiceEvent) {
@@ -77,11 +87,15 @@ class MdnsScanner {
     }
 
     fun stop() {
+        stopped = true
         _isScanning.value = false
         val inst = jmdns
         jmdns = null
         if (inst != null) {
-            runCatching { inst.close() }
+            Thread { runCatching { inst.close() } }.apply {
+                isDaemon = true
+                start()
+            }
         }
     }
 
