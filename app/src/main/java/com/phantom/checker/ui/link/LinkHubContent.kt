@@ -377,6 +377,14 @@ fun LinkHubContent(
                             color = MaterialTheme.colorScheme.error
                         )
                     }
+                    if (clientStatus.probeCooldownSec > 0) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(R.string.link_hub_probe_cooldown_hint, clientStatus.probeCooldownSec),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     if (clientStatus.connState != PhoneLinkConnState.DISCONNECTED) {
                         Spacer(Modifier.height(10.dp))
                         OutlinedButton(onClick = { DesktopLinkClient.disconnect(clearError = true) }) {
@@ -594,16 +602,53 @@ fun LinkHubContent(
                         Text(
                             text = stringResource(R.string.link_hub_diag_title),
                             style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f)
                         )
-                        if (diagnostics.isNotEmpty()) {
-                            TextButton(onClick = {
-                                runCatching { DesktopLinkStore.clearDiagnostics(appCtx) }
-                                diagnostics = emptyList()
-                            }) {
-                                Text(stringResource(R.string.link_hub_clear))
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedButton(
+                                enabled = !clientStatus.isProbing,
+                                onClick = {
+                                    val manualClean = manualHostPort.trim().removePrefix("wss://").removePrefix("ws://").substringBefore("/")
+                                    val manualHost = manualClean.substringBefore(":").trim()
+                                    val manualPort = manualClean.substringAfter(":", "").toIntOrNull()?.coerceIn(1024, 65535)
+                                        ?: LinkProtocol.DEFAULT_PORT
+                                    val targetHostPort: Pair<String, Int>? = when {
+                                        manualHost.isNotBlank() -> manualHost to manualPort
+                                        discoveredDesktops.isNotEmpty() -> discoveredDesktops.first().let { it.host to it.port }
+                                        pairedDevices.any { it.host.isNotBlank() } -> pairedDevices.first { it.host.isNotBlank() }.let { it.host to it.port }
+                                        else -> null
+                                    }
+                                    if (targetHostPort != null) {
+                                        localError = null
+                                        DesktopLinkClient.probeDesktopNow(appCtx, targetHostPort.first, targetHostPort.second)
+                                    } else {
+                                        localError = ctx.getString(R.string.link_hub_diag_no_target)
+                                    }
+                                }
+                            ) {
+                                Text(stringResource(R.string.link_hub_diag_now_btn))
+                            }
+                            if (diagnostics.isNotEmpty()) {
+                                TextButton(onClick = {
+                                    runCatching { DesktopLinkStore.clearDiagnostics(appCtx) }
+                                    diagnostics = emptyList()
+                                }) {
+                                    Text(stringResource(R.string.link_hub_clear))
+                                }
                             }
                         }
+                    }
+                    if (clientStatus.isProbing) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.link_hub_diag_probing,
+                                clientStatus.connectedHostPort.ifBlank { discoveredDesktops.firstOrNull()?.let { "${it.host}:${it.port}" }.orEmpty() }
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                     Spacer(Modifier.height(6.dp))
                     if (diagnostics.isEmpty()) {
@@ -614,11 +659,16 @@ fun LinkHubContent(
                         )
                     } else {
                         diagnostics.take(15).forEach { entry ->
+                            val isErr = entry.code.contains("TIMEOUT", ignoreCase = true) ||
+                                entry.code.contains("REFUSED", ignoreCase = true) ||
+                                entry.code.contains("ERR", ignoreCase = true) ||
+                                entry.code.contains("FAIL", ignoreCase = true) ||
+                                entry.code.contains("MISMATCH", ignoreCase = true)
                             Text(
                                 text = "${timeFmt.format(Date(entry.timestamp))} [${entry.stage}] ${entry.code} ${entry.detail}".trim(),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (isErr) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(vertical = 2.dp)
                             )
                         }

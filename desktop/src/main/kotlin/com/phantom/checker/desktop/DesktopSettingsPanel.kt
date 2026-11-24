@@ -60,6 +60,20 @@ fun DesktopSettingsCenter(
     var pairCodePair by remember { mutableStateOf(server.getOrGeneratePairCode()) }
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
 
+    // #487 Windows Firewall self-check & one-click allow state
+    var firewallResult by remember { mutableStateOf<FirewallCheckResult?>(null) }
+    var checkingFirewall by remember { mutableStateOf(false) }
+    var applyingFirewall by remember { mutableStateOf(false) }
+
+    fun runFirewallCheck(port: Int) {
+        if (checkingFirewall) return
+        checkingFirewall = true
+        scope.launch {
+            firewallResult = DesktopFirewallHelper.checkFirewallStatus(port)
+            checkingFirewall = false
+        }
+    }
+
     // #478 About tab recent 10 releases state
     var recentReleases by remember { mutableStateOf<List<DesktopReleaseEntry>>(emptyList()) }
     var loadingReleases by remember { mutableStateOf(false) }
@@ -108,9 +122,12 @@ fun DesktopSettingsCenter(
         }
     }
 
-    androidx.compose.runtime.LaunchedEffect(subTab) {
+    androidx.compose.runtime.LaunchedEffect(subTab, uiState.port) {
         if (subTab == SettingsSubTab.CONNECTION) {
             server.refreshLocalIps()
+            if (firewallResult == null || firewallResult?.port != uiState.port) {
+                runFirewallCheck(uiState.port)
+            }
             while (true) {
                 kotlinx.coroutines.delay(1000L)
                 nowMs = System.currentTimeMillis()
@@ -233,6 +250,90 @@ fun DesktopSettingsCenter(
                                 }
                             }
                             Text(DesktopStrings.serverFirewallHint, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
+                        }
+                    }
+
+                    // 1.5 #487 Windows Firewall Self-Check & One-Click Allow
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(DesktopStrings.firewallSectionTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                            val fw = firewallResult
+                            if (fw == null) {
+                                Text(
+                                    text = if (checkingFirewall) DesktopStrings.firewallChecking else DesktopStrings.firewallSafetyNote,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = DesktopPalette.TextSecondary
+                                )
+                            } else if (!fw.isWindows) {
+                                Text(DesktopStrings.firewallNonWindows, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextSecondary)
+                            } else {
+                                if (!fw.error.isNullOrBlank()) {
+                                    Text(fw.error, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.GlassError)
+                                } else {
+                                    Text(
+                                        text = if (fw.portRulePresent) DesktopStrings.firewallPortRuleOk(fw.port) else DesktopStrings.firewallPortRuleMissing(fw.port),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (fw.portRulePresent) DesktopPalette.GlassSuccess else DesktopPalette.GlassError
+                                    )
+                                    Text(
+                                        text = if (fw.programRulePresent) DesktopStrings.firewallProgRuleOk else DesktopStrings.firewallProgRuleMissing,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (fw.programRulePresent) DesktopPalette.GlassSuccess else DesktopPalette.TextMuted
+                                    )
+                                    if (fw.profiles.isNotEmpty()) {
+                                        val profText = fw.profiles.joinToString("  |  ") { p ->
+                                            val alias = p.interfaceAlias.ifBlank { p.name }
+                                            "$alias: ${p.category}"
+                                        }
+                                        Text(
+                                            text = "${DesktopStrings.firewallProfilesLabel} $profText",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = DesktopPalette.TextSecondary
+                                        )
+                                    }
+                                    if (fw.hasPublicProfile && !fw.portRulePresent) {
+                                        Text(
+                                            text = DesktopStrings.firewallPublicWarning,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = DesktopPalette.GlassWarning
+                                        )
+                                    }
+                                }
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                SpringOutlinedButton(
+                                    enabled = !checkingFirewall && !applyingFirewall,
+                                    onClick = { runFirewallCheck(uiState.port) },
+                                    animationsEnabled = settings.animationsEnabled
+                                ) {
+                                    Text(if (checkingFirewall) DesktopStrings.firewallChecking else DesktopStrings.firewallCheckBtn)
+                                }
+                                if (DesktopFirewallHelper.isWindowsOs()) {
+                                    SpringButton(
+                                        enabled = !applyingFirewall,
+                                        onClick = {
+                                            applyingFirewall = true
+                                            scope.launch {
+                                                DesktopFirewallHelper.allowInWindowsFirewall(uiState.port)
+                                                    .onSuccess { updated ->
+                                                        firewallResult = updated
+                                                        onFeedback(DesktopStrings.firewallAllowSuccess(uiState.port))
+                                                    }
+                                                    .onFailure { err ->
+                                                        onFeedback(DesktopStrings.firewallAllowFailed(err.message ?: err.javaClass.simpleName))
+                                                    }
+                                                applyingFirewall = false
+                                            }
+                                        },
+                                        animationsEnabled = settings.animationsEnabled,
+                                        containerColor = accentColor
+                                    ) {
+                                        Text(if (applyingFirewall) DesktopStrings.firewallApplying else DesktopStrings.firewallAllowBtn)
+                                    }
+                                }
+                            }
+                            Text(DesktopStrings.firewallSafetyNote, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted)
                         }
                     }
 

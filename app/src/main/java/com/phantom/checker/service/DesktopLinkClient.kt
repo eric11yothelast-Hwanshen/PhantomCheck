@@ -76,7 +76,9 @@ data class PhoneLinkStatus(
     val lastErrorCode: String? = null,
     val lastErrorDetail: String? = null,
     val reconnectRemainingSec: Int = 0,
-    val reconnectTotalSec: Int = 0
+    val reconnectTotalSec: Int = 0,
+    val isProbing: Boolean = false,
+    val probeCooldownSec: Int = 0
 )
 
 /**
@@ -85,6 +87,9 @@ data class PhoneLinkStatus(
  * - 嚴守隱私紅線：敏感記憶（PRIVACY_SENSITIVE）絕不外送、訊息預覽上限 200 字、審計與診斷不記訊息與金鑰
  */
 object DesktopLinkClient {
+
+    private const val PROBE_COOLDOWN_MS = 15_000L
+    private const val TCP_PROBE_TIMEOUT_MS = 8_000
 
     private val gson = Gson()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -106,6 +111,15 @@ object DesktopLinkClient {
 
     @Volatile
     private var messagePushJob: Job? = null
+
+    @Volatile
+    private var probeJob: Job? = null
+
+    @Volatile
+    private var lastTimeoutTargetKey: String? = null
+
+    @Volatile
+    private var lastTimeoutAtMs: Long = 0L
 
     @Volatile
     private var shouldKeepConnected: Boolean = false
@@ -239,6 +253,72 @@ object DesktopLinkClient {
         DesktopLinkStore.removePairedDevice(appCtx, instanceId)
     }
 
+    /**
+     * #487 手動「立即診斷」：繞過 15s 探測冷卻，直接對目標 host:port 執行一次 TCP 連通探測並記錄結果。
+     */
+    fun probeDesktopNow(ctx: Context, host: String, port: Int) {
+        val appCtx = ctx.applicationContext
+        val cleanHost = host.trim().removePrefix("wss://").removePrefix("ws://").substringBefore("/").substringBefore(":")
+        val cleanPort = port.coerceIn(1024, 65535)
+        if (cleanHost.isBlank()) return
+
+        probeJob?.cancel()
+        // 手動診斷繞過同目標冷卻
+        lastTimeoutTargetKey = null
+        lastTimeoutAtMs = 0L
+        _status.value = _status.value.copy(isProbing = true, probeCooldownSec = 0)
+
+        probeJob = scope.launch {
+            val startedAt = System.currentTimeMillis()
+            DesktopLinkStore.recordDiagnostic(appCtx, "PROBE", "START", "$cleanHost:$cleanPort")
+            try {
+                java.net.Socket().use { socket ->
+                    socket.connect(java.net.InetSocketAddress(cleanHost, cleanPort), TCP_PROBE_TIMEOUT_MS)
+                }
+                val elapsed = (System.currentTimeMillis() - startedAt).coerceAtLeast(1L)
+                DesktopLinkStore.recordDiagnostic(appCtx, "PROBE", "TCP_OK", "$cleanHost:$cleanPort (${elapsed}ms)")
+                _status.value = _status.value.copy(
+                    isProbing = false,
+                    probeCooldownSec = 0,
+                    lastErrorCode = if (_status.value.lastErrorCode == LinkErrorCode.TIMEOUT) null else _status.value.lastErrorCode,
+                    lastErrorDetail = if (_status.value.lastErrorCode == LinkErrorCode.TIMEOUT) null else _status.value.lastErrorDetail
+                )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: java.net.SocketTimeoutException) {
+                lastTimeoutTargetKey = "$cleanHost:$cleanPort"
+                lastTimeoutAtMs = System.currentTimeMillis()
+                val detail = e.message ?: "failed to connect to $cleanHost:$cleanPort after ${TCP_PROBE_TIMEOUT_MS}ms"
+                DesktopLinkStore.recordDiagnostic(appCtx, "TCP", LinkErrorCode.TIMEOUT, detail)
+                _status.value = _status.value.copy(
+                    isProbing = false,
+                    lastErrorCode = LinkErrorCode.TIMEOUT,
+                    lastErrorDetail = detail,
+                    probeCooldownSec = (PROBE_COOLDOWN_MS / 1000L).toInt()
+                )
+            } catch (e: ConnectException) {
+                val detail = e.message ?: "Connection refused"
+                DesktopLinkStore.recordDiagnostic(appCtx, "TCP", "REFUSED", detail)
+                _status.value = _status.value.copy(
+                    isProbing = false,
+                    lastErrorCode = LinkErrorCode.TCP_UNREACHABLE,
+                    lastErrorDetail = detail,
+                    probeCooldownSec = 0
+                )
+            } catch (e: Throwable) {
+                val (stage, code) = classifyThrowable(e)
+                val detail = e.message ?: e.javaClass.simpleName
+                DesktopLinkStore.recordDiagnostic(appCtx, stage, code, detail)
+                _status.value = _status.value.copy(
+                    isProbing = false,
+                    lastErrorCode = code,
+                    lastErrorDetail = detail,
+                    probeCooldownSec = 0
+                )
+            }
+        }
+    }
+
     private fun startConnectionFlow(appCtx: Context, target: ConnectTarget) {
         reconnectJob?.cancel()
         reconnectJob = null
@@ -303,6 +383,8 @@ object DesktopLinkClient {
 
         val ws = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                lastTimeoutTargetKey = null
+                lastTimeoutAtMs = 0L
                 DesktopLinkStore.recordDiagnostic(appCtx, "TLS", "OPEN", "fp=${observedCertFp.take(8)}…")
             }
 
@@ -552,8 +634,13 @@ object DesktopLinkClient {
                     isSubscribedToMessages = false
                 }
                 val (stage, code) = classifyThrowable(t)
+                val diagCode = if (t is ConnectException || t.cause is ConnectException) "REFUSED" else code
                 val detail = t.message ?: t.javaClass.simpleName
-                DesktopLinkStore.recordDiagnostic(appCtx, stage, code, detail)
+                if (code == LinkErrorCode.TIMEOUT) {
+                    lastTimeoutTargetKey = "${target.host}:${target.port}"
+                    lastTimeoutAtMs = System.currentTimeMillis()
+                }
+                DesktopLinkStore.recordDiagnostic(appCtx, stage, diagCode, detail)
 
                 // Do not auto-retry pairing failures or TLS/fingerprint failures
                 val nextTarget = activeTarget
@@ -566,7 +653,8 @@ object DesktopLinkClient {
                 _status.value = _status.value.copy(
                     connState = if (canAutoRetry) PhoneLinkConnState.RECONNECTING else PhoneLinkConnState.DISCONNECTED,
                     lastErrorCode = code,
-                    lastErrorDetail = detail
+                    lastErrorDetail = detail,
+                    probeCooldownSec = if (code == LinkErrorCode.TIMEOUT) (PROBE_COOLDOWN_MS / 1000L).toInt() else 0
                 )
 
                 if (canAutoRetry && nextTarget != null) {
@@ -581,7 +669,14 @@ object DesktopLinkClient {
 
     private fun scheduleReconnect(appCtx: Context, target: ConnectTarget, delaySec: Int) {
         reconnectJob?.cancel()
-        val capped = delaySec.coerceIn(1, 30)
+        val targetKey = "${target.host}:${target.port}"
+        val cooldownRemainSec = if (lastTimeoutTargetKey == targetKey) {
+            val remainMs = PROBE_COOLDOWN_MS - (System.currentTimeMillis() - lastTimeoutAtMs)
+            if (remainMs > 0L) ((remainMs + 999L) / 1000L).toInt() else 0
+        } else {
+            0
+        }
+        val capped = maxOf(delaySec, cooldownRemainSec).coerceIn(1, 30)
         reconnectJob = scope.launch {
             for (rem in capped downTo 1) {
                 if (!shouldKeepConnected) return@launch

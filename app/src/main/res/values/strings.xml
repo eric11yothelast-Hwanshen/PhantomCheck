@@ -2992,8 +2992,8 @@
     <string name="link_hub_pair_connect_btn">Pair &amp; Connect</string>
     <string name="link_hub_diag_title">Connection Diagnostics (last 60)</string>
     <string name="link_hub_diag_empty">No connection diagnostics recorded yet</string>
-    <string name="link_hub_err_timeout">Connection timed out. Ensure phone and PC are on the same Wi-Fi and Windows Firewall allows PhantomCheck Desktop.</string>
-    <string name="link_hub_err_unreachable">Cannot reach desktop (TCP unreachable). Check the IP/port and Windows Firewall inbound rules.</string>
+    <string name="link_hub_err_timeout">Connection timed out (TCP silent drop): Very likely blocked by Windows Firewall (especially on Mobile Hotspot / Public network 192.168.137.x).\nSteps:\n1. Open PhantomCheck Desktop → Settings → Connection → click \"One-Click Allow Firewall\"\n2. Ensure both devices are on the same LAN without AP client isolation</string>
+    <string name="link_hub_err_unreachable">Cannot reach desktop (TCP refused or unreachable). Verify the Desktop server is running, check IP:Port, and confirm Windows Firewall inbound rules.</string>
     <string name="link_hub_err_tls">TLS handshake failed. Please verify the desktop server is running and retry.</string>
     <string name="link_hub_err_fp_mismatch">Certificate fingerprint mismatch! Connection blocked for your security — please re-pair with the desktop.</string>
     <string name="link_hub_err_version_mismatch">Protocol version mismatch. Please update both Android and Desktop apps and pair again.</string>
@@ -3020,6 +3020,10 @@
     <string name="link_hub_qr_mdns_verified">Verified via LAN mDNS (%1$s)</string>
     <string name="link_hub_qr_confirm_btn">Confirm &amp; Pair</string>
     <string name="link_hub_qr_cancel_btn">Cancel</string>
+    <string name="link_hub_diag_now_btn">Diagnose Now</string>
+    <string name="link_hub_diag_probing">Probing TCP %1$s…</string>
+    <string name="link_hub_diag_no_target">No desktop IP available yet. Discover via mDNS or enter IP:Port manually first.</string>
+    <string name="link_hub_probe_cooldown_hint">Same target recently timed out; cooling down (%1$ds). Tap \"Diagnose Now\" below to test immediately.</string>
     <string name="common_link">Link</string>
     <string name="chat_smart_search_citation_rule">\n\n[Web Verification Mode] Combine the user\'s RAG memory and persona settings above with the retrieved web snippets. Cite sources inline using [1] or the domain name only — never dump raw long URLs. If search results are insufficient, state honestly that no up-to-date information was found without fabricating.</string>
 </resources>

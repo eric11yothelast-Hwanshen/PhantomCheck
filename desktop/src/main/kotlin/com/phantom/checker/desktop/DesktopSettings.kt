@@ -222,7 +222,7 @@ object DesktopSettingsStore {
         if (enable) "Enabled" else "Disabled"
     }
 
-    private fun resolveCurrentWindowsExecutable(): String {
+    internal fun resolveCurrentWindowsExecutable(): String {
         val jpackagePath = System.getProperty("jpackage.app-path").orEmpty().trim()
         if (jpackagePath.isNotBlank() && File(jpackagePath).exists()) return jpackagePath
         val localAppData = System.getenv("LOCALAPPDATA").orEmpty().trim()

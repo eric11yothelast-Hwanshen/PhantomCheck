@@ -2992,8 +2992,8 @@
     <string name="link_hub_pair_connect_btn">配對並連線</string>
     <string name="link_hub_diag_title">連線診斷紀錄（近 60 筆）</string>
     <string name="link_hub_diag_empty">尚無連線診斷紀錄</string>
-    <string name="link_hub_err_timeout">連線逾時。請確認手機與電腦在同一 Wi-Fi，且 Windows 防火牆已允許 PhantomCheck 桌面端。</string>
-    <string name="link_hub_err_unreachable">無法連線至電腦（TCP 不可達）。請檢查 IP/埠號與 Windows 防火牆輸入規則。</string>
+    <string name="link_hub_err_timeout">連線逾時（TCP 無回應）：極可能被電腦端 Windows 防火牆封鎖（尤其行動熱點／公用網路 192.168.137.x）。\n排查步驟：\n1. 開啟電腦版 PhantomCheck → 設定中心 → 連線配對 → 點擊「一鍵允許防火牆」\n2. 確認手機與電腦在同一區網，且未開啟路由器 AP 隔離</string>
+    <string name="link_hub_err_unreachable">無法連線至電腦（TCP 拒絕或不可達）。請確認電腦端伺服器已啟動、IP/埠號正確，並檢查 Windows 防火牆輸入規則。</string>
     <string name="link_hub_err_tls">TLS 加密握手失敗，請確認桌面伺服器正常運行後重試。</string>
     <string name="link_hub_err_fp_mismatch">憑證指紋不符！為保護安全已立即中斷連線，請重新與電腦配對。</string>
     <string name="link_hub_err_version_mismatch">協定版本不相容，請將手機與桌面端皆更新至最新版並重新配對。</string>
@@ -3020,6 +3020,10 @@
     <string name="link_hub_qr_mdns_verified">已與區網 mDNS 廣播比對相符（%1$s）</string>
     <string name="link_hub_qr_confirm_btn">確認並配對</string>
     <string name="link_hub_qr_cancel_btn">取消</string>
+    <string name="link_hub_diag_now_btn">立即診斷</string>
+    <string name="link_hub_diag_probing">正在探測 TCP %1$s…</string>
+    <string name="link_hub_diag_no_target">尚無可探測的電腦位址，請先透過 mDNS 探索或手動輸入 IP:埠。</string>
+    <string name="link_hub_probe_cooldown_hint">同目標剛發生連線逾時，冷卻中（剩餘 %1$d 秒）；可點下方「立即診斷」即時測試。</string>
     <string name="common_link">連線</string>
     <string name="chat_smart_search_citation_rule">\n\n【聯網查證模式】請結合上方使用者 RAG 記憶與個人化設定，並【僅依搜尋片段】回答。重要事實請在行內精簡標註來源（如 [1] 或網域名稱），嚴禁貼出整串長網址。若搜尋結果不足，請誠實說明「查無相關最新資料」，絕不以既有知識頂替或編造。</string>
 </resources>
