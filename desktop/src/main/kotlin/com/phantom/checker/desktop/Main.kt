@@ -38,8 +38,8 @@ fun main(args: Array<String>) = application {
     val traySupported = remember { runCatching { SystemTray.isSupported() }.getOrDefault(false) }
 
     val settings by DesktopSettingsStore.state.collectAsState()
-    val client = remember { DesktopLinkClient() }
-    val scanner = remember { MdnsScanner() }
+    val server = remember { DesktopLinkServer() }
+    val serverState by server.state.collectAsState()
     val trayState = rememberTrayState()
     val trayIcon = remember { PhantomTrayIconPainter }
 
@@ -55,16 +55,27 @@ fun main(args: Array<String>) = application {
     }
     val windowState = rememberWindowState(
         position = initialPos,
-        size = DpSize(settings.windowWidth.coerceAtLeast(1180).dp, settings.windowHeight.coerceAtLeast(760).dp)
+        size = DpSize(settings.windowWidth.coerceAtLeast(1024).dp, settings.windowHeight.coerceAtLeast(680).dp)
     )
 
-    // 生命週期拉升至 application 層，隱藏視窗至系統匣時 WSS 與 mDNS 不中斷
+    // 生命週期拉升至 application 層，隱藏視窗至系統匣（含 --minimized）時 WSS 伺服器與 mDNS 廣播持續常駐
     LaunchedEffect(Unit) {
         DesktopDiagnostics.info("App", "Started (traySupported=$traySupported, startMinimized=$startMinimized)")
-        scanner.start()
-        if (client.state.value.isPaired) {
-            client.connectSaved()
-        }
+        server.start(
+            onErrorNotify = { errMsg ->
+                if (traySupported) {
+                    runCatching {
+                        trayState.sendNotification(
+                            Notification(
+                                title = DesktopStrings.statusServerError,
+                                message = errMsg,
+                                type = Notification.Type.Error
+                            )
+                        )
+                    }
+                }
+            }
+        )
         if (!traySupported && settings.closeBehavior == CloseBehavior.MINIMIZE_TO_TRAY && !unsupportedNoticeShown) {
             unsupportedNoticeShown = true
             DesktopDiagnostics.warn("Tray", DesktopStrings.trayUnsupportedNotice)
@@ -73,24 +84,31 @@ fun main(args: Array<String>) = application {
 
     DisposableEffect(Unit) {
         onDispose {
-            scanner.stop()
-            client.disconnect()
+            server.stop()
         }
     }
 
     fun performFullExit() {
         saveWindowGeometry(windowState)
-        scanner.stop()
-        client.disconnect()
+        server.stop()
         DesktopDiagnostics.info("App", "Exiting application cleanly")
         exitApplication()
+    }
+
+    val trayTooltip = remember(serverState.connState, serverState.port, serverState.connectedPhones.size, serverState.lastError) {
+        when (serverState.connState) {
+            LinkConnState.ERROR -> "${DesktopStrings.appTitle} — ${DesktopStrings.statusServerError}: ${serverState.lastError.orEmpty()}"
+            LinkConnState.CONNECTED -> "${DesktopStrings.appTitle} — ${DesktopStrings.statusConnected}${serverState.pairedDeviceName}"
+            LinkConnState.WAITING_FOR_PHONE -> "${DesktopStrings.appTitle} — ${DesktopStrings.serverListeningOn(serverState.port, 0)}"
+            LinkConnState.STOPPED -> "${DesktopStrings.appTitle} — ${DesktopStrings.statusServerStopped}"
+        }
     }
 
     if (traySupported) {
         Tray(
             state = trayState,
             icon = trayIcon,
-            tooltip = DesktopStrings.appTitle,
+            tooltip = trayTooltip,
             onAction = { isWindowVisible = true },
             menu = {
                 Item(
@@ -122,7 +140,7 @@ fun main(args: Array<String>) = application {
         icon = trayIcon
     ) {
         LaunchedEffect(Unit) {
-            window.minimumSize = Dimension(1180, 760)
+            window.minimumSize = Dimension(1024, 680)
         }
         LaunchedEffect(isWindowVisible) {
             if (isWindowVisible) {
@@ -133,8 +151,7 @@ fun main(args: Array<String>) = application {
             }
         }
         DesktopApp(
-            client = client,
-            scanner = scanner,
+            server = server,
             manageLifecycle = false,
             onMirrorNotification = { title, body ->
                 if (traySupported) {

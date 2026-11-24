@@ -46,17 +46,8 @@ fun DesktopSettingsCenter(
     settings: DesktopSettings,
     accentColor: Color,
     uiState: DesktopLinkUiState,
-    devices: List<DiscoveredPhone>,
-    isScanning: Boolean,
-    manualHostPort: String,
-    onManualHostPortChange: (String) -> Unit,
-    manualCode: String,
-    onManualCodeChange: (String) -> Unit,
-    selectedFingerprintPrefix: String,
-    onSelectDevice: (DiscoveredPhone) -> Unit,
-    onPairAndConnect: () -> Unit,
-    onDisconnect: () -> Unit,
-    onClearPairing: () -> Unit,
+    mdnsStatus: MdnsBroadcastStatus,
+    server: DesktopLinkServer,
     onFeedback: (String) -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -64,6 +55,22 @@ fun DesktopSettingsCenter(
     var checkingUpdate by remember { mutableStateOf(false) }
     var updateStatus by remember { mutableStateOf<String?>(null) }
     var customBgInput by remember(settings.customBgImagePath) { mutableStateOf(settings.customBgImagePath) }
+    var portInput by remember(settings.serverPort) { mutableStateOf(settings.serverPort.toString()) }
+    var pairCodePair by remember { mutableStateOf(server.getOrGeneratePairCode()) }
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    androidx.compose.runtime.LaunchedEffect(subTab) {
+        if (subTab == SettingsSubTab.CONNECTION) {
+            server.refreshLocalIps()
+            while (true) {
+                kotlinx.coroutines.delay(1000L)
+                nowMs = System.currentTimeMillis()
+                server.getCurrentPairCode(nowMs)?.let { pairCodePair = it }
+            }
+        }
+    }
+
+    val timeFmt = remember { java.text.SimpleDateFormat("MM/dd HH:mm:ss", java.util.Locale.getDefault()) }
 
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -92,58 +99,179 @@ fun DesktopSettingsCenter(
         ) {
             when (subTab) {
                 SettingsSubTab.CONNECTION -> {
+                    // 1. Desktop WSS Server Status + Port + mDNS + Firewall hint
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(DesktopStrings.discoveredDevices, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
-                            Text(DesktopStrings.firewallHint, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
-                            if (uiState.isPaired) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    SpringOutlinedButton(onClick = onDisconnect, animationsEnabled = settings.animationsEnabled) {
-                                        Text(DesktopStrings.disconnectBtn)
-                                    }
-                                    SpringOutlinedButton(onClick = onClearPairing, animationsEnabled = settings.animationsEnabled) {
-                                        Text(DesktopStrings.unpairBtn, color = DesktopPalette.GlassError)
-                                    }
-                                }
-                            }
-                            if (devices.isEmpty()) {
+                            Text(DesktopStrings.serverStatusTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                            Text(
+                                text = when (uiState.connState) {
+                                    LinkConnState.CONNECTED, LinkConnState.WAITING_FOR_PHONE ->
+                                        DesktopStrings.serverListeningOn(uiState.port, uiState.connectedPhones.size)
+                                    LinkConnState.ERROR ->
+                                        "${DesktopStrings.statusServerError}: ${uiState.lastError.orEmpty()}"
+                                    LinkConnState.STOPPED ->
+                                        DesktopStrings.statusServerStopped
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (uiState.connState == LinkConnState.ERROR) DesktopPalette.GlassError else DesktopPalette.TextPrimary
+                            )
+                            if (uiState.certFingerprint.isNotBlank()) {
                                 Text(
-                                    text = if (isScanning) DesktopStrings.statusScanning else DesktopStrings.noDevicesFound,
-                                    style = MaterialTheme.typography.bodySmall,
+                                    text = "${DesktopStrings.fingerprintPrefix}${uiState.certFingerprint.take(16)}…",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
                                     color = DesktopPalette.TextMuted
                                 )
+                            }
+                            Text(
+                                text = if (mdnsStatus.isAdvertising) {
+                                    "${DesktopStrings.mdnsActiveLabel}: ${mdnsStatus.serviceName} (${mdnsStatus.boundIp}:${uiState.port})"
+                                } else if (!mdnsStatus.lastError.isNullOrBlank()) {
+                                    "${DesktopStrings.mdnsFailedLabel} (${mdnsStatus.lastError})"
+                                } else {
+                                    DesktopStrings.mdnsFailedLabel
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (mdnsStatus.isAdvertising) DesktopPalette.GlassSuccess else DesktopPalette.GlassWarning
+                            )
+                            if (uiState.localIps.isNotEmpty()) {
+                                Text(
+                                    text = "${DesktopStrings.serverLanIpsLabel}: ${uiState.localIps.joinToString("  |  ") { "$it:${uiState.port}" }}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = DesktopPalette.TextSecondary
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = portInput,
+                                    onValueChange = { portInput = it.filter { ch -> ch.isDigit() }.take(5) },
+                                    label = { Text(DesktopStrings.serverPortLabel) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                SpringButton(
+                                    onClick = {
+                                        val parsed = portInput.toIntOrNull()?.coerceIn(1024, 65535)
+                                            ?: com.phantom.checker.shared.LinkProtocol.DEFAULT_PORT
+                                        DesktopSettingsStore.update { it.copy(serverPort = parsed) }
+                                        server.restart(parsed)
+                                    },
+                                    animationsEnabled = settings.animationsEnabled
+                                ) { Text(DesktopStrings.serverRestartBtn) }
+                                SpringOutlinedButton(
+                                    onClick = {
+                                        if (uiState.isServerRunning) server.stop() else server.start()
+                                    },
+                                    animationsEnabled = settings.animationsEnabled
+                                ) { Text(if (uiState.isServerRunning) DesktopStrings.serverStopBtn else DesktopStrings.serverStartBtn) }
+                                if (uiState.connectedPhones.isNotEmpty()) {
+                                    SpringOutlinedButton(
+                                        onClick = { server.disconnectPhones() },
+                                        animationsEnabled = settings.animationsEnabled
+                                    ) { Text(DesktopStrings.disconnectBtn) }
+                                }
+                            }
+                            Text(DesktopStrings.serverFirewallHint, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
+                        }
+                    }
+
+                    // 2. Single-use 6-digit Pairing Code (3 min TTL)
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(DesktopStrings.pairNewPhoneTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                            val remSec = ((pairCodePair.second - nowMs) / 1000L).coerceAtLeast(0L)
+                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (remSec > 0L) pairCodePair.first else "------",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = if (remSec > 0L) accentColor else DesktopPalette.GlassError
+                                )
+                                Text(
+                                    text = if (remSec > 0L) {
+                                        DesktopStrings.pairCodeRemaining("%d:%02d".format(remSec / 60L, remSec % 60L))
+                                    } else {
+                                        DesktopStrings.pairCodeExpired
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (remSec > 0L) DesktopPalette.TextSecondary else DesktopPalette.GlassError
+                                )
+                                Spacer(Modifier.weight(1f))
+                                SpringButton(
+                                    onClick = { pairCodePair = server.generatePairCode() },
+                                    animationsEnabled = settings.animationsEnabled
+                                ) { Text(DesktopStrings.pairCodeRegenerate) }
+                            }
+                        }
+                    }
+
+                    // 3. Paired Phones List
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(DesktopStrings.pairedPhonesTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                                if (uiState.pairedPhones.isNotEmpty()) {
+                                    SpringOutlinedButton(
+                                        onClick = { server.clearAllPairings() },
+                                        animationsEnabled = settings.animationsEnabled
+                                    ) { Text(DesktopStrings.unpairBtn, color = DesktopPalette.GlassError) }
+                                }
+                            }
+                            if (uiState.pairedPhones.isEmpty()) {
+                                Text(DesktopStrings.pairedPhonesEmpty, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
                             } else {
-                                devices.forEach { dev ->
+                                uiState.pairedPhones.forEach { phone ->
                                     HorizontalDivider(color = DesktopPalette.GlassBorder)
+                                    val isOnline = uiState.connectedPhones.any { it.instanceId == phone.instanceId }
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text("${dev.friendlyName} (${dev.host}:${dev.port})", style = MaterialTheme.typography.bodyMedium, color = DesktopPalette.TextPrimary)
-                                            if (dev.fingerprintPrefix.isNotBlank()) {
-                                                Text("${DesktopStrings.fingerprintPrefix}${dev.fingerprintPrefix}…", style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted, fontFamily = FontFamily.Monospace)
-                                            }
+                                            Text(
+                                                text = "${if (isOnline) "● " else ""}${phone.name}",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = if (isOnline) DesktopPalette.GlassSuccess else DesktopPalette.TextPrimary
+                                            )
+                                            Text(
+                                                text = "${phone.instanceId.take(8)}… · ${timeFmt.format(java.util.Date(phone.lastSeenAt))}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontFamily = FontFamily.Monospace,
+                                                color = DesktopPalette.TextMuted
+                                            )
                                         }
-                                        SpringOutlinedButton(onClick = { onSelectDevice(dev) }, animationsEnabled = settings.animationsEnabled) {
-                                            Text(DesktopStrings.selectDevice)
-                                        }
+                                        SpringOutlinedButton(
+                                            onClick = { server.revokePhone(phone.instanceId) },
+                                            animationsEnabled = settings.animationsEnabled
+                                        ) { Text(DesktopStrings.remove, color = DesktopPalette.GlassError) }
                                     }
                                 }
                             }
                         }
                     }
 
+                    // 4. Server Audit Log
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text(DesktopStrings.manualPairTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
-                            OutlinedTextField(value = manualHostPort, onValueChange = onManualHostPortChange, label = { Text(DesktopStrings.hostPortLabel) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                            OutlinedTextField(value = manualCode, onValueChange = onManualCodeChange, label = { Text(DesktopStrings.pairCodeLabel) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                            if (selectedFingerprintPrefix.isNotBlank()) {
-                                Text("${DesktopStrings.fingerprintPrefix}$selectedFingerprintPrefix…", style = MaterialTheme.typography.labelSmall, color = DesktopPalette.TextMuted, fontFamily = FontFamily.Monospace)
+                        Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(DesktopStrings.serverAuditTitle, style = MaterialTheme.typography.titleSmall, color = DesktopPalette.TextPrimary)
+                                if (uiState.auditLogs.isNotEmpty()) {
+                                    androidx.compose.material3.TextButton(onClick = { server.clearAuditLogs() }) {
+                                        Text(DesktopStrings.clearLogsBtn)
+                                    }
+                                }
                             }
-                            SpringButton(
-                                onClick = onPairAndConnect,
-                                enabled = manualHostPort.isNotBlank() && manualCode.length == 6,
-                                animationsEnabled = settings.animationsEnabled
-                            ) { Text(DesktopStrings.pairBtn) }
+                            if (uiState.auditLogs.isEmpty()) {
+                                Text(DesktopStrings.serverAuditEmpty, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.TextMuted)
+                            } else {
+                                uiState.auditLogs.take(20).forEach { entry ->
+                                    val mark = if (entry.ok) "✓" else "✕"
+                                    Text(
+                                        text = "${timeFmt.format(java.util.Date(entry.timestamp))} · $mark ${entry.event} ${entry.detail}".trim(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = if (entry.ok) DesktopPalette.TextSecondary else DesktopPalette.GlassError
+                                    )
+                                }
+                            }
                         }
                     }
                 }

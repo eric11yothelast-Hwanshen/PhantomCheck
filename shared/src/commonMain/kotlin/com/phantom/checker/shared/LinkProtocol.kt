@@ -4,15 +4,17 @@ package com.phantom.checker.shared
  * #449 / #450 手機端 ↔ 桌面端 區網連線協定常數與純 Kotlin DTO（零第三方依賴，雙端統一以 Gson 序列化）。
  */
 object LinkProtocol {
-    const val PROTOCOL_VERSION = 1
+    const val PROTOCOL_VERSION = 2
     const val DEFAULT_PORT = 49515
     const val MDNS_SERVICE_TYPE = "_phantomcheck._tcp."
     const val WS_PATH = "/link"
     const val IDLE_TIMEOUT_MS = 30L * 60L * 1000L
-    const val PAIR_CODE_TTL_MS = 5L * 60L * 1000L
+    const val PAIR_CODE_TTL_MS = 3L * 60L * 1000L
     const val MAX_PAIRED_CLIENTS = 2
     const val MAX_COMMANDS_PER_SEC = 5
     const val MAX_COMMAND_BURST = 12
+    const val DEFAULT_COMMAND_TIMEOUT_MS = 8_500L
+    const val LONG_AI_COMMAND_TIMEOUT_MS = 130_000L
 }
 
 object LinkErrorCode {
@@ -28,6 +30,11 @@ object LinkErrorCode {
     const val UNSUPPORTED = "UNSUPPORTED"
     const val INVALID_REQUEST = "INVALID_REQUEST"
     const val INTERNAL_ERROR = "INTERNAL_ERROR"
+    const val TIMEOUT = "TIMEOUT"
+    const val TCP_UNREACHABLE = "TCP_UNREACHABLE"
+    const val TLS_ERROR = "TLS_ERROR"
+    const val HANDSHAKE_ERROR = "HANDSHAKE_ERROR"
+    const val PORT_IN_USE = "PORT_IN_USE"
 }
 
 object LinkMsgType {
@@ -125,11 +132,24 @@ data class QrPairingPayload(
     val protocolVersion: Int = LinkProtocol.PROTOCOL_VERSION
 )
 
+/**
+ * #476 / #477 桌面伺服器產出之配對 QR JSON（手機掃描連線用）。
+ */
+data class QrPairingPayloadV2(
+    val v: Int = LinkProtocol.PROTOCOL_VERSION,
+    val name: String = "",
+    val ip: String = "",
+    val port: Int = LinkProtocol.DEFAULT_PORT,
+    val fp: String = "",
+    val code: String = ""
+)
+
 data class HelloPayload(
     val protocolVersion: Int = LinkProtocol.PROTOCOL_VERSION,
     val deviceName: String = "",
     val certFingerprint: String = "",
-    val challenge: String = ""
+    val challenge: String = "",
+    val serverInstanceId: String = ""
 )
 
 data class PairRequestPayload(

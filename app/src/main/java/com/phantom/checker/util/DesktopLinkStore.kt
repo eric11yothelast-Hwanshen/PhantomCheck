@@ -8,7 +8,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.phantom.checker.shared.LinkProtocol
 import java.security.SecureRandom
-import java.util.concurrent.atomic.AtomicReference
+import java.util.UUID
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -17,7 +17,10 @@ data class PairedDesktop(
     val name: String = "",
     val hmacSecret: String = "",
     val pairedAt: Long = 0L,
-    val lastSeenAt: Long = 0L
+    val lastSeenAt: Long = 0L,
+    val host: String = "",
+    val port: Int = LinkProtocol.DEFAULT_PORT,
+    val fingerprint: String = ""
 )
 
 data class UnknownAttempt(
@@ -35,34 +38,35 @@ data class CommandAuditEntry(
     val detail: String = ""
 )
 
-enum class PairCodeCheckResult {
-    VALID,
-    EXPIRED,
-    INVALID
-}
+data class DiagnosticLogEntry(
+    val timestamp: Long = 0L,
+    val stage: String = "",
+    val code: String = "",
+    val detail: String = ""
+)
 
 /**
- * #449 / #450 桌面端連線安全儲存層（EncryptedSharedPreferences AES256_SIV / AES256_GCM）：
- * - 儲存配對桌機 secret、TLS KeyStore 密碼、開關與連接埠、未知連線嘗試紀錄與 200 筆指令審計紀錄。
- * - 6 位數配對碼僅存於記憶體（TTL 5 分鐘、單次有效）。
+ * #476 手機端桌面連線安全儲存層（EncryptedSharedPreferences AES256_SIV / AES256_GCM）：
+ * - 儲存「已配對電腦」清單（IP/埠/憑證 SHA-256 指紋/HMAC secret）、本機 phoneInstanceId、
+ *   最後連線電腦 ID、未知事件與指令審計紀錄（上限 200 筆）、連線階段診斷日誌（上限 60 筆）。
+ * - 絕不將訊息內容、配對碼或 HMAC 寫入診斷與審計紀錄。
  */
 object DesktopLinkStore {
 
     private const val PREF_FILE = "phantom_desktop_link_secrets"
     private const val KEY_ENABLED = "desktop_link_enabled"
-    private const val KEY_PORT = "desktop_link_port"
-    private const val KEY_KS_PASSWORD = "desktop_link_ks_password"
+    private const val KEY_PHONE_INSTANCE_ID = "desktop_link_phone_instance_id"
+    private const val KEY_LAST_DESKTOP_ID = "desktop_link_last_desktop_id"
     private const val KEY_PAIRED_DEVICES = "desktop_link_paired_devices"
     private const val KEY_UNKNOWN_ATTEMPTS = "desktop_link_unknown_attempts"
     private const val KEY_AUDIT_LOGS = "desktop_link_audit_logs"
+    private const val KEY_DIAGNOSTICS = "desktop_link_diagnostics"
     private const val MAX_UNKNOWN_ATTEMPTS = 40
     private const val MAX_AUDIT_LOGS = 200
+    private const val MAX_DIAGNOSTICS = 60
 
     private val gson = Gson()
     private val secureRandom = SecureRandom()
-
-    private data class ActivePairCode(val code: String, val expiresAtMs: Long)
-    private val activePairCode = AtomicReference<ActivePairCode?>(null)
 
     @Volatile
     private var cachedPrefs: SharedPreferences? = null
@@ -89,31 +93,28 @@ object DesktopLinkStore {
     }
 
     fun isLinkEnabled(ctx: Context): Boolean =
-        runCatching { securePrefs(ctx)?.getBoolean(KEY_ENABLED, false) ?: false }.getOrDefault(false)
+        runCatching { securePrefs(ctx)?.getBoolean(KEY_ENABLED, true) ?: true }.getOrDefault(true)
 
     fun setLinkEnabled(ctx: Context, enabled: Boolean) {
         runCatching { securePrefs(ctx)?.edit()?.putBoolean(KEY_ENABLED, enabled)?.apply() }
     }
 
-    fun getServerPort(ctx: Context): Int =
-        runCatching {
-            (securePrefs(ctx)?.getInt(KEY_PORT, LinkProtocol.DEFAULT_PORT) ?: LinkProtocol.DEFAULT_PORT)
-                .coerceIn(1024, 65535)
-        }.getOrDefault(LinkProtocol.DEFAULT_PORT)
-
-    fun setServerPort(ctx: Context, port: Int) {
-        runCatching { securePrefs(ctx)?.edit()?.putInt(KEY_PORT, port.coerceIn(1024, 65535))?.apply() }
+    fun getOrCreatePhoneInstanceId(ctx: Context): String {
+        return runCatching {
+            val prefs = securePrefs(ctx) ?: return@runCatching UUID.randomUUID().toString()
+            val existing = prefs.getString(KEY_PHONE_INSTANCE_ID, null)
+            if (!existing.isNullOrBlank()) return@runCatching existing
+            val created = UUID.randomUUID().toString()
+            prefs.edit().putString(KEY_PHONE_INSTANCE_ID, created).apply()
+            created
+        }.getOrElse { UUID.randomUUID().toString() }
     }
 
-    fun getOrCreateKeystorePassword(ctx: Context): String {
-        return runCatching {
-            val prefs = securePrefs(ctx) ?: return@runCatching randomHex(24)
-            val existing = prefs.getString(KEY_KS_PASSWORD, null)
-            if (!existing.isNullOrBlank()) return@runCatching existing
-            val created = randomHex(24)
-            prefs.edit().putString(KEY_KS_PASSWORD, created).apply()
-            created
-        }.getOrElse { randomHex(24) }
+    fun getLastConnectedDesktopId(ctx: Context): String =
+        runCatching { securePrefs(ctx)?.getString(KEY_LAST_DESKTOP_ID, null).orEmpty() }.getOrDefault("")
+
+    fun setLastConnectedDesktopId(ctx: Context, instanceId: String) {
+        runCatching { securePrefs(ctx)?.edit()?.putString(KEY_LAST_DESKTOP_ID, instanceId)?.apply() }
     }
 
     fun getPairedDevices(ctx: Context): List<PairedDesktop> {
@@ -160,10 +161,13 @@ object DesktopLinkStore {
         runCatching {
             val list = getPairedDevices(ctx).filterNot { it.instanceId == instanceId }
             val filteredAudit = getAuditLogs(ctx).filterNot { it.instanceId == instanceId }
-            securePrefs(ctx)?.edit()
+            val editor = securePrefs(ctx)?.edit()
                 ?.putString(KEY_PAIRED_DEVICES, gson.toJson(list))
                 ?.putString(KEY_AUDIT_LOGS, gson.toJson(filteredAudit))
-                ?.apply()
+            if (getLastConnectedDesktopId(ctx) == instanceId) {
+                editor?.remove(KEY_LAST_DESKTOP_ID)
+            }
+            editor?.apply()
         }
     }
 
@@ -228,36 +232,34 @@ object DesktopLinkStore {
         runCatching { securePrefs(ctx)?.edit()?.remove(KEY_UNKNOWN_ATTEMPTS)?.apply() }
     }
 
-    fun generatePairCode(nowMs: Long = System.currentTimeMillis()): Pair<String, Long> {
-        val num = secureRandom.nextInt(1_000_000)
-        val code = "%06d".format(num)
-        val expiresAt = nowMs + LinkProtocol.PAIR_CODE_TTL_MS
-        activePairCode.set(ActivePairCode(code, expiresAt))
-        return code to expiresAt
+    fun getDiagnostics(ctx: Context): List<DiagnosticLogEntry> {
+        return runCatching {
+            val raw = securePrefs(ctx)?.getString(KEY_DIAGNOSTICS, null).orEmpty()
+            if (raw.isBlank()) return@runCatching emptyList()
+            val type = object : TypeToken<List<DiagnosticLogEntry?>>() {}.type
+            gson.fromJson<List<DiagnosticLogEntry?>>(raw, type).orEmpty().filterNotNull()
+        }.getOrDefault(emptyList())
     }
 
-    fun getCurrentPairCode(nowMs: Long = System.currentTimeMillis()): Pair<String, Long>? {
-        val current = activePairCode.get() ?: return null
-        if (nowMs > current.expiresAtMs) return null
-        return current.code to current.expiresAtMs
+    @Synchronized
+    fun recordDiagnostic(
+        ctx: Context,
+        stage: String,
+        code: String,
+        detail: String = "",
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        runCatching {
+            val list = getDiagnostics(ctx).toMutableList()
+            list.add(0, DiagnosticLogEntry(nowMs, stage.take(24), code.take(36), detail.take(100)))
+            val trimmed = list.take(MAX_DIAGNOSTICS)
+            securePrefs(ctx)?.edit()?.putString(KEY_DIAGNOSTICS, gson.toJson(trimmed))?.apply()
+        }
     }
 
-    fun getOrGeneratePairCode(nowMs: Long = System.currentTimeMillis()): Pair<String, Long> =
-        getCurrentPairCode(nowMs) ?: generatePairCode(nowMs)
-
-    fun consumePairCode(inputCode: String, nowMs: Long = System.currentTimeMillis()): PairCodeCheckResult {
-        val current = activePairCode.get() ?: return PairCodeCheckResult.INVALID
-        if (nowMs > current.expiresAtMs) {
-            activePairCode.compareAndSet(current, null)
-            return PairCodeCheckResult.EXPIRED
-        }
-        val cleanInput = inputCode.trim()
-        if (cleanInput != current.code) {
-            return PairCodeCheckResult.INVALID
-        }
-        // 單次有效：成功即作廢
-        activePairCode.compareAndSet(current, null)
-        return PairCodeCheckResult.VALID
+    @Synchronized
+    fun clearDiagnostics(ctx: Context) {
+        runCatching { securePrefs(ctx)?.edit()?.remove(KEY_DIAGNOSTICS)?.apply() }
     }
 
     fun randomHex(numBytes: Int = 32): String {

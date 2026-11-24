@@ -44,6 +44,18 @@ object DesktopPaths {
         File(configDir, "settings.properties")
     }
 
+    val serverKeystoreFile: File by lazy {
+        File(configDir, "desktop_server.p12")
+    }
+
+    val serverTlsPropsFile: File by lazy {
+        File(configDir, "tls.properties")
+    }
+
+    val pairedPhonesFile: File by lazy {
+        File(configDir, "paired_phones.json")
+    }
+
     val logsDir: File by lazy {
         File(configDir, "logs").also { runCatching { if (!it.exists()) it.mkdirs() } }
     }

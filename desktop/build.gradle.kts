@@ -26,9 +26,12 @@ dependencies {
     implementation(project(":shared"))
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
-    implementation("io.ktor:ktor-client-cio:3.6.0")
-    implementation("io.ktor:ktor-client-websockets:3.6.0")
-    implementation("org.jmdns:jmdns:3.6.4")
+    implementation("io.ktor:ktor-server-core:3.6.0")
+    implementation("io.ktor:ktor-server-netty:3.6.0")
+    implementation("io.ktor:ktor-server-websockets:3.6.0")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.87")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.87")
+    implementation("org.jmdns:jmdns:3.6.5")
     implementation("com.google.code.gson:gson:2.15.0")
 }
 

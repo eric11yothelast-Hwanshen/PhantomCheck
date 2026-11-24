@@ -34,6 +34,7 @@ data class DesktopSettings(
     val maxReconnectBackoffSec: Int = 30, // 15 | 30 | 60
     val pingIntervalSec: Int = 15, // 10 | 15 | 30
     val previewLength: Int = 200, // 90 | 200 | 500
+    val serverPort: Int = com.phantom.checker.shared.LinkProtocol.DEFAULT_PORT,
     // 8 Custom settings
     val accentPreset: AccentPreset = AccentPreset.BLUE,
     val density: UiDensity = UiDensity.STANDARD,
@@ -94,6 +95,7 @@ object DesktopSettingsStore {
             maxReconnectBackoffSec = p.getProperty("maxReconnectBackoffSec", "30").toIntOrNull()?.takeIf { it in listOf(15, 30, 60) } ?: 30,
             pingIntervalSec = p.getProperty("pingIntervalSec", "15").toIntOrNull()?.takeIf { it in listOf(10, 15, 30) } ?: 15,
             previewLength = p.getProperty("previewLength", "200").toIntOrNull()?.takeIf { it in listOf(90, 200, 500) } ?: 200,
+            serverPort = p.getProperty("serverPort", com.phantom.checker.shared.LinkProtocol.DEFAULT_PORT.toString()).toIntOrNull()?.coerceIn(1024, 65535) ?: com.phantom.checker.shared.LinkProtocol.DEFAULT_PORT,
             accentPreset = AccentPreset.entries.firstOrNull { it.key == p.getProperty("accentPreset", "blue") } ?: AccentPreset.BLUE,
             density = UiDensity.entries.firstOrNull { it.key == p.getProperty("density", "standard") } ?: UiDensity.STANDARD,
             fontScale = p.getProperty("fontScale", "1.0").toFloatOrNull()?.coerceIn(0.9f, 1.25f) ?: 1.0f,
@@ -133,6 +135,7 @@ object DesktopSettingsStore {
             p.setProperty("maxReconnectBackoffSec", s.maxReconnectBackoffSec.toString())
             p.setProperty("pingIntervalSec", s.pingIntervalSec.toString())
             p.setProperty("previewLength", s.previewLength.toString())
+            p.setProperty("serverPort", s.serverPort.toString())
             p.setProperty("accentPreset", s.accentPreset.key)
             p.setProperty("density", s.density.key)
             p.setProperty("fontScale", s.fontScale.toString())

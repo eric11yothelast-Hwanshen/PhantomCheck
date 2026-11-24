@@ -37,6 +37,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
+Name: "firewall"; Description: "Add Windows Firewall exception for LAN link (requires admin)"; GroupDescription: "Network"; Flags: unchecked
 
 [Files]
 Source: "{#AppImageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -50,4 +51,8 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "PhantomCheckDesktop"; Flags: uninsdeletevalue
 
 [Run]
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""PhantomCheck Desktop"" dir=in action=allow program=""{app}\{#MyAppExeName}"" enable=yes profile=private"; Flags: runhidden waituntilterminated; Tasks: firewall
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""PhantomCheck Desktop"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveFirewallRule"

@@ -183,4 +183,60 @@ object DesktopStrings {
         "suspicious" -> t("可疑", "SUSPICIOUS")
         else -> t("安全", "SAFE")
     }
+
+    // #476 Reversed Desktop WSS Server & Diagnostics
+    val serverStatusTitle get() = t("桌面端 WSS 伺服器狀態", "Desktop WSS Server Status")
+    val statusWaitingForPhone get() = t("等待手機連線中…", "Waiting for phone…")
+    val statusServerStopped get() = t("伺服器已停止", "Server stopped")
+    val statusServerError get() = t("伺服器啟動失敗", "Server error")
+    val serverStartBtn get() = t("啟動伺服器", "Start Server")
+    val serverStopBtn get() = t("停止伺服器", "Stop Server")
+    val serverRestartBtn get() = t("套用埠並重啟", "Apply Port & Restart")
+    val serverPortLabel get() = t("監聽埠（預設 49515）", "Listen Port (default 49515)")
+    val serverLanIpsLabel get() = t("本機區網位址（供手機手動輸入備援）", "Local LAN Addresses (for phone manual fallback)")
+    val mdnsActiveLabel get() = t("mDNS 廣播中", "mDNS Advertising")
+    val mdnsFailedLabel get() = t("mDNS 廣播失敗（請以手動位址或 QR 配對）", "mDNS broadcast failed (use manual address or QR)")
+    val serverFirewallHint get() = t(
+        "Windows 防火牆說明：首次啟動監聽時請在系統彈窗點選「允許存取（私人網路）」。若手機顯示無法連線，請確認 Windows 防火牆已放行 PhantomCheckDesktop.exe 的輸入規則。",
+        "Windows Firewall: Click 'Allow access (Private networks)' on the first prompt. If your phone cannot reach this PC, allow inbound connections for PhantomCheckDesktop.exe in Windows Firewall."
+    )
+    val pairNewPhoneTitle get() = t("配對新手機（單次 6 位碼，3 分鐘有效）", "Pair New Phone (Single-Use 6-Digit Code, 3 min)")
+    val pairCodeRegenerate get() = t("重新產生配對碼", "Regenerate Code")
+    val pairCodeExpired get() = t("配對碼已過期，請重新產生", "Pairing code expired — regenerate")
+    val pairedPhonesTitle get() = t("已配對手機", "Paired Phones")
+    val pairedPhonesEmpty get() = t("尚未配對任何手機（請在手機端「連線」分頁配對）", "No paired phones yet (pair from the Link tab on your phone)")
+    val serverAuditTitle get() = t("伺服器連線與指令審計（上限 200 筆）", "Server Connection & Command Audit (max 200)")
+    val serverAuditEmpty get() = t("尚無審計紀錄", "No audit entries yet")
+    val clearLogsBtn get() = t("清除", "Clear")
+
+    fun serverListeningOn(port: Int, connected: Int): String =
+        t("監聽中（埠 $port）· 已連線 $connected 台手機", "Listening on port $port · $connected phone(s) connected")
+
+    fun serverPortInUse(port: Int): String =
+        t("連接埠 $port 已被其他程式佔用，請更換連接埠並重啟伺服器。", "Port $port is already in use. Change the port and restart the server.")
+
+    fun pairCodeRemaining(mmss: String): String =
+        t("有效剩餘 $mmss（單次有效）", "Valid for $mmss (single-use)")
+
+    fun classifiedError(code: String): String = when (code) {
+        com.phantom.checker.shared.LinkErrorCode.PORT_IN_USE ->
+            t("連接埠已被佔用，請至連線設定更換埠號", "Port is already in use — change port in Connection settings")
+        com.phantom.checker.shared.LinkErrorCode.VERSION_MISMATCH ->
+            t("協定版本不符（桌面為 v${com.phantom.checker.shared.LinkProtocol.PROTOCOL_VERSION}），請更新雙端並重新配對", "Protocol version mismatch (desktop v${com.phantom.checker.shared.LinkProtocol.PROTOCOL_VERSION}) — update both sides and re-pair")
+        com.phantom.checker.shared.LinkErrorCode.FINGERPRINT_MISMATCH ->
+            t("憑證指紋不符，已拒絕連線（請重新配對）", "Certificate fingerprint mismatch — connection rejected (please re-pair)")
+        com.phantom.checker.shared.LinkErrorCode.INVALID_PAIR_CODE ->
+            t("6 位配對碼錯誤", "Invalid 6-digit pairing code")
+        com.phantom.checker.shared.LinkErrorCode.PAIR_CODE_EXPIRED ->
+            t("配對碼已過期，請重新產生", "Pairing code expired — please regenerate")
+        com.phantom.checker.shared.LinkErrorCode.AUTH_FAILED ->
+            t("身分驗證失敗（HMAC 不符），請重新配對", "Authentication failed (HMAC mismatch) — please re-pair")
+        com.phantom.checker.shared.LinkErrorCode.TOO_MANY_CLIENTS ->
+            t("已達同時連線上限（最多 2 台手機）", "Maximum concurrent phones (2) reached")
+        com.phantom.checker.shared.LinkErrorCode.TLS_ERROR ->
+            t("TLS 憑證初始化或握手失敗", "TLS certificate initialization or handshake failed")
+        com.phantom.checker.shared.LinkErrorCode.TIMEOUT ->
+            t("指令等待手機回應逾時，請檢查區網連線", "Command timed out waiting for phone response")
+        else -> t("連線錯誤：$code", "Connection error: $code")
+    }
 }

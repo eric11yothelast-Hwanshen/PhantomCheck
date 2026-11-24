@@ -47,7 +47,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -105,8 +104,7 @@ private enum class DesktopTab {
  */
 @Composable
 fun DesktopApp(
-    client: DesktopLinkClient = remember { DesktopLinkClient() },
-    scanner: MdnsScanner = remember { MdnsScanner() },
+    server: DesktopLinkServer = remember { DesktopLinkServer() },
     manageLifecycle: Boolean = true,
     onMirrorNotification: (title: String, body: String) -> Unit = { _, _ -> }
 ) {
@@ -114,9 +112,8 @@ fun DesktopApp(
     val scope = rememberCoroutineScope()
 
     val settings by DesktopSettingsStore.state.collectAsState()
-    val devices by scanner.devices.collectAsState()
-    val isScanning by scanner.isScanning.collectAsState()
-    val uiState by client.state.collectAsState()
+    val uiState by server.state.collectAsState()
+    val mdnsStatus by server.mdnsStatus.collectAsState()
 
     val accentColor = remember(settings.accentPreset) { DesktopPalette.accentColor(settings.accentPreset) }
     val (bgTop, bgBottom) = remember(settings.bgTheme) { DesktopPalette.bgGradientColors(settings.bgTheme) }
@@ -126,11 +123,6 @@ fun DesktopApp(
     val typography = remember(settings.fontScale) { DesktopPalette.typography(settings.fontScale) }
 
     var activeTab by remember { mutableStateOf(DesktopTab.MESSAGES) }
-
-    // Pairing inputs
-    var manualHostPort by remember { mutableStateOf("") }
-    var manualCode by remember { mutableStateOf("") }
-    var selectedFingerprintPrefix by remember { mutableStateOf("") }
 
     // Messages Master-Detail state
     var msgFilter by remember { mutableStateOf("all") }
@@ -174,7 +166,7 @@ fun DesktopApp(
     fun reqId() = UUID.randomUUID().toString()
 
     suspend fun sendOrNotify(type: String, payload: Any): Boolean {
-        val ok = client.sendCommand(type, reqId(), payload)
+        val ok = server.sendCommand(type, reqId(), payload)
         if (!ok) {
             actionFeedback = DesktopStrings.commandNotSentDisconnected
         }
@@ -196,27 +188,27 @@ fun DesktopApp(
     }
 
     suspend fun refreshAllOnConnect() {
-        client.sendCommand(LinkMsgType.MESSAGES_SUBSCRIBE, reqId(), emptyMap<String, String>())
+        server.sendCommand(LinkMsgType.MESSAGES_SUBSCRIBE, reqId(), emptyMap<String, String>())
         delay(120L)
-        client.sendCommand(LinkMsgType.MESSAGES_LIST, reqId(), MessagesListReq(filter = msgFilter, offset = 0, limit = 40, sinceCursor = latestCursor))
+        server.sendCommand(LinkMsgType.MESSAGES_LIST, reqId(), MessagesListReq(filter = msgFilter, offset = 0, limit = 40, sinceCursor = latestCursor))
         delay(120L)
-        client.sendCommand(LinkMsgType.STATS_SNAPSHOT, reqId(), emptyMap<String, String>())
+        server.sendCommand(LinkMsgType.STATS_SNAPSHOT, reqId(), emptyMap<String, String>())
         delay(120L)
-        client.sendCommand(LinkMsgType.TODOS_LIST, reqId(), TodosListReq())
+        server.sendCommand(LinkMsgType.TODOS_LIST, reqId(), TodosListReq())
         delay(120L)
-        client.sendCommand(LinkMsgType.CHAT_SESSIONS_LIST, reqId(), emptyMap<String, String>())
+        server.sendCommand(LinkMsgType.CHAT_SESSIONS_LIST, reqId(), emptyMap<String, String>())
         delay(120L)
-        client.sendCommand(LinkMsgType.CHAT_HISTORY, reqId(), ChatHistoryReq(chatSessionId))
+        server.sendCommand(LinkMsgType.CHAT_HISTORY, reqId(), ChatHistoryReq(chatSessionId))
         delay(120L)
-        client.sendCommand(LinkMsgType.WHITELIST_LIST, reqId(), emptyMap<String, String>())
+        server.sendCommand(LinkMsgType.WHITELIST_LIST, reqId(), emptyMap<String, String>())
         delay(120L)
-        client.sendCommand(LinkMsgType.TAGS_LIST, reqId(), emptyMap<String, String>())
+        server.sendCommand(LinkMsgType.TAGS_LIST, reqId(), emptyMap<String, String>())
         delay(120L)
-        client.sendCommand(LinkMsgType.NOTES_LIST, reqId(), NotesListReq(limit = 50))
+        server.sendCommand(LinkMsgType.NOTES_LIST, reqId(), NotesListReq(limit = 50))
         delay(120L)
-        client.sendCommand(LinkMsgType.MUTED_APPS_LIST, reqId(), emptyMap<String, String>())
+        server.sendCommand(LinkMsgType.MUTED_APPS_LIST, reqId(), emptyMap<String, String>())
         delay(120L)
-        client.sendCommand(LinkMsgType.PHONE_STATUS_GET, reqId(), emptyMap<String, String>())
+        server.sendCommand(LinkMsgType.PHONE_STATUS_GET, reqId(), emptyMap<String, String>())
     }
 
     fun sendChatMessage(rawText: String) {
@@ -243,20 +235,16 @@ fun DesktopApp(
 
     LaunchedEffect(Unit) {
         if (manageLifecycle) {
-            scanner.start()
-            if (uiState.isPaired) {
-                client.connectSaved()
-            } else {
-                activeTab = DesktopTab.SETTINGS
-            }
-        } else if (!uiState.isPaired) {
+            server.start()
+        }
+        if (!uiState.isPaired) {
             activeTab = DesktopTab.SETTINGS
         }
     }
 
     LaunchedEffect(uiState.connState) {
         if (uiState.connState == LinkConnState.CONNECTED) {
-            DesktopDiagnostics.info("Link", "Connected to ${uiState.pairedDeviceName}")
+            DesktopDiagnostics.info("Link", "Phone connected: ${uiState.pairedDeviceName}")
             refreshAllOnConnect()
         } else if (chatSending) {
             chatTimeoutJob?.cancel()
@@ -267,7 +255,7 @@ fun DesktopApp(
     }
 
     LaunchedEffect(Unit) {
-        client.events.collect { env ->
+        server.events.collect { env ->
             when (env.type) {
                 LinkMsgType.MESSAGES_LIST_RES -> {
                     val res = runCatching { gson.fromJson(env.payloadJson, MessagesListRes::class.java) }.getOrNull() ?: return@collect
@@ -322,12 +310,12 @@ fun DesktopApp(
                 }
                 LinkMsgType.TODOS_TOGGLE_RES -> {
                     val res = runCatching { gson.fromJson(env.payloadJson, TodosToggleRes::class.java) }.getOrNull() ?: return@collect
-                    if (res.ok) scope.launch { client.sendCommand(LinkMsgType.TODOS_LIST, reqId(), TodosListReq()) }
+                    if (res.ok) scope.launch { server.sendCommand(LinkMsgType.TODOS_LIST, reqId(), TodosListReq()) }
                     else actionFeedback = res.errorMessage
                 }
                 LinkMsgType.TODOS_ADD_RES, LinkMsgType.TODOS_EDIT_RES, LinkMsgType.TODOS_DELETE_RES -> {
                     val res = runCatching { gson.fromJson(env.payloadJson, TodoMutateRes::class.java) }.getOrNull() ?: return@collect
-                    if (res.ok) scope.launch { client.sendCommand(LinkMsgType.TODOS_LIST, reqId(), TodosListReq()) }
+                    if (res.ok) scope.launch { server.sendCommand(LinkMsgType.TODOS_LIST, reqId(), TodosListReq()) }
                     else actionFeedback = res.errorMessage
                 }
                 LinkMsgType.NOTES_LIST_RES -> {
@@ -338,7 +326,7 @@ fun DesktopApp(
                     val res = runCatching { gson.fromJson(env.payloadJson, NoteMutateRes::class.java) }.getOrNull() ?: return@collect
                     if (res.ok) {
                         actionFeedback = DesktopStrings.noteAdded
-                        scope.launch { client.sendCommand(LinkMsgType.NOTES_LIST, reqId(), NotesListReq(limit = 50)) }
+                        scope.launch { server.sendCommand(LinkMsgType.NOTES_LIST, reqId(), NotesListReq(limit = 50)) }
                     } else actionFeedback = res.errorMessage
                 }
                 LinkMsgType.MESSAGE_DEEP_ANALYZE_RES -> {
@@ -404,7 +392,7 @@ fun DesktopApp(
                 LinkMsgType.WHITELIST_ADD_RES, LinkMsgType.WHITELIST_REMOVE_RES -> {
                     val res = runCatching { gson.fromJson(env.payloadJson, RuleMutateRes::class.java) }.getOrNull() ?: return@collect
                     actionFeedback = res.message
-                    scope.launch { client.sendCommand(LinkMsgType.WHITELIST_LIST, reqId(), emptyMap<String, String>()) }
+                    scope.launch { server.sendCommand(LinkMsgType.WHITELIST_LIST, reqId(), emptyMap<String, String>()) }
                 }
                 LinkMsgType.TAGS_LIST_RES -> {
                     val res = runCatching { gson.fromJson(env.payloadJson, TagsListRes::class.java) }.getOrNull() ?: return@collect
@@ -413,7 +401,7 @@ fun DesktopApp(
                 LinkMsgType.TAGS_ADD_RES, LinkMsgType.TAGS_REMOVE_RES -> {
                     val res = runCatching { gson.fromJson(env.payloadJson, TagMutateRes::class.java) }.getOrNull() ?: return@collect
                     actionFeedback = res.message
-                    scope.launch { client.sendCommand(LinkMsgType.TAGS_LIST, reqId(), emptyMap<String, String>()) }
+                    scope.launch { server.sendCommand(LinkMsgType.TAGS_LIST, reqId(), emptyMap<String, String>()) }
                 }
             }
         }
@@ -422,8 +410,7 @@ fun DesktopApp(
     if (manageLifecycle) {
         DisposableEffect(Unit) {
             onDispose {
-                scanner.stop()
-                client.disconnect()
+                server.stop()
             }
         }
     }
@@ -446,7 +433,7 @@ fun DesktopApp(
     LaunchedEffect(selectedMsg?.id, selectedMsg?.conversationKey) {
         val m = selectedMsg ?: return@LaunchedEffect
         if (uiState.connState == LinkConnState.CONNECTED && m.conversationKey.isNotBlank()) {
-            client.sendCommand(
+            server.sendCommand(
                 LinkMsgType.MESSAGES_CONVERSATION,
                 reqId(),
                 ConversationReq(packageName = m.packageName, conversationKey = m.conversationKey, limit = 50)
@@ -611,20 +598,18 @@ fun DesktopApp(
                         Spacer(Modifier.weight(1f))
 
                         // Persistent Connection Status Card
-                        val isPulsing = uiState.connState == LinkConnState.CONNECTING || uiState.connState == LinkConnState.RECONNECTING
+                        val isPulsing = uiState.connState == LinkConnState.WAITING_FOR_PHONE
                         val dotColor = when (uiState.connState) {
                             LinkConnState.CONNECTED -> DesktopPalette.GlassSuccess
-                            LinkConnState.CONNECTING -> accentColor
-                            LinkConnState.RECONNECTING -> DesktopPalette.GlassWarning
-                            LinkConnState.DISCONNECTED -> DesktopPalette.TextMuted
+                            LinkConnState.WAITING_FOR_PHONE -> accentColor
+                            LinkConnState.ERROR -> DesktopPalette.GlassError
+                            LinkConnState.STOPPED -> DesktopPalette.TextMuted
                         }
                         val statusText = when (uiState.connState) {
                             LinkConnState.CONNECTED -> DesktopStrings.statusConnected + uiState.pairedDeviceName
-                            LinkConnState.CONNECTING -> DesktopStrings.connectingPulse
-                            LinkConnState.RECONNECTING -> if (uiState.reconnectTotalSec > 0) {
-                                DesktopStrings.reconnectingCountdown(uiState.reconnectRemainingSec, uiState.reconnectTotalSec)
-                            } else DesktopStrings.statusReconnecting
-                            LinkConnState.DISCONNECTED -> if (uiState.isPaired) DesktopStrings.statusReconnecting else DesktopStrings.statusUnpaired
+                            LinkConnState.WAITING_FOR_PHONE -> DesktopStrings.serverListeningOn(uiState.port, 0)
+                            LinkConnState.ERROR -> DesktopStrings.statusServerError
+                            LinkConnState.STOPPED -> DesktopStrings.statusServerStopped
                         }
                         GlassCard(modifier = Modifier.fillMaxWidth(), containerColor = DesktopPalette.GlassSurfaceElevated) {
                             Column(
@@ -650,17 +635,8 @@ fun DesktopApp(
                                         val chargeTag = if (ps.isCharging) " · ${DesktopStrings.charging}" else ""
                                         Text("${DesktopStrings.phoneBattery}: ${ps.batteryPercent}%$chargeTag", style = MaterialTheme.typography.labelSmall, color = DesktopPalette.GlassSuccess)
                                     }
-                                    if (uiState.connState == LinkConnState.RECONNECTING && uiState.reconnectTotalSec > 0) {
-                                        val progress = (uiState.reconnectRemainingSec.toFloat() / uiState.reconnectTotalSec.toFloat()).coerceIn(0f, 1f)
-                                        LinearProgressIndicator(
-                                            progress = { progress },
-                                            modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(4.dp)),
-                                            color = DesktopPalette.GlassWarning,
-                                            trackColor = DesktopPalette.GlassBorder
-                                        )
-                                    }
                                     uiState.lastError?.takeIf { it.isNotBlank() }?.let { err ->
-                                        Text(err, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.GlassError, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        Text(err, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.GlassError, maxLines = 3, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                             }
@@ -1312,24 +1288,8 @@ fun DesktopApp(
                                             settings = settings,
                                             accentColor = accentColor,
                                             uiState = uiState,
-                                            devices = devices,
-                                            isScanning = isScanning,
-                                            manualHostPort = manualHostPort,
-                                            onManualHostPortChange = { manualHostPort = it },
-                                            manualCode = manualCode,
-                                            onManualCodeChange = { manualCode = it.filter { c -> c.isDigit() }.take(6) },
-                                            selectedFingerprintPrefix = selectedFingerprintPrefix,
-                                            onSelectDevice = { dev ->
-                                                manualHostPort = "${dev.host}:${dev.port}"
-                                                selectedFingerprintPrefix = dev.fingerprintPrefix
-                                            },
-                                            onPairAndConnect = {
-                                                if (manualHostPort.isNotBlank() && manualCode.length == 6) {
-                                                    client.pairAndConnect(manualHostPort, manualCode, selectedFingerprintPrefix)
-                                                }
-                                            },
-                                            onDisconnect = { client.disconnect() },
-                                            onClearPairing = { client.clearPairing() },
+                                            mdnsStatus = mdnsStatus,
+                                            server = server,
                                             onFeedback = { actionFeedback = it }
                                         )
                                     }

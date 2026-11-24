@@ -21,10 +21,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.phantom.checker.R
-import com.phantom.checker.service.DesktopLinkServer
+import com.phantom.checker.service.DesktopLinkClient
 import com.phantom.checker.ui.link.LinkHubContent
 import com.phantom.checker.util.AppLocaleHelper
-import com.phantom.checker.util.DesktopLinkStore
 
 class LinkHubActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: Context) {
@@ -36,9 +35,7 @@ class LinkHubActivity : ComponentActivity() {
         enableEdgeToEdge()
         var initError: String? = null
         runCatching {
-            if (DesktopLinkStore.isLinkEnabled(applicationContext)) {
-                DesktopLinkServer.start(applicationContext)
-            }
+            DesktopLinkClient.autoConnectIfPaired(applicationContext)
         }.onFailure { err ->
             initError = err.message ?: err.javaClass.simpleName
         }

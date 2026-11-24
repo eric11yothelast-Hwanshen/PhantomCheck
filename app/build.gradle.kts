@@ -82,11 +82,7 @@ android {
                 "META-INF/LICENSE.md",
                 "META-INF/LICENSE-notice.md",
                 "META-INF/NOTICE.md",
-                "META-INF/INDEX.LIST",
-                "META-INF/io.netty.versions.properties",
                 "META-INF/license/**",
-                "META-INF/native/**",
-                "META-INF/native-image/**",
                 "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
             )
         }
@@ -121,14 +117,8 @@ dependencies {
 
     implementation("androidx.health.connect:connect-client:1.1.0")
 
-    // #449 桌面端區網連線（M1）
+    // #476 桌面端區網連線協定 DTO（手機端改用既有 OkHttp WebSocket 用戶端，移除 Ktor/Netty/BC/qrcode-kotlin）
     implementation(project(":shared"))
-    implementation("io.ktor:ktor-server-core:3.6.0")
-    implementation("io.ktor:ktor-server-netty:3.6.0")
-    implementation("io.ktor:ktor-server-websockets:3.6.0")
-    implementation("org.bouncycastle:bcprov-jdk18on:1.87")
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.87")
-    implementation("io.github.g0dkar:qrcode-kotlin:4.5.0")
 }
 
 configurations.all {
