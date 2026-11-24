@@ -47,6 +47,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -58,6 +59,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
@@ -85,36 +87,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.gson.Gson
-import com.phantom.checker.shared.ChatBubbleDto
-import com.phantom.checker.shared.ChatHistoryReq
-import com.phantom.checker.shared.ChatHistoryRes
-import com.phantom.checker.shared.ChatReplyRes
-import com.phantom.checker.shared.ChatSendReq
-import com.phantom.checker.shared.LinkMsgType
-import com.phantom.checker.shared.MarkReadReq
-import com.phantom.checker.shared.MessageNewPush
-import com.phantom.checker.shared.MessageReadSyncPush
-import com.phantom.checker.shared.MessageSummaryDto
-import com.phantom.checker.shared.MessagesListReq
-import com.phantom.checker.shared.MessagesListRes
-import com.phantom.checker.shared.QuickReplySendReq
-import com.phantom.checker.shared.QuickReplySendRes
-import com.phantom.checker.shared.RuleItemDto
-import com.phantom.checker.shared.RuleMutateRes
-import com.phantom.checker.shared.RuleRemoveReq
-import com.phantom.checker.shared.RulesListRes
-import com.phantom.checker.shared.StatsSnapshotDto
-import com.phantom.checker.shared.TagAddReq
-import com.phantom.checker.shared.TagItemDto
-import com.phantom.checker.shared.TagMutateRes
-import com.phantom.checker.shared.TagRemoveReq
-import com.phantom.checker.shared.TagsListRes
-import com.phantom.checker.shared.TodoItemDto
-import com.phantom.checker.shared.TodosListReq
-import com.phantom.checker.shared.TodosListRes
-import com.phantom.checker.shared.TodosToggleReq
-import com.phantom.checker.shared.TodosToggleRes
-import com.phantom.checker.shared.WhitelistAddReq
+import com.phantom.checker.shared.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -272,6 +245,19 @@ fun DesktopApp() {
     var tags by remember { mutableStateOf<List<TagItemDto>>(emptyList()) }
     var newTagName by remember { mutableStateOf("") }
 
+    // #467 Bidirectional Sync states
+    var notes by remember { mutableStateOf<List<NoteItemDto>>(emptyList()) }
+    var newNoteContent by remember { mutableStateOf("") }
+    var newTodoTitle by remember { mutableStateOf("") }
+    var editingTodo by remember { mutableStateOf<TodoItemDto?>(null) }
+    var editTodoTitle by remember { mutableStateOf("") }
+    var mutedApps by remember { mutableStateOf<List<MutedAppDto>>(emptyList()) }
+    var phoneStatus by remember { mutableStateOf<PhoneStatusDto?>(null) }
+    var deepAnalyzingMsgId by remember { mutableLongStateOf(-1L) }
+    var deepAnalysisResult by remember { mutableStateOf<Pair<Long, String>?>(null) }
+    var conversationThread by remember { mutableStateOf<ConversationRes?>(null) }
+    var tagPickerMsgId by remember { mutableLongStateOf(-1L) }
+
     var chatTimeoutJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     fun reqId() = UUID.randomUUID().toString()
@@ -293,18 +279,24 @@ fun DesktopApp() {
 
     suspend fun refreshAllOnConnect() {
         client.sendCommand(LinkMsgType.MESSAGES_SUBSCRIBE, reqId(), emptyMap<String, String>())
-        delay(100L)
+        delay(120L)
         client.sendCommand(LinkMsgType.MESSAGES_LIST, reqId(), MessagesListReq(filter = msgFilter, offset = 0, limit = 40, sinceCursor = latestCursor))
-        delay(100L)
+        delay(120L)
         client.sendCommand(LinkMsgType.STATS_SNAPSHOT, reqId(), emptyMap<String, String>())
-        delay(100L)
+        delay(120L)
         client.sendCommand(LinkMsgType.TODOS_LIST, reqId(), TodosListReq())
-        delay(100L)
+        delay(120L)
         client.sendCommand(LinkMsgType.CHAT_HISTORY, reqId(), ChatHistoryReq(chatSessionId))
-        delay(100L)
+        delay(120L)
         client.sendCommand(LinkMsgType.WHITELIST_LIST, reqId(), emptyMap<String, String>())
-        delay(100L)
+        delay(120L)
         client.sendCommand(LinkMsgType.TAGS_LIST, reqId(), emptyMap<String, String>())
+        delay(120L)
+        client.sendCommand(LinkMsgType.NOTES_LIST, reqId(), NotesListReq(limit = 50))
+        delay(120L)
+        client.sendCommand(LinkMsgType.MUTED_APPS_LIST, reqId(), emptyMap<String, String>())
+        delay(120L)
+        client.sendCommand(LinkMsgType.PHONE_STATUS_GET, reqId(), emptyMap<String, String>())
     }
 
     LaunchedEffect(Unit) {
@@ -352,6 +344,26 @@ fun DesktopApp() {
                         messages.map { if (it.id in idSet) it.copy(isRead = true) else it }
                     }
                 }
+                LinkMsgType.MESSAGE_STAR_SYNC -> {
+                    val sync = runCatching { gson.fromJson(env.payloadJson, MessageStarSyncPush::class.java) }.getOrNull() ?: return@collect
+                    messages = messages.map { if (it.id == sync.id) it.copy(isStarred = sync.isStarred) else it }
+                }
+                LinkMsgType.MESSAGES_STAR_TOGGLE_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, StarToggleRes::class.java) }.getOrNull() ?: return@collect
+                    if (res.ok) {
+                        messages = messages.map { if (it.id == res.id) it.copy(isStarred = res.isStarred) else it }
+                    } else {
+                        actionFeedback = res.errorMessage
+                    }
+                }
+                LinkMsgType.MESSAGES_TAG_APPLY_RES, LinkMsgType.MESSAGES_TAG_REMOVE_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, MessageTagRes::class.java) }.getOrNull() ?: return@collect
+                    if (res.ok) {
+                        messages = messages.map { if (it.id == res.messageId) it.copy(tagIds = res.tagIds) else it }
+                    } else {
+                        actionFeedback = res.errorMessage
+                    }
+                }
                 LinkMsgType.STATS_SNAPSHOT_RES -> {
                     stats = runCatching { gson.fromJson(env.payloadJson, StatsSnapshotDto::class.java) }.getOrNull() ?: stats
                 }
@@ -366,6 +378,55 @@ fun DesktopApp() {
                     } else {
                         actionFeedback = res.errorMessage
                     }
+                }
+                LinkMsgType.TODOS_ADD_RES, LinkMsgType.TODOS_EDIT_RES, LinkMsgType.TODOS_DELETE_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, TodoMutateRes::class.java) }.getOrNull() ?: return@collect
+                    if (res.ok) {
+                        scope.launch { client.sendCommand(LinkMsgType.TODOS_LIST, reqId(), TodosListReq()) }
+                    } else {
+                        actionFeedback = res.errorMessage
+                    }
+                }
+                LinkMsgType.NOTES_LIST_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, NotesListRes::class.java) }.getOrNull() ?: return@collect
+                    notes = res.items
+                }
+                LinkMsgType.NOTE_ADD_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, NoteMutateRes::class.java) }.getOrNull() ?: return@collect
+                    if (res.ok) {
+                        actionFeedback = DesktopStrings.noteAdded
+                        scope.launch { client.sendCommand(LinkMsgType.NOTES_LIST, reqId(), NotesListReq(limit = 50)) }
+                    } else {
+                        actionFeedback = res.errorMessage
+                    }
+                }
+                LinkMsgType.MESSAGE_DEEP_ANALYZE_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, DeepAnalyzeRes::class.java) }.getOrNull() ?: return@collect
+                    deepAnalyzingMsgId = -1L
+                    if (res.ok) {
+                        deepAnalysisResult = res.messageId to res.markdown
+                    } else {
+                        actionFeedback = "${res.errorCode}: ${res.errorMessage}"
+                    }
+                }
+                LinkMsgType.MUTED_APPS_LIST_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, MutedAppsListRes::class.java) }.getOrNull() ?: return@collect
+                    mutedApps = res.items
+                }
+                LinkMsgType.MUTED_APPS_TOGGLE_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, MutedAppToggleRes::class.java) }.getOrNull() ?: return@collect
+                    if (res.ok) {
+                        mutedApps = mutedApps.map { if (it.packageName == res.packageName) it.copy(muted = res.muted) else it }
+                    } else {
+                        actionFeedback = res.errorMessage
+                    }
+                }
+                LinkMsgType.MESSAGES_CONVERSATION_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, ConversationRes::class.java) }.getOrNull() ?: return@collect
+                    conversationThread = res
+                }
+                LinkMsgType.PHONE_STATUS_RES -> {
+                    phoneStatus = runCatching { gson.fromJson(env.payloadJson, PhoneStatusDto::class.java) }.getOrNull() ?: phoneStatus
                 }
                 LinkMsgType.CHAT_HISTORY_RES -> {
                     val res = runCatching { gson.fromJson(env.payloadJson, ChatHistoryRes::class.java) }.getOrNull() ?: return@collect
@@ -571,6 +632,15 @@ fun DesktopApp() {
                                         color = TextPrimary
                                     )
                                 }
+                                val ps = phoneStatus
+                                if (uiState.connState == LinkConnState.CONNECTED && ps != null && ps.batteryPercent >= 0) {
+                                    val chargeTag = if (ps.isCharging) " · ${DesktopStrings.charging}" else ""
+                                    Text(
+                                        text = "${DesktopStrings.phoneBattery}: ${ps.batteryPercent}%$chargeTag",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = GlassSuccess
+                                    )
+                                }
                                 AnimatedVisibility(
                                     visible = uiState.connState == LinkConnState.RECONNECTING && uiState.reconnectTotalSec > 0,
                                     enter = fadeIn(tween(150)) + expandVertically(),
@@ -767,7 +837,7 @@ fun DesktopApp() {
                                                             Spacer(Modifier.height(6.dp))
                                                             Text(m.preview, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                                                             Spacer(Modifier.height(6.dp))
-                                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                                 if (!m.isRead) {
                                                                     TextButton(onClick = {
                                                                         scope.launch {
@@ -776,9 +846,61 @@ fun DesktopApp() {
                                                                     }) { Text(DesktopStrings.markRead) }
                                                                 }
                                                                 TextButton(onClick = {
+                                                                    scope.launch {
+                                                                        sendOrNotify(LinkMsgType.MESSAGES_STAR_TOGGLE, StarToggleReq(id = m.id, starred = !m.isStarred))
+                                                                    }
+                                                                }) { Text(if (m.isStarred) "★ ${DesktopStrings.unstar}" else "☆ ${DesktopStrings.star}", color = if (m.isStarred) GlassWarning else GlassAccent) }
+                                                                TextButton(onClick = {
                                                                     replyTargetId = if (replyTargetId == m.id) -1L else m.id
                                                                     replyText = ""
                                                                 }) { Text(DesktopStrings.sendReply) }
+                                                                if (m.conversationKey.isNotBlank()) {
+                                                                    TextButton(onClick = {
+                                                                        scope.launch {
+                                                                            sendOrNotify(LinkMsgType.MESSAGES_CONVERSATION, ConversationReq(packageName = m.packageName, conversationKey = m.conversationKey, limit = 50))
+                                                                        }
+                                                                    }) { Text(DesktopStrings.conversationBtn) }
+                                                                }
+                                                                TextButton(
+                                                                    enabled = deepAnalyzingMsgId != m.id,
+                                                                    onClick = {
+                                                                        scope.launch {
+                                                                            if (sendOrNotify(LinkMsgType.MESSAGE_DEEP_ANALYZE, DeepAnalyzeReq(id = m.id))) {
+                                                                                deepAnalyzingMsgId = m.id
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                ) { Text(if (deepAnalyzingMsgId == m.id) DesktopStrings.deepAnalyzing else DesktopStrings.deepAnalyze) }
+                                                                TextButton(onClick = {
+                                                                    scope.launch {
+                                                                        sendOrNotify(LinkMsgType.NOTE_ADD, NoteAddReq(content = "[${m.sender}] ${m.preview}", relatedMessageId = m.id))
+                                                                    }
+                                                                }) { Text(DesktopStrings.addNote) }
+                                                                if (tags.isNotEmpty()) {
+                                                                    TextButton(onClick = {
+                                                                        tagPickerMsgId = if (tagPickerMsgId == m.id) -1L else m.id
+                                                                    }) { Text("${DesktopStrings.applyTags}${if (m.tagIds.isNotEmpty()) " (${m.tagIds.size})" else ""}") }
+                                                                }
+                                                            }
+                                                            AnimatedVisibility(visible = tagPickerMsgId == m.id && tags.isNotEmpty()) {
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                                ) {
+                                                                    tags.forEach { tg ->
+                                                                        val applied = tg.id in m.tagIds
+                                                                        FilterChip(
+                                                                            selected = applied,
+                                                                            onClick = {
+                                                                                scope.launch {
+                                                                                    val cmd = if (applied) LinkMsgType.MESSAGES_TAG_REMOVE else LinkMsgType.MESSAGES_TAG_APPLY
+                                                                                    sendOrNotify(cmd, MessageTagReq(messageId = m.id, tagId = tg.id))
+                                                                                }
+                                                                            },
+                                                                            label = { Text(tg.name) }
+                                                                        )
+                                                                    }
+                                                                }
                                                             }
                                                             AnimatedVisibility(
                                                                 visible = replyTargetId == m.id,
@@ -840,39 +962,104 @@ fun DesktopApp() {
                                 }
 
                                 DesktopTab.TODOS -> {
-                                    if (todos.isEmpty()) {
-                                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                            Text(DesktopStrings.todosEmpty, color = TextMuted)
+                                    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            OutlinedTextField(
+                                                value = newTodoTitle,
+                                                onValueChange = { newTodoTitle = it },
+                                                label = { Text(DesktopStrings.todoAddHint) },
+                                                singleLine = true,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            SpringButton(onClick = {
+                                                val title = newTodoTitle.trim()
+                                                if (title.isNotBlank()) {
+                                                    scope.launch {
+                                                        if (sendOrNotify(LinkMsgType.TODOS_ADD, TodoAddReq(title = title))) {
+                                                            newTodoTitle = ""
+                                                        }
+                                                    }
+                                                }
+                                            }) { Text(DesktopStrings.add) }
                                         }
-                                    } else {
-                                        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                            items(todos, key = { it.id }) { t ->
-                                                GlassCard(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .animateItem(
-                                                            fadeInSpec = tween(150),
-                                                            placementSpec = DesktopSpringOffset
-                                                        )
-                                                ) {
-                                                    Row(
-                                                        modifier = Modifier.fillMaxWidth().padding(14.dp),
-                                                        verticalAlignment = Alignment.CenterVertically
+                                        if (todos.isEmpty()) {
+                                            Text(DesktopStrings.todosEmpty, color = TextMuted, style = MaterialTheme.typography.bodySmall)
+                                        } else {
+                                            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+                                                items(todos, key = { it.id }) { t ->
+                                                    GlassCard(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .animateItem(
+                                                                fadeInSpec = tween(150),
+                                                                placementSpec = DesktopSpringOffset
+                                                            )
                                                     ) {
-                                                        Checkbox(
-                                                            checked = t.isDone,
-                                                            onCheckedChange = { checked ->
-                                                                scope.launch {
-                                                                    sendOrNotify(LinkMsgType.TODOS_TOGGLE, TodosToggleReq(id = t.id, done = checked))
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Checkbox(
+                                                                checked = t.isDone,
+                                                                onCheckedChange = { checked ->
+                                                                    scope.launch {
+                                                                        sendOrNotify(LinkMsgType.TODOS_TOGGLE, TodosToggleReq(id = t.id, done = checked))
+                                                                    }
+                                                                }
+                                                            )
+                                                            Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
+                                                                Text(t.title, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                                                                if (t.repeatRule.isNotBlank()) {
+                                                                    Text(t.repeatRule, style = MaterialTheme.typography.labelSmall, color = TextMuted)
                                                                 }
                                                             }
-                                                        )
-                                                        Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                                                            Text(t.title, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
-                                                            if (t.repeatRule.isNotBlank()) {
-                                                                Text(t.repeatRule, style = MaterialTheme.typography.labelSmall, color = TextMuted)
+                                                            TextButton(onClick = {
+                                                                editingTodo = t
+                                                                editTodoTitle = t.title
+                                                            }) { Text(DesktopStrings.todoEdit) }
+                                                            TextButton(onClick = {
+                                                                scope.launch {
+                                                                    sendOrNotify(LinkMsgType.TODOS_DELETE, TodoDeleteReq(id = t.id))
+                                                                }
+                                                            }) { Text(DesktopStrings.todoDelete, color = GlassError) }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        // #467 記事本區塊
+                                        GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                            Column(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Text(DesktopStrings.notesTitle, style = MaterialTheme.typography.titleSmall, color = TextPrimary)
+                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                    OutlinedTextField(
+                                                        value = newNoteContent,
+                                                        onValueChange = { newNoteContent = it },
+                                                        label = { Text(DesktopStrings.noteInputHint) },
+                                                        singleLine = true,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                    SpringButton(onClick = {
+                                                        val c = newNoteContent.trim()
+                                                        if (c.isNotBlank()) {
+                                                            scope.launch {
+                                                                if (sendOrNotify(LinkMsgType.NOTE_ADD, NoteAddReq(content = c))) {
+                                                                    newNoteContent = ""
+                                                                }
                                                             }
                                                         }
+                                                    }) { Text(DesktopStrings.add) }
+                                                }
+                                                if (notes.isEmpty()) {
+                                                    Text(DesktopStrings.notesEmpty, style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                                } else {
+                                                    notes.take(8).forEach { n ->
+                                                        HorizontalDivider(color = GlassBorder)
+                                                        Text(
+                                                            text = "${if (n.relatedAppLabel.isNotBlank()) "[${n.relatedAppLabel}] " else ""}${n.content}",
+                                                            style = MaterialTheme.typography.bodySmall,
+                                                            color = TextSecondary
+                                                        )
                                                     }
                                                 }
                                             }
@@ -1039,6 +1226,34 @@ fun DesktopApp() {
                                                 }
                                             }
                                         }
+
+                                        // #467 靜音 App 管理
+                                        GlassCard(modifier = Modifier.fillMaxWidth()) {
+                                            Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                Text(DesktopStrings.mutedAppsTitle, style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                                                if (mutedApps.isEmpty()) {
+                                                    Text(DesktopStrings.mutedAppsEmpty, style = MaterialTheme.typography.bodySmall, color = TextMuted)
+                                                } else {
+                                                    mutedApps.forEach { app ->
+                                                        HorizontalDivider(color = GlassBorder)
+                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                            Column(modifier = Modifier.weight(1f)) {
+                                                                Text(app.appLabel, style = MaterialTheme.typography.bodySmall, color = TextPrimary)
+                                                                Text(app.packageName, style = MaterialTheme.typography.labelSmall, color = TextMuted, fontFamily = FontFamily.Monospace)
+                                                            }
+                                                            Switch(
+                                                                checked = app.muted,
+                                                                onCheckedChange = { checked ->
+                                                                    scope.launch {
+                                                                        sendOrNotify(LinkMsgType.MUTED_APPS_TOGGLE, MutedAppToggleReq(packageName = app.packageName, muted = checked))
+                                                                    }
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
 
@@ -1115,6 +1330,85 @@ fun DesktopApp() {
                         }
                     }
                 }
+            }
+
+            // #467 深度分析結果彈窗
+            deepAnalysisResult?.let { (_, markdown) ->
+                AlertDialog(
+                    onDismissRequest = { deepAnalysisResult = null },
+                    title = { Text(DesktopStrings.deepAnalysisTitle, color = TextPrimary) },
+                    text = {
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            Text(markdown, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { deepAnalysisResult = null }) { Text(DesktopStrings.ok) }
+                    },
+                    containerColor = GlassBgBottom
+                )
+            }
+
+            // #467 對話串檢視彈窗（上限 200 字部分預覽）
+            conversationThread?.let { thread ->
+                AlertDialog(
+                    onDismissRequest = { conversationThread = null },
+                    title = { Text("${DesktopStrings.conversationTitle} (${thread.conversationKey})", color = TextPrimary) },
+                    text = {
+                        if (thread.items.isEmpty()) {
+                            Text(DesktopStrings.conversationEmpty, color = TextMuted)
+                        } else {
+                            Column(
+                                modifier = Modifier.verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                thread.items.forEach { item ->
+                                    Column {
+                                        Text("${item.sender} · ${timeFmt.format(Date(item.timestamp))}", style = MaterialTheme.typography.labelSmall, color = GlassAccent)
+                                        Text(item.preview, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+                                    }
+                                    HorizontalDivider(color = GlassBorder)
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { conversationThread = null }) { Text(DesktopStrings.dismiss) }
+                    },
+                    containerColor = GlassBgBottom
+                )
+            }
+
+            // #467 編輯待辦彈窗
+            editingTodo?.let { target ->
+                AlertDialog(
+                    onDismissRequest = { editingTodo = null },
+                    title = { Text(DesktopStrings.todoEdit, color = TextPrimary) },
+                    text = {
+                        OutlinedTextField(
+                            value = editTodoTitle,
+                            onValueChange = { editTodoTitle = it },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val title = editTodoTitle.trim()
+                            if (title.isNotBlank()) {
+                                scope.launch {
+                                    if (sendOrNotify(LinkMsgType.TODOS_EDIT, TodoEditReq(id = target.id, title = title, dueAt = target.dueAt, repeatRule = target.repeatRule))) {
+                                        editingTodo = null
+                                    }
+                                }
+                            }
+                        }) { Text(DesktopStrings.todoSave) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { editingTodo = null }) { Text(DesktopStrings.dismiss) }
+                    },
+                    containerColor = GlassBgBottom
+                )
             }
         }
     }

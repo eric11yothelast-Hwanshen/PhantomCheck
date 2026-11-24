@@ -456,6 +456,12 @@ interface MessageDao {
     @Query("UPDATE messages SET isRead = 1 WHERE packageName = :packageName AND conversationKey = :conversationKey AND isRead = 0")
     suspend fun markReadByConversation(packageName: String, conversationKey: String): Int
 
+    @Query("SELECT * FROM messages WHERE packageName = :packageName AND conversationKey = :conversationKey ORDER BY timestamp DESC LIMIT :limit OFFSET :offset")
+    suspend fun byConversationPaged(packageName: String, conversationKey: String, limit: Int, offset: Int): List<MessageEntity>
+
+    @Query("SELECT COUNT(*) FROM messages WHERE isOwn = 0 AND riskLabel = 'suspicious'")
+    suspend fun suspiciousCount(): Int
+
     @Query("UPDATE messages SET isStarred = :starred WHERE id = :id")
     suspend fun setStarred(id: Long, starred: Boolean)
 
@@ -688,6 +694,12 @@ interface TagDao {
 
     @Query("SELECT * FROM message_tags WHERE messageId = :messageId")
     suspend fun crossRefsForMessage(messageId: Long): List<MessageTagCrossRef>
+
+    @Query("SELECT tagId FROM message_tags WHERE messageId = :messageId")
+    suspend fun tagIdsForMessage(messageId: Long): List<Long>
+
+    @Query("SELECT * FROM message_tags WHERE messageId IN (:messageIds)")
+    suspend fun crossRefsForMessages(messageIds: List<Long>): List<MessageTagCrossRef>
 
     @Query("SELECT * FROM message_tags")
     suspend fun allCrossRefs(): List<MessageTagCrossRef>

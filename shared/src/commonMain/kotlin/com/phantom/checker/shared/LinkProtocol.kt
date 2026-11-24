@@ -76,6 +76,39 @@ object LinkMsgType {
     const val TAGS_ADD_RES = "tags.add.res"
     const val TAGS_REMOVE = "tags.remove"
     const val TAGS_REMOVE_RES = "tags.remove.res"
+
+    // #467 Bidirectional sync extensions (PROTOCOL_VERSION = 1, backwards-compatible)
+    const val MESSAGES_STAR_TOGGLE = "messages.star.toggle"
+    const val MESSAGES_STAR_TOGGLE_RES = "messages.star.toggle.res"
+    const val MESSAGE_STAR_SYNC = "message.star.sync"
+    const val MESSAGES_TAG_APPLY = "messages.tag.apply"
+    const val MESSAGES_TAG_APPLY_RES = "messages.tag.apply.res"
+    const val MESSAGES_TAG_REMOVE = "messages.tag.remove"
+    const val MESSAGES_TAG_REMOVE_RES = "messages.tag.remove.res"
+    const val TODOS_ADD = "todos.add"
+    const val TODOS_ADD_RES = "todos.add.res"
+    const val TODOS_EDIT = "todos.edit"
+    const val TODOS_EDIT_RES = "todos.edit.res"
+    const val TODOS_DELETE = "todos.delete"
+    const val TODOS_DELETE_RES = "todos.delete.res"
+    const val NOTES_LIST = "notes.list"
+    const val NOTES_LIST_RES = "notes.list.res"
+    const val NOTE_ADD = "note.add"
+    const val NOTE_ADD_RES = "note.add.res"
+    const val MESSAGE_DEEP_ANALYZE = "message.deepAnalyze"
+    const val MESSAGE_DEEP_ANALYZE_RES = "message.deepAnalyze.res"
+    const val MUTED_APPS_LIST = "muted.apps.list"
+    const val MUTED_APPS_LIST_RES = "muted.apps.list.res"
+    const val MUTED_APPS_TOGGLE = "muted.apps.toggle"
+    const val MUTED_APPS_TOGGLE_RES = "muted.apps.toggle.res"
+    const val MESSAGES_CONVERSATION = "messages.conversation"
+    const val MESSAGES_CONVERSATION_RES = "messages.conversation.res"
+    const val PHONE_STATUS_GET = "phone.status.get"
+    const val PHONE_STATUS_RES = "phone.status.res"
+    const val CHAT_SESSIONS_LIST = "chat.sessions.list"
+    const val CHAT_SESSIONS_LIST_RES = "chat.sessions.list.res"
+    const val CHAT_SESSION_NEW = "chat.session.new"
+    const val CHAT_SESSION_NEW_RES = "chat.session.new.res"
 }
 
 data class LinkEnvelope(
@@ -145,7 +178,9 @@ data class MessageSummaryDto(
     val timestamp: Long = 0L,
     val riskLabel: String = "safe",
     val isStarred: Boolean = false,
-    val isRead: Boolean = false
+    val isRead: Boolean = false,
+    val conversationKey: String = "",
+    val tagIds: List<Long> = emptyList()
 )
 
 data class MessagesListReq(
@@ -184,13 +219,26 @@ data class MarkReadRes(
     val note: String = ""
 )
 
+data class DayCountDto(
+    val label: String = "",
+    val count: Int = 0
+)
+
+data class HourCountDto(
+    val hour: Int = 0,
+    val count: Int = 0
+)
+
 data class StatsSnapshotDto(
     val total: Int = 0,
     val today: Int = 0,
     val unread: Int = 0,
     val scam: Int = 0,
     val latestPackageName: String = "",
-    val recentPackages: List<String> = emptyList()
+    val recentPackages: List<String> = emptyList(),
+    val suspicious: Int = 0,
+    val dailyCounts: List<DayCountDto> = emptyList(),
+    val hourlyCounts: List<HourCountDto> = emptyList()
 )
 
 data class ChatSendReq(
@@ -319,3 +367,165 @@ data class TagMutateRes(
     val message: String = "",
     val item: TagItemDto? = null
 )
+
+// ---- #467 Bidirectional Sync DTOs ----
+
+data class StarToggleReq(
+    val id: Long = 0L,
+    val starred: Boolean = true
+)
+
+data class StarToggleRes(
+    val ok: Boolean = false,
+    val id: Long = 0L,
+    val isStarred: Boolean = false,
+    val errorMessage: String = ""
+)
+
+data class MessageStarSyncPush(
+    val id: Long = 0L,
+    val isStarred: Boolean = false
+)
+
+data class MessageTagReq(
+    val messageId: Long = 0L,
+    val tagId: Long = 0L
+)
+
+data class MessageTagRes(
+    val ok: Boolean = false,
+    val messageId: Long = 0L,
+    val tagIds: List<Long> = emptyList(),
+    val errorMessage: String = ""
+)
+
+data class TodoAddReq(
+    val title: String = "",
+    val dueAt: Long = 0L,
+    val repeatRule: String = "",
+    val notes: String = ""
+)
+
+data class TodoEditReq(
+    val id: Long = 0L,
+    val title: String = "",
+    val dueAt: Long = 0L,
+    val repeatRule: String = "",
+    val notes: String = ""
+)
+
+data class TodoDeleteReq(
+    val id: Long = 0L
+)
+
+data class TodoMutateRes(
+    val ok: Boolean = false,
+    val item: TodoItemDto? = null,
+    val deletedId: Long = 0L,
+    val errorMessage: String = ""
+)
+
+data class NoteItemDto(
+    val id: Long = 0L,
+    val content: String = "",
+    val pinned: Boolean = false,
+    val source: String = "manual",
+    val relatedMessageId: Long = 0L,
+    val relatedAppLabel: String = "",
+    val updatedAt: Long = 0L
+)
+
+data class NotesListReq(
+    val limit: Int = 50
+)
+
+data class NotesListRes(
+    val items: List<NoteItemDto> = emptyList()
+)
+
+data class NoteAddReq(
+    val content: String = "",
+    val relatedMessageId: Long = 0L
+)
+
+data class NoteMutateRes(
+    val ok: Boolean = false,
+    val item: NoteItemDto? = null,
+    val errorMessage: String = ""
+)
+
+data class DeepAnalyzeReq(
+    val id: Long = 0L
+)
+
+data class DeepAnalyzeRes(
+    val ok: Boolean = false,
+    val messageId: Long = 0L,
+    val markdown: String = "",
+    val errorCode: String = "",
+    val errorMessage: String = ""
+)
+
+data class MutedAppDto(
+    val packageName: String = "",
+    val appLabel: String = "",
+    val muted: Boolean = false
+)
+
+data class MutedAppsListRes(
+    val items: List<MutedAppDto> = emptyList()
+)
+
+data class MutedAppToggleReq(
+    val packageName: String = "",
+    val muted: Boolean = true
+)
+
+data class MutedAppToggleRes(
+    val ok: Boolean = false,
+    val packageName: String = "",
+    val muted: Boolean = false,
+    val errorMessage: String = ""
+)
+
+data class ConversationReq(
+    val packageName: String = "",
+    val conversationKey: String = "",
+    val offset: Int = 0,
+    val limit: Int = 50
+)
+
+data class ConversationRes(
+    val packageName: String = "",
+    val conversationKey: String = "",
+    val items: List<MessageSummaryDto> = emptyList(),
+    val hasMore: Boolean = false
+)
+
+data class PhoneStatusDto(
+    val batteryPercent: Int = -1,
+    val isCharging: Boolean = false,
+    val serverUptimeMs: Long = 0L,
+    val deviceName: String = ""
+)
+
+data class ChatSessionSummaryDto(
+    val id: Long = 0L,
+    val title: String = "",
+    val updatedAt: Long = 0L
+)
+
+data class ChatSessionsListRes(
+    val sessions: List<ChatSessionSummaryDto> = emptyList()
+)
+
+data class ChatSessionNewReq(
+    val title: String = ""
+)
+
+data class ChatSessionNewRes(
+    val ok: Boolean = false,
+    val session: ChatSessionSummaryDto? = null,
+    val errorMessage: String = ""
+)
+

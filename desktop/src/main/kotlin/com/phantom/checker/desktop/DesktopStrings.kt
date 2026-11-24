@@ -87,6 +87,32 @@ object DesktopStrings {
     val commandNotSentDisconnected get() = t("目前未連線手機，操作未送出", "Not connected to phone — action not sent")
     val chatTimeoutError get() = t("AI 回覆逾時（130 秒）或連線中斷，請稍後重試", "AI reply timed out (130s) or connection dropped. Please retry.")
 
+    // #467 雙向互動擴充
+    val star get() = t("星標", "Star")
+    val unstar get() = t("取消星標", "Unstar")
+    val deepAnalyze get() = t("深度分析", "Deep Analyze")
+    val deepAnalyzing get() = t("深度分析中…", "Analyzing…")
+    val deepAnalysisTitle get() = t("AI 深度風險分析", "AI Deep Risk Analysis")
+    val addNote get() = t("記一筆", "Note")
+    val noteAdded get() = t("已新增記事", "Note saved")
+    val notesTitle get() = t("記事本", "Notes")
+    val notesEmpty get() = t("尚無記事", "No notes yet")
+    val noteInputHint get() = t("輸入記事內容…", "Write a note…")
+    val todoAddHint get() = t("新增待辦標題…", "New todo title…")
+    val todoEdit get() = t("編輯", "Edit")
+    val todoSave get() = t("儲存", "Save")
+    val todoDelete get() = t("刪除", "Delete")
+    val mutedAppsTitle get() = t("靜音 App 管理", "Muted Apps")
+    val mutedAppsEmpty get() = t("尚無可管理的 App", "No apps to manage yet")
+    val mutedLabel get() = t("已靜音", "Muted")
+    val unmutedLabel get() = t("正常通知", "Active")
+    val conversationBtn get() = t("對話串", "Thread")
+    val conversationTitle get() = t("對話串檢視（上限 200 字預覽）", "Conversation Thread (200-char preview)")
+    val conversationEmpty get() = t("尚無同對話訊息", "No messages in this thread")
+    val phoneBattery get() = t("手機電量", "Phone Battery")
+    val charging get() = t("充電中", "Charging")
+    val applyTags get() = t("標籤", "Tags")
+
     fun reconnectingCountdown(remSec: Int, totalSec: Int): String =
         t("將於 ${remSec}s 後重連（退避 ${totalSec}s）", "Reconnecting in ${remSec}s (backoff ${totalSec}s)")
 

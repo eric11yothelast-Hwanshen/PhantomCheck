@@ -1,61 +1,30 @@
 package com.phantom.checker.service
 
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.os.BatteryManager
 import android.os.Build
 import com.google.gson.Gson
+import com.phantom.checker.R
 import com.phantom.checker.data.AiRuleEntity
 import com.phantom.checker.data.ChatMessageEntity
 import com.phantom.checker.data.ChatSessionEntity
+import com.phantom.checker.data.MessageTagCrossRef
+import com.phantom.checker.data.NoteEntity
 import com.phantom.checker.data.TagEntity
+import com.phantom.checker.data.TodoEntity
 import com.phantom.checker.data.WhitelistRuleHelper
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.network.ChatMessage
-import com.phantom.checker.shared.AuthRequestPayload
-import com.phantom.checker.shared.AuthResponsePayload
-import com.phantom.checker.shared.ChatBubbleDto
-import com.phantom.checker.shared.ChatHistoryReq
-import com.phantom.checker.shared.ChatHistoryRes
-import com.phantom.checker.shared.ChatReplyRes
-import com.phantom.checker.shared.ChatSendReq
-import com.phantom.checker.shared.ErrorPayload
-import com.phantom.checker.shared.HelloPayload
-import com.phantom.checker.shared.LinkEnvelope
-import com.phantom.checker.shared.LinkErrorCode
-import com.phantom.checker.shared.LinkMsgType
-import com.phantom.checker.shared.LinkProtocol
-import com.phantom.checker.shared.MarkReadReq
-import com.phantom.checker.shared.MarkReadRes
-import com.phantom.checker.shared.MessageNewPush
-import com.phantom.checker.shared.MessageReadSyncPush
-import com.phantom.checker.shared.MessageSummaryDto
-import com.phantom.checker.shared.MessagesListReq
-import com.phantom.checker.shared.MessagesListRes
-import com.phantom.checker.shared.PairRequestPayload
-import com.phantom.checker.shared.PairResponsePayload
-import com.phantom.checker.shared.QuickReplySendReq
-import com.phantom.checker.shared.QuickReplySendRes
-import com.phantom.checker.shared.RuleItemDto
-import com.phantom.checker.shared.RuleMutateRes
-import com.phantom.checker.shared.RuleRemoveReq
-import com.phantom.checker.shared.RulesListRes
-import com.phantom.checker.shared.StatsSnapshotDto
-import com.phantom.checker.shared.TagAddReq
-import com.phantom.checker.shared.TagItemDto
-import com.phantom.checker.shared.TagMutateRes
-import com.phantom.checker.shared.TagRemoveReq
-import com.phantom.checker.shared.TagsListRes
-import com.phantom.checker.shared.TodoItemDto
-import com.phantom.checker.shared.TodosListReq
-import com.phantom.checker.shared.TodosListRes
-import com.phantom.checker.shared.TodosToggleReq
-import com.phantom.checker.shared.TodosToggleRes
-import com.phantom.checker.shared.WhitelistAddReq
-import com.phantom.checker.R
+import com.phantom.checker.shared.*
+import com.phantom.checker.util.AiPurpose
 import com.phantom.checker.util.DesktopLinkStore
 import com.phantom.checker.util.PairCodeCheckResult
 import com.phantom.checker.util.PairedDesktop
+import com.phantom.checker.util.PhantomPrefs
 import io.ktor.server.application.install
 import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
@@ -130,6 +99,9 @@ object DesktopLinkServer {
 
     @Volatile
     private var lastActivityMs: Long = System.currentTimeMillis()
+
+    @Volatile
+    private var serverStartedAtMs: Long = 0L
 
     internal data class ClientSession(
         val info: ConnectedClientInfo,
@@ -226,7 +198,9 @@ object DesktopLinkServer {
             createdEngine = engine
             engine.start(wait = false)
             server = engine
-            lastActivityMs = System.currentTimeMillis()
+            val nowMs = System.currentTimeMillis()
+            lastActivityMs = nowMs
+            serverStartedAtMs = nowMs
             _status.value = LinkServerStatus(
                 isRunning = true,
                 port = port,
@@ -546,6 +520,12 @@ object DesktopLinkServer {
                     else -> db.messageDao().paged(limit, offset)
                 }
                 val filtered = if (req.sinceCursor > 0L) raw.filter { it.id > req.sinceCursor } else raw
+                val tagMap = if (filtered.isNotEmpty()) {
+                    runCatching {
+                        db.tagDao().crossRefsForMessages(filtered.map { it.id })
+                            .groupBy({ it.messageId }, { it.tagId })
+                    }.getOrDefault(emptyMap())
+                } else emptyMap()
                 val items = filtered.map { m ->
                     MessageSummaryDto(
                         id = m.id,
@@ -555,7 +535,9 @@ object DesktopLinkServer {
                         timestamp = m.timestamp,
                         riskLabel = m.riskLabel,
                         isStarred = m.isStarred,
-                        isRead = m.isRead
+                        isRead = m.isRead,
+                        conversationKey = m.conversationKey,
+                        tagIds = tagMap[m.id].orEmpty()
                     )
                 }
                 val latestCursor = items.maxOfOrNull { it.id } ?: req.sinceCursor
@@ -607,6 +589,25 @@ object DesktopLinkServer {
             LinkMsgType.STATS_SNAPSHOT -> {
                 val startOfDay = NotificationCollectorService.startOfTodayMillis()
                 val snap = db.messageDao().statsSnapshot(startOfDay)
+                val suspicious = runCatching { db.messageDao().suspiciousCount() }.getOrDefault(0)
+                val cal = java.util.Calendar.getInstance().apply {
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                    add(java.util.Calendar.DAY_OF_YEAR, -6)
+                }
+                val sevenDaysAgo = cal.timeInMillis
+                val dayMap = runCatching { db.messageDao().countByDaySince(sevenDaysAgo).associate { it.dayKey to it.cnt } }.getOrDefault(emptyMap())
+                val keyFmt = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+                val labelFmt = java.text.SimpleDateFormat("M/d", java.util.Locale.getDefault())
+                val dailyCounts = (0..6).map { offset ->
+                    val c = (cal.clone() as java.util.Calendar).apply { add(java.util.Calendar.DAY_OF_YEAR, offset) }
+                    val key = keyFmt.format(c.time)
+                    DayCountDto(label = labelFmt.format(c.time), count = dayMap[key] ?: 0)
+                }
+                val hourMap = runCatching { db.messageDao().countByHourSince(startOfDay).associate { it.hour to it.cnt } }.getOrDefault(emptyMap())
+                val hourlyCounts = (0..23).map { h -> HourCountDto(hour = h, count = hourMap[h] ?: 0) }
                 sendEnvelope(
                     ws,
                     LinkMsgType.STATS_SNAPSHOT_RES,
@@ -617,7 +618,10 @@ object DesktopLinkServer {
                         unread = snap.unread,
                         scam = snap.scam,
                         latestPackageName = snap.latestPackageName.orEmpty(),
-                        recentPackages = snap.recentPackages()
+                        recentPackages = snap.recentPackages(),
+                        suspicious = suspicious,
+                        dailyCounts = dailyCounts,
+                        hourlyCounts = hourlyCounts
                     )
                 )
             }
@@ -816,6 +820,357 @@ object DesktopLinkServer {
                 sendEnvelope(ws, LinkMsgType.TAGS_REMOVE_RES, env.reqId, TagMutateRes(ok = true, message = "Removed"))
             }
 
+            // ---- #467 Bidirectional Sync Extensions ----
+
+            LinkMsgType.MESSAGES_STAR_TOGGLE -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, StarToggleReq::class.java) }.getOrNull()
+                if (req == null || req.id <= 0L) {
+                    DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MESSAGES_STAR_TOGGLE, false, "invalid_id")
+                    sendEnvelope(ws, LinkMsgType.MESSAGES_STAR_TOGGLE_RES, env.reqId, StarToggleRes(ok = false, errorMessage = "Invalid message id"))
+                    return
+                }
+                val msg = db.messageDao().byId(req.id)
+                if (msg == null) {
+                    DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MESSAGES_STAR_TOGGLE, false, "not_found:${req.id}")
+                    sendEnvelope(ws, LinkMsgType.MESSAGES_STAR_TOGGLE_RES, env.reqId, StarToggleRes(ok = false, id = req.id, errorMessage = "Message not found"))
+                    return
+                }
+                db.messageDao().setStarred(req.id, req.starred)
+                DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MESSAGES_STAR_TOGGLE, true, "id=${req.id},starred=${req.starred}")
+                broadcastToAll(LinkMsgType.MESSAGE_STAR_SYNC, MessageStarSyncPush(id = req.id, isStarred = req.starred))
+                sendEnvelope(ws, LinkMsgType.MESSAGES_STAR_TOGGLE_RES, env.reqId, StarToggleRes(ok = true, id = req.id, isStarred = req.starred))
+            }
+
+            LinkMsgType.MESSAGES_TAG_APPLY -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, MessageTagReq::class.java) }.getOrNull()
+                if (req == null || req.messageId <= 0L || req.tagId <= 0L) {
+                    DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MESSAGES_TAG_APPLY, false, "invalid_request")
+                    sendEnvelope(ws, LinkMsgType.MESSAGES_TAG_APPLY_RES, env.reqId, MessageTagRes(ok = false, errorMessage = "Invalid messageId or tagId"))
+                    return
+                }
+                db.tagDao().addTagToMessage(MessageTagCrossRef(messageId = req.messageId, tagId = req.tagId, source = "desktop"))
+                val tagIds = db.tagDao().tagIdsForMessage(req.messageId)
+                DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MESSAGES_TAG_APPLY, true, "msg=${req.messageId},tag=${req.tagId}")
+                sendEnvelope(ws, LinkMsgType.MESSAGES_TAG_APPLY_RES, env.reqId, MessageTagRes(ok = true, messageId = req.messageId, tagIds = tagIds))
+            }
+
+            LinkMsgType.MESSAGES_TAG_REMOVE -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, MessageTagReq::class.java) }.getOrNull()
+                if (req == null || req.messageId <= 0L || req.tagId <= 0L) {
+                    DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MESSAGES_TAG_REMOVE, false, "invalid_request")
+                    sendEnvelope(ws, LinkMsgType.MESSAGES_TAG_REMOVE_RES, env.reqId, MessageTagRes(ok = false, errorMessage = "Invalid messageId or tagId"))
+                    return
+                }
+                db.tagDao().removeTagFromMessage(req.messageId, req.tagId)
+                val tagIds = db.tagDao().tagIdsForMessage(req.messageId)
+                DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MESSAGES_TAG_REMOVE, true, "msg=${req.messageId},tag=${req.tagId}")
+                sendEnvelope(ws, LinkMsgType.MESSAGES_TAG_REMOVE_RES, env.reqId, MessageTagRes(ok = true, messageId = req.messageId, tagIds = tagIds))
+            }
+
+            LinkMsgType.TODOS_ADD -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, TodoAddReq::class.java) }.getOrNull() ?: TodoAddReq()
+                val title = req.title.trim()
+                if (title.isBlank()) {
+                    DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.TODOS_ADD, false, "empty_title")
+                    sendEnvelope(ws, LinkMsgType.TODOS_ADD_RES, env.reqId, TodoMutateRes(ok = false, errorMessage = "Empty todo title"))
+                    return
+                }
+                val now = System.currentTimeMillis()
+                val dueAt = if (req.dueAt > 0L) req.dueAt else now + 60L * 60L * 1000L
+                val repeat = req.repeatRule.takeIf { it == TodoEntity.REPEAT_DAILY || it == TodoEntity.REPEAT_WEEKLY } ?: TodoEntity.REPEAT_NONE
+                val entity = TodoEntity(title = title, dueAt = dueAt, repeatRule = repeat, notes = req.notes.trim())
+                val id = db.todoDao().insert(entity)
+                if (dueAt > now) {
+                    ReminderScheduler.scheduleTodo(appCtx, id, dueAt)
+                }
+                DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.TODOS_ADD, true, "id=$id")
+                sendEnvelope(
+                    ws,
+                    LinkMsgType.TODOS_ADD_RES,
+                    env.reqId,
+                    TodoMutateRes(ok = true, item = TodoItemDto(id = id, title = title, dueAt = dueAt, isDone = false, repeatRule = repeat))
+                )
+            }
+
+            LinkMsgType.TODOS_EDIT -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, TodoEditReq::class.java) }.getOrNull()
+                val existing = if (req != null && req.id > 0L) db.todoDao().byId(req.id) else null
+                if (req == null || existing == null) {
+                    DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.TODOS_EDIT, false, "not_found")
+                    sendEnvelope(ws, LinkMsgType.TODOS_EDIT_RES, env.reqId, TodoMutateRes(ok = false, errorMessage = "Todo not found"))
+                    return
+                }
+                val title = req.title.trim().ifBlank { existing.title }
+                val dueAt = if (req.dueAt > 0L) req.dueAt else existing.dueAt
+                val repeat = req.repeatRule.takeIf { it == TodoEntity.REPEAT_DAILY || it == TodoEntity.REPEAT_WEEKLY || it.isEmpty() } ?: existing.repeatRule
+                val updated = existing.copy(title = title, dueAt = dueAt, repeatRule = repeat, notes = req.notes.trim())
+                db.todoDao().update(updated)
+                ReminderScheduler.cancelTodo(appCtx, updated.id)
+                if (!updated.isDone && updated.dueAt > System.currentTimeMillis()) {
+                    ReminderScheduler.scheduleTodo(appCtx, updated.id, updated.dueAt)
+                }
+                DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.TODOS_EDIT, true, "id=${updated.id}")
+                sendEnvelope(
+                    ws,
+                    LinkMsgType.TODOS_EDIT_RES,
+                    env.reqId,
+                    TodoMutateRes(ok = true, item = TodoItemDto(id = updated.id, title = updated.title, dueAt = updated.dueAt, isDone = updated.isDone, repeatRule = updated.repeatRule))
+                )
+            }
+
+            LinkMsgType.TODOS_DELETE -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, TodoDeleteReq::class.java) }.getOrNull()
+                if (req == null || req.id <= 0L) {
+                    DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.TODOS_DELETE, false, "invalid_id")
+                    sendEnvelope(ws, LinkMsgType.TODOS_DELETE_RES, env.reqId, TodoMutateRes(ok = false, errorMessage = "Invalid todo id"))
+                    return
+                }
+                ReminderScheduler.cancelTodo(appCtx, req.id)
+                db.todoDao().deleteById(req.id)
+                DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.TODOS_DELETE, true, "id=${req.id}")
+                sendEnvelope(ws, LinkMsgType.TODOS_DELETE_RES, env.reqId, TodoMutateRes(ok = true, deletedId = req.id))
+            }
+
+            LinkMsgType.NOTES_LIST -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, NotesListReq::class.java) }.getOrNull() ?: NotesListReq()
+                val limit = req.limit.coerceIn(1, 100)
+                val items = db.noteDao().all().take(limit).map { n ->
+                    NoteItemDto(
+                        id = n.id,
+                        content = n.content,
+                        pinned = n.pinned,
+                        source = n.source,
+                        relatedMessageId = n.relatedMessageId ?: 0L,
+                        relatedAppLabel = n.relatedAppLabel.orEmpty(),
+                        updatedAt = n.updatedAt
+                    )
+                }
+                DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.NOTES_LIST, true, "count=${items.size}")
+                sendEnvelope(ws, LinkMsgType.NOTES_LIST_RES, env.reqId, NotesListRes(items = items))
+            }
+
+            LinkMsgType.NOTE_ADD -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, NoteAddReq::class.java) }.getOrNull() ?: NoteAddReq()
+                val content = req.content.trim()
+                if (content.isBlank()) {
+                    DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.NOTE_ADD, false, "empty_content")
+                    sendEnvelope(ws, LinkMsgType.NOTE_ADD_RES, env.reqId, NoteMutateRes(ok = false, errorMessage = "Empty note content"))
+                    return
+                }
+                val relatedId = req.relatedMessageId.takeIf { it > 0L }
+                val relatedMsg = relatedId?.let { db.messageDao().byId(it) }
+                // 簡易去重：同關聯訊息且內容完全相同直接回傳既有記事
+                val existing = db.noteDao().all().firstOrNull {
+                    it.content.trim() == content && it.relatedMessageId == relatedId
+                }
+                if (existing != null) {
+                    DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.NOTE_ADD, true, "dedup:${existing.id}")
+                    sendEnvelope(
+                        ws,
+                        LinkMsgType.NOTE_ADD_RES,
+                        env.reqId,
+                        NoteMutateRes(
+                            ok = true,
+                            item = NoteItemDto(
+                                id = existing.id,
+                                content = existing.content,
+                                pinned = existing.pinned,
+                                source = existing.source,
+                                relatedMessageId = existing.relatedMessageId ?: 0L,
+                                relatedAppLabel = existing.relatedAppLabel.orEmpty(),
+                                updatedAt = existing.updatedAt
+                            )
+                        )
+                    )
+                    return
+                }
+                val now = System.currentTimeMillis()
+                val note = NoteEntity(
+                    content = content,
+                    source = NoteEntity.SOURCE_MANUAL,
+                    relatedMessageId = relatedId,
+                    relatedAppLabel = relatedMsg?.appLabel?.ifBlank { relatedMsg.packageName },
+                    createdAt = now,
+                    updatedAt = now
+                )
+                val id = db.noteDao().insert(note)
+                DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.NOTE_ADD, true, "id=$id")
+                sendEnvelope(
+                    ws,
+                    LinkMsgType.NOTE_ADD_RES,
+                    env.reqId,
+                    NoteMutateRes(
+                        ok = true,
+                        item = NoteItemDto(
+                            id = id,
+                            content = note.content,
+                            pinned = note.pinned,
+                            source = note.source,
+                            relatedMessageId = note.relatedMessageId ?: 0L,
+                            relatedAppLabel = note.relatedAppLabel.orEmpty(),
+                            updatedAt = note.updatedAt
+                        )
+                    )
+                )
+            }
+
+            LinkMsgType.MESSAGE_DEEP_ANALYZE -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, DeepAnalyzeReq::class.java) }.getOrNull()
+                val msg = if (req != null && req.id > 0L) db.messageDao().byId(req.id) else null
+                if (req == null || msg == null) {
+                    DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MESSAGE_DEEP_ANALYZE, false, "not_found")
+                    sendEnvelope(ws, LinkMsgType.MESSAGE_DEEP_ANALYZE_RES, env.reqId, DeepAnalyzeRes(ok = false, messageId = req?.id ?: 0L, errorCode = LinkErrorCode.INVALID_REQUEST, errorMessage = "Message not found"))
+                    return
+                }
+                if (AiClient.getProfileForPurpose(appCtx, AiPurpose.DEEP_ANALYSIS) == null) {
+                    DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MESSAGE_DEEP_ANALYZE, false, "no_api_key")
+                    sendEnvelope(ws, LinkMsgType.MESSAGE_DEEP_ANALYZE_RES, env.reqId, DeepAnalyzeRes(ok = false, messageId = msg.id, errorCode = LinkErrorCode.UNSUPPORTED, errorMessage = "AI Provider API Key not configured on phone"))
+                    return
+                }
+                if (!PhantomPrefs.canUseAiTodayAndIncrement(appCtx)) {
+                    DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MESSAGE_DEEP_ANALYZE, false, "quota_exceeded")
+                    sendEnvelope(ws, LinkMsgType.MESSAGE_DEEP_ANALYZE_RES, env.reqId, DeepAnalyzeRes(ok = false, messageId = msg.id, errorCode = LinkErrorCode.RATE_LIMIT_EXCEEDED, errorMessage = "Daily AI quota reached"))
+                    return
+                }
+                DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MESSAGE_DEEP_ANALYZE, true, "id=${msg.id}")
+                scope.launch {
+                    val result = AiClient.deepAnalyzeMessage(
+                        sender = msg.sender,
+                        content = msg.content,
+                        appLabel = msg.appLabel.ifBlank { msg.packageName },
+                        context = appCtx
+                    )
+                    result.onSuccess { md ->
+                        runCatching {
+                            sendEnvelope(ws, LinkMsgType.MESSAGE_DEEP_ANALYZE_RES, env.reqId, DeepAnalyzeRes(ok = true, messageId = msg.id, markdown = md))
+                        }
+                    }.onFailure { err ->
+                        PhantomPrefs.refundTodayAiUsage(appCtx)
+                        runCatching {
+                            sendEnvelope(ws, LinkMsgType.MESSAGE_DEEP_ANALYZE_RES, env.reqId, DeepAnalyzeRes(ok = false, messageId = msg.id, errorCode = LinkErrorCode.INTERNAL_ERROR, errorMessage = err.message ?: "Deep analysis failed"))
+                        }
+                    }
+                }
+            }
+
+            LinkMsgType.MUTED_APPS_LIST -> {
+                val mutedSet = PhantomPrefs.getMutedApps(appCtx)
+                val recentApps = runCatching { db.messageDao().paged(200, 0) }
+                    .getOrDefault(emptyList())
+                    .filter { it.packageName.isNotBlank() }
+                    .associate { it.packageName to it.appLabel.ifBlank { it.packageName } }
+                val allPkgs = (mutedSet + recentApps.keys).sorted()
+                val items = allPkgs.map { pkg ->
+                    MutedAppDto(
+                        packageName = pkg,
+                        appLabel = recentApps[pkg] ?: pkg,
+                        muted = pkg in mutedSet
+                    )
+                }
+                DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MUTED_APPS_LIST, true, "count=${items.size}")
+                sendEnvelope(ws, LinkMsgType.MUTED_APPS_LIST_RES, env.reqId, MutedAppsListRes(items = items))
+            }
+
+            LinkMsgType.MUTED_APPS_TOGGLE -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, MutedAppToggleReq::class.java) }.getOrNull()
+                if (req == null || req.packageName.isBlank()) {
+                    DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MUTED_APPS_TOGGLE, false, "invalid_pkg")
+                    sendEnvelope(ws, LinkMsgType.MUTED_APPS_TOGGLE_RES, env.reqId, MutedAppToggleRes(ok = false, errorMessage = "Invalid packageName"))
+                    return
+                }
+                PhantomPrefs.setAppMuted(appCtx, req.packageName.trim(), req.muted)
+                DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MUTED_APPS_TOGGLE, true, "${req.packageName}=${req.muted}")
+                sendEnvelope(ws, LinkMsgType.MUTED_APPS_TOGGLE_RES, env.reqId, MutedAppToggleRes(ok = true, packageName = req.packageName.trim(), muted = req.muted))
+            }
+
+            LinkMsgType.MESSAGES_CONVERSATION -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, ConversationReq::class.java) }.getOrNull() ?: ConversationReq()
+                if (req.packageName.isBlank() || req.conversationKey.isBlank()) {
+                    DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MESSAGES_CONVERSATION, false, "invalid_request")
+                    sendEnvelope(ws, LinkMsgType.MESSAGES_CONVERSATION_RES, env.reqId, ConversationRes())
+                    return
+                }
+                val limit = req.limit.coerceIn(1, 60)
+                val offset = req.offset.coerceAtLeast(0)
+                val raw = db.messageDao().byConversationPaged(req.packageName, req.conversationKey, limit, offset)
+                val tagMap = if (raw.isNotEmpty()) {
+                    runCatching {
+                        db.tagDao().crossRefsForMessages(raw.map { it.id })
+                            .groupBy({ it.messageId }, { it.tagId })
+                    }.getOrDefault(emptyMap())
+                } else emptyMap()
+                // 僅回傳上限 200 字部分預覽，不傳全文（PRIVACY.md 區網紅線）
+                val items = raw.map { m ->
+                    MessageSummaryDto(
+                        id = m.id,
+                        packageName = m.packageName,
+                        sender = m.sender,
+                        preview = m.content.replace(Regex("\\s+"), " ").trim().take(200),
+                        timestamp = m.timestamp,
+                        riskLabel = m.riskLabel,
+                        isStarred = m.isStarred,
+                        isRead = m.isRead,
+                        conversationKey = m.conversationKey,
+                        tagIds = tagMap[m.id].orEmpty()
+                    )
+                }
+                DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.MESSAGES_CONVERSATION, true, "count=${items.size}")
+                sendEnvelope(
+                    ws,
+                    LinkMsgType.MESSAGES_CONVERSATION_RES,
+                    env.reqId,
+                    ConversationRes(
+                        packageName = req.packageName,
+                        conversationKey = req.conversationKey,
+                        items = items,
+                        hasMore = raw.size >= limit
+                    )
+                )
+            }
+
+            LinkMsgType.PHONE_STATUS_GET -> {
+                val batteryIntent = runCatching { appCtx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) }.getOrNull()
+                val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+                val pct = if (level >= 0 && scale > 0) ((level * 100) / scale).coerceIn(0, 100) else -1
+                val statusExtra = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+                val charging = statusExtra == BatteryManager.BATTERY_STATUS_CHARGING || statusExtra == BatteryManager.BATTERY_STATUS_FULL
+                val uptime = if (serverStartedAtMs > 0L) (System.currentTimeMillis() - serverStartedAtMs).coerceAtLeast(0L) else 0L
+                DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.PHONE_STATUS_GET, true, "bat=$pct%")
+                sendEnvelope(
+                    ws,
+                    LinkMsgType.PHONE_STATUS_RES,
+                    env.reqId,
+                    PhoneStatusDto(
+                        batteryPercent = pct,
+                        isCharging = charging,
+                        serverUptimeMs = uptime,
+                        deviceName = Build.MODEL.ifBlank { "Android" }
+                    )
+                )
+            }
+
+            LinkMsgType.CHAT_SESSIONS_LIST -> {
+                val sessions = db.chatDao().allSessions()
+                    .filter { it.title != ProactiveEngine.PROACTIVE_SESSION_TITLE }
+                    .take(30)
+                    .map { ChatSessionSummaryDto(id = it.id, title = it.title.ifBlank { "Chat #${it.id}" }, updatedAt = it.createdAt) }
+                sendEnvelope(ws, LinkMsgType.CHAT_SESSIONS_LIST_RES, env.reqId, ChatSessionsListRes(sessions = sessions))
+            }
+
+            LinkMsgType.CHAT_SESSION_NEW -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, ChatSessionNewReq::class.java) }.getOrNull() ?: ChatSessionNewReq()
+                val title = req.title.trim().ifBlank { "Desktop Chat" }
+                val id = db.chatDao().insertSession(ChatSessionEntity(title = title.take(30)))
+                DesktopLinkStore.recordAuditLog(appCtx, instanceId, LinkMsgType.CHAT_SESSION_NEW, true, "id=$id")
+                sendEnvelope(
+                    ws,
+                    LinkMsgType.CHAT_SESSION_NEW_RES,
+                    env.reqId,
+                    ChatSessionNewRes(ok = true, session = ChatSessionSummaryDto(id = id, title = title.take(30), updatedAt = System.currentTimeMillis()))
+                )
+            }
+
             else -> {
                 DesktopLinkStore.recordAuditLog(appCtx, instanceId, env.type, false, "unknown_command")
                 sendEnvelope(
@@ -852,7 +1207,8 @@ object DesktopLinkServer {
                             timestamp = m.timestamp,
                             riskLabel = m.riskLabel,
                             isStarred = m.isStarred,
-                            isRead = m.isRead
+                            isRead = m.isRead,
+                            conversationKey = m.conversationKey
                         )
                     }
                     val env = LinkEnvelope(
