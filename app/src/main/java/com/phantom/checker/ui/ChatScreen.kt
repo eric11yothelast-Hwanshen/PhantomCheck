@@ -552,48 +552,6 @@ fun ChatAssistantTab(
                 }
             }
 
-            // #389 聊天頁「🔍 聯網」開關：走 runGroundedQuery（Gemini 3+ tools=[google_search] 或 BYOK），查無／失敗誠實回報
-            if (webSearchEnabled && attachedImage == null) {
-                val groundedPrompt =
-                    resCtx.getString(R.string.chat_s_e42fdf) +
-                        resCtx.getString(R.string.chat_s_621925)
-                val groundedRes = AiClient.runGroundedQuery(
-                    context = appCtx,
-                    systemPrompt = groundedPrompt,
-                    userQuery = query,
-                    maxTokens = 480,
-                    purpose = com.phantom.checker.util.AiPurpose.CHAT
-                )
-                val finalContent = groundedRes.fold(
-                    onSuccess = { gr ->
-                        buildString {
-                            append(resCtx.getString(R.string.chat_s_240512))
-                            append(gr.text.trim())
-                            if (gr.sources.isNotEmpty()) {
-                                append(resCtx.getString(R.string.chat_s_8d4936))
-                                gr.sources.forEach { url -> appendLine("- $url") }
-                            }
-                        }.trim()
-                    },
-                    onFailure = { err ->
-                        resCtx.getString(R.string.chat_s_9c7a09, err.message ?: resCtx.getString(R.string.chat_s_1e9720))
-                    }
-                )
-                withContext(Dispatchers.IO) {
-                    db.chatDao().insertMessage(
-                        ChatMessageEntity(
-                            sessionId = sessionId,
-                            role = ChatMessageEntity.ROLE_ASSISTANT,
-                            content = finalContent,
-                            createdAt = System.currentTimeMillis()
-                        )
-                    )
-                }
-                loadMessages(sessionId)
-                isSending = false
-                return@launch
-            }
-
             val history = messages
                 .dropLast(if (!isRetry && messages.lastOrNull()?.role == ChatMessageEntity.ROLE_USER) 1 else 0)
                 .map { ChatMessage(it.role, it.content) }
@@ -608,6 +566,63 @@ fun ChatAssistantTab(
                     memoryDegradeFactor = 1.0f,
                     recordMemoryUsage = true
                 )
+            }
+
+            // #389 / #455 聊天頁「🔍 聯網」開關：智慧聯網（先組 RAG＋近 12 則歷史 → 必要性判斷＋情境查詢重寫；免搜則直接走原本 chatAssistant）
+            if (webSearchEnabled && attachedImage == null) {
+                val recent12 = history.takeLast(12)
+                val decision = AiClient.decideSearchNecessityAndRewrite(
+                    context = appCtx,
+                    userQuery = query,
+                    ragSystemPrompt = ragBuild.prompt,
+                    recentHistory = recent12,
+                    purpose = com.phantom.checker.util.AiPurpose.CHAT
+                )
+                if (decision.shouldSearch) {
+                    val fusedSystemPrompt = ragBuild.prompt + resCtx.getString(R.string.chat_smart_search_citation_rule)
+                    val groundedRes = AiClient.runGroundedQuery(
+                        context = appCtx,
+                        systemPrompt = fusedSystemPrompt,
+                        userQuery = query,
+                        maxTokens = 480,
+                        purpose = com.phantom.checker.util.AiPurpose.CHAT,
+                        history = recent12,
+                        searchQueryOverride = decision.rewrittenQuery
+                    )
+                    val finalContent = groundedRes.fold(
+                        onSuccess = { gr ->
+                            val domainSources = gr.sources
+                                .map { com.phantom.checker.network.FreeWebSearchEngine.extractDisplayDomain(it) }
+                                .filter { it.isNotBlank() }
+                                .distinct()
+                                .take(3)
+                            buildString {
+                                append(resCtx.getString(R.string.chat_s_240512))
+                                append(gr.text.trim())
+                                if (domainSources.isNotEmpty()) {
+                                    append(resCtx.getString(R.string.chat_s_8d4936))
+                                    domainSources.forEach { domain -> appendLine("- $domain") }
+                                }
+                            }.trim()
+                        },
+                        onFailure = { err ->
+                            resCtx.getString(R.string.chat_s_9c7a09, err.message ?: resCtx.getString(R.string.chat_s_1e9720))
+                        }
+                    )
+                    withContext(Dispatchers.IO) {
+                        db.chatDao().insertMessage(
+                            ChatMessageEntity(
+                                sessionId = sessionId,
+                                role = ChatMessageEntity.ROLE_ASSISTANT,
+                                content = finalContent,
+                                createdAt = System.currentTimeMillis()
+                            )
+                        )
+                    }
+                    loadMessages(sessionId)
+                    isSending = false
+                    return@launch
+                }
             }
 
             var retryDegradeStep = 0
