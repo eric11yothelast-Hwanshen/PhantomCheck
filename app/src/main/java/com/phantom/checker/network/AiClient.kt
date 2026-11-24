@@ -2985,11 +2985,165 @@ object AiClient {
             (msg.contains("tool") || msg.contains("search") || msg.contains("ground") || msg.contains("billing") || msg.contains("permission") || msg.contains("enabled"))
     }
 
+    data class SmartSearchDecision(
+        val shouldSearch: Boolean,
+        val rewrittenQuery: String,
+        val usedRuleFallback: Boolean = false
+    )
+
+    private val NON_SEARCH_ACTION_CUES = listOf(
+        "記下來", "幫我記", "幫我建", "提醒我", "建一個", "新增待辦", "加到待辦", "待辦", "鬧鐘",
+        "行事曆", "行程", "備忘", "你好", "哈囉", "早安", "午安", "晚安", "謝謝", "感謝",
+        "remember this", "note down", "remind me", "create a reminder", "add todo", "set alarm",
+        "hello", "hi ", "thanks", "thank you"
+    )
+    private val RULE_SEARCH_CUES = listOf(
+        // 時間 / 即時
+        "今天", "今日", "明天", "明日", "本週", "這週", "最新", "現在", "即時", "剛剛", "目前",
+        "today", "tomorrow", "latest", "current", "breaking", "live",
+        // 新聞 / 天氣 / 災情 / 金融
+        "天氣", "氣溫", "降雨", "下雨", "颱風", "地震", "停班", "停課", "災情", "新聞", "快訊",
+        "股價", "匯率", "油價", "比分", "賽果", "開獎",
+        "weather", "forecast", "typhoon", "earthquake", "news", "stock", "exchange rate",
+        // 型號 / 規格 / 版本
+        "型號", "規格", "上市", "發售", "評測", "版本", "價格", "發表會",
+        "spec", "release date", "benchmark", "price"
+    )
+
+    internal fun ruleBasedSearchDecision(userQuery: String): SmartSearchDecision {
+        val q = userQuery.trim()
+        if (q.isBlank()) return SmartSearchDecision(false, "", usedRuleFallback = true)
+        val lower = q.lowercase()
+        val hasExplicitInfoCue = listOf(
+            "天氣", "新聞", "股價", "匯率", "颱風", "地震", "停班", "停課", "災情", "weather", "news", "typhoon"
+        ).any { lower.contains(it) }
+        if (!hasExplicitInfoCue && NON_SEARCH_ACTION_CUES.any { lower.contains(it) }) {
+            return SmartSearchDecision(false, "", usedRuleFallback = true)
+        }
+        val should = RULE_SEARCH_CUES.any { lower.contains(it) }
+        return SmartSearchDecision(
+            shouldSearch = should,
+            rewrittenQuery = if (should) q.take(120) else "",
+            usedRuleFallback = true
+        )
+    }
+
     /**
-     * #389 / #447 具來源聯網查詢：
+     * #455 智慧聯網前置判斷（≤120 tokens、temperature 0、與主模型同 profile）：
+     * - 融合 RAG 記憶與近 12 則歷史，判斷「是否需要聯網」並產出情境補全後的搜尋查詢。
+     * - 記事/提醒/行程/日常對話/記憶寫入/已有充足記憶可答 → shouldSearch=false（走原 chatAssistant）。
+     * - Zero Token Saver 或無額度／無金鑰時直接退回純規則，零前置呼叫。
+     */
+    suspend fun decideSearchNecessityAndRewrite(
+        context: Context,
+        userQuery: String,
+        ragSystemPrompt: String,
+        recentHistory: List<ChatMessage>,
+        purpose: AiPurpose = AiPurpose.CHAT
+    ): SmartSearchDecision = withContext(Dispatchers.IO) {
+        val cleanQuery = sanitizeForPrompt(userQuery).trim()
+        if (cleanQuery.isBlank()) return@withContext SmartSearchDecision(false, "", usedRuleFallback = true)
+
+        if (PhantomPrefs.isTokenSaverEnabled(context)) {
+            return@withContext ruleBasedSearchDecision(cleanQuery)
+        }
+        val profile = getProfileForPurpose(context, purpose)
+        if (profile == null || profile.apiKey.isBlank()) {
+            return@withContext ruleBasedSearchDecision(cleanQuery)
+        }
+
+        val hasQuota = if (purpose == AiPurpose.PROACTIVE) {
+            PhantomPrefs.canUseProactiveAiTodayAndIncrement(context)
+        } else {
+            PhantomPrefs.canUseAiTodayAndIncrement(context)
+        }
+        if (!hasQuota) {
+            return@withContext ruleBasedSearchDecision(cleanQuery)
+        }
+        fun refund() {
+            if (purpose == AiPurpose.PROACTIVE) {
+                PhantomPrefs.refundTodayProactiveAiUsage(context)
+            } else {
+                PhantomPrefs.refundTodayAiUsage(context)
+            }
+        }
+
+        val contextExcerpt = ragSystemPrompt.take(1200)
+        val historyExcerpt = recentHistory.takeLast(12).joinToString("\n") { m ->
+            "${m.role}: ${sanitizeForPrompt(m.content).replace("\n", " ").take(120)}"
+        }
+        val routerSystem =
+            "You are a search necessity router & query rewriter. Decide whether the user's message requires live web search.\n" +
+                "Return ONLY compact JSON: {\"search\":false,\"query\":\"\"} or {\"search\":true,\"query\":\"<rewritten query>\"}.\n" +
+                "Rules:\n" +
+                "1) search=false for: saving memories/notes (e.g. '我人在桃園，記下來'), creating reminders/todos/schedules (e.g. '幫我建一個明天9點提醒'), casual chat, or questions already answerable from RAG memory.\n" +
+                "2) search=true ONLY when fresh/external facts (weather, news, prices, releases, disasters, live events) are needed.\n" +
+                "3) When search=true, rewrite query by fusing relevant user context from RAG memory/history (e.g. if memory says user is in 桃園 and user asks '今天天氣', output '桃園 今天天氣預報'). Keep query <= 80 chars."
+
+        val routerUser = buildString {
+            if (contextExcerpt.isNotBlank()) {
+                appendLine("<rag_context>")
+                appendLine(contextExcerpt)
+                appendLine("</rag_context>")
+            }
+            if (historyExcerpt.isNotBlank()) {
+                appendLine("<recent_history>")
+                appendLine(historyExcerpt)
+                appendLine("</recent_history>")
+            }
+            appendLine("<user_message>")
+            appendLine(cleanQuery)
+            append("</user_message>")
+        }
+
+        val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
+        val reqObj = ChatRequest(
+            model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
+            messages = listOf(
+                ChatMessage("system", routerSystem),
+                ChatMessage("user", routerUser)
+            ),
+            maxTokens = 120,
+            temperature = 0.0
+        )
+        try {
+            enforceRateLimit()
+            val res = getApi(profile.baseUrl).chat(
+                url = fullUrl,
+                auth = "Bearer ${profile.apiKey.trim()}",
+                body = reqObj
+            )
+            val raw = extractReplyText(res.choices.firstOrNull()?.message?.content).trim()
+            val start = raw.indexOf('{')
+            val end = raw.lastIndexOf('}')
+            if (start < 0 || end <= start) {
+                refund()
+                return@withContext ruleBasedSearchDecision(cleanQuery)
+            }
+            val obj = runCatching { JsonParser.parseString(raw.substring(start, end + 1)).asJsonObject }.getOrNull()
+            if (obj == null) {
+                refund()
+                return@withContext ruleBasedSearchDecision(cleanQuery)
+            }
+            val should = obj.get("search")?.takeIf { !it.isJsonNull }?.asBoolean ?: false
+            val rewritten = obj.get("query")?.takeIf { !it.isJsonNull }?.asString?.trim().orEmpty()
+                .ifBlank { if (should) cleanQuery else "" }
+                .take(120)
+            SmartSearchDecision(shouldSearch = should, rewrittenQuery = rewritten, usedRuleFallback = false)
+        } catch (e: CancellationException) {
+            refund()
+            throw e
+        } catch (_: Exception) {
+            refund()
+            ruleBasedSearchDecision(cleanQuery)
+        }
+    }
+
+    /**
+     * #389 / #447 / #455 具來源聯網查詢：
      * 1) Gemini 3+ 原生 google_search grounding（遇不支援 400 時靜默退款＋快取旗標並改走下位）
      * 2) BYOK 外部搜尋端點（Perplexity sonar 等）
-     * 3) 免費搜尋引擎後端（DuckDuckGo IA → DDG HTML → Wikipedia）＋ 現有一般模型摘要
+     * 3) 免費搜尋引擎後端（DuckDuckGo IA → DDG HTML → Wikipedia，含 #455 品質治理）＋ 現有一般模型摘要
      * 4) 全不可用時誠實回報失敗，絕不以模型既有知識頂替。
      */
     suspend fun runGroundedQuery(
@@ -2997,7 +3151,9 @@ object AiClient {
         systemPrompt: String,
         userQuery: String,
         maxTokens: Int = 360,
-        purpose: AiPurpose = AiPurpose.PROACTIVE
+        purpose: AiPurpose = AiPurpose.PROACTIVE,
+        history: List<ChatMessage> = emptyList(),
+        searchQueryOverride: String? = null
     ): Result<GroundedResult> = withContext(Dispatchers.IO) {
         if (PhantomPrefs.isTokenSaverEnabled(context)) {
             return@withContext Result.failure(IllegalStateException("省 token 模式已開啟，已停用聯網查詢。"))
@@ -3006,6 +3162,10 @@ object AiClient {
         if (cleanQuery.isBlank()) {
             return@withContext Result.failure(IllegalArgumentException("查詢內容不可為空。"))
         }
+        val effectiveSearchQuery = sanitizeForPrompt(
+            searchQueryOverride?.takeIf { it.isNotBlank() } ?: cleanQuery
+        ).trim().take(200)
+        val trimmedHistory = history.takeLast(12)
 
         val profile = getProfileForPurpose(context, purpose)
         fun tryCheckAndIncrementQuota(): Boolean = if (purpose == AiPurpose.PROACTIVE) {
@@ -3036,12 +3196,18 @@ object AiClient {
             }
 
             val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
+            val geminiUserMsg = if (effectiveSearchQuery != cleanQuery) {
+                "$cleanQuery\n(Search focus: $effectiveSearchQuery)"
+            } else {
+                cleanQuery
+            }
             val reqObj = ChatRequest(
                 model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
-                messages = listOf(
-                    ChatMessage("system", effectiveSystemPrompt),
-                    ChatMessage("user", cleanQuery)
-                ),
+                messages = buildList {
+                    add(ChatMessage("system", effectiveSystemPrompt))
+                    addAll(trimmedHistory)
+                    add(ChatMessage("user", geminiUserMsg))
+                },
                 maxTokens = maxTokens.coerceIn(120, 800),
                 temperature = 0.2,
                 tools = listOf(mapOf("google_search" to emptyMap<String, Any>()))
@@ -3082,6 +3248,8 @@ object AiClient {
                             Result.failure(IllegalStateException("查無可用最新資料。"))
                         } else {
                             val sources = extractGroundedSources(root, replyText)
+                                .distinctBy { FreeWebSearchEngine.extractDisplayDomain(it) }
+                                .take(3)
                             Result.success(GroundedResult(text = replyText, sources = sources))
                         }
                     }
@@ -3106,9 +3274,11 @@ object AiClient {
 
         // 2. BYOK 外部搜尋端點（如 Perplexity sonar）
         if (com.phantom.checker.util.EncryptedByokStore.isExternalSearchConfigured(context)) {
-            val byokReply = queryExternalSearchEndpoint(context, cleanQuery)
+            val byokReply = queryExternalSearchEndpoint(context, effectiveSearchQuery)
             if (!byokReply.isNullOrBlank()) {
                 val sources = extractGroundedSources(null, byokReply)
+                    .distinctBy { FreeWebSearchEngine.extractDisplayDomain(it) }
+                    .take(3)
                 return@withContext Result.success(GroundedResult(text = byokReply, sources = sources))
             }
         }
@@ -3118,26 +3288,28 @@ object AiClient {
             if (!tryCheckAndIncrementQuota()) {
                 return@withContext Result.failure(IllegalStateException("今日 AI 查詢額度已達上限。"))
             }
-            val snippets = FreeWebSearchEngine.search(cleanQuery, preferZh = isZhTwLocale())
+            val snippets = FreeWebSearchEngine.search(effectiveSearchQuery, preferZh = isZhTwLocale())
             if (snippets.isEmpty()) {
                 refund()
                 return@withContext Result.failure(IllegalStateException("查無可用最新資料（免費搜尋引擎目前無結果或網路不可用）。"))
             }
             val formattedSnippets = snippets.mapIndexed { idx, s ->
-                "[${idx + 1}] ${s.title}\n${s.snippet}\nURL: ${s.url}"
+                val domain = FreeWebSearchEngine.extractDisplayDomain(s.url)
+                "[${idx + 1}] (${domain}) ${s.title}\n${s.snippet}"
             }.joinToString("\n\n")
             val groundedSystem = if (isZhTwLocale()) {
-                "$effectiveSystemPrompt\n\n以下是免費搜尋引擎（DuckDuckGo / Wikipedia）取得的公開來源片段，請【僅依以下來源】精簡摘要回答並附上對應來源網址；若來源不足以回答請誠實說明，絕不以既有知識頂替：\n\n$formattedSnippets"
+                "$effectiveSystemPrompt\n\n以下是免費搜尋引擎（DuckDuckGo / Wikipedia）針對「$effectiveSearchQuery」取得的公開來源片段，請【僅依以下來源】並結合上方記憶與個人化設定精簡回答，行內以 [1] 或網域名稱引用來源（不要貼整串長網址）；若來源不足以回答請誠實說明，絕不以既有知識頂替：\n\n$formattedSnippets"
             } else {
-                "$effectiveSystemPrompt\n\nBelow are public snippets from free search engines (DuckDuckGo / Wikipedia). Answer concisely 【ONLY based on these sources】 and include the source URLs. If insufficient, state so honestly without fabricating from prior knowledge:\n\n$formattedSnippets"
+                "$effectiveSystemPrompt\n\nBelow are public snippets from free search engines (DuckDuckGo / Wikipedia) for \"$effectiveSearchQuery\". Answer concisely 【ONLY based on these sources】 combined with the user's memory/persona above, citing sources inline as [1] or domain name (do NOT paste raw long URLs). If insufficient, state so honestly without fabricating from prior knowledge:\n\n$formattedSnippets"
             }
             val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
             val reqObj = ChatRequest(
                 model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
-                messages = listOf(
-                    ChatMessage("system", groundedSystem),
-                    ChatMessage("user", cleanQuery)
-                ),
+                messages = buildList {
+                    add(ChatMessage("system", groundedSystem))
+                    addAll(trimmedHistory)
+                    add(ChatMessage("user", cleanQuery))
+                },
                 maxTokens = maxTokens.coerceIn(120, 800),
                 temperature = 0.2
             )
@@ -3154,7 +3326,9 @@ object AiClient {
                     Result.failure(IllegalStateException("查無可用最新資料。"))
                 } else {
                     val cited = extractGroundedSources(null, replyText)
-                    val mergedSources = (cited + snippets.map { it.url }).distinct().take(6)
+                    val mergedSources = (cited + snippets.map { it.url })
+                        .distinctBy { FreeWebSearchEngine.extractDisplayDomain(it) }
+                        .take(3)
                     Result.success(GroundedResult(text = replyText, sources = mergedSources))
                 }
             } catch (e: CancellationException) {
