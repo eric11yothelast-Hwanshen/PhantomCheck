@@ -3,7 +3,7 @@
 ; with Desktop shortcut checkbox (checked by default) and "Launch after install" checkbox (checked by default).
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.4.0"
+  #define MyAppVersion "0.5.0"
 #endif
 
 #define MyAppName "PhantomCheck Desktop"

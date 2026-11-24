@@ -3,6 +3,35 @@
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses Semantic Versioning.
 
+## [4.8.0] - 2026-11-24
+
+- **Tag 對照**：[`v4.7.0...v4.8.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.7.0...v4.8.0)（`versionCode = 56`、`versionName = "4.8.0"`；桌面端 `desktopVersion = "0.5.0"`）
+- **發佈資產（雙 APK ＋ 桌面端 Windows MSI / Inno Setup 安裝檔）**：
+  - `app-release.apk`：正式簽章＋R8 程式碼縮減與資源壓縮（`isMinifyEnabled = true`、`isShrinkResources = true`），供一般使用者安裝與原簽章覆蓋升級。
+  - `app-debug.apk`：除錯建置版本，供開發測試與排錯使用。
+  - `PhantomCheckDesktop-0.5.0.msi` / `PhantomCheckDesktop-0.5.0-setup.exe`：Windows 桌面端連線與訊息管理安裝檔（Compose Multiplatform，`desktopVersion = "0.5.0"`）。
+
+### 新增、變更與修正
+- **#487 桌面端 Windows 防火牆自我檢查與一鍵放行（PR #491）**：新增 `DesktopFirewallHelper.kt`（唯讀查詢目前網路 Profile 與 Windows Defender 防火牆規則，提供 UAC 提權一鍵新增「目前執行檔＋TCP 49515＋`-Profile Any`」專屬放行規則，並針對 Public profile 與行動熱點 `192.168.137.x` 顯示明確警示與操作指引）；手機端 `DesktopLinkClient.kt` 與 `LinkHubContent.kt` 新增 15 秒探測冷卻、「立即診斷」即時探測按鈕與錯誤高亮，並於 `PRIVACY.md` 雙語補充防火牆一鍵放行說明。
+- **#486 相機掃碼 R8 閃退修復與穩定性加固（PR #491）**：補齊 `app/proguard-rules.pro` 中 ML Kit bundled 與 `firebase-components` `ComponentRegistrar.<init>()` 之 R8 full mode keep 規則（經 `retrace` 還原並於 `mapping.txt` 驗證），徹底修復 Release APK 開啟掃碼即 NPE 閃退；`QrScannerOverlay.kt` 新增初始化防呆、後鏡頭存在預檢、`ON_RESUME` 自動重新綁定、`try/finally` 確保 `ImageProxy.close()` 不卡死管線，以及安全關閉順序以提升 QR 掃碼穩定性。
+- **#488 桌面端頁面轉場與深淺自訂體驗（PR #491）**：新增 `DesktopThemeTokens`／`LocalDesktopTokens` 依背景與玻璃設定動態調整高對比文字／格線／邊框顏色；實作 4 種頁面轉場動畫（無／淡入淡出／滑動／縮放）並保留各分頁捲動狀態；新增玻璃深淺與背景遮罩（scrim）滑桿（draw-phase 繪製），並新增 `DesktopBackgroundHelper.kt` 支援原生選圖、Skia 驗證與複製至 `DesktopPaths.backgroundsDir`。
+- **#489 雙端效能與省電優化（PR #491）**：桌面端隔離呼吸動效並於縮至系統匣時暫停繪幀、加入快取上限、`refreshAllOnConnect` 節流、以 `remember` 快取 Markdown 解析與圖表資料轉換，並新增 60s WSS Ping 省電選項；手機端 `DesktopLinkClient.kt` 於熄屏時暫停 mDNS 探索、退避封頂 60s 整段睡眠免每秒喚醒、推播輪詢降為 10s（亮屏立即恢復），`LinkHubContent.kt` 輪詢降頻為 3s 且熄屏跳過。
+- **#490 雙端全域稽核修復 E1–E10（PR #491）**：E1 `NsdManager.resolveService` 改為單發序列化佇列＋`FAILURE_ALREADY_ACTIVE` 指數退避重試；E2 `DesktopLinkServer.kt` 配對碼跨連線錯碼達 5 次即銷毀並鎖定 30 秒且寫入審計；E3 `DesktopUpdater.kt` 下載安裝器計算本機 SHA-256 並支援 optional `.sha256` sidecar 驗證；E4/E5 於 `AGENTS.md` 納入 `:app:assembleRelease` R8 冒煙與 `mapping.txt` 不公開決策；E6 斷線／逾時即時復位 `deepAnalyzingMsgId` 與 `chatSending`；E7–E10 完成多廠牌自檢、3024 組雙語字串對齊驗證與捕獲例外補 log。
+
+### English
+- **Tag Compare**: [`v4.7.0...v4.8.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.7.0...v4.8.0) (`versionCode = 56`, `versionName = "4.8.0"`; Desktop `desktopVersion = "0.5.0"`)
+- **Release Assets (Dual APKs + Desktop Windows MSI / Inno Setup Installer)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`), for general users and in-place signature upgrades.
+  - `app-debug.apk`: Debug build for development testing and troubleshooting.
+  - `PhantomCheckDesktop-0.5.0.msi` / `PhantomCheckDesktop-0.5.0-setup.exe`: Windows desktop companion installers (Compose Multiplatform, `desktopVersion = "0.5.0"`).
+
+**Added, Changed & Fixed**
+- **#487 Windows Firewall Self-Check & One-Click Allow (PR #491)**: Added `DesktopFirewallHelper.kt` (read-only inspection of active network profile and Windows Defender Firewall rules, plus UAC-elevated one-click creation of a scoped executable + TCP `49515` + `-Profile Any` rule, with explicit Public profile and `192.168.137.x` mobile hotspot warnings); Android `DesktopLinkClient.kt` and `LinkHubContent.kt` add a 15s probe cooldown, "Diagnose Now" immediate probe action, and highlighted errors, alongside bilingual documentation in `PRIVACY.md`.
+- **#486 Camera Scanner R8 Crash Fix & QR Stability Hardening (PR #491)**: Added R8 full-mode keep rules in `app/proguard-rules.pro` for bundled ML Kit and `firebase-components` `ComponentRegistrar.<init>()` (traced via `retrace` and verified in `mapping.txt`), eliminating the release APK scanner NPE crash; `QrScannerOverlay.kt` adds init guards, back-camera availability precheck, `ON_RESUME` rebinding, `try/finally` `ImageProxy.close()` to prevent pipeline stalls, and safe teardown ordering.
+- **#488 Desktop Page Transitions & Glass/Surface Customization (PR #491)**: Added `DesktopThemeTokens` / `LocalDesktopTokens` for high-contrast text, gridlines, and borders adapting to background and glass settings; implemented 4 page transitions (None / Fade / Slide / Scale) while preserving per-tab scroll state; added glass depth and draw-phase background scrim sliders, plus `DesktopBackgroundHelper.kt` for native image picking, Skia validation, and storage in `DesktopPaths.backgroundsDir`.
+- **#489 Cross-End Performance & Battery Optimization (PR #491)**: Desktop isolates breathing animations (pausing when minimized to tray), caps caches, throttles `refreshAllOnConnect`, memoizes Markdown parsing and chart transforms via `remember`, and adds a 60s WSS ping option; Android `DesktopLinkClient.kt` pauses mDNS discovery when the screen is off, caps backoff sleep at 60s without per-second wakeups, slows push polling to 10s (restoring immediately on screen-on), and reduces `LinkHubContent.kt` polling to 3s (skipping when screen is off).
+- **#490 Cross-End Global Audit Fixes E1–E10 (PR #491)**: E1 serializes `NsdManager.resolveService` with exponential backoff on `FAILURE_ALREADY_ACTIVE`; E2 locks desktop pairing for 30s and invalidates the code after 5 failed attempts across connections with audit logging; E3 computes local SHA-256 in `DesktopUpdater.kt` with optional `.sha256` sidecar verification; E4/E5 document `:app:assembleRelease` R8 smoke testing and private `mapping.txt` policy in `AGENTS.md`; E6 resets `deepAnalyzingMsgId` and `chatSending` on disconnect/timeout; E7–E10 complete OEM checklists, 3,024-key bilingual string parity checks, and diagnostic logging.
+
 ## [4.7.0] - 2026-11-24
 
 - **Tag 對照**：[`v4.6.0...v4.7.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.6.0...v4.7.0)（`versionCode = 55`、`versionName = "4.7.0"`；桌面端 `desktopVersion = "0.4.0"`）
