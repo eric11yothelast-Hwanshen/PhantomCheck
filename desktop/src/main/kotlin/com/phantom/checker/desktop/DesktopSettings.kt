@@ -119,7 +119,7 @@ object DesktopSettingsStore {
             dndStartHour = p.getProperty("dndStartHour", "0").toIntOrNull()?.coerceIn(0, 23) ?: 0,
             dndEndHour = p.getProperty("dndEndHour", "7").toIntOrNull()?.coerceIn(0, 23) ?: 7,
             maxReconnectBackoffSec = p.getProperty("maxReconnectBackoffSec", "30").toIntOrNull()?.takeIf { it in listOf(15, 30, 60) } ?: 30,
-            pingIntervalSec = p.getProperty("pingIntervalSec", "15").toIntOrNull()?.takeIf { it in listOf(10, 15, 30) } ?: 15,
+            pingIntervalSec = p.getProperty("pingIntervalSec", "15").toIntOrNull()?.takeIf { it in listOf(10, 15, 30, 60) } ?: 15,
             previewLength = p.getProperty("previewLength", "200").toIntOrNull()?.takeIf { it in listOf(90, 200, 500) } ?: 200,
             serverPort = p.getProperty("serverPort", com.phantom.checker.shared.LinkProtocol.DEFAULT_PORT.toString()).toIntOrNull()?.coerceIn(1024, 65535) ?: com.phantom.checker.shared.LinkProtocol.DEFAULT_PORT,
             accentPreset = AccentPreset.entries.firstOrNull { it.key == p.getProperty("accentPreset", "blue") } ?: AccentPreset.BLUE,

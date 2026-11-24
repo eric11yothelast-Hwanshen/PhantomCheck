@@ -103,13 +103,18 @@ private enum class DesktopTab {
     MESSAGES, STATS, TODOS, CHAT, RULES, SETTINGS
 }
 
+private const val MAX_CACHED_MESSAGES = 240
+private const val MAX_CACHED_CHAT_BUBBLES = 120
+private const val FULL_REFRESH_COOLDOWN_MS = 10_000L
+
 /**
- * #468 桌面端主畫面（10 系統設定＋8 自訂設定＋大螢幕 Master-Detail＋Canvas 統計＋多會話 Markdown AI 助手＋鍵盤捷徑）。
+ * #468 / #488 / #489 桌面端主畫面（10 系統設定＋16 自訂設定＋深淺/轉場＋大螢幕 Master-Detail＋Canvas 統計＋多會話 Markdown AI 助手＋鍵盤捷徑）。
  */
 @Composable
 fun DesktopApp(
     server: DesktopLinkServer = remember { DesktopLinkServer() },
     manageLifecycle: Boolean = true,
+    isWindowVisible: Boolean = true,
     onMirrorNotification: (title: String, body: String) -> Unit = { _, _ -> }
 ) {
     val gson = remember { Gson() }
@@ -208,10 +213,17 @@ fun DesktopApp(
         }
     }
 
+    var lastFullRefreshAtMs by remember { mutableLongStateOf(0L) }
+
     suspend fun refreshAllOnConnect() {
+        val now = System.currentTimeMillis()
         server.sendCommand(LinkMsgType.MESSAGES_SUBSCRIBE, reqId(), emptyMap<String, String>())
         delay(120L)
         server.sendCommand(LinkMsgType.MESSAGES_LIST, reqId(), MessagesListReq(filter = msgFilter, offset = 0, limit = 40, sinceCursor = latestCursor))
+        if (now - lastFullRefreshAtMs < FULL_REFRESH_COOLDOWN_MS && stats.total > 0) {
+            return
+        }
+        lastFullRefreshAtMs = now
         delay(120L)
         server.sendCommand(LinkMsgType.STATS_SNAPSHOT, reqId(), emptyMap<String, String>())
         delay(120L)
@@ -298,13 +310,15 @@ fun DesktopApp(
                 LinkMsgType.MESSAGES_LIST_RES -> {
                     val res = runCatching { gson.fromJson(env.payloadJson, MessagesListRes::class.java) }.getOrNull() ?: return@collect
                     if (res.latestCursor > latestCursor) latestCursor = res.latestCursor
-                    messages = if (messages.isEmpty()) res.items else (res.items + messages).distinctBy { it.id }.sortedByDescending { it.timestamp }
+                    messages = (if (messages.isEmpty()) res.items else (res.items + messages).distinctBy { it.id }.sortedByDescending { it.timestamp })
+                        .take(MAX_CACHED_MESSAGES)
                     if (selectedMsgId <= 0L && messages.isNotEmpty()) selectedMsgId = messages.first().id
                 }
                 LinkMsgType.MESSAGE_NEW -> {
                     val push = runCatching { gson.fromJson(env.payloadJson, MessageNewPush::class.java) }.getOrNull() ?: return@collect
                     if (push.latestCursor > latestCursor) latestCursor = push.latestCursor
                     messages = (push.items + messages).distinctBy { it.id }.sortedByDescending { it.timestamp }
+                        .take(MAX_CACHED_MESSAGES)
                     push.items.firstOrNull()?.let { newest ->
                         val curSettings = DesktopSettingsStore.state.value
                         val preview = newest.preview.take(curSettings.previewLength)
@@ -408,7 +422,7 @@ fun DesktopApp(
                 LinkMsgType.CHAT_HISTORY_RES -> {
                     val res = runCatching { gson.fromJson(env.payloadJson, ChatHistoryRes::class.java) }.getOrNull() ?: return@collect
                     if (res.sessionId > 0L) chatSessionId = res.sessionId
-                    chatBubbles = res.messages
+                    chatBubbles = res.messages.takeLast(MAX_CACHED_CHAT_BUBBLES)
                 }
                 LinkMsgType.CHAT_REPLY -> {
                     chatTimeoutJob?.cancel()
@@ -417,7 +431,8 @@ fun DesktopApp(
                     val res = runCatching { gson.fromJson(env.payloadJson, ChatReplyRes::class.java) }.getOrNull() ?: return@collect
                     if (res.sessionId > 0L) chatSessionId = res.sessionId
                     if (res.ok) {
-                        chatBubbles = chatBubbles + ChatBubbleDto(System.currentTimeMillis(), "assistant", res.content, System.currentTimeMillis())
+                        chatBubbles = (chatBubbles + ChatBubbleDto(System.currentTimeMillis(), "assistant", res.content, System.currentTimeMillis()))
+                            .takeLast(MAX_CACHED_CHAT_BUBBLES)
                     } else {
                         actionFeedback = "${res.errorCode}: ${res.errorMessage}"
                     }
@@ -466,17 +481,6 @@ fun DesktopApp(
     val timeFmt = remember(settings.use24HourTime) {
         SimpleDateFormat(if (settings.use24HourTime) "HH:mm:ss" else "hh:mm:ss a", Locale.getDefault())
     }
-
-    val pulseTransition = rememberInfiniteTransition(label = "conn_pulse")
-    val pulseAlpha by pulseTransition.animateFloat(
-        initialValue = 1.0f,
-        targetValue = if (settings.animationsEnabled) 0.4f else 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 850, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "conn_pulse_alpha"
-    )
 
     // Load thread automatically when selecting a message in Master-Detail
     val selectedMsg = remember(messages, selectedMsgId) { messages.firstOrNull { it.id == selectedMsgId } }
@@ -670,12 +674,10 @@ fun DesktopApp(
                                 horizontalAlignment = if (settings.sidebarCollapsed) Alignment.CenterHorizontally else Alignment.Start
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(9.dp)
-                                            .graphicsLayer { alpha = if (isPulsing) pulseAlpha else 1f }
-                                            .clip(CircleShape)
-                                            .background(dotColor)
+                                    PulsingStatusDot(
+                                        color = dotColor,
+                                        pulsing = isPulsing && isWindowVisible,
+                                        animationsEnabled = settings.animationsEnabled
                                     )
                                     if (!settings.sidebarCollapsed) {
                                         Text(statusText, style = MaterialTheme.typography.labelSmall, color = tokens.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -1218,11 +1220,10 @@ fun DesktopApp(
                                                 }
 
                                                 AnimatedVisibility(visible = chatSending) {
-                                                    Text(
+                                                    PulsingThinkingLabel(
                                                         text = DesktopStrings.chatThinking,
-                                                        style = MaterialTheme.typography.labelSmall,
                                                         color = accentColor,
-                                                        modifier = Modifier.padding(vertical = 6.dp).graphicsLayer { alpha = pulseAlpha }
+                                                        animationsEnabled = settings.animationsEnabled && isWindowVisible
                                                     )
                                                 }
 
@@ -1457,4 +1458,77 @@ private fun StatBox(label: String, value: String, modifier: Modifier = Modifier)
             Text(value, style = MaterialTheme.typography.headlineSmall, color = tokens.textPrimary)
         }
     }
+}
+
+/**
+ * #489 隔離式 draw-phase 呼吸點：僅於 pulsing && animationsEnabled 時啟動 rememberInfiniteTransition，
+ * 連線中或縮至系統匣時零影格喚醒，且僅於 graphicsLayer lambda 讀取動畫值（零重組）。
+ */
+@Composable
+private fun PulsingStatusDot(
+    color: Color,
+    pulsing: Boolean,
+    animationsEnabled: Boolean
+) {
+    if (!pulsing || !animationsEnabled) {
+        Box(
+            modifier = Modifier
+                .size(9.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        return
+    }
+    val transition = rememberInfiniteTransition(label = "conn_pulse")
+    val alphaState = transition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = 0.4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 850, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "conn_pulse_alpha"
+    )
+    Box(
+        modifier = Modifier
+            .size(9.dp)
+            .graphicsLayer { alpha = alphaState.value }
+            .clip(CircleShape)
+            .background(color)
+    )
+}
+
+@Composable
+private fun PulsingThinkingLabel(
+    text: String,
+    color: Color,
+    animationsEnabled: Boolean
+) {
+    if (!animationsEnabled) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            modifier = Modifier.padding(vertical = 6.dp)
+        )
+        return
+    }
+    val transition = rememberInfiniteTransition(label = "chat_thinking_pulse")
+    val alphaState = transition.animateFloat(
+        initialValue = 1.0f,
+        targetValue = 0.4f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 850, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "chat_thinking_alpha"
+    )
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = color,
+        modifier = Modifier
+            .padding(vertical = 6.dp)
+            .graphicsLayer { alpha = alphaState.value }
+    )
 }

@@ -600,7 +600,7 @@ fun DesktopSettingsCenter(
                             HorizontalDivider(color = tokens.border)
                             Text(DesktopStrings.sysPingTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                listOf(10, 15, 30).forEach { sec ->
+                                listOf(10, 15, 30, 60).forEach { sec ->
                                     FilterChip(
                                         selected = settings.pingIntervalSec == sec,
                                         onClick = { DesktopSettingsStore.update { it.copy(pingIntervalSec = sec) } },

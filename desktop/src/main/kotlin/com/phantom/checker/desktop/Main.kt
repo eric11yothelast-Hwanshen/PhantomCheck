@@ -155,6 +155,7 @@ fun main(args: Array<String>) = application {
         DesktopApp(
             server = server,
             manageLifecycle = false,
+            isWindowVisible = isWindowVisible,
             onMirrorNotification = { title, body ->
                 if (traySupported) {
                     runCatching {

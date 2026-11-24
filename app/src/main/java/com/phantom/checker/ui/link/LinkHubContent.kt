@@ -140,8 +140,10 @@ fun LinkHubContent(
             runCatching { DesktopLinkClient.autoConnectIfPaired(appCtx) }
                 .onFailure { err -> if (localError.isNullOrBlank()) localError = err.message ?: err.javaClass.simpleName }
         }
+        val pm = runCatching { appCtx.getSystemService(Context.POWER_SERVICE) as? PowerManager }.getOrNull()
         while (true) {
-            delay(1500L)
+            delay(3000L)
+            if (pm != null && !pm.isInteractive) continue
             linkEnabled = runCatching { DesktopLinkStore.isLinkEnabled(appCtx) }.getOrDefault(linkEnabled)
             pairedDevices = runCatching { DesktopLinkStore.getPairedDevices(appCtx) }.getOrDefault(pairedDevices)
             unknownAttempts = runCatching { DesktopLinkStore.getUnknownAttempts(appCtx) }.getOrDefault(unknownAttempts)
