@@ -176,10 +176,23 @@ fun DesktopSettingsCenter(
                         }
                     }
 
-                    // 2. Single-use 6-digit Pairing Code (3 min TTL)
+                    // 2. Configure New Phone (QR Code + Single-use 6-digit Pairing Code, 3 min TTL)
+                    var showQrDialog by remember { mutableStateOf(false) }
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(DesktopStrings.pairNewPhoneTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(DesktopStrings.pairNewPhoneTitle, style = MaterialTheme.typography.titleMedium, color = DesktopPalette.TextPrimary, modifier = Modifier.weight(1f))
+                                SpringButton(
+                                    enabled = uiState.isServerRunning && uiState.certFingerprint.length == 64,
+                                    onClick = { showQrDialog = true },
+                                    animationsEnabled = settings.animationsEnabled,
+                                    containerColor = accentColor
+                                ) { Text(DesktopStrings.qrConfigurePhoneBtn) }
+                            }
                             val remSec = ((pairCodePair.second - nowMs) / 1000L).coerceAtLeast(0L)
                             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(
@@ -198,12 +211,23 @@ fun DesktopSettingsCenter(
                                     color = if (remSec > 0L) DesktopPalette.TextSecondary else DesktopPalette.GlassError
                                 )
                                 Spacer(Modifier.weight(1f))
-                                SpringButton(
+                                SpringOutlinedButton(
                                     onClick = { pairCodePair = server.generatePairCode() },
                                     animationsEnabled = settings.animationsEnabled
                                 ) { Text(DesktopStrings.pairCodeRegenerate) }
                             }
                         }
+                    }
+                    if (showQrDialog) {
+                        val (_, bgBottom) = DesktopPalette.bgGradientColors(settings.bgTheme)
+                        DesktopQrPairingDialog(
+                            uiState = uiState,
+                            server = server,
+                            accentColor = accentColor,
+                            containerColor = bgBottom,
+                            animationsEnabled = settings.animationsEnabled,
+                            onDismiss = { showQrDialog = false }
+                        )
                     }
 
                     // 3. Paired Phones List

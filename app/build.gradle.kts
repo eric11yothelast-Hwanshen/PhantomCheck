@@ -119,6 +119,14 @@ dependencies {
 
     // #476 桌面端區網連線協定 DTO（手機端改用既有 OkHttp WebSocket 用戶端，移除 Ktor/Netty/BC/qrcode-kotlin）
     implementation(project(":shared"))
+
+    // #477 手機掃碼配對：ML Kit bundled（內建模型、離線可用、無 GMS 依賴）＋ CameraX 1.6.2
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    val cameraxVersion = "1.6.2"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
 }
 
 configurations.all {

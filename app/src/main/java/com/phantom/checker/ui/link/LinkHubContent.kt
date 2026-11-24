@@ -1,10 +1,14 @@
 package com.phantom.checker.ui.link
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -41,11 +45,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.phantom.checker.R
 import com.phantom.checker.service.DesktopLinkClient
 import com.phantom.checker.service.PhoneLinkConnState
 import com.phantom.checker.shared.LinkErrorCode
 import com.phantom.checker.shared.LinkProtocol
+import com.phantom.checker.shared.QrPairingPayloadV2
 import com.phantom.checker.util.DesktopLinkStore
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -53,10 +59,9 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * #476 手機端桌面連線共用內容（供 LinkHubActivity 與 MainActivity 底部「連線」分頁共用）：
+ * #476 / #477 手機端桌面連線共用內容（供 LinkHubActivity 與 MainActivity 底部「連線」分頁共用）：
  * - 手機作為 OkHttp WSS 用戶端，以 TLS SHA-256 指紋 pinning 連線桌面端 WSS 伺服器
- * - 顯示分類錯誤（逾時/不可達/TLS/指紋不符/版本不符/碼過期/碼錯）、mDNS 發現電腦、手動配對備援、
- *   已配對電腦列表（一鍵連線/移除）、未知事件、指令審計與連線診斷日誌
+ * - 支援 CameraX + ML Kit bundled 全屏掃碼配對、待配對資訊確認卡、CAMERA 權限引導、手動備援與診斷紀錄
  */
 @Composable
 fun LinkHubContent(
@@ -86,6 +91,36 @@ fun LinkHubContent(
         mutableStateOf(runCatching { DesktopLinkStore.getDiagnostics(appCtx) }.getOrDefault(emptyList()))
     }
 
+    // #477 QR Scanner & CAMERA permission states (intentionally non-saveable so Activity recreate never retains stale scan session)
+    var showQrScanner by remember { mutableStateOf(false) }
+    var cameraPermissionDenied by remember { mutableStateOf(false) }
+    var pendingQrPayload by remember { mutableStateOf<QrPairingPayloadV2?>(null) }
+    var qrErrorMsg by remember { mutableStateOf<String?>(null) }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            cameraPermissionDenied = false
+            qrErrorMsg = null
+            showQrScanner = true
+        } else {
+            cameraPermissionDenied = true
+            showQrScanner = false
+        }
+    }
+
+    fun launchQrScan() {
+        val granted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            cameraPermissionDenied = false
+            qrErrorMsg = null
+            showQrScanner = true
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
     // Manual pairing fallback inputs
     var manualHostPort by remember { mutableStateOf("") }
     var manualCode by remember { mutableStateOf("") }
@@ -95,6 +130,7 @@ fun LinkHubContent(
     DisposableEffect(Unit) {
         DesktopLinkClient.startDiscovery(appCtx)
         onDispose {
+            showQrScanner = false
             DesktopLinkClient.stopDiscovery()
         }
     }
@@ -116,56 +152,188 @@ fun LinkHubContent(
 
     val timeFmt = remember { SimpleDateFormat("MM/dd HH:mm:ss", Locale.getDefault()) }
     val classifiedErrorText = resolveClassifiedErrorText(clientStatus.lastErrorCode, clientStatus.lastErrorDetail)
+        ?: qrErrorMsg?.takeIf { it.isNotBlank() }
         ?: localError?.takeIf { it.isNotBlank() }
+
+    if (showQrScanner) {
+        QrScannerDialog(
+            onScanned = { raw ->
+                showQrScanner = false
+                when (val parsed = QrPairingParser.parse(raw)) {
+                    is QrParseResult.Valid -> {
+                        qrErrorMsg = null
+                        pendingQrPayload = parsed.payload
+                    }
+                    is QrParseResult.VersionMismatch -> {
+                        pendingQrPayload = null
+                        qrErrorMsg = ctx.getString(R.string.link_hub_qr_version_mismatch, parsed.foundVersion, parsed.expectedVersion)
+                    }
+                    is QrParseResult.Invalid -> {
+                        pendingQrPayload = null
+                        qrErrorMsg = ctx.getString(R.string.link_hub_qr_invalid, parsed.reason)
+                    }
+                }
+            },
+            onDismiss = { showQrScanner = false }
+        )
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 1. 自動連線總開關
+        // 1. 自動連線總開關 + 主掃碼配對入口
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
                 shape = RoundedCornerShape(16.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
-                        Text(
-                            text = stringResource(R.string.link_hub_client_master_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = stringResource(R.string.link_hub_client_master_desc),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(
+                                text = stringResource(R.string.link_hub_client_master_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = stringResource(R.string.link_hub_client_master_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = linkEnabled,
+                            onCheckedChange = { checked ->
+                                linkEnabled = checked
+                                runCatching {
+                                    DesktopLinkStore.setLinkEnabled(appCtx, checked)
+                                    if (checked) {
+                                        DesktopLinkClient.autoConnectIfPaired(appCtx)
+                                    } else {
+                                        DesktopLinkClient.disconnect(clearError = true)
+                                    }
+                                    localError = null
+                                }.onFailure { err ->
+                                    localError = err.message ?: err.javaClass.simpleName
+                                }
+                            }
                         )
                     }
-                    Switch(
-                        checked = linkEnabled,
-                        onCheckedChange = { checked ->
-                            linkEnabled = checked
-                            runCatching {
-                                DesktopLinkStore.setLinkEnabled(appCtx, checked)
-                                if (checked) {
-                                    DesktopLinkClient.autoConnectIfPaired(appCtx)
-                                } else {
-                                    DesktopLinkClient.disconnect(clearError = true)
+                    Button(
+                        onClick = { launchQrScan() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.link_hub_qr_scan_btn))
+                    }
+                }
+            }
+        }
+
+        // 1.5 CAMERA 權限拒絕引導卡
+        if (cameraPermissionDenied) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = stringResource(R.string.link_hub_camera_perm_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            text = stringResource(R.string.link_hub_camera_perm_rationale),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = Uri.fromParts("package", ctx.packageName, null)
+                                    }
+                                    runCatching { ctx.startActivity(intent) }
                                 }
-                                localError = null
-                            }.onFailure { err ->
-                                localError = err.message ?: err.javaClass.simpleName
+                            ) {
+                                Text(stringResource(R.string.link_hub_camera_open_settings))
+                            }
+                            Button(onClick = { launchQrScan() }) {
+                                Text(stringResource(R.string.link_hub_camera_retry))
                             }
                         }
-                    )
+                    }
+                }
+            }
+        }
+
+        // 1.8 待配對電腦資訊確認卡（掃碼成功後由使用者確認才建立 wss + 指紋 pinning 連線）
+        pendingQrPayload?.let { pending ->
+            item {
+                val mdnsMatch = discoveredDesktops.firstOrNull {
+                    it.host == pending.ip && it.port == pending.port &&
+                        (it.fingerprintPrefix.isBlank() || pending.fp.startsWith(it.fingerprintPrefix, ignoreCase = true))
+                }
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = stringResource(R.string.link_hub_qr_confirm_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = stringResource(R.string.link_hub_qr_confirm_pc, pending.name),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = stringResource(R.string.link_hub_qr_confirm_addr, pending.ip, pending.port),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            text = stringResource(R.string.link_hub_qr_confirm_fp, pending.fp.take(8)),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        if (mdnsMatch != null) {
+                            Text(
+                                text = stringResource(R.string.link_hub_qr_mdns_verified, mdnsMatch.friendlyName),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = {
+                                    DesktopLinkClient.pairAndConnect(
+                                        ctx = appCtx,
+                                        host = pending.ip,
+                                        port = pending.port,
+                                        code = pending.code,
+                                        expectedFingerprint = pending.fp,
+                                        desktopName = pending.name
+                                    )
+                                    pendingQrPayload = null
+                                }
+                            ) {
+                                Text(stringResource(R.string.link_hub_qr_confirm_btn))
+                            }
+                            OutlinedButton(onClick = { pendingQrPayload = null }) {
+                                Text(stringResource(R.string.link_hub_qr_cancel_btn))
+                            }
+                        }
+                    }
                 }
             }
         }

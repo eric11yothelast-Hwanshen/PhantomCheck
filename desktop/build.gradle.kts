@@ -32,6 +32,7 @@ dependencies {
     implementation("org.bouncycastle:bcprov-jdk18on:1.87")
     implementation("org.bouncycastle:bcpkix-jdk18on:1.87")
     implementation("org.jmdns:jmdns:3.6.5")
+    implementation("com.google.zxing:core:3.5.4")
     implementation("com.google.code.gson:gson:2.15.0")
 }
 

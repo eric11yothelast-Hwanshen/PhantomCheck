@@ -239,4 +239,15 @@ object DesktopStrings {
             t("指令等待手機回應逾時，請檢查區網連線", "Command timed out waiting for phone response")
         else -> t("連線錯誤：$code", "Connection error: $code")
     }
+
+    // #477 QR Pairing Dialog
+    val qrConfigurePhoneBtn get() = t("配置新手機（顯示 QR Code）", "Configure New Phone (Show QR Code)")
+    val qrDialogTitle get() = t("掃描 QR Code 配對新手機", "Scan QR Code to Pair New Phone")
+    val qrDialogHint get() = t(
+        "請在手機端開啟「幻訊 → 連線 → 掃描電腦 QR Code」，掃描下方條碼並確認電腦名稱與憑證指紋。",
+        "Open PhantomCheck on your phone → Link → Scan Desktop QR Code, then verify the PC name and fingerprint."
+    )
+    val qrSelectNicLabel get() = t("偵測到多張網卡，請選擇手機同區網的 IPv4 位址：", "Multiple network interfaces detected — pick the IPv4 on your phone's Wi-Fi:")
+    val qrNoLanIpError get() = t("尚未偵測到區網 IPv4 位址，請確認電腦已連上區域網路。", "No LAN IPv4 address detected. Check your network connection.")
+    val qrUnavailableHint get() = t("伺服器尚未就緒或無法產生 QR Code", "Server not ready or unable to render QR code")
 }

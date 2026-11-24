@@ -3003,6 +3003,23 @@
     <string name="link_hub_err_too_many">電腦端已達同時連線上限（最多 2 台手機）。</string>
     <string name="link_hub_err_generic">連線錯誤（%1$s）：%2$s</string>
     <string name="link_hub_paired_fp_prefix">指紋：%1$s…</string>
+    <string name="link_hub_qr_scan_btn">掃描電腦 QR Code 配對</string>
+    <string name="link_hub_qr_scan_title">掃描電腦端 QR Code</string>
+    <string name="link_hub_qr_scan_close">關閉</string>
+    <string name="link_hub_qr_scan_prompt">請對準電腦版 PhantomCheck 顯示的配對 QR Code</string>
+    <string name="link_hub_camera_perm_title">需要相機權限</string>
+    <string name="link_hub_camera_perm_rationale">相機權限僅用於掃描電腦上的配對 QR Code。請允許權限或前往應用程式設定開啟後重試。</string>
+    <string name="link_hub_camera_open_settings">前往應用程式設定</string>
+    <string name="link_hub_camera_retry">重試</string>
+    <string name="link_hub_qr_invalid">無效的配對 QR Code（%1$s），請掃描 PhantomCheck 桌面端產生的 QR Code。</string>
+    <string name="link_hub_qr_version_mismatch">QR 協定版本為 v%1$d，與手機版 v%2$d 不相容，請先更新雙端。</string>
+    <string name="link_hub_qr_confirm_title">確認配對電腦</string>
+    <string name="link_hub_qr_confirm_pc">電腦名稱：%1$s</string>
+    <string name="link_hub_qr_confirm_addr">區網位址：%1$s:%2$d</string>
+    <string name="link_hub_qr_confirm_fp">憑證指紋（前 8 碼）：%1$s…</string>
+    <string name="link_hub_qr_mdns_verified">已與區網 mDNS 廣播比對相符（%1$s）</string>
+    <string name="link_hub_qr_confirm_btn">確認並配對</string>
+    <string name="link_hub_qr_cancel_btn">取消</string>
     <string name="common_link">連線</string>
     <string name="chat_smart_search_citation_rule">\n\n【聯網查證模式】請結合上方使用者 RAG 記憶與個人化設定，並【僅依搜尋片段】回答。重要事實請在行內精簡標註來源（如 [1] 或網域名稱），嚴禁貼出整串長網址。若搜尋結果不足，請誠實說明「查無相關最新資料」，絕不以既有知識頂替或編造。</string>
 </resources>
