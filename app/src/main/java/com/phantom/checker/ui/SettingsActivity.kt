@@ -4399,6 +4399,33 @@ fun FilterSettingsScreen(
                             ThemePreferences.setHighContrast(appCtx, checked)
                         }
                     )
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    val animVersion = UiLayoutPrefs.version
+                    val animMode = remember(appCtx, animVersion) { UiLayoutPrefs.getAnimationMode(appCtx) }
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = stringResource(R.string.anim_mode_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = stringResource(R.string.anim_mode_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = animMode == UiLayoutPrefs.ANIM_MODE_BALANCED,
+                                onClick = { UiLayoutPrefs.setAnimationMode(appCtx, UiLayoutPrefs.ANIM_MODE_BALANCED) },
+                                label = { Text(stringResource(R.string.anim_mode_balanced)) }
+                            )
+                            FilterChip(
+                                selected = animMode == UiLayoutPrefs.ANIM_MODE_POWER_SAVER,
+                                onClick = { UiLayoutPrefs.setAnimationMode(appCtx, UiLayoutPrefs.ANIM_MODE_POWER_SAVER) },
+                                label = { Text(stringResource(R.string.anim_mode_power_saver)) }
+                            )
+                        }
+                    }
 
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     var currentLangMode by remember { mutableStateOf(com.phantom.checker.util.AppLocaleHelper.getEffectiveMode(appCtx)) }

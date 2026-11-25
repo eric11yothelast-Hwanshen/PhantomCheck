@@ -200,27 +200,74 @@ object PhantomMotion {
         dampingRatio = 0.85f,
         stiffness = Spring.StiffnessMediumLow,
     )
+
+    // ── Aurora III 手機連線頁動效常數（C1–C10，#520，僅追加不改既有 M/N 系列） ──
+
+    const val LinkHeroTintMs = 240
+    const val LinkPulseHalfCycleMs = 850
+    const val LinkPulseMaxSec = 60
+    const val LinkPopInAlphaMs = 160
+    const val LinkSuccessRingMs = 480
+    const val LinkStatusDotColorMs = 200
+    const val LinkPowerSaverFadeMs = 80
+}
+
+/** #520 手機端有效動效設定檔（BALANCED / POWER_SAVER / OFF 當系統 scale=0） */
+enum class PhoneMotionProfile {
+    BALANCED,
+    POWER_SAVER,
+    OFF;
+
+    val isFull: Boolean get() = this == BALANCED
+    val isReduced: Boolean get() = this != BALANCED
 }
 
 /**
- * 讀取系統「動畫時長縮放」：＝0 代表使用者關閉動畫。
- * 僅用於手動 delay／位移類 stagger；Compose 內建動畫 API 自己會處理 scale=0。
+ * #520 反應式讀取系統 ANIMATOR_DURATION_SCALE（透過 ContentObserver）與使用者動畫模式（UiLayoutPrefs.version）。
  */
 @Composable
-fun rememberMotionEnabled(): Boolean {
+fun rememberMotionProfile(): PhoneMotionProfile {
     val ctx = LocalContext.current
-    return remember(ctx) {
-        try {
-            Settings.Global.getFloat(
-                ctx.contentResolver,
-                Settings.Global.ANIMATOR_DURATION_SCALE,
-                1f,
-            ) > 0f
-        } catch (_: Exception) {
-            true
+    val prefsVersion = com.phantom.checker.ui.UiLayoutPrefs.version
+    val systemScale = remember(ctx) {
+        androidx.compose.runtime.mutableFloatStateOf(
+            try {
+                Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+            } catch (_: Exception) {
+                1f
+            }
+        )
+    }
+    androidx.compose.runtime.DisposableEffect(ctx) {
+        val resolver = ctx.contentResolver
+        val uri = Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE)
+        val observer = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                systemScale.floatValue = try {
+                    Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+                } catch (_: Exception) {
+                    1f
+                }
+            }
+        }
+        runCatching { resolver.registerContentObserver(uri, false, observer) }
+        onDispose {
+            runCatching { resolver.unregisterContentObserver(observer) }
         }
     }
+    val userMode = remember(ctx, prefsVersion) { com.phantom.checker.ui.UiLayoutPrefs.getAnimationMode(ctx) }
+    return when {
+        systemScale.floatValue <= 0f -> PhoneMotionProfile.OFF
+        userMode == com.phantom.checker.ui.UiLayoutPrefs.ANIM_MODE_POWER_SAVER -> PhoneMotionProfile.POWER_SAVER
+        else -> PhoneMotionProfile.BALANCED
+    }
 }
+
+/**
+ * 讀取系統「動畫時長縮放」與使用者動畫模式（#520 反應式升級，保留原函式簽名與既有 M1–M13/N1–N7 呼叫點零改動）。
+ */
+@Composable
+fun rememberMotionEnabled(): Boolean = rememberMotionProfile() == PhoneMotionProfile.BALANCED
 
 /**
  * 進場播放紀錄（每個分頁組合一份，於 MainActivity 分頁容器提供）：

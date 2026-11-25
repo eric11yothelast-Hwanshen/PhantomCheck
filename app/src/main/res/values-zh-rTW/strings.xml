@@ -3149,4 +3149,18 @@
     <string name="cross_end_open_url_btn">在電腦開啟</string>
     <string name="cross_end_open_url_sent">已傳送網址至電腦瀏覽器開啟</string>
     <string name="cross_end_open_url_invalid">僅允許 http:// 或 https:// 網址</string>
+    <!-- #520 v5.0.0 編排輪：全域動畫模式與手機連線頁 -->
+    <string name="anim_mode_title">動畫模式</string>
+    <string name="anim_mode_desc">平衡模式保留完整 draw-phase 轉場；省電模式將動畫降至最低以節省電量，切換後即刻全域生效。</string>
+    <string name="anim_mode_balanced">平衡模式</string>
+    <string name="anim_mode_power_saver">省電模式</string>
+    <string name="catalog_anim_mode_aliases">動畫,動效,省電,減少動態效果,轉場,流暢</string>
+    <string name="link_hub_quick_qr">掃 QR</string>
+    <string name="link_hub_quick_rescan">重掃區網</string>
+    <string name="link_hub_quick_manual">手動輸入</string>
+    <string name="link_hub_quick_wifi">Wi-Fi</string>
+    <string name="link_hub_section_my_pcs">我的電腦（%1$d）</string>
+    <string name="link_hub_section_nearby_pcs">附近的電腦</string>
+    <string name="link_hub_advanced_logs_group">進階與紀錄</string>
+    <string name="link_hub_connect_recent_pc">連線到「%1$s」</string>
 </resources>

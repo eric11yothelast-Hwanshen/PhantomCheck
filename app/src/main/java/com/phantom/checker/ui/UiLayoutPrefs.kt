@@ -18,7 +18,11 @@ object UiLayoutPrefs {
     private const val KEY_RECENT_SETTING_IDS = "recent_setting_ids"
     private const val KEY_RECENT_SEARCHES = "recent_global_searches"
     private const val KEY_V4_TOUR_PROMPT_SHOWN = "v4_tour_prompt_shown"
+    private const val KEY_ANIM_MODE = "anim_mode"
     private const val DELIMITER = "\u001F"
+
+    const val ANIM_MODE_BALANCED = "balanced"
+    const val ANIM_MODE_POWER_SAVER = "power_saver"
 
     const val MAX_PINNED = 6
     const val MAX_RECENT_SETTINGS = 5
@@ -164,6 +168,21 @@ object UiLayoutPrefs {
     fun setSeenV4TourPrompt(context: Context, seen: Boolean) {
         prefs(context).edit()
             .putBoolean(KEY_V4_TOUR_PROMPT_SHOWN, seen)
+            .apply()
+        bump()
+    }
+
+    // ── #520 v5.0.0 全域動畫模式（平衡 / 省電，寫入即 bump() 全域生效） ──
+
+    fun getAnimationMode(context: Context): String =
+        prefs(context).getString(KEY_ANIM_MODE, ANIM_MODE_BALANCED)
+            ?.takeIf { it == ANIM_MODE_BALANCED || it == ANIM_MODE_POWER_SAVER }
+            ?: ANIM_MODE_BALANCED
+
+    fun setAnimationMode(context: Context, mode: String) {
+        val normalized = if (mode == ANIM_MODE_POWER_SAVER) ANIM_MODE_POWER_SAVER else ANIM_MODE_BALANCED
+        prefs(context).edit()
+            .putString(KEY_ANIM_MODE, normalized)
             .apply()
         bump()
     }

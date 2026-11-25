@@ -3149,4 +3149,18 @@
     <string name="cross_end_open_url_btn">Open on PC</string>
     <string name="cross_end_open_url_sent">URL sent to PC browser</string>
     <string name="cross_end_open_url_invalid">Only http:// or https:// URLs are allowed</string>
+    <!-- #520 v5.0.0 Orchestration: Global Animation Mode & Phone Link Hub -->
+    <string name="anim_mode_title">Animation mode</string>
+    <string name="anim_mode_desc">Balanced enables full draw-phase transitions; Power-saver minimizes motion for battery savings. Takes effect immediately.</string>
+    <string name="anim_mode_balanced">Balanced</string>
+    <string name="anim_mode_power_saver">Power-saver</string>
+    <string name="catalog_anim_mode_aliases">animation,motion,power saver,battery,reduce motion,transition</string>
+    <string name="link_hub_quick_qr">Scan QR</string>
+    <string name="link_hub_quick_rescan">Rescan LAN</string>
+    <string name="link_hub_quick_manual">Manual</string>
+    <string name="link_hub_quick_wifi">Wi-Fi</string>
+    <string name="link_hub_section_my_pcs">My PCs (%1$d)</string>
+    <string name="link_hub_section_nearby_pcs">Nearby PCs</string>
+    <string name="link_hub_advanced_logs_group">Advanced &amp; Logs</string>
+    <string name="link_hub_connect_recent_pc">Connect to %1$s</string>
 </resources>
