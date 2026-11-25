@@ -3131,4 +3131,7 @@
     <string name="catalog_notif_subtitle_mode_title">Persistent notification subtitle</string>
     <string name="catalog_notif_subtitle_mode_desc">Show desktop link status (falls back to unread count when unpaired), unread count, both, or hide</string>
     <string name="catalog_notif_subtitle_mode_aliases">persistent notification,subtitle,desktop link,connection status,unread,status bar</string>
+    <!-- #516 mDNS Discovery Reliability -->
+    <string name="link_hub_mdns_scanning">Scanning…</string>
+    <string name="link_hub_mdns_fallback_manual">Can\'t find PC? Use Manual Pairing →</string>
 </resources>

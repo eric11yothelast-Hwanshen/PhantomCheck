@@ -502,8 +502,9 @@ fun LinkHubContent(
             }
         }
 
-        // 3. 區網 mDNS 發現的桌面端（含 TTL 過期自動清理＋重新掃描鈕）
+        // 3. 區網 mDNS 發現的桌面端（含 TTL 過期自動清理＋MulticastLock 掃描狀態＋重新掃描鈕）
         item {
+            val isScanningLan by DesktopLinkClient.isScanningLan.collectAsState()
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.35f))),
                 shape = RoundedCornerShape(16.dp)
@@ -514,11 +515,23 @@ fun LinkHubContent(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = stringResource(R.string.link_hub_discovered_pcs_title),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.link_hub_discovered_pcs_title),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            if (isScanningLan) {
+                                Text(
+                                    text = stringResource(R.string.link_hub_mdns_scanning),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                         TextButton(onClick = { DesktopLinkClient.rescanNow(appCtx) }) {
                             Text(stringResource(R.string.link_hub_rescan_btn))
                         }
@@ -530,6 +543,10 @@ fun LinkHubContent(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(Modifier.height(6.dp))
+                        TextButton(onClick = { manualExpanded = true }) {
+                            Text(stringResource(R.string.link_hub_mdns_fallback_manual))
+                        }
                     } else {
                         discoveredDesktops.forEachIndexed { idx, pc ->
                             if (idx > 0) HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))

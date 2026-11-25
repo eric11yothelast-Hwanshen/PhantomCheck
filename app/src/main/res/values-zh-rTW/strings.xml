@@ -3131,4 +3131,7 @@
     <string name="catalog_notif_subtitle_mode_title">常駐通知副標內容</string>
     <string name="catalog_notif_subtitle_mode_desc">可選顯示電腦連線狀態（未配對時自動回退未讀數）、未讀數、兩者並顯或隱藏</string>
     <string name="catalog_notif_subtitle_mode_aliases">常駐通知,副標,小字,電腦連線,連線狀態,未讀數,通知欄</string>
+    <!-- #516 區網 mDNS 探索可靠性 -->
+    <string name="link_hub_mdns_scanning">掃描中…</string>
+    <string name="link_hub_mdns_fallback_manual">找不到電腦？改用手動配對 →</string>
 </resources>

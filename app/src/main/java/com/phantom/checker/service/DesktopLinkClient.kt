@@ -104,6 +104,14 @@ object DesktopLinkClient {
     private val _discoveredDesktops = MutableStateFlow<List<DiscoveredDesktop>>(emptyList())
     val discoveredDesktops: StateFlow<List<DiscoveredDesktop>> = _discoveredDesktops.asStateFlow()
 
+    private val _isScanningLan = MutableStateFlow(false)
+    val isScanningLan: StateFlow<Boolean> = _isScanningLan.asStateFlow()
+
+    @Volatile
+    private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
+    @Volatile
+    private var mdnsRestartJob: Job? = null
+
     @Volatile
     private var activeWs: WebSocket? = null
 
@@ -1867,7 +1875,8 @@ object DesktopLinkClient {
                 override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
                     DesktopLinkStore.recordDiagnostic(appCtx, "mDNS", "RESOLVE_FAILED", "code=$errorCode attempt=$attempt")
                     synchronized(resolveLock) { isResolvingService = false }
-                    if (errorCode == NsdManager.FAILURE_ALREADY_ACTIVE && attempt < 3 && discoveryListener != null) {
+                    val retryable = errorCode == NsdManager.FAILURE_ALREADY_ACTIVE || errorCode == NsdManager.FAILURE_INTERNAL_ERROR
+                    if (retryable && attempt < 3 && discoveryListener != null) {
                         val backoffMs = 500L * (1L shl attempt)
                         scope.launch {
                             delay(backoffMs)
@@ -1915,12 +1924,39 @@ object DesktopLinkClient {
     }
 
     @Synchronized
+    private fun acquireMulticastLock(appCtx: Context) {
+        if (multicastLock?.isHeld == true) return
+        runCatching {
+            val wm = appCtx.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager ?: return
+            val lock = multicastLock ?: wm.createMulticastLock("phantomcheck:mdns").apply {
+                setReferenceCounted(false)
+                multicastLock = this
+            }
+            if (!lock.isHeld) lock.acquire()
+        }.onFailure { err ->
+            DesktopLinkStore.recordDiagnostic(appCtx, "mDNS", "MULTICAST_LOCK_WARN", err.javaClass.simpleName)
+        }
+    }
+
+    @Synchronized
+    private fun releaseMulticastLock() {
+        val lock = multicastLock
+        multicastLock = null
+        if (lock != null && lock.isHeld) {
+            runCatching { lock.release() }
+        }
+    }
+
+    @Synchronized
     private fun startDiscoveryInternal(appCtx: Context) {
         if (discoveryListener != null) return
+        acquireMulticastLock(appCtx)
         runCatching {
             val mgr = appCtx.getSystemService(Context.NSD_SERVICE) as? NsdManager ?: return
             val listener = object : NsdManager.DiscoveryListener {
-                override fun onDiscoveryStarted(regType: String) {}
+                override fun onDiscoveryStarted(regType: String) {
+                    _isScanningLan.value = true
+                }
                 override fun onServiceFound(serviceInfo: NsdServiceInfo) {
                     if (!serviceInfo.serviceType.contains("_phantomcheck", ignoreCase = true)) return
                     enqueueServiceResolve(appCtx, mgr, serviceInfo, attempt = 0)
@@ -1928,18 +1964,23 @@ object DesktopLinkClient {
                 override fun onServiceLost(serviceInfo: NsdServiceInfo) {
                     _discoveredDesktops.value = _discoveredDesktops.value.filterNot { it.serviceName == serviceInfo.serviceName }
                 }
-                override fun onDiscoveryStopped(serviceType: String) {}
+                override fun onDiscoveryStopped(serviceType: String) {
+                    _isScanningLan.value = false
+                }
                 override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                    _isScanningLan.value = false
                     DesktopLinkStore.recordDiagnostic(appCtx, "mDNS", "DISCOVERY_START_FAILED", "code=$errorCode")
                     pauseDiscoveryForScreenOff()
                 }
                 override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
+                    _isScanningLan.value = false
                     DesktopLinkStore.recordDiagnostic(appCtx, "mDNS", "DISCOVERY_STOP_FAILED", "code=$errorCode")
                 }
             }
             mgr.discoverServices(LinkProtocol.MDNS_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener)
             nsdManager = mgr
             discoveryListener = listener
+            _isScanningLan.value = true
             mdnsTtlSweepJob?.cancel()
             mdnsTtlSweepJob = scope.launch {
                 while (discoveryListener != null) {
@@ -1947,7 +1988,25 @@ object DesktopLinkClient {
                     pruneExpiredDiscovered()
                 }
             }
+            // #516 OEM 省電防卡死：每 35 秒若仍未發現任何電腦且螢幕開啟，安全重啟 discoverServices
+            mdnsRestartJob?.cancel()
+            mdnsRestartJob = scope.launch {
+                while (discoveryRequested && !isScreenOff) {
+                    delay(35_000L)
+                    if (discoveryRequested && !isScreenOff && _discoveredDesktops.value.isEmpty()) {
+                        DesktopLinkStore.recordDiagnostic(appCtx, "mDNS", "PERIODIC_RESTART", "refreshing listener")
+                        pauseDiscoveryForScreenOff()
+                        delay(350L)
+                        if (discoveryRequested && !isScreenOff) {
+                            startDiscoveryInternal(appCtx)
+                        }
+                        break
+                    }
+                }
+            }
         }.onFailure { err ->
+            _isScanningLan.value = false
+            releaseMulticastLock()
             DesktopLinkStore.recordDiagnostic(appCtx, "mDNS", "DISCOVERY_ERR", err.javaClass.simpleName)
         }
     }
@@ -1956,6 +2015,9 @@ object DesktopLinkClient {
     private fun pauseDiscoveryForScreenOff() {
         mdnsTtlSweepJob?.cancel()
         mdnsTtlSweepJob = null
+        mdnsRestartJob?.cancel()
+        mdnsRestartJob = null
+        _isScanningLan.value = false
         val mgr = nsdManager
         val listener = discoveryListener
         nsdManager = null
@@ -1970,6 +2032,7 @@ object DesktopLinkClient {
                     android.util.Log.w("DesktopLinkClient", "stopServiceDiscovery failed: ${err.javaClass.simpleName}")
                 }
         }
+        releaseMulticastLock()
     }
 
     @Synchronized

@@ -53,7 +53,7 @@ class DesktopMdnsBroadcaster {
                     "fp" to fingerprint.take(8),
                     "v" to LinkProtocol.PROTOCOL_VERSION.toString()
                 )
-                val info = ServiceInfo.create(serviceType, svcName, port, 0, 0, txtProps)
+                val info = ServiceInfo.create(serviceType, svcName, port, 0, 0, true, txtProps)
                 instance.registerService(info)
                 jmdns = instance
                 val ipText = bindAddr?.hostAddress ?: listSiteLocalIpv4Addresses().firstOrNull().orEmpty()
@@ -63,7 +63,7 @@ class DesktopMdnsBroadcaster {
                     serviceName = svcName,
                     lastError = null
                 )
-                DesktopDiagnostics.info("mDNS", "Registered $svcName ($serviceType) on $ipText:$port (v=${LinkProtocol.PROTOCOL_VERSION}, fp=${fingerprint.take(8)})")
+                DesktopDiagnostics.info("mDNS", "Registered persistent $svcName ($serviceType) on $ipText:$port (v=${LinkProtocol.PROTOCOL_VERSION}, fp=${fingerprint.take(8)})")
             }.onFailure { err ->
                 val msg = err.message ?: err.javaClass.simpleName
                 DesktopDiagnostics.warn("mDNS", "Broadcast registration failed: $msg")
