@@ -23,7 +23,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -147,6 +149,9 @@ fun DesktopApp(
     server: DesktopLinkServer = remember { DesktopLinkServer() },
     manageLifecycle: Boolean = true,
     isWindowVisible: Boolean = true,
+    requestedTabKey: String? = null,
+    onRequestedTabConsumed: () -> Unit = {},
+    triggerUpdateCheckTick: Int = 0,
     onMirrorNotification: (title: String, body: String) -> Unit = { _, _ -> }
 ) {
     val gson = remember { Gson() }
@@ -343,6 +348,31 @@ fun DesktopApp(
         }
     }
 
+    // #497 Handle tray menu tab navigation & update check trigger
+    LaunchedEffect(requestedTabKey) {
+        val key = requestedTabKey ?: return@LaunchedEffect
+        runCatching { DesktopTab.valueOf(key) }.getOrNull()?.let { activeTab = it }
+        onRequestedTabConsumed()
+    }
+    LaunchedEffect(triggerUpdateCheckTick) {
+        if (triggerUpdateCheckTick <= 0) return@LaunchedEffect
+        when (val res = DesktopUpdater.checkForUpdate(isAutoStartup = false)) {
+            is DesktopUpdateOutcome.UpdateAvailable -> pendingUpdateDialog = res
+            is DesktopUpdateOutcome.UpToDate -> actionFeedback = "${DesktopStrings.updateUpToDate} (v${res.currentVersion})"
+            is DesktopUpdateOutcome.Error -> actionFeedback = res.message
+            is DesktopUpdateOutcome.SilentSkipped -> Unit
+        }
+    }
+    val navToConv by DesktopNotificationBus.navigateToConversation.collectAsState()
+    LaunchedEffect(navToConv?.seq) {
+        val ev = navToConv ?: return@LaunchedEffect
+        activeTab = DesktopTab.MESSAGES
+        val targetKey = if (ev.conversationKey.isNotBlank()) "${ev.packageName}::${ev.conversationKey}" else "${ev.packageName}::${ev.sender}"
+        selectedConvKey = targetKey
+        if (ev.id > 0L) selectedMsgId = ev.id
+        DesktopNotificationBus.consumeNavigation()
+    }
+
     LaunchedEffect(Unit) {
         server.events.collect { env ->
             when (env.type) {
@@ -394,17 +424,8 @@ fun DesktopApp(
                     }
                     push.items.firstOrNull()?.let { newest ->
                         val curSettings = DesktopSettingsStore.state.value
-                        val preview = newest.preview.take(curSettings.previewLength)
-                        val appName = DesktopAppLabels.resolveLabel(newest.packageName, newest.appLabel)
-                        if (curSettings.mirrorMode == MirrorDisplayMode.BANNER || curSettings.mirrorMode == MirrorDisplayMode.BOTH) {
-                            mirrorToast = "${DesktopStrings.newMessageMirror}[$appName] ${newest.sender}: $preview"
-                        }
-                        if ((curSettings.mirrorMode == MirrorDisplayMode.NATIVE || curSettings.mirrorMode == MirrorDisplayMode.BOTH) &&
-                            curSettings.nativeNotifications && !curSettings.isInDndWindow()
-                        ) {
-                            onMirrorNotification("$appName · ${newest.sender}", preview)
-                        }
-                        if (curSettings.notificationSoundEnabled && !curSettings.isInDndWindow()) {
+                        DesktopNotificationBus.dispatchNewMessage(newest, curSettings, onMirrorNotification)
+                        if (curSettings.notificationSoundEnabled && !curSettings.isInDndWindow() && !DesktopNotificationBus.isPausedNow()) {
                             runCatching { Toolkit.getDefaultToolkit().beep() }
                         }
                     }
@@ -665,6 +686,7 @@ fun DesktopApp(
                             editingTodo = null
                             pendingUpdateDialog = null
                             mirrorToast = null
+                            DesktopNotificationBus.clearBanner()
                             actionFeedback = null
                             true
                         }
@@ -841,24 +863,68 @@ fun DesktopApp(
 
                     // Right Main Content Area
                     Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(24.dp)) {
-                        // Mirror notification banner
+                        // #497 A: Top Mirror Notification Banner (auto-dismiss + hover-pause + overwrite latest + click to jump)
+                        val bannerEvent by DesktopNotificationBus.latestBanner.collectAsState()
+                        val bannerHoverSource = remember { MutableInteractionSource() }
+                        val bannerHovered by bannerHoverSource.collectIsHoveredAsState()
+                        LaunchedEffect(bannerEvent?.seq, bannerHovered, settings.bannerDurationSec) {
+                            if (bannerEvent == null || bannerHovered) return@LaunchedEffect
+                            val sec = settings.bannerDurationSec
+                            if (sec <= 0) return@LaunchedEffect
+                            delay(sec * 1000L)
+                            DesktopNotificationBus.clearBanner()
+                        }
                         AnimatedVisibility(
-                            visible = mirrorToast != null,
+                            visible = bannerEvent != null,
                             enter = fadeIn(tween(150)) + slideInVertically { -it / 2 },
                             exit = fadeOut(tween(150)) + slideOutVertically { -it / 2 }
                         ) {
-                            mirrorToast?.let { toast ->
+                            bannerEvent?.let { ev ->
+                                val riskDotColor = when (ev.riskLabel.lowercase()) {
+                                    "scam" -> DesktopPalette.GlassError
+                                    "suspicious" -> DesktopPalette.GlassWarning
+                                    else -> DesktopPalette.GlassSuccess
+                                }
                                 GlassCard(
-                                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(bottom = 12.dp)
+                                        .hoverable(bannerHoverSource)
+                                        .clickable {
+                                            DesktopNotificationBus.clearBanner()
+                                            DesktopNotificationBus.requestNavigateTo(ev)
+                                        },
                                     containerColor = accentColor.copy(alpha = 0.16f)
                                 ) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(toast, style = MaterialTheme.typography.bodySmall, color = tokens.textPrimary, modifier = Modifier.weight(1f))
-                                        TextButton(onClick = { mirrorToast = null }) { Text(DesktopStrings.dismiss) }
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .clip(CircleShape)
+                                                .background(riskDotColor)
+                                        )
+                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text(
+                                                text = "${ev.appLabel} · ${ev.sender}",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = tokens.textPrimary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = ev.preview.take(settings.previewLength),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = tokens.textSecondary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        TextButton(onClick = { DesktopNotificationBus.clearBanner() }) { Text(DesktopStrings.dismiss) }
                                     }
                                 }
                             }

@@ -329,8 +329,10 @@ object DesktopStrings {
 
     fun mirrorModeLabel(m: MirrorDisplayMode): String = when (m) {
         MirrorDisplayMode.BANNER -> t("視窗橫幅 (Banner)", "In-App Banner")
+        MirrorDisplayMode.TOAST -> t("右下小彈窗 (Toast)", "Corner Toast")
         MirrorDisplayMode.NATIVE -> t("系統通知 (Native)", "System Notification")
-        MirrorDisplayMode.BOTH -> t("兩者皆開 (Both)", "Both")
+        MirrorDisplayMode.BOTH -> t("橫幅＋系統 (Both)", "Banner + System")
+        MirrorDisplayMode.COMBO -> t("全開組合 (Combo)", "All Combined")
     }
 
     fun bgThemeLabel(b: BgThemePreset): String = when (b) {
@@ -419,4 +421,47 @@ object DesktopStrings {
     val autoStartRecheckBtn get() = t("重新檢查狀態", "Re-check Status")
     val autoStartPathMismatchDesc get() = t("偵測到舊版安裝路徑的啟動項目，點擊修復以指向目前執行檔。", "Detected stale startup path from a previous install. Click Repair to update it.")
     val autoStartRepairBtn get() = t("立即修復路徑", "Repair Path")
+
+    // #497 Notification Center 4-in-1 (Banner / Corner Toast / Floating Assistant / Tray Menu)
+    val notifCenterTitle get() = t("4. 通知中心（橫幅／右下彈窗／懸浮助手／勿擾）", "4. Notification Center (Banner / Toast / Floating Assistant / DND)")
+    val enableBanner get() = t("啟用頂部橫幅通知", "Enable Top Banner Notification")
+    val bannerDurationLabel get() = t("橫幅停留秒數", "Banner Auto-Dismiss")
+    fun durationSecLabel(sec: Int): String = if (sec <= 0) t("不自動收回", "Keep Open") else t("${sec} 秒", "${sec}s")
+    val enableToast get() = t("啟用右下角小彈窗（全螢幕自動隱藏）", "Enable Corner Toast (hidden in fullscreen)")
+    val toastDurationLabel get() = t("小彈窗停留秒數", "Toast Duration")
+    val floatingAssistantTitle get() = t("懸浮助手", "Floating Assistant")
+    val enableFloatingAssistant get() = t("啟用桌面懸浮球（可拖曳吸邊＋AI 快問＋氣泡通知）", "Enable Floating Orb (drag & snap, quick AI, message bubbles)")
+    val floatingOrbSizeLabel get() = t("懸浮球尺寸", "Orb Size")
+    val floatingOrbOpacityLabel get() = t("閒置透明度", "Idle Opacity")
+    val floatingBubbleSecLabel get() = t("氣泡停留秒數", "Bubble Duration")
+    val floatingBubbleContentLabel get() = t("氣泡顯示內容", "Bubble Content")
+    val floatingClickActionLabel get() = t("點擊懸浮球行為", "Orb Click Action")
+    val floatingAiHint get() = t("輸入問題給 AI 助手…", "Ask AI Assistant…")
+
+    fun floatingBubbleContentLabel(c: FloatingBubbleContent): String = when (c) {
+        FloatingBubbleContent.APP_ONLY -> t("僅 App 名稱", "App Name Only")
+        FloatingBubbleContent.SENDER_PREVIEW -> t("寄件人＋摘要", "Sender + Preview")
+        FloatingBubbleContent.FULL_PREVIEW -> t("完整摘要", "Full Preview")
+    }
+
+    fun floatingClickActionLabel(a: FloatingClickAction): String = when (a) {
+        FloatingClickAction.OPEN_AI -> t("展開小型 AI 視窗", "Open Mini AI Chat")
+        FloatingClickAction.OPEN_MAIN -> t("開啟主視窗", "Open Main Window")
+    }
+
+    // #497 Expanded 8-item System Tray Menu
+    fun trayConnStatus(connectedCount: Int, port: Int, running: Boolean): String = when {
+        !running -> t("連線狀態：伺服器已停止", "Status: Server Stopped")
+        connectedCount > 0 -> t("連線狀態：已連線 $connectedCount 台手機（埠 $port）", "Status: $connectedCount Phone(s) Connected (Port $port)")
+        else -> t("連線狀態：等待連線（埠 $port）", "Status: Listening (Port $port)")
+    }
+    val trayStartServer get() = t("啟動 WSS 伺服器", "Start WSS Server")
+    val trayStopServer get() = t("停止 WSS 伺服器", "Stop WSS Server")
+    val trayCheckUpdate get() = t("檢查更新", "Check for Updates")
+    val trayPauseNotif1h get() = t("暫停通知 1 小時", "Pause Notifications (1 hr)")
+    val trayResumeNotif get() = t("恢復通知（目前暫停中）", "Resume Notifications (Paused)")
+    fun trayToggleDnd(enabled: Boolean): String =
+        if (enabled) t("勿擾模式：開啟（點擊關閉）", "Do Not Disturb: On (Click to Disable)")
+        else t("勿擾模式：關閉（點擊開啟）", "Do Not Disturb: Off (Click to Enable)")
+    val trayOpenSettings get() = t("開啟設定", "Open Settings")
 }

@@ -610,10 +610,122 @@ fun DesktopSettingsCenter(
                         }
                     }
 
-                    // 4. Native Notifications & DND (with Start/End Hour Picker supporting overnight window)
+                    // 4. Notification Center (#497 Banner / Corner Toast / Floating Assistant / Native / DND)
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text(DesktopStrings.sysNativeNotifTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
+                            Text(DesktopStrings.notifCenterTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
+
+                            // A. Top Banner
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(DesktopStrings.enableBanner, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
+                                Switch(
+                                    checked = settings.bannerEnabled,
+                                    onCheckedChange = { v -> DesktopSettingsStore.update { it.copy(bannerEnabled = v) } }
+                                )
+                            }
+                            if (settings.bannerEnabled) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(DesktopStrings.bannerDurationLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                    listOf(3, 5, 8, 0).forEach { sec ->
+                                        FilterChip(
+                                            selected = settings.bannerDurationSec == sec,
+                                            onClick = { DesktopSettingsStore.update { it.copy(bannerDurationSec = sec) } },
+                                            label = { Text(DesktopStrings.durationSecLabel(sec)) }
+                                        )
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(color = tokens.border)
+
+                            // B. Bottom-Right Corner Toast
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(DesktopStrings.enableToast, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
+                                Switch(
+                                    checked = settings.toastEnabled,
+                                    onCheckedChange = { v -> DesktopSettingsStore.update { it.copy(toastEnabled = v) } }
+                                )
+                            }
+                            if (settings.toastEnabled) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(DesktopStrings.toastDurationLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                    listOf(3, 5, 8).forEach { sec ->
+                                        FilterChip(
+                                            selected = settings.toastDurationSec == sec,
+                                            onClick = { DesktopSettingsStore.update { it.copy(toastDurationSec = sec) } },
+                                            label = { Text(DesktopStrings.durationSecLabel(sec)) }
+                                        )
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(color = tokens.border)
+
+                            // C. Floating Assistant Orb
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(DesktopStrings.enableFloatingAssistant, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary, modifier = Modifier.weight(1f))
+                                Switch(
+                                    checked = settings.floatingAssistantEnabled,
+                                    onCheckedChange = { v -> DesktopSettingsStore.update { it.copy(floatingAssistantEnabled = v) } }
+                                )
+                            }
+                            if (settings.floatingAssistantEnabled) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(DesktopStrings.floatingOrbSizeLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                    listOf(28, 36, 48).forEach { sz ->
+                                        FilterChip(
+                                            selected = settings.floatingOrbSizeDp == sz,
+                                            onClick = { DesktopSettingsStore.update { it.copy(floatingOrbSizeDp = sz) } },
+                                            label = { Text("${sz}px") }
+                                        )
+                                    }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(DesktopStrings.floatingOrbOpacityLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                    listOf(0.45f to "45%", 0.72f to "72%", 0.95f to "95%").forEach { (op, lbl) ->
+                                        FilterChip(
+                                            selected = kotlin.math.abs(settings.floatingOrbOpacity - op) < 0.05f,
+                                            onClick = { DesktopSettingsStore.update { it.copy(floatingOrbOpacity = op) } },
+                                            label = { Text(lbl) }
+                                        )
+                                    }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(DesktopStrings.floatingBubbleSecLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                    listOf(3, 5, 8).forEach { sec ->
+                                        FilterChip(
+                                            selected = settings.floatingBubbleSec == sec,
+                                            onClick = { DesktopSettingsStore.update { it.copy(floatingBubbleSec = sec) } },
+                                            label = { Text(DesktopStrings.durationSecLabel(sec)) }
+                                        )
+                                    }
+                                }
+                                @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(DesktopStrings.floatingBubbleContentLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                    FloatingBubbleContent.entries.forEach { contentMode ->
+                                        FilterChip(
+                                            selected = settings.floatingBubbleContent == contentMode,
+                                            onClick = { DesktopSettingsStore.update { it.copy(floatingBubbleContent = contentMode) } },
+                                            label = { Text(DesktopStrings.floatingBubbleContentLabel(contentMode)) }
+                                        )
+                                    }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(DesktopStrings.floatingClickActionLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                    FloatingClickAction.entries.forEach { act ->
+                                        FilterChip(
+                                            selected = settings.floatingClickAction == act,
+                                            onClick = { DesktopSettingsStore.update { it.copy(floatingClickAction = act) } },
+                                            label = { Text(DesktopStrings.floatingClickActionLabel(act)) }
+                                        )
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(color = tokens.border)
+
+                            // Native OS Tray Notifications & DND
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text(DesktopStrings.enableNativeNotif, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
                                 Switch(

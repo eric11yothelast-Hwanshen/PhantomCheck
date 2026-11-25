@@ -16,7 +16,9 @@ enum class CloseBehavior { MINIMIZE_TO_TRAY, EXIT_APP }
 enum class AccentPreset(val key: String) { PURPLE("purple"), BLUE("blue"), GREEN("green"), ORANGE("orange"), PINK("pink"), CYAN("cyan") }
 enum class UiDensity(val key: String) { COMPACT("compact"), STANDARD("standard"), COMFORTABLE("comfortable") }
 enum class MessageCardStyle(val key: String) { CARD("card"), COMPACT_LIST("compact_list") }
-enum class MirrorDisplayMode(val key: String) { BANNER("banner"), NATIVE("native"), BOTH("both") }
+enum class MirrorDisplayMode(val key: String) { BANNER("banner"), TOAST("toast"), NATIVE("native"), BOTH("both"), COMBO("combo") }
+enum class FloatingBubbleContent(val key: String) { APP_ONLY("app_only"), SENDER_PREVIEW("sender_preview"), FULL_PREVIEW("full_preview") }
+enum class FloatingClickAction(val key: String) { OPEN_AI("open_ai"), OPEN_MAIN("open_main") }
 enum class BgThemePreset(val key: String) { MIDNIGHT("midnight"), AURORA("aurora"), OBSIDIAN("obsidian"), DEEP_OCEAN("deep_ocean") }
 enum class GlassBlurLevel(val key: String) { LOW("low"), MEDIUM("medium"), HIGH("high") }
 enum class ChatFontSize(val key: String, val multiplier: Float) { SMALL("small", 0.9f), STANDARD("standard", 1.0f), LARGE("large", 1.18f) }
@@ -29,7 +31,7 @@ enum class PageTransitionStyle(val key: String) {
 }
 
 /**
- * #468 / #479 / #488 桌機端設定資料模型（10 系統設定＋16 既有自訂設定＋#488 轉場動畫與深淺自訂＋視窗位置記憶）。
+ * #468 / #479 / #488 / #497 桌機端設定資料模型（10 系統設定＋16 既有自訂設定＋#488 轉場與深淺＋#497 通知中心四合一＋視窗位置記憶）。
  */
 data class DesktopSettings(
     // 10 System settings
@@ -52,7 +54,7 @@ data class DesktopSettings(
     val sidebarWidthDp: Int = 244, // 210 | 244 | 280
     val sidebarCollapsed: Boolean = false,
     val messageCardStyle: MessageCardStyle = MessageCardStyle.CARD,
-    val mirrorMode: MirrorDisplayMode = MirrorDisplayMode.BOTH,
+    val mirrorMode: MirrorDisplayMode = MirrorDisplayMode.COMBO,
     val bgTheme: BgThemePreset = BgThemePreset.MIDNIGHT,
     val customBgImagePath: String = "",
     val animationsEnabled: Boolean = true,
@@ -68,6 +70,19 @@ data class DesktopSettings(
     val surfaceOpacity: Float = 0.74f, // 0.55f..0.96f (default matches existing MEDIUM glass alpha)
     val bgScrimAlpha: Float = 0.56f, // 0.15f..0.85f (controls custom background emergence)
     val highContrastText: Boolean = false,
+    // #497 Notification Center 4-in-1 (banner auto-dismiss, bottom-right toast, floating assistant orb)
+    val bannerEnabled: Boolean = true,
+    val bannerDurationSec: Int = 5, // 3 | 5 | 8 | 0 (never)
+    val toastEnabled: Boolean = true,
+    val toastDurationSec: Int = 5, // 3 | 5 | 8
+    val floatingAssistantEnabled: Boolean = false,
+    val floatingOrbSizeDp: Int = 36, // 28 | 36 | 48
+    val floatingOrbOpacity: Float = 0.72f, // 0.45 | 0.72 | 0.95
+    val floatingBubbleSec: Int = 5, // 3 | 5 | 8
+    val floatingBubbleContent: FloatingBubbleContent = FloatingBubbleContent.SENDER_PREVIEW,
+    val floatingClickAction: FloatingClickAction = FloatingClickAction.OPEN_AI,
+    val floatingOrbX: Int = Int.MIN_VALUE,
+    val floatingOrbY: Int = Int.MIN_VALUE,
     // Window geometry persistence
     val windowX: Int = Int.MIN_VALUE,
     val windowY: Int = Int.MIN_VALUE,
@@ -144,6 +159,18 @@ object DesktopSettingsStore {
             surfaceOpacity = p.getProperty("surfaceOpacity", "0.74").toFloatOrNull()?.coerceIn(0.55f, 0.96f) ?: 0.74f,
             bgScrimAlpha = p.getProperty("bgScrimAlpha", "0.56").toFloatOrNull()?.coerceIn(0.15f, 0.85f) ?: 0.56f,
             highContrastText = p.getProperty("highContrastText", "false").toBoolean(),
+            bannerEnabled = p.getProperty("bannerEnabled", "true").toBoolean(),
+            bannerDurationSec = p.getProperty("bannerDurationSec", "5").toIntOrNull()?.takeIf { it in listOf(0, 3, 5, 8) } ?: 5,
+            toastEnabled = p.getProperty("toastEnabled", "true").toBoolean(),
+            toastDurationSec = p.getProperty("toastDurationSec", "5").toIntOrNull()?.takeIf { it in listOf(3, 5, 8) } ?: 5,
+            floatingAssistantEnabled = p.getProperty("floatingAssistantEnabled", "false").toBoolean(),
+            floatingOrbSizeDp = p.getProperty("floatingOrbSizeDp", "36").toIntOrNull()?.takeIf { it in listOf(28, 36, 48) } ?: 36,
+            floatingOrbOpacity = p.getProperty("floatingOrbOpacity", "0.72").toFloatOrNull()?.coerceIn(0.35f, 1.0f) ?: 0.72f,
+            floatingBubbleSec = p.getProperty("floatingBubbleSec", "5").toIntOrNull()?.takeIf { it in listOf(3, 5, 8) } ?: 5,
+            floatingBubbleContent = FloatingBubbleContent.entries.firstOrNull { it.key == p.getProperty("floatingBubbleContent", "sender_preview") } ?: FloatingBubbleContent.SENDER_PREVIEW,
+            floatingClickAction = FloatingClickAction.entries.firstOrNull { it.key == p.getProperty("floatingClickAction", "open_ai") } ?: FloatingClickAction.OPEN_AI,
+            floatingOrbX = p.getProperty("floatingOrbX", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
+            floatingOrbY = p.getProperty("floatingOrbY", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowX = p.getProperty("windowX", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowY = p.getProperty("windowY", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowWidth = p.getProperty("windowWidth", "1280").toIntOrNull()?.coerceAtLeast(1024) ?: 1280,
@@ -197,6 +224,18 @@ object DesktopSettingsStore {
             p.setProperty("surfaceOpacity", "%.2f".format(java.util.Locale.US, s.surfaceOpacity.coerceIn(0.55f, 0.96f)))
             p.setProperty("bgScrimAlpha", "%.2f".format(java.util.Locale.US, s.bgScrimAlpha.coerceIn(0.15f, 0.85f)))
             p.setProperty("highContrastText", s.highContrastText.toString())
+            p.setProperty("bannerEnabled", s.bannerEnabled.toString())
+            p.setProperty("bannerDurationSec", s.bannerDurationSec.toString())
+            p.setProperty("toastEnabled", s.toastEnabled.toString())
+            p.setProperty("toastDurationSec", s.toastDurationSec.toString())
+            p.setProperty("floatingAssistantEnabled", s.floatingAssistantEnabled.toString())
+            p.setProperty("floatingOrbSizeDp", s.floatingOrbSizeDp.toString())
+            p.setProperty("floatingOrbOpacity", "%.2f".format(java.util.Locale.US, s.floatingOrbOpacity.coerceIn(0.35f, 1.0f)))
+            p.setProperty("floatingBubbleSec", s.floatingBubbleSec.toString())
+            p.setProperty("floatingBubbleContent", s.floatingBubbleContent.key)
+            p.setProperty("floatingClickAction", s.floatingClickAction.key)
+            p.setProperty("floatingOrbX", s.floatingOrbX.toString())
+            p.setProperty("floatingOrbY", s.floatingOrbY.toString())
             p.setProperty("windowX", s.windowX.toString())
             p.setProperty("windowY", s.windowY.toString())
             p.setProperty("windowWidth", s.windowWidth.toString())

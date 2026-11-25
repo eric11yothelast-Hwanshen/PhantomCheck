@@ -49,7 +49,11 @@ fun main(args: Array<String>) {
 
         var isWindowVisible by remember { mutableStateOf(!(startMinimized && traySupported)) }
         var focusRequestTick by remember { mutableStateOf(0) }
+        var requestedTabKey by remember { mutableStateOf<String?>(null) }
+        var triggerUpdateCheckTick by remember { mutableStateOf(0) }
         var unsupportedNoticeShown by remember { mutableStateOf(false) }
+        val pausedUntilMs by DesktopNotificationBus.pausedUntilMs.collectAsState()
+        val isNotifPaused = pausedUntilMs > System.currentTimeMillis()
 
         val initialPos = remember {
             if (settings.windowX != Int.MIN_VALUE && settings.windowY != Int.MIN_VALUE) {
@@ -63,6 +67,12 @@ fun main(args: Array<String>) {
             size = DpSize(settings.windowWidth.coerceAtLeast(1024).dp, settings.windowHeight.coerceAtLeast(680).dp)
         )
 
+        fun showAndFocusMainWindow(tabKey: String? = null) {
+            if (tabKey != null) requestedTabKey = tabKey
+            isWindowVisible = true
+            focusRequestTick += 1
+        }
+
         fun performFullExit() {
             saveWindowGeometry(windowState)
             server.stop()
@@ -74,13 +84,8 @@ fun main(args: Array<String>) {
         // 生命週期拉升至 application 層，隱藏視窗至系統匣（含 --minimized）時 WSS 伺服器與 mDNS 廣播持續常駐
         LaunchedEffect(Unit) {
             singleInstance.setCallbacks(
-                onFocus = {
-                    isWindowVisible = true
-                    focusRequestTick += 1
-                },
-                onGracefulExit = {
-                    performFullExit()
-                }
+                onFocus = { showAndFocusMainWindow() },
+                onGracefulExit = { performFullExit() }
             )
             DesktopDiagnostics.info("App", "Started (traySupported=$traySupported, startMinimized=$startMinimized, autoConnect=${settings.autoConnectOnStartup})")
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -107,6 +112,20 @@ fun main(args: Array<String>) {
                 unsupportedNoticeShown = true
                 DesktopDiagnostics.warn("Tray", DesktopStrings.trayUnsupportedNotice)
             }
+            // #497 D: Single left-click on tray icon directly opens main window (in addition to double-click onAction)
+            if (traySupported) {
+                kotlinx.coroutines.delay(400L)
+                runCatching {
+                    val icons = SystemTray.getSystemTray().trayIcons
+                    icons.lastOrNull()?.addMouseListener(object : java.awt.event.MouseAdapter() {
+                        override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                            if (e.button == java.awt.event.MouseEvent.BUTTON1 && e.clickCount == 1) {
+                                showAndFocusMainWindow()
+                            }
+                        }
+                    })
+                }
+            }
         }
 
         DisposableEffect(Unit) {
@@ -125,24 +144,64 @@ fun main(args: Array<String>) {
             }
         }
 
+        val isServerRunning = serverState.connState == LinkConnState.CONNECTED || serverState.connState == LinkConnState.WAITING_FOR_PHONE
+
         if (traySupported) {
             Tray(
                 state = trayState,
                 icon = trayIcon,
                 tooltip = trayTooltip,
-                onAction = {
-                    isWindowVisible = true
-                    focusRequestTick += 1
-                },
+                onAction = { showAndFocusMainWindow() },
                 menu = {
+                    // 1. Open PhantomCheck
                     Item(
                         text = DesktopStrings.trayOpen,
+                        onClick = { showAndFocusMainWindow() }
+                    )
+                    // 2. Live Connection Status
+                    Item(
+                        text = DesktopStrings.trayConnStatus(serverState.connectedPhones.size, serverState.port, isServerRunning),
+                        onClick = { showAndFocusMainWindow("SETTINGS") }
+                    )
+                    Separator()
+                    // 3. Start / Stop WSS Server
+                    Item(
+                        text = if (isServerRunning) DesktopStrings.trayStopServer else DesktopStrings.trayStartServer,
                         onClick = {
-                            isWindowVisible = true
-                            focusRequestTick += 1
+                            if (isServerRunning) server.stop() else server.start()
+                        }
+                    )
+                    // 4. Check for Updates
+                    Item(
+                        text = DesktopStrings.trayCheckUpdate,
+                        onClick = {
+                            showAndFocusMainWindow("SETTINGS")
+                            triggerUpdateCheckTick += 1
                         }
                     )
                     Separator()
+                    // 5. Pause Notifications 1 hr / Resume
+                    Item(
+                        text = if (isNotifPaused) DesktopStrings.trayResumeNotif else DesktopStrings.trayPauseNotif1h,
+                        onClick = {
+                            if (isNotifPaused) DesktopNotificationBus.resumeNotifications()
+                            else DesktopNotificationBus.pauseForOneHour()
+                        }
+                    )
+                    // 6. Toggle DND
+                    Item(
+                        text = DesktopStrings.trayToggleDnd(settings.dndEnabled),
+                        onClick = {
+                            DesktopSettingsStore.update { it.copy(dndEnabled = !it.dndEnabled) }
+                        }
+                    )
+                    // 7. Open Settings
+                    Item(
+                        text = DesktopStrings.trayOpenSettings,
+                        onClick = { showAndFocusMainWindow("SETTINGS") }
+                    )
+                    Separator()
+                    // 8. Exit
                     Item(
                         text = DesktopStrings.trayExit,
                         onClick = { performFullExit() }
@@ -150,6 +209,26 @@ fun main(args: Array<String>) {
                 }
             )
         }
+
+        // #497 B: Bottom-right always-on-top toast overlay window (application scope)
+        DesktopToastOverlayWindow(
+            settings = settings,
+            onOpenConversation = { ev ->
+                DesktopNotificationBus.requestNavigateTo(ev)
+                showAndFocusMainWindow("MESSAGES")
+            }
+        )
+
+        // #497 C: Floating assistant orb + mini AI chat + adaptive bubble (application scope)
+        DesktopFloatingAssistantWindow(
+            settings = settings,
+            server = server,
+            onOpenMainWindow = { showAndFocusMainWindow() },
+            onOpenConversation = { ev ->
+                DesktopNotificationBus.requestNavigateTo(ev)
+                showAndFocusMainWindow("MESSAGES")
+            }
+        )
 
         Window(
             visible = isWindowVisible,
@@ -182,6 +261,9 @@ fun main(args: Array<String>) {
                 server = server,
                 manageLifecycle = false,
                 isWindowVisible = isWindowVisible,
+                requestedTabKey = requestedTabKey,
+                onRequestedTabConsumed = { requestedTabKey = null },
+                triggerUpdateCheckTick = triggerUpdateCheckTick,
                 onMirrorNotification = { title, body ->
                     if (traySupported) {
                         runCatching {
