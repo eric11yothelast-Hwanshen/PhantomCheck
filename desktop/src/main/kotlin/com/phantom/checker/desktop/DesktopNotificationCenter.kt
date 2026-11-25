@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -168,11 +169,28 @@ object DesktopNotificationBus {
         _floatingUnreadBadge.value = 0
     }
 
+    private val toastMinuteWindow = ArrayDeque<Long>()
+    private val floatingMinuteWindow = ArrayDeque<Long>()
+    private var aggWindowStartMs: Long = 0L
+    private var aggCount: Int = 0
+    private var aggLastEvent: MirrorNotificationEvent? = null
+
+    private fun allowUnderPerMinuteCap(window: ArrayDeque<Long>, maxPerMin: Int, nowMs: Long): Boolean {
+        if (maxPerMin <= 0) return true
+        while (window.isNotEmpty() && nowMs - window.first() > 60_000L) {
+            window.removeFirst()
+        }
+        if (window.size >= maxPerMin) return false
+        window.addLast(nowMs)
+        return true
+    }
+
     fun dispatchNewMessage(
         msg: MessageSummaryDto,
         settings: DesktopSettings,
         onNativeTrayNotify: (title: String, body: String) -> Unit
     ) {
+        val nowMs = System.currentTimeMillis()
         val appName = DesktopAppLabels.resolveLabel(msg.packageName, msg.appLabel)
         val preview = msg.preview.take(settings.previewLength)
         val event = MirrorNotificationEvent(
@@ -186,35 +204,137 @@ object DesktopNotificationBus {
             timestamp = msg.timestamp
         )
 
-        val dndOrPaused = settings.isInDndWindow() || isPausedNow()
+        val dndOrPaused = settings.isEffectiveDndNow() || isPausedNow(nowMs)
 
         // A. In-app top banner
-        if (settings.bannerEnabled && (settings.mirrorMode == MirrorDisplayMode.BANNER || settings.mirrorMode == MirrorDisplayMode.BOTH || settings.mirrorMode == MirrorDisplayMode.COMBO)) {
+        if (!dndOrPaused && settings.bannerEnabled && (settings.mirrorMode == MirrorDisplayMode.BANNER || settings.mirrorMode == MirrorDisplayMode.BOTH || settings.mirrorMode == MirrorDisplayMode.COMBO)) {
             _latestBanner.value = event
         }
 
-        // B. Bottom-right desktop toast (suppressed in DND/paused or fullscreen)
-        if (!dndOrPaused && settings.toastEnabled && (settings.mirrorMode == MirrorDisplayMode.TOAST || settings.mirrorMode == MirrorDisplayMode.BOTH || settings.mirrorMode == MirrorDisplayMode.COMBO)) {
+        // B. Bottom-right desktop toast (suppressed in DND/paused or fullscreen, respects #513 frequency & aggregation)
+        val toastAllowedByStar = !settings.toastOnlyStarred || msg.isStarred
+        if (!dndOrPaused && toastAllowedByStar && settings.toastEnabled && (settings.mirrorMode == MirrorDisplayMode.TOAST || settings.mirrorMode == MirrorDisplayMode.BOTH || settings.mirrorMode == MirrorDisplayMode.COMBO)) {
             if (!DesktopFullscreenDetector.isFullscreenAppActive()) {
-                _latestToast.value = event
+                val aggMin = settings.toastAggregateMinutes.coerceIn(0, 15)
+                if (aggMin > 0) {
+                    val aggMs = aggMin * 60_000L
+                    if (aggWindowStartMs == 0L) {
+                        aggWindowStartMs = nowMs
+                        aggCount = 1
+                        aggLastEvent = event
+                        if (allowUnderPerMinuteCap(toastMinuteWindow, settings.toastMaxPerMinute, nowMs)) {
+                            _latestToast.value = event
+                            if (settings.notificationSoundEnabled) DesktopSoundPlayer.play(settings)
+                        }
+                    } else if (nowMs - aggWindowStartMs >= aggMs) {
+                        val total = aggCount + 1
+                        aggWindowStartMs = nowMs
+                        aggCount = 0
+                        aggLastEvent = null
+                        val summaryEvent = event.copy(
+                            sender = DesktopStrings.toastAggregatedTitle,
+                            preview = DesktopStrings.toastAggregatedBody(total)
+                        )
+                        if (allowUnderPerMinuteCap(toastMinuteWindow, settings.toastMaxPerMinute, nowMs)) {
+                            _latestToast.value = summaryEvent
+                            if (settings.notificationSoundEnabled) DesktopSoundPlayer.play(settings)
+                        }
+                    } else {
+                        aggCount++
+                        aggLastEvent = event
+                    }
+                } else if (allowUnderPerMinuteCap(toastMinuteWindow, settings.toastMaxPerMinute, nowMs)) {
+                    _latestToast.value = event
+                    if (settings.notificationSoundEnabled) DesktopSoundPlayer.play(settings)
+                }
             }
         }
 
-        // C. Floating assistant bubble or badge-only in DND/paused
+        // C. Floating assistant bubble or badge-only in DND/paused (separate #513 frequency controls)
+        val floatingAllowedByStar = !settings.floatingOnlyStarred || msg.isStarred
         if (settings.floatingAssistantEnabled) {
             if (dndOrPaused) {
                 _floatingUnreadBadge.value = (_floatingUnreadBadge.value + 1).coerceAtMost(99)
-            } else {
+            } else if (floatingAllowedByStar && allowUnderPerMinuteCap(floatingMinuteWindow, settings.floatingMaxPerMinute, nowMs)) {
                 _latestFloatingBubble.value = event
+                _floatingUnreadBadge.value = (_floatingUnreadBadge.value + 1).coerceAtMost(99)
+            } else {
                 _floatingUnreadBadge.value = (_floatingUnreadBadge.value + 1).coerceAtMost(99)
             }
         }
 
         // Native OS tray notification
-        if (!dndOrPaused && settings.nativeNotifications &&
+        if (!dndOrPaused && toastAllowedByStar && settings.nativeNotifications &&
             (settings.mirrorMode == MirrorDisplayMode.NATIVE || settings.mirrorMode == MirrorDisplayMode.BOTH || settings.mirrorMode == MirrorDisplayMode.COMBO)
         ) {
             onNativeTrayNotify("$appName · ${event.sender}", preview)
+        }
+    }
+
+    /** #513 測試通知：勿擾開啟時靜默記錄並回傳 false（不彈出），勿擾關閉時立即彈出測試 Toast 並播音。 */
+    fun dispatchTestNotification(settings: DesktopSettings): Boolean {
+        val nowMs = System.currentTimeMillis()
+        if (settings.isEffectiveDndNow() || isPausedNow(nowMs)) {
+            DesktopDiagnostics.info("Notification", "Test notification suppressed (DND/paused active)")
+            return false
+        }
+        val testEvent = MirrorNotificationEvent(
+            id = -1L,
+            packageName = "com.phantom.checker",
+            appLabel = "PhantomCheck",
+            sender = DesktopStrings.sendTestNotifBtn,
+            preview = DesktopStrings.testNotifSent,
+            riskLabel = "safe",
+            conversationKey = "",
+            timestamp = nowMs
+        )
+        _latestToast.value = testEvent
+        if (settings.notificationSoundEnabled) {
+            DesktopSoundPlayer.play(settings)
+        }
+        DesktopDiagnostics.info("Notification", "Test notification dispatched")
+        return true
+    }
+}
+
+/**
+ * #513 桌面端通知音效播放器（支援自訂 WAV + javax.sound MASTER_GAIN 音量，無自訂檔時退回系統提示音）。
+ */
+object DesktopSoundPlayer {
+    fun play(settings: DesktopSettings) {
+        if (!settings.notificationSoundEnabled || settings.toastSoundVolume <= 0.01f) return
+        Thread {
+            val wavPath = settings.toastSoundCustomWavPath.trim()
+            val playedCustom = if (wavPath.isNotBlank()) {
+                runCatching {
+                    val file = java.io.File(wavPath)
+                    if (!file.exists() || !file.isFile) return@runCatching false
+                    val audioIn = javax.sound.sampled.AudioSystem.getAudioInputStream(file)
+                    val clip = javax.sound.sampled.AudioSystem.getClip()
+                    clip.open(audioIn)
+                    if (clip.isControlSupported(javax.sound.sampled.FloatControl.Type.MASTER_GAIN)) {
+                        val gain = clip.getControl(javax.sound.sampled.FloatControl.Type.MASTER_GAIN) as javax.sound.sampled.FloatControl
+                        val vol = settings.toastSoundVolume.coerceIn(0.01f, 1f)
+                        val db = (20.0 * kotlin.math.log10(vol.toDouble())).toFloat().coerceIn(gain.minimum, gain.maximum)
+                        gain.value = db
+                    }
+                    clip.addLineListener { ev ->
+                        if (ev.type == javax.sound.sampled.LineEvent.Type.STOP) {
+                            runCatching { clip.close() }
+                            runCatching { audioIn.close() }
+                        }
+                    }
+                    clip.start()
+                    true
+                }.getOrDefault(false)
+            } else false
+            if (!playedCustom) {
+                runCatching { java.awt.Toolkit.getDefaultToolkit().beep() }
+            }
+        }.apply {
+            isDaemon = true
+            name = "phantom-sound"
+            start()
         }
     }
 }
@@ -289,8 +409,8 @@ fun DesktopToastOverlayWindow(
     val isHovered by hoverSource.collectIsHoveredAsState()
 
     val bounds = remember(current.seq) { primaryWorkAreaBounds() }
-    val toastW = 360
-    val toastH = 112
+    val toastW = settings.toastWidthDp.coerceIn(280, 480)
+    val toastH = settings.toastHeightDp.coerceIn(84, 180)
     val toastX = (bounds.x + bounds.width - toastW - 18).coerceAtLeast(bounds.x)
     val toastY = (bounds.y + bounds.height - toastH - 18).coerceAtLeast(bounds.y)
 
@@ -313,6 +433,27 @@ fun DesktopToastOverlayWindow(
         position = WindowPosition(toastX.dp, toastY.dp),
         size = DpSize(toastW.dp, toastH.dp)
     )
+    LaunchedEffect(toastW, toastH, toastX, toastY) {
+        toastWindowState.size = DpSize(toastW.dp, toastH.dp)
+        toastWindowState.position = WindowPosition(toastX.dp, toastY.dp)
+    }
+
+    val customToastBgBitmap = remember(settings.toastBgImagePath) {
+        val path = settings.toastBgImagePath.trim()
+        if (path.isBlank()) null else runCatching {
+            val file = java.io.File(path)
+            if (file.exists() && file.isFile) {
+                org.jetbrains.skia.Image.makeFromEncoded(file.readBytes()).toComposeImageBitmap()
+            } else null
+        }.getOrNull()
+    }
+    val customTextColor = remember(settings.toastTextColorHex, tokens.textPrimary) {
+        val hex = settings.toastTextColorHex.trim().removePrefix("#")
+        if (hex.length == 6) {
+            runCatching { Color(0xFF000000.toInt() or hex.toInt(16)) }.getOrNull() ?: tokens.textPrimary
+        } else tokens.textPrimary
+    }
+    val toastBgColor = if (settings.lightTheme) Color(0xF5FFFFFF) else Color(0xF0151C2C)
 
     Window(
         onCloseRequest = { DesktopNotificationBus.clearToast() },
@@ -343,65 +484,95 @@ fun DesktopToastOverlayWindow(
                         "suspicious" -> DesktopPalette.GlassWarning
                         else -> DesktopPalette.GlassSuccess
                     }
-                    Row(
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(RoundedCornerShape(16.dp))
-                            .background(Color(0xF0151C2C))
+                            .background(toastBgColor)
                             .border(1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
                             .hoverable(hoverSource)
                             .clickable {
                                 DesktopNotificationBus.clearToast()
                                 onOpenConversation(current)
                             }
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .clip(CircleShape)
-                                .background(appColor.copy(alpha = 0.24f))
-                                .border(1.dp, appColor.copy(alpha = 0.7f), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = DesktopAppLabels.avatarInitial(current.sender, current.appLabel),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = appColor
+                        if (customToastBgBitmap != null) {
+                            androidx.compose.foundation.Image(
+                                bitmap = customToastBgBitmap,
+                                contentDescription = null,
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(if (settings.lightTheme) Color.White.copy(alpha = 0.72f) else Color.Black.copy(alpha = 0.58f))
                             )
                         }
-                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(appColor.copy(alpha = 0.24f))
+                                    .border(1.dp, appColor.copy(alpha = 0.7f), CircleShape),
+                                contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "${current.appLabel} · ${current.sender}",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = tokens.textPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    text = DesktopStrings.riskLabelText(current.riskLabel),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = riskColor
+                                    text = DesktopAppLabels.avatarInitial(current.sender, current.appLabel),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = appColor
                                 )
                             }
-                            Text(
-                                text = current.preview.take(settings.previewLength),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = tokens.textSecondary,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                val headerText = buildList {
+                                    if (settings.toastShowAppName && current.appLabel.isNotBlank()) add(current.appLabel)
+                                    if (settings.toastShowTitle && current.sender.isNotBlank()) add(current.sender)
+                                }.joinToString(" · ")
+                                if (headerText.isNotBlank() || settings.toastShowTime) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = headerText,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = customTextColor,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        val rightMeta = if (settings.toastShowTime) {
+                                            val sdf = java.text.SimpleDateFormat(if (settings.use24HourTime) "HH:mm" else "hh:mm a", java.util.Locale.getDefault())
+                                            "${sdf.format(java.util.Date(current.timestamp))} · ${DesktopStrings.riskLabelText(current.riskLabel)}"
+                                        } else {
+                                            DesktopStrings.riskLabelText(current.riskLabel)
+                                        }
+                                        Text(
+                                            text = rightMeta,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = riskColor
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = current.preview.take(settings.previewLength),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = customTextColor.copy(alpha = 0.85f),
+                                    maxLines = settings.toastMaxLines.coerceIn(1, 4),
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }

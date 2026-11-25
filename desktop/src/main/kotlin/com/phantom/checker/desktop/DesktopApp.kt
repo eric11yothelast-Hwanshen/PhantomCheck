@@ -952,6 +952,22 @@ fun DesktopApp(
 
                         Spacer(Modifier.weight(1f))
 
+                        // #513 一鍵勿擾開關（靜音彈窗/懸浮球氣泡/音效，記錄不中斷，與 Tray 同步）
+                        FilterChip(
+                            selected = settings.quickDndActive,
+                            onClick = { DesktopSettingsStore.update { it.copy(quickDndActive = !it.quickDndActive) } },
+                            label = {
+                                Text(
+                                    text = if (settings.sidebarCollapsed) "☾" else if (settings.quickDndActive) "☾ ${DesktopStrings.quickDndOn}" else "☾ ${DesktopStrings.quickDndOff}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(6.dp))
+
                         // Persistent Connection Status Card
                         val isPulsing = uiState.connState == LinkConnState.WAITING_FOR_PHONE
                         val dotColor = when (uiState.connState) {

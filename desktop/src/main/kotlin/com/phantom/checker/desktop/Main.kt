@@ -188,11 +188,11 @@ fun main(args: Array<String>) {
                             else DesktopNotificationBus.pauseForOneHour()
                         }
                     )
-                    // 6. Toggle DND
+                    // 6. Toggle DND (#513 one-click quickDndActive synced with main window)
                     Item(
-                        text = DesktopStrings.trayToggleDnd(settings.dndEnabled),
+                        text = DesktopStrings.trayToggleDnd(settings.quickDndActive),
                         onClick = {
-                            DesktopSettingsStore.update { it.copy(dndEnabled = !it.dndEnabled) }
+                            DesktopSettingsStore.update { it.copy(quickDndActive = !it.quickDndActive) }
                         }
                     )
                     // 7. Open Settings

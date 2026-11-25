@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -655,6 +658,142 @@ fun DesktopSettingsCenter(
                                             onClick = { DesktopSettingsStore.update { it.copy(toastDurationSec = sec) } },
                                             label = { Text(DesktopStrings.durationSecLabel(sec)) }
                                         )
+                                    }
+                                }
+                                HorizontalDivider(color = tokens.border)
+                                Text(DesktopStrings.toastCustomizeSection, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
+                                // Live preview card reflecting toastWidthDp / toastHeightDp / content toggles
+                                Box(
+                                    modifier = Modifier
+                                        .width((settings.toastWidthDp.coerceIn(280, 480) * 0.72f).dp)
+                                        .height((settings.toastHeightDp.coerceIn(84, 180) * 0.78f).dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (settings.lightTheme) Color(0xF5FFFFFF) else Color(0xF0151C2C))
+                                        .border(1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                                        .padding(10.dp)
+                                ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        val hdr = buildList {
+                                            if (settings.toastShowAppName) add("LINE")
+                                            if (settings.toastShowTitle) add("Phantom")
+                                        }.joinToString(" · ")
+                                        if (hdr.isNotBlank() || settings.toastShowTime) {
+                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                Text(hdr, style = MaterialTheme.typography.labelMedium, color = tokens.textPrimary, maxLines = 1)
+                                                if (settings.toastShowTime) {
+                                                    Text("12:00", style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                                }
+                                            }
+                                        }
+                                        Text(
+                                            text = DesktopStrings.testNotifSent,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = tokens.textSecondary,
+                                            maxLines = settings.toastMaxLines.coerceIn(1, 4),
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                Text("${DesktopStrings.toastSizeLabel}: ${settings.toastWidthDp} × ${settings.toastHeightDp}", style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Slider(
+                                        value = settings.toastWidthDp.toFloat(),
+                                        onValueChange = { v -> DesktopSettingsStore.update { it.copy(toastWidthDp = v.toInt().coerceIn(280, 480)) } },
+                                        valueRange = 280f..480f,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Slider(
+                                        value = settings.toastHeightDp.toFloat(),
+                                        onValueChange = { v -> DesktopSettingsStore.update { it.copy(toastHeightDp = v.toInt().coerceIn(84, 180)) } },
+                                        valueRange = 84f..180f,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(
+                                        selected = settings.toastShowAppName,
+                                        onClick = { DesktopSettingsStore.update { it.copy(toastShowAppName = !it.toastShowAppName) } },
+                                        label = { Text(DesktopStrings.toastShowAppLabel) }
+                                    )
+                                    FilterChip(
+                                        selected = settings.toastShowTitle,
+                                        onClick = { DesktopSettingsStore.update { it.copy(toastShowTitle = !it.toastShowTitle) } },
+                                        label = { Text(DesktopStrings.toastShowTitleLabel) }
+                                    )
+                                    FilterChip(
+                                        selected = settings.toastShowTime,
+                                        onClick = { DesktopSettingsStore.update { it.copy(toastShowTime = !it.toastShowTime) } },
+                                        label = { Text(DesktopStrings.toastShowTimeLabel) }
+                                    )
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(DesktopStrings.toastLinesLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                    listOf(1, 2, 3, 4).forEach { ln ->
+                                        FilterChip(
+                                            selected = settings.toastMaxLines == ln,
+                                            onClick = { DesktopSettingsStore.update { it.copy(toastMaxLines = ln) } },
+                                            label = { Text("$ln") }
+                                        )
+                                    }
+                                }
+                                Text("${DesktopStrings.toastSoundVolumeLabel}: ${(settings.toastSoundVolume * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                Slider(
+                                    value = settings.toastSoundVolume,
+                                    onValueChange = { v -> DesktopSettingsStore.update { it.copy(toastSoundVolume = v.coerceIn(0f, 1f)) } },
+                                    valueRange = 0f..1f
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(DesktopStrings.toastMaxPerMinLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                    listOf(0, 3, 5, 10).forEach { cap ->
+                                        FilterChip(
+                                            selected = settings.toastMaxPerMinute == cap,
+                                            onClick = { DesktopSettingsStore.update { it.copy(toastMaxPerMinute = cap) } },
+                                            label = { Text(if (cap == 0) "∞" else "$cap") }
+                                        )
+                                    }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(DesktopStrings.toastAggregateLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                    listOf(0, 1, 3, 5).forEach { m ->
+                                        FilterChip(
+                                            selected = settings.toastAggregateMinutes == m,
+                                            onClick = { DesktopSettingsStore.update { it.copy(toastAggregateMinutes = m) } },
+                                            label = { Text(if (m == 0) "0" else "${m}m") }
+                                        )
+                                    }
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(
+                                        selected = settings.toastOnlyStarred,
+                                        onClick = { DesktopSettingsStore.update { it.copy(toastOnlyStarred = !it.toastOnlyStarred) } },
+                                        label = { Text(DesktopStrings.toastOnlyStarredLabel) }
+                                    )
+                                    FilterChip(
+                                        selected = settings.floatingOnlyStarred,
+                                        onClick = { DesktopSettingsStore.update { it.copy(floatingOnlyStarred = !it.floatingOnlyStarred) } },
+                                        label = { Text(DesktopStrings.floatingOnlyStarredLabel) }
+                                    )
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(DesktopStrings.floatingMaxPerMinLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                    listOf(0, 3, 5, 10).forEach { cap ->
+                                        FilterChip(
+                                            selected = settings.floatingMaxPerMinute == cap,
+                                            onClick = { DesktopSettingsStore.update { it.copy(floatingMaxPerMinute = cap) } },
+                                            label = { Text(if (cap == 0) "∞" else "$cap") }
+                                        )
+                                    }
+                                }
+                                var testNotifFeedback by remember { mutableStateOf("") }
+                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedButton(onClick = {
+                                        val sent = DesktopNotificationBus.dispatchTestNotification(settings)
+                                        testNotifFeedback = if (sent) DesktopStrings.testNotifSent else DesktopStrings.testNotifSuppressedDnd
+                                    }) {
+                                        Text(DesktopStrings.sendTestNotifBtn)
+                                    }
+                                    if (testNotifFeedback.isNotBlank()) {
+                                        Text(testNotifFeedback, style = MaterialTheme.typography.labelSmall, color = accentColor)
                                     }
                                 }
                             }

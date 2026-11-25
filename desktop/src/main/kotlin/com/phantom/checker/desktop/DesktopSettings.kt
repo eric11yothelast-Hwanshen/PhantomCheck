@@ -89,6 +89,23 @@ data class DesktopSettings(
     val rulesCollapseMuted: Boolean = false,
     // #504 Light/Dark theme mode toggle
     val lightTheme: Boolean = false,
+    // #513 Toast customization, frequency control & one-click DND (all additive, preserving existing keys)
+    val quickDndActive: Boolean = false,
+    val toastWidthDp: Int = 360, // 280..480
+    val toastHeightDp: Int = 112, // 84..180
+    val toastShowTitle: Boolean = true,
+    val toastMaxLines: Int = 2, // 1..4
+    val toastShowAppName: Boolean = true,
+    val toastShowTime: Boolean = true,
+    val toastBgImagePath: String = "",
+    val toastTextColorHex: String = "",
+    val toastSoundCustomWavPath: String = "",
+    val toastSoundVolume: Float = 0.8f, // 0.0..1.0
+    val toastMaxPerMinute: Int = 0, // 0 = unlimited, 1..20
+    val toastAggregateMinutes: Int = 0, // 0 = instant, 1..15
+    val toastOnlyStarred: Boolean = false,
+    val floatingMaxPerMinute: Int = 0, // 0 = unlimited, 1..20
+    val floatingOnlyStarred: Boolean = false,
     // Window geometry persistence
     val windowX: Int = Int.MIN_VALUE,
     val windowY: Int = Int.MIN_VALUE,
@@ -104,6 +121,9 @@ data class DesktopSettings(
             h >= dndStartHour || h < dndEndHour
         }
     }
+
+    fun isEffectiveDndNow(cal: Calendar = Calendar.getInstance()): Boolean =
+        quickDndActive || isInDndWindow(cal)
 }
 
 data class DesktopUpdateCheckResult(
@@ -181,6 +201,22 @@ object DesktopSettingsStore {
             rulesCollapseTags = p.getProperty("rulesCollapseTags", "false").toBoolean(),
             rulesCollapseMuted = p.getProperty("rulesCollapseMuted", "false").toBoolean(),
             lightTheme = p.getProperty("lightTheme", "false").toBoolean(),
+            quickDndActive = p.getProperty("quickDndActive", "false").toBoolean(),
+            toastWidthDp = p.getProperty("toastWidthDp", "360").toIntOrNull()?.coerceIn(280, 480) ?: 360,
+            toastHeightDp = p.getProperty("toastHeightDp", "112").toIntOrNull()?.coerceIn(84, 180) ?: 112,
+            toastShowTitle = p.getProperty("toastShowTitle", "true").toBoolean(),
+            toastMaxLines = p.getProperty("toastMaxLines", "2").toIntOrNull()?.coerceIn(1, 4) ?: 2,
+            toastShowAppName = p.getProperty("toastShowAppName", "true").toBoolean(),
+            toastShowTime = p.getProperty("toastShowTime", "true").toBoolean(),
+            toastBgImagePath = p.getProperty("toastBgImagePath", ""),
+            toastTextColorHex = p.getProperty("toastTextColorHex", "").trim(),
+            toastSoundCustomWavPath = p.getProperty("toastSoundCustomWavPath", ""),
+            toastSoundVolume = p.getProperty("toastSoundVolume", "0.8").toFloatOrNull()?.coerceIn(0f, 1f) ?: 0.8f,
+            toastMaxPerMinute = p.getProperty("toastMaxPerMinute", "0").toIntOrNull()?.coerceIn(0, 20) ?: 0,
+            toastAggregateMinutes = p.getProperty("toastAggregateMinutes", "0").toIntOrNull()?.coerceIn(0, 15) ?: 0,
+            toastOnlyStarred = p.getProperty("toastOnlyStarred", "false").toBoolean(),
+            floatingMaxPerMinute = p.getProperty("floatingMaxPerMinute", "0").toIntOrNull()?.coerceIn(0, 20) ?: 0,
+            floatingOnlyStarred = p.getProperty("floatingOnlyStarred", "false").toBoolean(),
             windowX = p.getProperty("windowX", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowY = p.getProperty("windowY", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowWidth = p.getProperty("windowWidth", "1280").toIntOrNull()?.coerceAtLeast(1024) ?: 1280,
@@ -250,6 +286,22 @@ object DesktopSettingsStore {
             p.setProperty("rulesCollapseTags", s.rulesCollapseTags.toString())
             p.setProperty("rulesCollapseMuted", s.rulesCollapseMuted.toString())
             p.setProperty("lightTheme", s.lightTheme.toString())
+            p.setProperty("quickDndActive", s.quickDndActive.toString())
+            p.setProperty("toastWidthDp", s.toastWidthDp.toString())
+            p.setProperty("toastHeightDp", s.toastHeightDp.toString())
+            p.setProperty("toastShowTitle", s.toastShowTitle.toString())
+            p.setProperty("toastMaxLines", s.toastMaxLines.toString())
+            p.setProperty("toastShowAppName", s.toastShowAppName.toString())
+            p.setProperty("toastShowTime", s.toastShowTime.toString())
+            p.setProperty("toastBgImagePath", s.toastBgImagePath)
+            p.setProperty("toastTextColorHex", s.toastTextColorHex)
+            p.setProperty("toastSoundCustomWavPath", s.toastSoundCustomWavPath)
+            p.setProperty("toastSoundVolume", "%.2f".format(java.util.Locale.US, s.toastSoundVolume.coerceIn(0f, 1f)))
+            p.setProperty("toastMaxPerMinute", s.toastMaxPerMinute.toString())
+            p.setProperty("toastAggregateMinutes", s.toastAggregateMinutes.toString())
+            p.setProperty("toastOnlyStarred", s.toastOnlyStarred.toString())
+            p.setProperty("floatingMaxPerMinute", s.floatingMaxPerMinute.toString())
+            p.setProperty("floatingOnlyStarred", s.floatingOnlyStarred.toString())
             p.setProperty("windowX", s.windowX.toString())
             p.setProperty("windowY", s.windowY.toString())
             p.setProperty("windowWidth", s.windowWidth.toString())
