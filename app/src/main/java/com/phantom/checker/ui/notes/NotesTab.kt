@@ -312,12 +312,14 @@ internal fun NoteCardItem(
                         onClick = {
                             if (note.relatedMessageId != null) {
                                 onOpenMessageDetail(note.relatedMessageId)
+                            } else {
+                                onEdit(note)
                             }
                         },
                         onLongClick = { onAutoNoteLongPress(note) }
                     )
                 } else {
-                    Modifier
+                    Modifier.clickable { onEdit(note) }
                 }
             ),
         cornerRadius = if (overlapOpaque) 20.dp else 18.dp,

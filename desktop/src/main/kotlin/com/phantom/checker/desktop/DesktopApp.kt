@@ -65,6 +65,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -205,10 +207,55 @@ fun DesktopApp(
     var stats by remember { mutableStateOf(StatsSnapshotDto()) }
     var todos by remember { mutableStateOf<List<TodoItemDto>>(emptyList()) }
     var newTodoTitle by remember { mutableStateOf("") }
+    var showNewTodoDialog by remember { mutableStateOf(false) }
     var editingTodo by remember { mutableStateOf<TodoItemDto?>(null) }
     var editTodoTitle by remember { mutableStateOf("") }
+    var editTodoNotes by remember { mutableStateOf("") }
+    var editTodoDueAt by remember { mutableLongStateOf(0L) }
+    var editTodoDueCustom by remember { mutableStateOf("") }
+    var editTodoPriority by remember { mutableIntStateOf(1) }
+    var editTodoRepeat by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf<List<NoteItemDto>>(emptyList()) }
     var newNoteContent by remember { mutableStateOf("") }
+    var newNotePinned by remember { mutableStateOf(false) }
+    var newNoteColor by remember { mutableStateOf("") }
+    var editingNote by remember { mutableStateOf<NoteItemDto?>(null) }
+    var editNoteContent by remember { mutableStateOf("") }
+    var editNotePinned by remember { mutableStateOf(false) }
+    var editNoteColor by remember { mutableStateOf("") }
+    val notifiedDueTodoIds = remember { mutableSetOf<Long>() }
+
+    // #499 Desktop local due-reminder loop (deduplicated per todo id, respects DND/pause)
+    LaunchedEffect(todos) {
+        while (true) {
+            val now = System.currentTimeMillis()
+            val cur = DesktopSettingsStore.state.value
+            if (!cur.isInDndWindow() && !DesktopNotificationBus.isPausedNow(now)) {
+                todos.forEach { t ->
+                    if (!t.isDone && t.dueAt > 0L && t.id !in notifiedDueTodoIds) {
+                        if (t.dueAt in (now - 60_000L)..(now + 30_000L)) {
+                            notifiedDueTodoIds.add(t.id)
+                            DesktopNotificationBus.dispatchNewMessage(
+                                msg = MessageSummaryDto(
+                                    id = t.id,
+                                    packageName = "com.phantom.checker.todo",
+                                    appLabel = DesktopStrings.todoReminderBannerTitle,
+                                    sender = t.title,
+                                    preview = t.notes.ifBlank { formatDueTime(t.dueAt) },
+                                    riskLabel = if (t.priority >= 2) "suspicious" else "safe",
+                                    conversationKey = "",
+                                    timestamp = now
+                                ),
+                                settings = cur,
+                                onNativeTrayNotify = onMirrorNotification
+                            )
+                        }
+                    }
+                }
+            }
+            delay(30_000L)
+        }
+    }
 
     var chatSessions by remember { mutableStateOf<List<ChatSessionSummaryDto>>(emptyList()) }
     var chatSessionId by remember { mutableLongStateOf(0L) }
@@ -478,6 +525,20 @@ fun DesktopApp(
                     val res = runCatching { gson.fromJson(env.payloadJson, NoteMutateRes::class.java) }.getOrNull() ?: return@collect
                     if (res.ok) {
                         actionFeedback = DesktopStrings.noteAdded
+                        scope.launch { server.sendCommand(LinkMsgType.NOTES_LIST, reqId(), NotesListReq(limit = 50)) }
+                    } else actionFeedback = res.errorMessage
+                }
+                LinkMsgType.NOTE_EDIT_RES, LinkMsgType.NOTE_PIN_TOGGLE_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, NoteMutateRes::class.java) }.getOrNull() ?: return@collect
+                    if (res.ok) {
+                        actionFeedback = DesktopStrings.noteUpdated
+                        scope.launch { server.sendCommand(LinkMsgType.NOTES_LIST, reqId(), NotesListReq(limit = 50)) }
+                    } else actionFeedback = res.errorMessage
+                }
+                LinkMsgType.NOTE_DELETE_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, NoteMutateRes::class.java) }.getOrNull() ?: return@collect
+                    if (res.ok) {
+                        actionFeedback = DesktopStrings.noteDeleted
                         scope.launch { server.sendCommand(LinkMsgType.NOTES_LIST, reqId(), NotesListReq(limit = 50)) }
                     } else actionFeedback = res.errorMessage
                 }
@@ -1438,8 +1499,10 @@ fun DesktopApp(
                                     }
 
                                     DesktopTab.TODOS -> {
+                                        val nowMs = System.currentTimeMillis()
+                                        val noteColorChoices = listOf("", "#A78BFA", "#6EA8FE", "#34D399", "#FBBF24", "#FB7185")
                                         Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                                            // Left: Todos CRUD
+                                            // Left: Todos Full CRUD (#499)
                                             Column(modifier = Modifier.weight(0.55f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                                     OutlinedTextField(
@@ -1457,6 +1520,16 @@ fun DesktopApp(
                                                             }
                                                         }
                                                     }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.add) }
+                                                    SpringOutlinedButton(onClick = {
+                                                        editTodoTitle = newTodoTitle.trim()
+                                                        editTodoNotes = ""
+                                                        editTodoDueAt = System.currentTimeMillis() + 60L * 60L * 1000L
+                                                        editTodoDueCustom = formatDueTime(editTodoDueAt)
+                                                        editTodoPriority = 1
+                                                        editTodoRepeat = ""
+                                                        editingTodo = null
+                                                        showNewTodoDialog = true
+                                                    }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.todoAddFull) }
                                                 }
                                                 if (todos.isEmpty()) {
                                                     Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -1465,6 +1538,12 @@ fun DesktopApp(
                                                 } else {
                                                     LazyColumn(state = todosListState, verticalArrangement = Arrangement.spacedBy(listSpace), modifier = Modifier.weight(1f)) {
                                                         items(todos, key = { it.id }) { t ->
+                                                            val isOverdue = !t.isDone && t.dueAt > 0L && t.dueAt < nowMs
+                                                            val prioColor = when (t.priority) {
+                                                                2 -> DesktopPalette.GlassError
+                                                                0 -> DesktopPalette.GlassSuccess
+                                                                else -> DesktopPalette.GlassWarning
+                                                            }
                                                             GlassCard(modifier = Modifier.fillMaxWidth()) {
                                                                 Row(modifier = Modifier.fillMaxWidth().padding(cardPad), verticalAlignment = Alignment.CenterVertically) {
                                                                     Checkbox(
@@ -1473,13 +1552,60 @@ fun DesktopApp(
                                                                             scope.launch { sendOrNotify(LinkMsgType.TODOS_TOGGLE, TodosToggleReq(id = t.id, done = checked)) }
                                                                         }
                                                                     )
+                                                                    Box(
+                                                                        modifier = Modifier
+                                                                            .size(8.dp)
+                                                                            .clip(CircleShape)
+                                                                            .background(prioColor)
+                                                                    )
                                                                     Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
-                                                                        Text(t.title, style = MaterialTheme.typography.bodyMedium, color = tokens.textPrimary)
-                                                                        if (t.repeatRule.isNotBlank()) {
-                                                                            Text(t.repeatRule, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                                                        Text(
+                                                                            text = t.title,
+                                                                            style = MaterialTheme.typography.bodyMedium,
+                                                                            textDecoration = if (t.isDone) TextDecoration.LineThrough else null,
+                                                                            color = if (t.isDone) tokens.textMuted else if (isOverdue) DesktopPalette.GlassError else tokens.textPrimary
+                                                                        )
+                                                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                                            if (t.dueAt > 0L) {
+                                                                                val duePrefix = if (isOverdue) "${DesktopStrings.todoOverdue} · " else ""
+                                                                                Text(
+                                                                                    text = "$duePrefix${formatDueTime(t.dueAt)}",
+                                                                                    style = MaterialTheme.typography.labelSmall,
+                                                                                    color = if (isOverdue) DesktopPalette.GlassError else tokens.textMuted
+                                                                                )
+                                                                            }
+                                                                            if (t.repeatRule.isNotBlank()) {
+                                                                                Text(
+                                                                                    text = when (t.repeatRule) {
+                                                                                        "daily" -> DesktopStrings.todoRepeatDaily
+                                                                                        "weekly" -> DesktopStrings.todoRepeatWeekly
+                                                                                        else -> t.repeatRule
+                                                                                    },
+                                                                                    style = MaterialTheme.typography.labelSmall,
+                                                                                    color = accentColor
+                                                                                )
+                                                                            }
+                                                                        }
+                                                                        if (t.notes.isNotBlank()) {
+                                                                            Text(
+                                                                                text = t.notes,
+                                                                                style = MaterialTheme.typography.labelSmall,
+                                                                                color = tokens.textSecondary,
+                                                                                maxLines = 2,
+                                                                                overflow = TextOverflow.Ellipsis
+                                                                            )
                                                                         }
                                                                     }
-                                                                    TextButton(onClick = { editingTodo = t; editTodoTitle = t.title }) { Text(DesktopStrings.todoEdit) }
+                                                                    TextButton(onClick = {
+                                                                        editingTodo = t
+                                                                        editTodoTitle = t.title
+                                                                        editTodoNotes = t.notes
+                                                                        editTodoDueAt = if (t.dueAt > 0L) t.dueAt else System.currentTimeMillis() + 3600_000L
+                                                                        editTodoDueCustom = formatDueTime(editTodoDueAt)
+                                                                        editTodoPriority = t.priority
+                                                                        editTodoRepeat = t.repeatRule
+                                                                        showNewTodoDialog = true
+                                                                    }) { Text(DesktopStrings.todoEdit) }
                                                                     TextButton(onClick = { scope.launch { sendOrNotify(LinkMsgType.TODOS_DELETE, TodoDeleteReq(id = t.id)) } }) {
                                                                         Text(DesktopStrings.todoDelete, color = DesktopPalette.GlassError)
                                                                     }
@@ -1490,10 +1616,20 @@ fun DesktopApp(
                                                 }
                                             }
 
-                                            // Right: Notes Panel
+                                            // Right: Notes Full CRUD Panel (#499)
                                             GlassCard(modifier = Modifier.weight(0.45f).fillMaxHeight()) {
                                                 Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                    Text(DesktopStrings.notesTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
+                                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                            Icon(DesktopIcons.Note, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
+                                                            Text(DesktopStrings.notesTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
+                                                        }
+                                                        FilterChip(
+                                                            selected = newNotePinned,
+                                                            onClick = { newNotePinned = !newNotePinned },
+                                                            label = { Text(DesktopStrings.notePin, style = MaterialTheme.typography.labelSmall) }
+                                                        )
+                                                    }
                                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                                         OutlinedTextField(
                                                             value = newNoteContent,
@@ -1506,29 +1642,93 @@ fun DesktopApp(
                                                             val c = newNoteContent.trim()
                                                             if (c.isNotBlank()) {
                                                                 scope.launch {
-                                                                    if (sendOrNotify(LinkMsgType.NOTE_ADD, NoteAddReq(content = c))) newNoteContent = ""
+                                                                    if (sendOrNotify(LinkMsgType.NOTE_ADD, NoteAddReq(content = c, pinned = newNotePinned, colorHex = newNoteColor))) {
+                                                                        newNoteContent = ""
+                                                                        newNotePinned = false
+                                                                    }
                                                                 }
                                                             }
                                                         }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.add) }
+                                                    }
+                                                    // Color palette dots for new note
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                        Text(DesktopStrings.noteColorLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                                        noteColorChoices.forEach { hex ->
+                                                            val selected = newNoteColor == hex
+                                                            val swatch = DesktopPalette.parseHexColor(hex) ?: tokens.border
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(if (selected) 20.dp else 16.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(swatch)
+                                                                    .border(if (selected) 2.dp else 1.dp, if (selected) tokens.textPrimary else tokens.border, CircleShape)
+                                                                    .clickable { newNoteColor = hex }
+                                                            )
+                                                        }
                                                     }
                                                     if (notes.isEmpty()) {
                                                         Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                                                             Text(DesktopStrings.notesEmpty, color = tokens.textMuted)
                                                         }
                                                     } else {
+                                                        val sortedNotes = remember(notes) {
+                                                            notes.sortedWith(compareByDescending<NoteItemDto> { it.pinned }.thenByDescending { it.updatedAt })
+                                                        }
                                                         LazyColumn(state = notesListState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                            items(notes, key = { it.id }) { n ->
-                                                                Column(
+                                                            items(sortedNotes, key = { it.id }) { n ->
+                                                                val noteAccent = DesktopPalette.parseHexColor(n.colorHex)
+                                                                Row(
                                                                     modifier = Modifier
                                                                         .fillMaxWidth()
                                                                         .clip(RoundedCornerShape(10.dp))
                                                                         .background(tokens.surfaceElevated.copy(alpha = 0.6f))
-                                                                        .padding(10.dp)
+                                                                        .border(1.dp, if (n.pinned) accentColor.copy(alpha = 0.4f) else tokens.border, RoundedCornerShape(10.dp))
+                                                                        .clickable {
+                                                                            editingNote = n
+                                                                            editNoteContent = n.content
+                                                                            editNotePinned = n.pinned
+                                                                            editNoteColor = n.colorHex
+                                                                        }
+                                                                        .padding(10.dp),
+                                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                                    verticalAlignment = Alignment.Top
                                                                 ) {
-                                                                    if (n.relatedAppLabel.isNotBlank()) {
-                                                                        Text(n.relatedAppLabel, style = MaterialTheme.typography.labelSmall, color = accentColor)
+                                                                    if (noteAccent != null) {
+                                                                        Box(
+                                                                            modifier = Modifier
+                                                                                .width(4.dp)
+                                                                                .height(36.dp)
+                                                                                .clip(RoundedCornerShape(2.dp))
+                                                                                .background(noteAccent)
+                                                                        )
                                                                     }
-                                                                    Text(n.content, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
+                                                                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                                                        if (n.relatedAppLabel.isNotBlank() || n.pinned) {
+                                                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                                                if (n.pinned) {
+                                                                                    Icon(DesktopIcons.Pin, contentDescription = null, tint = accentColor, modifier = Modifier.size(13.dp))
+                                                                                }
+                                                                                if (n.relatedAppLabel.isNotBlank()) {
+                                                                                    Text(n.relatedAppLabel, style = MaterialTheme.typography.labelSmall, color = accentColor)
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                        Text(n.content, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
+                                                                    }
+                                                                    Column(horizontalAlignment = Alignment.End) {
+                                                                        TextButton(onClick = {
+                                                                            scope.launch {
+                                                                                sendOrNotify(LinkMsgType.NOTE_PIN_TOGGLE, NotePinToggleReq(id = n.id, pinned = !n.pinned))
+                                                                            }
+                                                                        }) {
+                                                                            Text(if (n.pinned) DesktopStrings.noteUnpin else DesktopStrings.notePin, style = MaterialTheme.typography.labelSmall)
+                                                                        }
+                                                                        TextButton(onClick = {
+                                                                            scope.launch { sendOrNotify(LinkMsgType.NOTE_DELETE, NoteDeleteReq(id = n.id)) }
+                                                                        }) {
+                                                                            Text(DesktopStrings.noteDelete, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.GlassError)
+                                                                        }
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -1539,7 +1739,7 @@ fun DesktopApp(
                                     }
 
                                     DesktopTab.CHAT -> {
-                                        // Multi-Session AI Chat with Markdown + Copy + Quick Commands + Ctrl+Enter
+                                        // Multi-Session AI Chat with Markdown + Copy + Quick Commands + Quote Notification + Ctrl+Enter (#499)
                                         Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                             // Session Sidebar
                                             GlassCard(modifier = Modifier.width(220.dp).fillMaxHeight()) {
@@ -1574,14 +1774,27 @@ fun DesktopApp(
 
                                             // Chat Main Column
                                             Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                                                // Quick Commands Bar
+                                                // Quick Commands Bar + Quote Latest Notification (#499)
                                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 10.dp)) {
                                                     listOf(
                                                         DesktopStrings.quickPromptSummary,
+                                                        DesktopStrings.quickPromptUnread,
                                                         DesktopStrings.quickPromptScam,
                                                         DesktopStrings.quickPromptTodos
                                                     ).forEach { prompt ->
                                                         FilterChip(selected = false, onClick = { sendChatMessage(prompt) }, label = { Text(prompt) })
+                                                    }
+                                                    val latestMsg = messages.maxByOrNull { it.timestamp }
+                                                    if (latestMsg != null) {
+                                                        FilterChip(
+                                                            selected = false,
+                                                            onClick = {
+                                                                val app = DesktopAppLabels.resolveLabel(latestMsg.packageName, latestMsg.appLabel)
+                                                                val quote = "[$app · ${latestMsg.sender}] ${latestMsg.preview.take(120)}\n"
+                                                                chatInput = if (chatInput.isBlank()) quote else "$quote$chatInput"
+                                                            },
+                                                            label = { Text(DesktopStrings.chatQuoteLatest, color = accentColor) }
+                                                        )
                                                     }
                                                 }
 
@@ -1809,25 +2022,143 @@ fun DesktopApp(
                     )
                 }
 
-                // Edit Todo Dialog
-                editingTodo?.let { target ->
+                // #499 Full Todo Add / Edit Dialog (title, notes, dueAt, priority, repeatRule)
+                if (showNewTodoDialog) {
+                    val target = editingTodo
                     AlertDialog(
-                        onDismissRequest = { editingTodo = null },
-                        title = { Text(DesktopStrings.todoEdit, color = tokens.textPrimary) },
+                        onDismissRequest = { showNewTodoDialog = false; editingTodo = null },
+                        title = { Text(if (target == null) DesktopStrings.todoAddFull else DesktopStrings.todoEdit, color = tokens.textPrimary) },
                         text = {
-                            OutlinedTextField(
-                                value = editTodoTitle,
-                                onValueChange = { editTodoTitle = it },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = editTodoTitle,
+                                    onValueChange = { editTodoTitle = it },
+                                    label = { Text(DesktopStrings.todoAddHint) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                OutlinedTextField(
+                                    value = editTodoNotes,
+                                    onValueChange = { editTodoNotes = it },
+                                    label = { Text(DesktopStrings.todoNotesHint) },
+                                    maxLines = 3,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                // Priority chips
+                                Text(DesktopStrings.todoPriorityLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    listOf(
+                                        0 to DesktopStrings.todoPriorityLow,
+                                        1 to DesktopStrings.todoPriorityMed,
+                                        2 to DesktopStrings.todoPriorityHigh
+                                    ).forEach { (p, label) ->
+                                        FilterChip(
+                                            selected = editTodoPriority == p,
+                                            onClick = { editTodoPriority = p },
+                                            label = { Text(label) }
+                                        )
+                                    }
+                                }
+                                // Reminder time presets + custom input
+                                Text(DesktopStrings.todoDueLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    FilterChip(
+                                        selected = false,
+                                        onClick = {
+                                            editTodoDueAt = System.currentTimeMillis() + 60L * 60L * 1000L
+                                            editTodoDueCustom = formatDueTime(editTodoDueAt)
+                                        },
+                                        label = { Text(DesktopStrings.todoDue1h) }
+                                    )
+                                    FilterChip(
+                                        selected = false,
+                                        onClick = {
+                                            val cal = java.util.Calendar.getInstance().apply {
+                                                set(java.util.Calendar.HOUR_OF_DAY, 20)
+                                                set(java.util.Calendar.MINUTE, 0)
+                                                set(java.util.Calendar.SECOND, 0)
+                                                if (timeInMillis <= System.currentTimeMillis()) add(java.util.Calendar.DAY_OF_YEAR, 1)
+                                            }
+                                            editTodoDueAt = cal.timeInMillis
+                                            editTodoDueCustom = formatDueTime(editTodoDueAt)
+                                        },
+                                        label = { Text(DesktopStrings.todoDueTonight) }
+                                    )
+                                    FilterChip(
+                                        selected = false,
+                                        onClick = {
+                                            val cal = java.util.Calendar.getInstance().apply {
+                                                add(java.util.Calendar.DAY_OF_YEAR, 1)
+                                                set(java.util.Calendar.HOUR_OF_DAY, 9)
+                                                set(java.util.Calendar.MINUTE, 0)
+                                                set(java.util.Calendar.SECOND, 0)
+                                            }
+                                            editTodoDueAt = cal.timeInMillis
+                                            editTodoDueCustom = formatDueTime(editTodoDueAt)
+                                        },
+                                        label = { Text(DesktopStrings.todoDueTomorrow) }
+                                    )
+                                }
+                                OutlinedTextField(
+                                    value = editTodoDueCustom,
+                                    onValueChange = { raw ->
+                                        editTodoDueCustom = raw
+                                        parseDueTime(raw)?.let { editTodoDueAt = it }
+                                    },
+                                    label = { Text(DesktopStrings.todoDueCustomHint) },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                // Repeat rule chips
+                                Text(DesktopStrings.todoRepeatLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    listOf(
+                                        "" to DesktopStrings.todoRepeatNone,
+                                        "daily" to DesktopStrings.todoRepeatDaily,
+                                        "weekly" to DesktopStrings.todoRepeatWeekly
+                                    ).forEach { (rule, label) ->
+                                        FilterChip(
+                                            selected = editTodoRepeat == rule,
+                                            onClick = { editTodoRepeat = rule },
+                                            label = { Text(label) }
+                                        )
+                                    }
+                                }
+                            }
                         },
                         confirmButton = {
                             TextButton(onClick = {
                                 val title = editTodoTitle.trim()
                                 if (title.isNotBlank()) {
+                                    val resolvedDue = parseDueTime(editTodoDueCustom) ?: editTodoDueAt
                                     scope.launch {
-                                        if (sendOrNotify(LinkMsgType.TODOS_EDIT, TodoEditReq(id = target.id, title = title, dueAt = target.dueAt, repeatRule = target.repeatRule))) {
+                                        val ok = if (target == null) {
+                                            sendOrNotify(
+                                                LinkMsgType.TODOS_ADD,
+                                                TodoAddReq(
+                                                    title = title,
+                                                    dueAt = resolvedDue,
+                                                    repeatRule = editTodoRepeat,
+                                                    notes = editTodoNotes.trim(),
+                                                    priority = editTodoPriority
+                                                )
+                                            )
+                                        } else {
+                                            sendOrNotify(
+                                                LinkMsgType.TODOS_EDIT,
+                                                TodoEditReq(
+                                                    id = target.id,
+                                                    title = title,
+                                                    dueAt = resolvedDue,
+                                                    repeatRule = editTodoRepeat,
+                                                    notes = editTodoNotes.trim(),
+                                                    priority = editTodoPriority
+                                                )
+                                            )
+                                        }
+                                        if (ok) {
+                                            if (target == null) newTodoTitle = ""
+                                            showNewTodoDialog = false
                                             editingTodo = null
                                         }
                                     }
@@ -1835,7 +2166,63 @@ fun DesktopApp(
                             }) { Text(DesktopStrings.todoSave) }
                         },
                         dismissButton = {
-                            TextButton(onClick = { editingTodo = null }) { Text(DesktopStrings.dismiss) }
+                            TextButton(onClick = { showNewTodoDialog = false; editingTodo = null }) { Text(DesktopStrings.dismiss) }
+                        },
+                        containerColor = tokens.dialogContainer
+                    )
+                }
+
+                // #499 Edit Note Dialog
+                editingNote?.let { targetNote ->
+                    val noteColorChoices = listOf("", "#A78BFA", "#6EA8FE", "#34D399", "#FBBF24", "#FB7185")
+                    AlertDialog(
+                        onDismissRequest = { editingNote = null },
+                        title = { Text(DesktopStrings.noteEditTitle, color = tokens.textPrimary) },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = editNoteContent,
+                                    onValueChange = { editNoteContent = it },
+                                    minLines = 3,
+                                    maxLines = 8,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    FilterChip(
+                                        selected = editNotePinned,
+                                        onClick = { editNotePinned = !editNotePinned },
+                                        label = { Text(if (editNotePinned) DesktopStrings.noteUnpin else DesktopStrings.notePin) }
+                                    )
+                                    Text(DesktopStrings.noteColorLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                    noteColorChoices.forEach { hex ->
+                                        val selected = editNoteColor == hex
+                                        val swatch = DesktopPalette.parseHexColor(hex) ?: tokens.border
+                                        Box(
+                                            modifier = Modifier
+                                                .size(if (selected) 20.dp else 16.dp)
+                                                .clip(CircleShape)
+                                                .background(swatch)
+                                                .border(if (selected) 2.dp else 1.dp, if (selected) tokens.textPrimary else tokens.border, CircleShape)
+                                                .clickable { editNoteColor = hex }
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                val content = editNoteContent.trim()
+                                if (content.isNotBlank()) {
+                                    scope.launch {
+                                        if (sendOrNotify(LinkMsgType.NOTE_EDIT, NoteEditReq(id = targetNote.id, content = content, pinned = editNotePinned, colorHex = editNoteColor))) {
+                                            editingNote = null
+                                        }
+                                    }
+                                }
+                            }) { Text(DesktopStrings.todoSave) }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { editingNote = null }) { Text(DesktopStrings.dismiss) }
                         },
                         containerColor = tokens.dialogContainer
                     )
@@ -1957,4 +2344,36 @@ private fun PulsingThinkingLabel(
             .padding(vertical = 6.dp)
             .graphicsLayer { alpha = alphaState.value }
     )
+}
+
+private fun formatDueTime(ts: Long): String {
+    if (ts <= 0L) return ""
+    return runCatching {
+        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(ts))
+    }.getOrDefault("")
+}
+
+private fun parseDueTime(raw: String): Long? {
+    val clean = raw.trim()
+    if (clean.isEmpty()) return null
+    val patterns = listOf("yyyy-MM-dd HH:mm", "yyyy/MM/dd HH:mm", "MM-dd HH:mm", "HH:mm")
+    for (p in patterns) {
+        val parsed = runCatching {
+            val fmt = java.text.SimpleDateFormat(p, java.util.Locale.getDefault()).apply { isLenient = false }
+            val date = fmt.parse(clean) ?: return@runCatching null
+            if (p == "HH:mm") {
+                val now = java.util.Calendar.getInstance()
+                val t = java.util.Calendar.getInstance().apply { time = date }
+                now.set(java.util.Calendar.HOUR_OF_DAY, t.get(java.util.Calendar.HOUR_OF_DAY))
+                now.set(java.util.Calendar.MINUTE, t.get(java.util.Calendar.MINUTE))
+                now.set(java.util.Calendar.SECOND, 0)
+                if (now.timeInMillis <= System.currentTimeMillis()) now.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                now.timeInMillis
+            } else {
+                date.time
+            }
+        }.getOrNull()
+        if (parsed != null) return parsed
+    }
+    return null
 }

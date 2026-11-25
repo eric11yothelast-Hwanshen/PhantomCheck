@@ -1026,7 +1026,17 @@ object DesktopLinkClient {
                 val all = db.todoDao().all()
                 val filtered = if (req.done != null) all.filter { it.isDone == req.done } else all
                 val items = filtered.map {
-                    TodoItemDto(id = it.id, title = it.title, dueAt = it.dueAt, isDone = it.isDone, repeatRule = it.repeatRule)
+                    TodoItemDto(
+                        id = it.id,
+                        title = it.title,
+                        dueAt = it.dueAt,
+                        isDone = it.isDone,
+                        repeatRule = it.repeatRule,
+                        priority = it.priority,
+                        notes = it.notes,
+                        createdAt = it.createdAt,
+                        completedAt = it.completedAt ?: 0L
+                    )
                 }
                 sendEnvelope(ws, LinkMsgType.TODOS_LIST_RES, env.reqId, TodosListRes(items = items))
             }
@@ -1207,13 +1217,32 @@ object DesktopLinkClient {
                 val now = System.currentTimeMillis()
                 val dueAt = if (req.dueAt > 0L) req.dueAt else now + 60L * 60L * 1000L
                 val repeat = req.repeatRule.takeIf { it == TodoEntity.REPEAT_DAILY || it == TodoEntity.REPEAT_WEEKLY } ?: TodoEntity.REPEAT_NONE
-                val entity = TodoEntity(title = title, dueAt = dueAt, repeatRule = repeat, notes = req.notes.trim())
+                val priority = req.priority.coerceIn(TodoEntity.PRIORITY_LOW, TodoEntity.PRIORITY_HIGH)
+                val notesStr = req.notes.trim()
+                val entity = TodoEntity(title = title, dueAt = dueAt, repeatRule = repeat, notes = notesStr, priority = priority)
                 val id = db.todoDao().insert(entity)
                 if (dueAt > now) {
                     ReminderScheduler.scheduleTodo(appCtx, id, dueAt)
                 }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.TODOS_ADD, true, "id=$id")
-                sendEnvelope(ws, LinkMsgType.TODOS_ADD_RES, env.reqId, TodoMutateRes(ok = true, item = TodoItemDto(id = id, title = title, dueAt = dueAt, isDone = false, repeatRule = repeat)))
+                sendEnvelope(
+                    ws,
+                    LinkMsgType.TODOS_ADD_RES,
+                    env.reqId,
+                    TodoMutateRes(
+                        ok = true,
+                        item = TodoItemDto(
+                            id = id,
+                            title = title,
+                            dueAt = dueAt,
+                            isDone = false,
+                            repeatRule = repeat,
+                            priority = priority,
+                            notes = notesStr,
+                            createdAt = entity.createdAt
+                        )
+                    )
+                )
             }
 
             LinkMsgType.TODOS_EDIT -> {
@@ -1227,14 +1256,33 @@ object DesktopLinkClient {
                 val title = req.title.trim().ifBlank { existing.title }
                 val dueAt = if (req.dueAt > 0L) req.dueAt else existing.dueAt
                 val repeat = req.repeatRule.takeIf { it == TodoEntity.REPEAT_DAILY || it == TodoEntity.REPEAT_WEEKLY || it.isEmpty() } ?: existing.repeatRule
-                val updated = existing.copy(title = title, dueAt = dueAt, repeatRule = repeat, notes = req.notes.trim())
+                val priority = req.priority.coerceIn(TodoEntity.PRIORITY_LOW, TodoEntity.PRIORITY_HIGH)
+                val updated = existing.copy(title = title, dueAt = dueAt, repeatRule = repeat, notes = req.notes.trim(), priority = priority)
                 db.todoDao().update(updated)
                 ReminderScheduler.cancelTodo(appCtx, updated.id)
                 if (!updated.isDone && updated.dueAt > System.currentTimeMillis()) {
                     ReminderScheduler.scheduleTodo(appCtx, updated.id, updated.dueAt)
                 }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.TODOS_EDIT, true, "id=${updated.id}")
-                sendEnvelope(ws, LinkMsgType.TODOS_EDIT_RES, env.reqId, TodoMutateRes(ok = true, item = TodoItemDto(id = updated.id, title = updated.title, dueAt = updated.dueAt, isDone = updated.isDone, repeatRule = updated.repeatRule)))
+                sendEnvelope(
+                    ws,
+                    LinkMsgType.TODOS_EDIT_RES,
+                    env.reqId,
+                    TodoMutateRes(
+                        ok = true,
+                        item = TodoItemDto(
+                            id = updated.id,
+                            title = updated.title,
+                            dueAt = updated.dueAt,
+                            isDone = updated.isDone,
+                            repeatRule = updated.repeatRule,
+                            priority = updated.priority,
+                            notes = updated.notes,
+                            createdAt = updated.createdAt,
+                            completedAt = updated.completedAt ?: 0L
+                        )
+                    )
+                )
             }
 
             LinkMsgType.TODOS_DELETE -> {
@@ -1261,7 +1309,8 @@ object DesktopLinkClient {
                         source = n.source,
                         relatedMessageId = n.relatedMessageId ?: 0L,
                         relatedAppLabel = n.relatedAppLabel.orEmpty(),
-                        updatedAt = n.updatedAt
+                        updatedAt = n.updatedAt,
+                        colorHex = n.colorHex.orEmpty()
                     )
                 }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.NOTES_LIST, true, "count=${items.size}")
@@ -1296,15 +1345,19 @@ object DesktopLinkClient {
                                 source = existing.source,
                                 relatedMessageId = existing.relatedMessageId ?: 0L,
                                 relatedAppLabel = existing.relatedAppLabel.orEmpty(),
-                                updatedAt = existing.updatedAt
+                                updatedAt = existing.updatedAt,
+                                colorHex = existing.colorHex.orEmpty()
                             )
                         )
                     )
                     return
                 }
                 val now = System.currentTimeMillis()
+                val colorHex = req.colorHex.trim().takeIf { it.matches(Regex("^#[0-9A-Fa-f]{6}$")) }
                 val note = NoteEntity(
                     content = content,
+                    colorHex = colorHex,
+                    pinned = req.pinned,
                     source = NoteEntity.SOURCE_MANUAL,
                     relatedMessageId = relatedId,
                     relatedAppLabel = relatedMsg?.appLabel?.ifBlank { relatedMsg.packageName },
@@ -1326,7 +1379,89 @@ object DesktopLinkClient {
                             source = note.source,
                             relatedMessageId = note.relatedMessageId ?: 0L,
                             relatedAppLabel = note.relatedAppLabel.orEmpty(),
-                            updatedAt = note.updatedAt
+                            updatedAt = note.updatedAt,
+                            colorHex = note.colorHex.orEmpty()
+                        )
+                    )
+                )
+            }
+
+            LinkMsgType.NOTE_EDIT -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, NoteEditReq::class.java) }.getOrNull()
+                val existing = if (req != null && req.id > 0L) db.noteDao().all().firstOrNull { it.id == req.id } else null
+                if (req == null || existing == null) {
+                    DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.NOTE_EDIT, false, "not_found")
+                    sendEnvelope(ws, LinkMsgType.NOTE_EDIT_RES, env.reqId, NoteMutateRes(ok = false, errorMessage = "Note not found"))
+                    return
+                }
+                val newContent = req.content.trim().ifBlank { existing.content }
+                val newColor = req.colorHex.trim().takeIf { it.matches(Regex("^#[0-9A-Fa-f]{6}$")) }
+                val updated = existing.copy(
+                    content = newContent,
+                    pinned = req.pinned,
+                    colorHex = newColor,
+                    updatedAt = System.currentTimeMillis()
+                )
+                db.noteDao().update(updated)
+                DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.NOTE_EDIT, true, "id=${updated.id}")
+                sendEnvelope(
+                    ws,
+                    LinkMsgType.NOTE_EDIT_RES,
+                    env.reqId,
+                    NoteMutateRes(
+                        ok = true,
+                        item = NoteItemDto(
+                            id = updated.id,
+                            content = updated.content,
+                            pinned = updated.pinned,
+                            source = updated.source,
+                            relatedMessageId = updated.relatedMessageId ?: 0L,
+                            relatedAppLabel = updated.relatedAppLabel.orEmpty(),
+                            updatedAt = updated.updatedAt,
+                            colorHex = updated.colorHex.orEmpty()
+                        )
+                    )
+                )
+            }
+
+            LinkMsgType.NOTE_DELETE -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, NoteDeleteReq::class.java) }.getOrNull()
+                if (req == null || req.id <= 0L) {
+                    DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.NOTE_DELETE, false, "invalid_id")
+                    sendEnvelope(ws, LinkMsgType.NOTE_DELETE_RES, env.reqId, NoteMutateRes(ok = false, errorMessage = "Invalid note id"))
+                    return
+                }
+                db.noteDao().deleteById(req.id)
+                DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.NOTE_DELETE, true, "id=${req.id}")
+                sendEnvelope(ws, LinkMsgType.NOTE_DELETE_RES, env.reqId, NoteMutateRes(ok = true, deletedId = req.id))
+            }
+
+            LinkMsgType.NOTE_PIN_TOGGLE -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, NotePinToggleReq::class.java) }.getOrNull()
+                val existing = if (req != null && req.id > 0L) db.noteDao().all().firstOrNull { it.id == req.id } else null
+                if (req == null || existing == null) {
+                    DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.NOTE_PIN_TOGGLE, false, "not_found")
+                    sendEnvelope(ws, LinkMsgType.NOTE_PIN_TOGGLE_RES, env.reqId, NoteMutateRes(ok = false, errorMessage = "Note not found"))
+                    return
+                }
+                val updated = existing.copy(pinned = req.pinned, updatedAt = System.currentTimeMillis())
+                db.noteDao().update(updated)
+                DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.NOTE_PIN_TOGGLE, true, "id=${updated.id},pin=${updated.pinned}")
+                sendEnvelope(
+                    ws,
+                    LinkMsgType.NOTE_PIN_TOGGLE_RES,
+                    env.reqId,
+                    NoteMutateRes(
+                        ok = true,
+                        item = NoteItemDto(
+                            id = updated.id,
+                            content = updated.content,
+                            pinned = updated.pinned,
+                            source = updated.source,
+                            relatedMessageId = updated.relatedMessageId ?: 0L,
+                            relatedAppLabel = updated.relatedAppLabel.orEmpty(),
+                            updatedAt = updated.updatedAt,
+                            colorHex = updated.colorHex.orEmpty()
                         )
                     )
                 )
