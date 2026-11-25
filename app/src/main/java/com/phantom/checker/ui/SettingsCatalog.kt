@@ -56,6 +56,7 @@ object SettingsCatalog {
         SettingSearchItem("ai_model_deep_analysis", "ai", R.string.catalog_ai_model_deep_analysis_title, R.string.catalog_ai_model_deep_analysis_desc, R.string.catalog_ai_model_deep_analysis_aliases, page = "ApiKeySettingsActivity"),
         SettingSearchItem("ai_model_settings_search", "ai", R.string.catalog_ai_model_settings_search_title, R.string.catalog_ai_model_settings_search_desc, R.string.catalog_ai_model_settings_search_aliases, page = "ApiKeySettingsActivity"),
         SettingSearchItem("notif_style", "notif", R.string.catalog_notif_style_title, R.string.catalog_notif_style_desc, R.string.catalog_notif_style_aliases),
+        SettingSearchItem("notif_persistent_subtitle", "notif", R.string.catalog_notif_subtitle_mode_title, R.string.catalog_notif_subtitle_mode_desc, R.string.catalog_notif_subtitle_mode_aliases),
         SettingSearchItem("notif_persistent_icons", "notif", R.string.catalog_notif_persistent_icons_title, R.string.catalog_notif_persistent_icons_desc, R.string.catalog_notif_persistent_icons_aliases),
         SettingSearchItem("notif_ongoing", "notif", R.string.catalog_notif_ongoing_title, R.string.catalog_notif_ongoing_desc, R.string.catalog_notif_ongoing_aliases),
         SettingSearchItem("notif_quiet_hours", "notif", R.string.catalog_notif_quiet_hours_title, R.string.catalog_notif_quiet_hours_desc, R.string.catalog_notif_quiet_hours_aliases),

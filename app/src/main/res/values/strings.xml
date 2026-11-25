@@ -3120,4 +3120,15 @@
     <string name="batch_app_delete_done">Deleted %1$d message(s)</string>
     <string name="batch_app_delete_done_more">Deleted %1$d message(s) (batch limit 100; %2$d remaining — tap Delete again to continue)</string>
     <string name="batch_app_delete_none">No deletable messages (scam &amp; own replies are protected)</string>
+    <!-- #512 Persistent Notification Desktop Link Status Subtitle -->
+    <string name="prefs_pnotif_sub_link">Link status</string>
+    <string name="prefs_pnotif_sub_unread">Unread count</string>
+    <string name="prefs_pnotif_sub_both">Both</string>
+    <string name="prefs_pnotif_sub_hidden">Hidden</string>
+    <string name="notif_stats_link_connected">Connected: %1$s</string>
+    <string name="notif_stats_link_connecting">Connecting to desktop…</string>
+    <string name="notif_stats_link_disconnected">Not connected to paired PC</string>
+    <string name="catalog_notif_subtitle_mode_title">Persistent notification subtitle</string>
+    <string name="catalog_notif_subtitle_mode_desc">Show desktop link status (falls back to unread count when unpaired), unread count, both, or hide</string>
+    <string name="catalog_notif_subtitle_mode_aliases">persistent notification,subtitle,desktop link,connection status,unread,status bar</string>
 </resources>

@@ -3860,6 +3860,36 @@ fun FilterSettingsScreen(
                             )
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    var persistentSubtitleMode by remember {
+                        mutableStateOf(PhantomPrefs.getPersistentNotifSubtitleMode(appCtx))
+                    }
+                    Text(
+                        text = stringResource(R.string.catalog_notif_subtitle_mode_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = stringResource(R.string.catalog_notif_subtitle_mode_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        com.phantom.checker.util.PersistentNotifSubtitleMode.entries.forEach { subMode ->
+                            FilterChip(
+                                selected = persistentSubtitleMode == subMode,
+                                onClick = {
+                                    persistentSubtitleMode = subMode
+                                    PhantomPrefs.setPersistentNotifSubtitleMode(appCtx, subMode)
+                                    if (persistentStats) {
+                                        StatsForegroundService.startOrRefresh(appCtx, force = true)
+                                    }
+                                },
+                                label = { Text(subMode.label) }
+                            )
+                        }
+                    }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     SettingSwitchRow(

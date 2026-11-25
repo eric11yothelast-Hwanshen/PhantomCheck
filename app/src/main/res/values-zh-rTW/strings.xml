@@ -3120,4 +3120,15 @@
     <string name="batch_app_delete_done">已批次刪除 %1$d 則訊息</string>
     <string name="batch_app_delete_done_more">已刪除 %1$d 則（單批上限 100 則，尚餘 %2$d 則可再次點擊刪除）</string>
     <string name="batch_app_delete_none">沒有可刪除的訊息（已保護詐騙證據與本人回覆）</string>
+    <!-- #512 常駐通知副標顯示桌面連線狀態 -->
+    <string name="prefs_pnotif_sub_link">連線狀態</string>
+    <string name="prefs_pnotif_sub_unread">未讀數</string>
+    <string name="prefs_pnotif_sub_both">兩者</string>
+    <string name="prefs_pnotif_sub_hidden">隱藏</string>
+    <string name="notif_stats_link_connected">已連線：%1$s</string>
+    <string name="notif_stats_link_connecting">正在連線電腦…</string>
+    <string name="notif_stats_link_disconnected">未連線已配對電腦</string>
+    <string name="catalog_notif_subtitle_mode_title">常駐通知副標內容</string>
+    <string name="catalog_notif_subtitle_mode_desc">可選顯示電腦連線狀態（未配對時自動回退未讀數）、未讀數、兩者並顯或隱藏</string>
+    <string name="catalog_notif_subtitle_mode_aliases">常駐通知,副標,小字,電腦連線,連線狀態,未讀數,通知欄</string>
 </resources>

@@ -25,11 +25,15 @@ import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.ui.buildRecentAppsHorizontalStripBitmap
 import com.phantom.checker.util.NotifClickBehavior
 import com.phantom.checker.util.PersistentNotifStyle
+import com.phantom.checker.util.PersistentNotifSubtitleMode
 import com.phantom.checker.util.PhantomPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -46,6 +50,8 @@ class StatsForegroundService : Service() {
         val latestPkg: String?,
         val showIcons: Boolean,
         val style: PersistentNotifStyle,
+        val subtitleMode: PersistentNotifSubtitleMode,
+        val linkSubtitle: String?,
         val clickBehavior: NotifClickBehavior
     )
 
@@ -88,6 +94,19 @@ class StatsForegroundService : Service() {
         ensureChannel(applicationContext)
         KeepAlivePolicy.scheduleAll(applicationContext)
         registerScreenStateReceiver()
+        // #512 僅於桌面連線狀態或裝置名稱變化時觸發常駐通知刷新，零輪詢開銷
+        scope.launch {
+            DesktopLinkClient.status
+                .map { it.connState to it.connectedDesktopName }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect {
+                    val mode = PhantomPrefs.getPersistentNotifSubtitleMode(applicationContext)
+                    if (mode == PersistentNotifSubtitleMode.LINK_STATUS || mode == PersistentNotifSubtitleMode.BOTH) {
+                        performRefresh(force = true)
+                    }
+                }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -248,6 +267,8 @@ class StatsForegroundService : Service() {
                 com.phantom.checker.widget.RiskActionWidgetProvider.updateAllIfChanged(applicationContext)
                 com.phantom.checker.widget.ReminderWidgetProvider.updateAllIfChanged(applicationContext)
 
+                val subtitleMode = PhantomPrefs.getPersistentNotifSubtitleMode(applicationContext)
+                val linkSubtitle = resolveLinkStatusSubtitle(applicationContext)
                 val newSig = RefreshSignature(
                     today = snap.today,
                     unread = snap.unread,
@@ -256,6 +277,8 @@ class StatsForegroundService : Service() {
                     latestPkg = snap.latestPackageName,
                     showIcons = showIcons,
                     style = style,
+                    subtitleMode = subtitleMode,
+                    linkSubtitle = linkSubtitle,
                     clickBehavior = clickBehavior
                 )
 
@@ -418,6 +441,28 @@ class StatsForegroundService : Service() {
             )
         }
 
+        internal fun resolveLinkStatusSubtitle(ctx: Context): String? {
+            val paired = runCatching {
+                com.phantom.checker.util.DesktopLinkStore.getPairedDevices(ctx)
+            }.getOrDefault(emptyList())
+            if (paired.isEmpty()) return null
+            val st = DesktopLinkClient.status.value
+            return when (st.connState) {
+                PhoneLinkConnState.CONNECTED -> {
+                    val name = st.connectedDesktopName.ifBlank {
+                        paired.firstOrNull { it.instanceId == st.connectedDesktopId }?.name
+                            ?.ifBlank { st.connectedHostPort }
+                            ?: st.connectedHostPort
+                    }.ifBlank { "PC" }
+                    com.phantom.checker.PhantomApplication.str(R.string.notif_stats_link_connected, name)
+                }
+                PhoneLinkConnState.CONNECTING, PhoneLinkConnState.RECONNECTING ->
+                    com.phantom.checker.PhantomApplication.str(R.string.notif_stats_link_connecting)
+                PhoneLinkConnState.DISCONNECTED ->
+                    com.phantom.checker.PhantomApplication.str(R.string.notif_stats_link_disconnected)
+            }
+        }
+
         fun buildNotification(
             ctx: Context,
             today: Int,
@@ -430,28 +475,43 @@ class StatsForegroundService : Service() {
             ensureChannel(appCtx)
             val pendingIntent = buildContentIntent(appCtx, latestPackageName)
             val style = PhantomPrefs.getPersistentNotifStyle(appCtx)
+            val subtitleMode = PhantomPrefs.getPersistentNotifSubtitleMode(appCtx)
             val showIcons = PhantomPrefs.isPersistentNotifShowIcons(appCtx)
             val title = com.phantom.checker.PhantomApplication.str(R.string.notif_stats_s_6d05d2, today)
-            val text = when (style) {
+            val unreadText = when (style) {
                 com.phantom.checker.util.PersistentNotifStyle.DETAILED ->
                     com.phantom.checker.PhantomApplication.str(R.string.notif_stats_s_fe53e3, unread, scam)
                 com.phantom.checker.util.PersistentNotifStyle.COMPACT ->
                     com.phantom.checker.PhantomApplication.str(R.string.notif_stats_s_7d33b6)
             }
+            val linkText = resolveLinkStatusSubtitle(appCtx)
+            val text = when (subtitleMode) {
+                PersistentNotifSubtitleMode.LINK_STATUS -> linkText ?: unreadText
+                PersistentNotifSubtitleMode.UNREAD_COUNT -> unreadText
+                PersistentNotifSubtitleMode.BOTH -> if (linkText != null) "$linkText · $unreadText" else unreadText
+                PersistentNotifSubtitleMode.HIDDEN -> ""
+            }
 
             val builder = Notification.Builder(appCtx, STATS_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_phantom)
                 .setContentTitle(title)
-                .setContentText(text)
                 .setOngoing(true)
                 .setCategory(Notification.CATEGORY_STATUS)
                 .setOnlyAlertOnce(true)
                 .setContentIntent(pendingIntent)
+            if (text.isNotEmpty()) {
+                builder.setContentText(text)
+            }
 
             val appliedCustomView = try {
                 val rv = RemoteViews(appCtx.packageName, R.layout.notif_stats_collapsed).apply {
                     setTextViewText(R.id.notif_title, title)
-                    setTextViewText(R.id.notif_subtitle, text)
+                    if (text.isNotEmpty()) {
+                        setTextViewText(R.id.notif_subtitle, text)
+                        setViewVisibility(R.id.notif_subtitle, View.VISIBLE)
+                    } else {
+                        setViewVisibility(R.id.notif_subtitle, View.GONE)
+                    }
                     if (showIcons && largeIcon != null) {
                         setImageViewBitmap(R.id.notif_recent_strip, largeIcon)
                         setViewVisibility(R.id.notif_recent_strip, View.VISIBLE)
