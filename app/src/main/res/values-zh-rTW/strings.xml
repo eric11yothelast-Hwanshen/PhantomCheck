@@ -3028,4 +3028,20 @@
     <string name="link_hub_camera_init_failed">相機或 QR 掃碼模組初始化失敗（%1$s），請關閉並改用下方「手動配對（備援）」。</string>
     <string name="common_link">連線</string>
     <string name="chat_smart_search_citation_rule">\n\n【聯網查證模式】請結合上方使用者 RAG 記憶與個人化設定，並【僅依搜尋片段】回答。重要事實請在行內精簡標註來源（如 [1] 或網域名稱），嚴禁貼出整串長網址。若搜尋結果不足，請誠實說明「查無相關最新資料」，絕不以既有知識頂替或編造。</string>
+    <!-- #500 手機連線三合一 -->
+    <string name="link_hub_rescan_btn">重新掃描</string>
+    <string name="link_hub_paired_online">在線 · %1$s:%2$d</string>
+    <string name="link_hub_paired_offline">離線 · 待重新掃描</string>
+    <string name="link_hub_manual_expand">展開手動配對</string>
+    <string name="link_hub_manual_collapse">收合手動配對</string>
+    <string name="link_hub_diag_cat_port_changed">桌面端埠號已變更（如 49515 → %1$d），請點擊「重新掃描」自動解析最新位址。</string>
+    <string name="link_hub_diag_cat_server_stopped">桌面端 WSS 伺服器未啟動或拒絕連線，請開啟幻訊桌面端並確認伺服器執行中。</string>
+    <string name="link_hub_diag_cat_firewall">連線逾時，可能受 Windows 防火牆或路由器 AP 隔離阻擋；請在私人網路允許幻訊桌面端通過防火牆。</string>
+    <string name="link_hub_diag_cat_code_expired">配對碼已過期或錯誤，請在桌面端重新產生 QR Code 後再掃描。</string>
+    <string name="link_hub_diag_cat_diff_subnet">手機目前未連上 Wi-Fi（或與電腦處於不同網段），請將手機與電腦連至同一個 Wi-Fi。</string>
+    <string name="link_hub_diag_cat_weak_signal">Wi-Fi 訊號偏弱導致交握逾時或斷線，請靠近路由器或重試連線。</string>
+    <string name="link_hub_diag_action_rescan">重新掃描區網</string>
+    <string name="link_hub_diag_action_wifi">開啟 Wi-Fi 設定</string>
+    <string name="link_hub_diag_action_scan_qr">重新掃描 QR</string>
+    <string name="link_hub_diag_action_probe">立即探測</string>
 </resources>

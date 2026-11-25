@@ -3,6 +3,9 @@ package com.phantom.checker.service
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.os.BatteryManager
@@ -65,7 +68,8 @@ data class DiscoveredDesktop(
     val host: String,
     val port: Int,
     val fingerprintPrefix: String,
-    val protocolVersion: Int
+    val protocolVersion: Int,
+    val discoveredAtMs: Long = System.currentTimeMillis()
 )
 
 data class PhoneLinkStatus(
@@ -264,9 +268,38 @@ object DesktopLinkClient {
         startConnectionFlow(appCtx, target)
     }
 
+    /**
+     * #500 依憑證指紋前綴或服務/裝置名稱從即時 mDNS 清單解析已配對電腦之最新 IP:port（解決埠漂移 49515→49513）。
+     */
+    fun findDiscoveredForPaired(desktop: PairedDesktop): DiscoveredDesktop? {
+        val now = System.currentTimeMillis()
+        val live = _discoveredDesktops.value.filter { now - it.discoveredAtMs <= MDNS_TTL_MS }
+        val fpLower = desktop.fingerprint.trim().lowercase()
+        if (fpLower.length >= 6) {
+            live.firstOrNull { d ->
+                val prefix = d.fingerprintPrefix.trim().lowercase()
+                prefix.length >= 6 && fpLower.startsWith(prefix)
+            }?.let { return it }
+        }
+        return live.firstOrNull { d ->
+            (desktop.instanceId.isNotBlank() && d.serviceName.equals(desktop.instanceId, ignoreCase = true)) ||
+                (desktop.name.isNotBlank() && d.friendlyName.equals(desktop.name, ignoreCase = true))
+        }
+    }
+
+    fun isOnWifi(ctx: Context): Boolean = runCatching {
+        val cm = ctx.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        val net = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(net) ?: return false
+        caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+    }.getOrDefault(false)
+
     fun connectToPaired(ctx: Context, desktop: PairedDesktop) {
         val appCtx = ctx.applicationContext
-        if (desktop.host.isBlank() || desktop.hmacSecret.isBlank()) {
+        val liveMatch = findDiscoveredForPaired(desktop)
+        val resolvedHost = liveMatch?.host?.takeIf { it.isNotBlank() } ?: desktop.host
+        val resolvedPort = (liveMatch?.port ?: desktop.port).coerceIn(1024, 65535)
+        if (resolvedHost.isBlank() || desktop.hmacSecret.isBlank()) {
             _status.value = _status.value.copy(
                 connState = PhoneLinkConnState.DISCONNECTED,
                 lastErrorCode = LinkErrorCode.INVALID_REQUEST,
@@ -274,14 +307,23 @@ object DesktopLinkClient {
             )
             return
         }
+        if (liveMatch != null && (liveMatch.host != desktop.host || liveMatch.port != desktop.port)) {
+            DesktopLinkStore.recordDiagnostic(
+                appCtx,
+                "mDNS",
+                "ENDPOINT_UPDATED",
+                "${desktop.host}:${desktop.port} -> ${liveMatch.host}:${liveMatch.port}"
+            )
+            DesktopLinkStore.upsertPairedDevice(appCtx, desktop.copy(host = resolvedHost, port = resolvedPort))
+        }
         DesktopLinkStore.setLinkEnabled(appCtx, true)
         DesktopLinkStore.setLastConnectedDesktopId(appCtx, desktop.instanceId)
         val target = ConnectTarget(
-            host = desktop.host,
-            port = desktop.port.coerceIn(1024, 65535),
+            host = resolvedHost,
+            port = resolvedPort,
             expectedFingerprint = desktop.fingerprint.trim().lowercase(),
             desktopId = desktop.instanceId,
-            desktopName = desktop.name.ifBlank { desktop.host },
+            desktopName = desktop.name.ifBlank { resolvedHost },
             hmacSecret = desktop.hmacSecret,
             pairCode = null
         )
@@ -1673,7 +1715,10 @@ object DesktopLinkClient {
         return resolved
     }
 
-    // ---- Android NsdManager LAN Discovery for Desktop WSS Servers (#490 E1 serialized resolve queue) ----
+    // ---- Android NsdManager LAN Discovery for Desktop WSS Servers (#490 E1 serialized resolve queue + #500 TTL & NetworkCallback) ----
+
+    private const val MDNS_TTL_MS = 60_000L
+    private const val MDNS_SWEEP_INTERVAL_MS = 15_000L
 
     private val resolveLock = Any()
     private val resolveQueue = ArrayDeque<Pair<NsdServiceInfo, Int>>()
@@ -1681,12 +1726,84 @@ object DesktopLinkClient {
     @Volatile
     private var isResolvingService: Boolean = false
 
+    private var mdnsTtlSweepJob: Job? = null
+    private var connectivityManager: ConnectivityManager? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
+    private fun pruneExpiredDiscovered(nowMs: Long = System.currentTimeMillis()) {
+        val current = _discoveredDesktops.value
+        val fresh = current.filter { nowMs - it.discoveredAtMs <= MDNS_TTL_MS }
+        if (fresh.size != current.size) {
+            _discoveredDesktops.value = fresh
+        }
+    }
+
+    @Synchronized
+    private fun ensureNetworkCallbackRegistered(appCtx: Context) {
+        if (networkCallback != null) return
+        runCatching {
+            val cm = appCtx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return
+            val cb = object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    handleNetworkChanged(appCtx, "AVAILABLE")
+                }
+
+                override fun onLost(network: Network) {
+                    handleNetworkChanged(appCtx, "LOST")
+                }
+            }
+            cm.registerDefaultNetworkCallback(cb)
+            connectivityManager = cm
+            networkCallback = cb
+        }.onFailure { err ->
+            DesktopLinkStore.recordDiagnostic(appCtx, "NET", "CALLBACK_REG_ERR", err.javaClass.simpleName)
+        }
+    }
+
+    @Synchronized
+    private fun unregisterNetworkCallback() {
+        val cm = connectivityManager
+        val cb = networkCallback
+        connectivityManager = null
+        networkCallback = null
+        if (cm != null && cb != null) {
+            runCatching { cm.unregisterNetworkCallback(cb) }
+        }
+    }
+
+    private fun handleNetworkChanged(appCtx: Context, event: String) {
+        DesktopLinkStore.recordDiagnostic(appCtx, "NET", "NETWORK_$event", "Clearing stale mDNS cache")
+        _discoveredDesktops.value = emptyList()
+        synchronized(this) {
+            if (discoveryRequested && !isScreenOff) {
+                pauseDiscoveryForScreenOff()
+                startDiscoveryInternal(appCtx)
+            }
+        }
+    }
+
+    @Synchronized
+    fun rescanNow(ctx: Context) {
+        val appCtx = ctx.applicationContext
+        _discoveredDesktops.value = emptyList()
+        discoveryRequested = true
+        discoveryAppCtx = appCtx
+        ensureScreenReceiverRegistered(appCtx)
+        ensureNetworkCallbackRegistered(appCtx)
+        pauseDiscoveryForScreenOff()
+        if (!isScreenOff) {
+            startDiscoveryInternal(appCtx)
+        }
+    }
+
     @Synchronized
     fun startDiscovery(ctx: Context) {
         val appCtx = ctx.applicationContext
         ensureScreenReceiverRegistered(appCtx)
+        ensureNetworkCallbackRegistered(appCtx)
         discoveryRequested = true
         discoveryAppCtx = appCtx
+        pruneExpiredDiscovered()
         if (isScreenOff) return
         startDiscoveryInternal(appCtx)
     }
@@ -1732,6 +1849,7 @@ object DesktopLinkClient {
                     @Suppress("DEPRECATION")
                     val host = info.host?.hostAddress
                     if (!host.isNullOrBlank()) {
+                        val now = System.currentTimeMillis()
                         val port = info.port.takeIf { it in 1024..65535 } ?: LinkProtocol.DEFAULT_PORT
                         val attrs = info.attributes
                         val fn = attrs["fn"]?.toString(Charsets.UTF_8).orEmpty().ifBlank { info.serviceName }
@@ -1743,10 +1861,11 @@ object DesktopLinkClient {
                             host = host,
                             port = port,
                             fingerprintPrefix = fp,
-                            protocolVersion = ver
+                            protocolVersion = ver,
+                            discoveredAtMs = now
                         )
                         _discoveredDesktops.value = _discoveredDesktops.value
-                            .filterNot { it.serviceName == item.serviceName } + item
+                            .filter { now - it.discoveredAtMs <= MDNS_TTL_MS && it.serviceName != item.serviceName } + item
                     }
                     synchronized(resolveLock) { isResolvingService = false }
                     drainResolveQueue(appCtx, mgr)
@@ -1785,6 +1904,13 @@ object DesktopLinkClient {
             mgr.discoverServices(LinkProtocol.MDNS_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener)
             nsdManager = mgr
             discoveryListener = listener
+            mdnsTtlSweepJob?.cancel()
+            mdnsTtlSweepJob = scope.launch {
+                while (discoveryListener != null) {
+                    delay(MDNS_SWEEP_INTERVAL_MS)
+                    pruneExpiredDiscovered()
+                }
+            }
         }.onFailure { err ->
             DesktopLinkStore.recordDiagnostic(appCtx, "mDNS", "DISCOVERY_ERR", err.javaClass.simpleName)
         }
@@ -1792,6 +1918,8 @@ object DesktopLinkClient {
 
     @Synchronized
     private fun pauseDiscoveryForScreenOff() {
+        mdnsTtlSweepJob?.cancel()
+        mdnsTtlSweepJob = null
         val mgr = nsdManager
         val listener = discoveryListener
         nsdManager = null
@@ -1812,5 +1940,6 @@ object DesktopLinkClient {
     fun stopDiscovery() {
         discoveryRequested = false
         pauseDiscoveryForScreenOff()
+        unregisterNetworkCallback()
     }
 }

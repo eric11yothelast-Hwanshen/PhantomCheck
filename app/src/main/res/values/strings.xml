@@ -3028,4 +3028,20 @@
     <string name="link_hub_camera_init_failed">Camera or QR scanner failed to initialize (%1$s). Please close and use Manual Pairing below.</string>
     <string name="common_link">Link</string>
     <string name="chat_smart_search_citation_rule">\n\n[Web Verification Mode] Combine the user\'s RAG memory and persona settings above with the retrieved web snippets. Cite sources inline using [1] or the domain name only — never dump raw long URLs. If search results are insufficient, state honestly that no up-to-date information was found without fabricating.</string>
+    <!-- #500 Connection 3-in-1 -->
+    <string name="link_hub_rescan_btn">Rescan</string>
+    <string name="link_hub_paired_online">Online · %1$s:%2$d</string>
+    <string name="link_hub_paired_offline">Offline · Rescan to locate</string>
+    <string name="link_hub_manual_expand">Show manual pairing</string>
+    <string name="link_hub_manual_collapse">Hide manual pairing</string>
+    <string name="link_hub_diag_cat_port_changed">Desktop port changed (e.g. 49515 → %1$d). Tap Rescan to resolve the latest address automatically.</string>
+    <string name="link_hub_diag_cat_server_stopped">Desktop WSS server is not running or connection was refused. Open PhantomCheck Desktop and ensure the server is started.</string>
+    <string name="link_hub_diag_cat_firewall">Connection timed out — Windows Firewall or router AP isolation may be blocking LAN traffic. Allow PhantomCheck Desktop on Private networks.</string>
+    <string name="link_hub_diag_cat_code_expired">Pairing code expired or mismatched. Refresh the QR code on Desktop and scan again.</string>
+    <string name="link_hub_diag_cat_diff_subnet">Phone is not on Wi-Fi (or on a different subnet). Connect your phone and PC to the same Wi-Fi network.</string>
+    <string name="link_hub_diag_cat_weak_signal">Connection dropped or handshake timed out due to weak Wi-Fi signal. Move closer to the router or retry.</string>
+    <string name="link_hub_diag_action_rescan">Rescan LAN</string>
+    <string name="link_hub_diag_action_wifi">Open Wi-Fi Settings</string>
+    <string name="link_hub_diag_action_scan_qr">Scan New QR</string>
+    <string name="link_hub_diag_action_probe">Run Probe</string>
 </resources>
