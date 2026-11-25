@@ -34,6 +34,29 @@ object DesktopDiagnostics {
     fun warn(tag: String, message: String) = log("WARN", tag, message)
     fun error(tag: String, message: String) = log("ERROR", tag, message)
 
+    @Volatile
+    private var perfStarted = false
+
+    /** #520 選配效能取樣（僅在啟動參數加 -Dphantom.perf=1 時每 5 秒紀錄 JVM processCpuLoad，預設零開銷） */
+    fun startPerfSamplerIfEnabled() {
+        if (perfStarted || System.getProperty("phantom.perf") != "1") return
+        perfStarted = true
+        val t = Thread({
+            val bean = runCatching {
+                java.lang.management.ManagementFactory.getOperatingSystemMXBean() as? com.sun.management.OperatingSystemMXBean
+            }.getOrNull()
+            while (true) {
+                runCatching { Thread.sleep(5_000L) }.onFailure { break }
+                val load = bean?.processCpuLoad ?: -1.0
+                if (load >= 0.0) {
+                    info("Perf", "processCpuLoad=%.2f%%".format(Locale.US, load * 100.0))
+                }
+            }
+        }, "PhantomPerfSampler")
+        t.isDaemon = true
+        t.start()
+    }
+
     private fun rotate() {
         for (i in (MAX_FILES - 1) downTo 1) {
             val src = logFile(i - 1)

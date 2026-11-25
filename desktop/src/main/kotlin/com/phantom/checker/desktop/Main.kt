@@ -62,9 +62,12 @@ fun main(args: Array<String>) {
                 WindowPosition(Alignment.Center)
             }
         }
+        val workArea = remember { primaryWorkAreaBounds() }
+        val initW = settings.windowWidth.coerceAtLeast(880).coerceAtMost((workArea.width * 0.92).toInt().coerceAtLeast(880))
+        val initH = settings.windowHeight.coerceAtLeast(560).coerceAtMost((workArea.height * 0.92).toInt().coerceAtLeast(560))
         val windowState = rememberWindowState(
             position = initialPos,
-            size = DpSize(settings.windowWidth.coerceAtLeast(1024).dp, settings.windowHeight.coerceAtLeast(680).dp)
+            size = DpSize(initW.dp, initH.dp)
         )
 
         fun showAndFocusMainWindow(tabKey: String? = null) {
@@ -83,6 +86,7 @@ fun main(args: Array<String>) {
 
         // 生命週期拉升至 application 層，隱藏視窗至系統匣（含 --minimized）時 WSS 伺服器與 mDNS 廣播持續常駐
         LaunchedEffect(Unit) {
+            DesktopDiagnostics.startPerfSamplerIfEnabled()
             singleInstance.setCallbacks(
                 onFocus = { showAndFocusMainWindow() },
                 onGracefulExit = { performFullExit() }
@@ -135,10 +139,18 @@ fun main(args: Array<String>) {
             }
         }
 
-        val trayTooltip = remember(settings.language, serverState.connState, serverState.port, serverState.connectedPhones.size, serverState.lastError) {
+        val phoneStatus by DesktopDeviceStatusHolder.status.collectAsState()
+        val batterySuffix = remember(phoneStatus, serverState.connState) {
+            val st = phoneStatus
+            if (serverState.connState == LinkConnState.CONNECTED && st != null && st.batteryLevel >= 0) {
+                " · 📱 ${st.batteryLevel}%${if (st.isCharging) "⚡" else ""}"
+            } else ""
+        }
+
+        val trayTooltip = remember(settings.language, serverState.connState, serverState.port, serverState.connectedPhones.size, serverState.lastError, batterySuffix) {
             when (serverState.connState) {
                 LinkConnState.ERROR -> "${DesktopStrings.appTitle} — ${DesktopStrings.statusServerError}: ${serverState.lastError.orEmpty()}"
-                LinkConnState.CONNECTED -> "${DesktopStrings.appTitle} — ${DesktopStrings.statusConnected}${serverState.pairedDeviceName}"
+                LinkConnState.CONNECTED -> "${DesktopStrings.appTitle} — ${DesktopStrings.statusConnected}${serverState.pairedDeviceName}$batterySuffix"
                 LinkConnState.WAITING_FOR_PHONE -> "${DesktopStrings.appTitle} — ${DesktopStrings.serverListeningOn(serverState.port, 0)}"
                 LinkConnState.STOPPED -> "${DesktopStrings.appTitle} — ${DesktopStrings.statusServerStopped}"
             }
@@ -153,34 +165,25 @@ fun main(args: Array<String>) {
                 tooltip = trayTooltip,
                 onAction = { showAndFocusMainWindow() },
                 menu = {
-                    // 1. Open PhantomCheck
+                    // 1. Live Connection Status (+ #517 battery suffix)
+                    Item(
+                        text = DesktopStrings.trayConnStatus(serverState.connectedPhones.size, serverState.port, isServerRunning) + batterySuffix,
+                        onClick = { showAndFocusMainWindow("HOME") }
+                    )
+                    // 2. Open PhantomCheck
                     Item(
                         text = DesktopStrings.trayOpen,
                         onClick = { showAndFocusMainWindow() }
                     )
-                    // 2. Live Connection Status
-                    Item(
-                        text = DesktopStrings.trayConnStatus(serverState.connectedPhones.size, serverState.port, isServerRunning),
-                        onClick = { showAndFocusMainWindow("SETTINGS") }
-                    )
                     Separator()
-                    // 3. Start / Stop WSS Server
+                    // 3. Toggle DND (#513 one-click quickDndActive synced with main window)
                     Item(
-                        text = if (isServerRunning) DesktopStrings.trayStopServer else DesktopStrings.trayStartServer,
+                        text = DesktopStrings.trayToggleDnd(settings.quickDndActive),
                         onClick = {
-                            if (isServerRunning) server.stop() else server.start()
+                            DesktopSettingsStore.update { it.copy(quickDndActive = !it.quickDndActive) }
                         }
                     )
-                    // 4. Check for Updates
-                    Item(
-                        text = DesktopStrings.trayCheckUpdate,
-                        onClick = {
-                            showAndFocusMainWindow("SETTINGS")
-                            triggerUpdateCheckTick += 1
-                        }
-                    )
-                    Separator()
-                    // 5. Pause Notifications 1 hr / Resume
+                    // 4. Pause Notifications 1 hr / Resume
                     Item(
                         text = if (isNotifPaused) DesktopStrings.trayResumeNotif else DesktopStrings.trayPauseNotif1h,
                         onClick = {
@@ -188,20 +191,46 @@ fun main(args: Array<String>) {
                             else DesktopNotificationBus.pauseForOneHour()
                         }
                     )
-                    // 6. Toggle DND (#513 one-click quickDndActive synced with main window)
+                    // 5. #520 Floating Orb Toggle
                     Item(
-                        text = DesktopStrings.trayToggleDnd(settings.quickDndActive),
+                        text = DesktopStrings.trayFloatingOrb(settings.floatingAssistantEnabled),
                         onClick = {
-                            DesktopSettingsStore.update { it.copy(quickDndActive = !it.quickDndActive) }
+                            DesktopSettingsStore.update { it.copy(floatingAssistantEnabled = !it.floatingAssistantEnabled) }
                         }
                     )
-                    // 7. Open Settings
+                    Separator()
+                    // 6. #520 Quick Go Submenu
+                    Menu(DesktopStrings.trayQuickGo) {
+                        Item(DesktopStrings.tabHome, onClick = { showAndFocusMainWindow("HOME") })
+                        Item(DesktopStrings.navMessages, onClick = { showAndFocusMainWindow("MESSAGES") })
+                        Item(DesktopStrings.tabReports, onClick = { showAndFocusMainWindow("REPORTS") })
+                        Item(DesktopStrings.navTodos, onClick = { showAndFocusMainWindow("TODOS") })
+                        Item(DesktopStrings.navChat, onClick = { showAndFocusMainWindow("CHAT") })
+                        Item(DesktopStrings.tabTools, onClick = { showAndFocusMainWindow("TOOLS") })
+                        Item(DesktopStrings.navSettings, onClick = { showAndFocusMainWindow("SETTINGS") })
+                    }
+                    // 7. Start / Stop WSS Server
+                    Item(
+                        text = if (isServerRunning) DesktopStrings.trayStopServer else DesktopStrings.trayStartServer,
+                        onClick = {
+                            if (isServerRunning) server.stop() else server.start()
+                        }
+                    )
+                    // 8. Check for Updates
+                    Item(
+                        text = DesktopStrings.trayCheckUpdate,
+                        onClick = {
+                            showAndFocusMainWindow("SETTINGS")
+                            triggerUpdateCheckTick += 1
+                        }
+                    )
+                    // 9. Open Settings
                     Item(
                         text = DesktopStrings.trayOpenSettings,
                         onClick = { showAndFocusMainWindow("SETTINGS") }
                     )
                     Separator()
-                    // 8. Exit
+                    // 10. Exit
                     Item(
                         text = DesktopStrings.trayExit,
                         onClick = { performFullExit() }
@@ -247,7 +276,7 @@ fun main(args: Array<String>) {
             icon = trayIcon
         ) {
             LaunchedEffect(Unit) {
-                window.minimumSize = Dimension(1024, 680)
+                window.minimumSize = Dimension(880, 560)
             }
             LaunchedEffect(isWindowVisible, focusRequestTick) {
                 if (isWindowVisible) {

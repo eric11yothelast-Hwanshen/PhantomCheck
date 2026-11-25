@@ -155,6 +155,35 @@ fun DesktopSettingsCenter(
     val timeFmt = remember { java.text.SimpleDateFormat("MM/dd HH:mm:ss", java.util.Locale.getDefault()) }
 
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // #520 Bilingual Settings Search Bar
+        var settingsQuery by remember { mutableStateOf("") }
+        val searchHits = remember(settingsQuery) { DesktopSettingsCatalog.search(settingsQuery) }
+        OutlinedTextField(
+            value = settingsQuery,
+            onValueChange = { settingsQuery = it },
+            placeholder = { Text(DesktopStrings.settingsSearchHint) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (searchHits.isNotEmpty()) {
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                searchHits.take(8).forEach { hit ->
+                    FilterChip(
+                        selected = false,
+                        onClick = {
+                            runCatching { SettingsSubTab.valueOf(hit.subTab) }.getOrNull()?.let { subTab = it }
+                            settingsQuery = ""
+                        },
+                        label = { Text(DesktopStrings.t(hit.titleZh, hit.titleEn), style = MaterialTheme.typography.labelSmall) }
+                    )
+                }
+            }
+        }
+
         @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
         androidx.compose.foundation.layout.FlowRow(
             modifier = Modifier.fillMaxWidth(),
@@ -668,7 +697,7 @@ fun DesktopSettingsCenter(
                                         .width((settings.toastWidthDp.coerceIn(280, 480) * 0.72f).dp)
                                         .height((settings.toastHeightDp.coerceIn(84, 180) * 0.78f).dp)
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(if (settings.lightTheme) Color(0xF5FFFFFF) else Color(0xF0151C2C))
+                                        .background(tokens.popupBg)
                                         .border(1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
                                         .padding(10.dp)
                                 ) {
@@ -1344,6 +1373,24 @@ fun DesktopSettingsCenter(
                                     checked = settings.lightTheme,
                                     onCheckedChange = { lt -> DesktopSettingsStore.update { it.copy(lightTheme = lt) } }
                                 )
+                            }
+                            HorizontalDivider(color = tokens.border)
+                            // #520 Global Animation Mode (Balanced / Power-saver, instant effect)
+                            Text(DesktopStrings.animModeTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilterChip(
+                                    selected = settings.animationMode == AnimationMode.BALANCED,
+                                    onClick = { DesktopSettingsStore.update { it.copy(animationMode = AnimationMode.BALANCED) } },
+                                    label = { Text(DesktopStrings.animModeBalanced) }
+                                )
+                                FilterChip(
+                                    selected = settings.animationMode == AnimationMode.POWER_SAVER,
+                                    onClick = { DesktopSettingsStore.update { it.copy(animationMode = AnimationMode.POWER_SAVER) } },
+                                    label = { Text(DesktopStrings.animModePowerSaver) }
+                                )
+                            }
+                            if (settings.animationMode == AnimationMode.POWER_SAVER) {
+                                Text(DesktopStrings.animModePowerSaverNote, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
                             }
                             HorizontalDivider(color = tokens.border)
                             // #488 Page Transition Style Selector (4+ styles + Off)

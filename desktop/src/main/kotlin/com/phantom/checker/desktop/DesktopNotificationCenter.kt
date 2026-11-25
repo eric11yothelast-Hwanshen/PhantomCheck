@@ -477,7 +477,7 @@ fun DesktopToastOverlayWindow(
             runCatching { Color(0xFF000000.toInt() or hex.toInt(16)) }.getOrNull() ?: tokens.textPrimary
         } else tokens.textPrimary
     }
-    val toastBgColor = if (settings.lightTheme) Color(0xF5FFFFFF) else Color(0xF0151C2C)
+    val toastBgColor = tokens.popupBg
 
     Window(
         onCloseRequest = { DesktopNotificationBus.clearToast() },
@@ -489,37 +489,45 @@ fun DesktopToastOverlayWindow(
         alwaysOnTop = true,
         title = DesktopStrings.appTitle
     ) {
-        MaterialTheme(
-            colorScheme = darkColorScheme(
-                surface = tokens.surface,
-                primary = accentColor,
-                onSurface = tokens.textPrimary
-            )
-        ) {
-            Box(modifier = Modifier.fillMaxSize().padding(4.dp)) {
-                AnimatedVisibility(
-                    visible = visible,
-                    enter = fadeIn(tween(180)) + slideInHorizontally(tween(200)) { it / 2 },
-                    exit = fadeOut(tween(150)) + slideOutHorizontally(tween(160)) { it / 2 }
-                ) {
-                    val appColor = DesktopAppLabels.resolveColor(current.packageName)
-                    val riskColor = when (current.riskLabel.lowercase()) {
-                        "scam" -> DesktopPalette.GlassError
-                        "suspicious" -> DesktopPalette.GlassWarning
-                        else -> DesktopPalette.GlassSuccess
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(toastBgColor)
-                            .border(1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
-                            .hoverable(hoverSource)
-                            .clickable {
-                                DesktopNotificationBus.clearToast()
-                                onOpenConversation(current)
-                            }
+        ProvideDesktopTheme(settings) {
+            val motion = LocalDesktopMotion.current
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    surface = tokens.surface,
+                    primary = accentColor,
+                    onSurface = tokens.textPrimary
+                )
+            ) {
+                Box(modifier = Modifier.fillMaxSize().padding(4.dp)) {
+                    val enterAnim = if (motion.isBalanced) {
+                        fadeIn(tween(180)) + slideInHorizontally(tween(200)) { it / 2 }
+                    } else fadeIn(tween(80))
+                    val exitAnim = if (motion.isBalanced) {
+                        fadeOut(tween(150)) + slideOutHorizontally(tween(160)) { it / 2 }
+                    } else fadeOut(tween(80))
+                    AnimatedVisibility(
+                        visible = visible,
+                        enter = enterAnim,
+                        exit = exitAnim
                     ) {
+                        val appColor = DesktopAppLabels.resolveColor(current.packageName)
+                        val riskColor = when (current.riskLabel.lowercase()) {
+                            "scam" -> tokens.error
+                            "suspicious" -> tokens.warning
+                            else -> tokens.success
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(toastBgColor)
+                                .border(if (tokens.isHighContrast) 2.dp else 1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
+                                .hoverable(hoverSource)
+                                .clickable {
+                                    DesktopNotificationBus.clearToast()
+                                    onOpenConversation(current)
+                                }
+                        ) {
                         if (customToastBgBitmap != null) {
                             androidx.compose.foundation.Image(
                                 bitmap = customToastBgBitmap,
@@ -601,6 +609,7 @@ fun DesktopToastOverlayWindow(
                     }
                 }
             }
+        }
         }
     }
 }
@@ -948,7 +957,7 @@ fun DesktopFloatingAssistantWindow(
         }
     }
 
-    val popupBgColor = if (settings.lightTheme) Color(0xF5FFFFFF) else Color(0xF5121826)
+    val popupBgColor = tokens.popupBg
 
     Window(
         onCloseRequest = { aiExpanded = false; radialOpen = false },
