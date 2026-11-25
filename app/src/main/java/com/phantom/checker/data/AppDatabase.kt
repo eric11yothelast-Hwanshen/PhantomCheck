@@ -570,6 +570,12 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE packageName = :packageName")
     suspend fun deleteByApp(packageName: String)
 
+    @Query("SELECT COUNT(*) FROM messages WHERE packageName IN (:packages) AND riskLabel != 'scam' AND isOwn = 0")
+    suspend fun countDeletableByApps(packages: List<String>): Int
+
+    @Query("SELECT id FROM messages WHERE packageName IN (:packages) AND riskLabel != 'scam' AND isOwn = 0 ORDER BY timestamp ASC LIMIT :limit")
+    suspend fun deletableIdsByApps(packages: List<String>, limit: Int = 100): List<Long>
+
     @Query("DELETE FROM messages")
     suspend fun deleteAll()
 

@@ -394,7 +394,10 @@ internal fun MessagesHomeTab(
     onOpenMessageDetail: (MessageEntity) -> Unit,
     onLongPressMessage: (MessageEntity) -> Unit,
     onOpenNotificationAccess: () -> Unit,
-    onReportBounds: (String, Rect) -> Unit
+    onReportBounds: (String, Rect) -> Unit,
+    isAppMultiSelectMode: Boolean = false,
+    selectedAppPackages: Set<String> = emptySet(),
+    onToggleAppSelect: (String) -> Unit = {}
 ) {
     val resCtx = LocalContext.current
     val ctx = LocalContext.current
@@ -950,7 +953,13 @@ internal fun MessagesHomeTab(
                                     .alpha(if (isMuted) 0.5f else 1f)
                                     .pressableScale()
                                     .combinedClickable(
-                                        onClick = { onOpenApp(app.packageName, app.appLabel) },
+                                        onClick = {
+                                            if (isAppMultiSelectMode) {
+                                                onToggleAppSelect(app.packageName)
+                                            } else {
+                                                onOpenApp(app.packageName, app.appLabel)
+                                            }
+                                        },
                                         onLongClick = { onLongPressApp(app) }
                                     ),
                                 cornerRadius = 20.dp,
@@ -963,6 +972,12 @@ internal fun MessagesHomeTab(
                                         .fillMaxHeight(),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    if (isAppMultiSelectMode) {
+                                        Checkbox(
+                                            checked = app.packageName in selectedAppPackages,
+                                            onCheckedChange = { onToggleAppSelect(app.packageName) }
+                                        )
+                                    }
                                     Box {
                                         AppIconImage(
                                             packageName = app.packageName,
@@ -1117,7 +1132,13 @@ internal fun MessagesHomeTab(
                             .alpha(if (isMuted) 0.5f else 1f)
                             .pressableScale()
                             .combinedClickable(
-                                onClick = { onOpenApp(app.packageName, app.appLabel) },
+                                onClick = {
+                                    if (isAppMultiSelectMode) {
+                                        onToggleAppSelect(app.packageName)
+                                    } else {
+                                        onOpenApp(app.packageName, app.appLabel)
+                                    }
+                                },
                                 onLongClick = { onLongPressApp(app) }
                             )
                         val segShape = AuroraTokens.segmentedItemShape(idx, appGroups.size)
@@ -1134,6 +1155,12 @@ internal fun MessagesHomeTab(
                                     .padding(horizontal = 14.dp, vertical = if (isCompactCard) 8.dp else 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                if (isAppMultiSelectMode) {
+                                    Checkbox(
+                                        checked = app.packageName in selectedAppPackages,
+                                        onCheckedChange = { onToggleAppSelect(app.packageName) }
+                                    )
+                                }
                                 Box {
                                     AppIconImage(
                                         packageName = app.packageName,

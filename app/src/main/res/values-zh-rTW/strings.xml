@@ -3112,4 +3112,12 @@
     <string name="group_report_err_no_ai_key">尚未設定 AI 金鑰</string>
     <string name="group_report_err_quota">今日 AI 額度已達上限，順延至下個週期</string>
     <string name="group_report_err_ai_failed">AI 請求重試後失敗（訊息已保留，待下次補跑）</string>
+    <!-- #511 主訊息頁跨 App 多選批次刪除 -->
+    <string name="batch_app_multi_select_btn">多選</string>
+    <string name="batch_app_selected_summary">已選 %1$d 個 App · 約 %2$d 則</string>
+    <string name="batch_app_delete_confirm_title">確定跨 App 批次刪除？</string>
+    <string name="batch_app_delete_confirm_body">已選 %1$d 個 App，預估可刪除 %2$d 則訊息。\n\n保護規則：\n• 自動排除高風險詐騙證據（riskLabel=scam）。\n• 自動排除您自行回覆之訊息（isOwn）。\n• 單批上限 100 則（超過時將分批刪除並提示剩餘筆數）。</string>
+    <string name="batch_app_delete_done">已批次刪除 %1$d 則訊息</string>
+    <string name="batch_app_delete_done_more">已刪除 %1$d 則（單批上限 100 則，尚餘 %2$d 則可再次點擊刪除）</string>
+    <string name="batch_app_delete_none">沒有可刪除的訊息（已保護詐騙證據與本人回覆）</string>
 </resources>

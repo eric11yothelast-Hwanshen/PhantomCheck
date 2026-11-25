@@ -3112,4 +3112,12 @@
     <string name="group_report_err_no_ai_key">AI API key not configured</string>
     <string name="group_report_err_quota">Daily AI quota reached (will retry next cycle)</string>
     <string name="group_report_err_ai_failed">AI request failed after retries (messages kept for next run)</string>
+    <!-- #511 Cross-App Multi-Select Batch Delete -->
+    <string name="batch_app_multi_select_btn">Multi-select apps</string>
+    <string name="batch_app_selected_summary">%1$d app(s) · ~%2$d msgs</string>
+    <string name="batch_app_delete_confirm_title">Batch delete across apps?</string>
+    <string name="batch_app_delete_confirm_body">Selected %1$d app(s), about %2$d deletable message(s).\n\nProtection rules:\n• Scam-flagged messages (riskLabel=scam) are excluded.\n• Your own reply messages (isOwn) are excluded.\n• Up to 100 messages are deleted per batch (if more remain, tap delete again).</string>
+    <string name="batch_app_delete_done">Deleted %1$d message(s)</string>
+    <string name="batch_app_delete_done_more">Deleted %1$d message(s) (batch limit 100; %2$d remaining — tap Delete again to continue)</string>
+    <string name="batch_app_delete_none">No deletable messages (scam &amp; own replies are protected)</string>
 </resources>

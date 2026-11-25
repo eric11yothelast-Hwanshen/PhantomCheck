@@ -543,6 +543,22 @@ private fun PhantomCheckApp(
     var selectedMessageIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
 
+    // #511 跨 App 多選批次刪除狀態（唯一入口：長按 App 功能表）
+    var isAppMultiSelectMode by remember { mutableStateOf(false) }
+    var selectedAppPackages by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var estimatedAppBatchDeleteCount by remember { mutableIntStateOf(0) }
+    var showAppBatchDeleteConfirm by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isAppMultiSelectMode, selectedAppPackages, refreshTrigger) {
+        if (!isAppMultiSelectMode || selectedAppPackages.isEmpty()) {
+            estimatedAppBatchDeleteCount = 0
+        } else {
+            estimatedAppBatchDeleteCount = withContext(Dispatchers.IO) {
+                AppDatabaseHolder.db(appCtx).messageDao().countDeletableByApps(selectedAppPackages.toList())
+            }
+        }
+    }
+
     val haptic = rememberPhantomHaptic()
 
     // 新手引導狀態
@@ -1009,6 +1025,16 @@ private fun PhantomCheckApp(
                     ) {
                         Text(stringResource(R.string.main_s_7a2223), color = MaterialTheme.colorScheme.error)
                     }
+                    OutlinedButton(
+                        onClick = {
+                            isAppMultiSelectMode = true
+                            selectedAppPackages = setOf(target.packageName)
+                            actionTargetApp = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.batch_app_multi_select_btn))
+                    }
                 }
             },
             confirmButton = {
@@ -1160,6 +1186,61 @@ private fun PhantomCheckApp(
             },
             dismissButton = {
                 TextButton(onClick = { showBatchDeleteConfirm = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
+    if (showAppBatchDeleteConfirm && selectedAppPackages.isNotEmpty()) {
+        val pkgs = selectedAppPackages.toList()
+        val estCount = estimatedAppBatchDeleteCount
+        AlertDialog(
+            onDismissRequest = { showAppBatchDeleteConfirm = false },
+            title = { Text(stringResource(R.string.batch_app_delete_confirm_title)) },
+            text = {
+                Text(stringResource(R.string.batch_app_delete_confirm_body, pkgs.size, estCount))
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            val (deletedCount, remainingCount) = withContext(Dispatchers.IO) {
+                                val db = AppDatabaseHolder.db(appCtx)
+                                val ids = db.messageDao().deletableIdsByApps(pkgs, limit = 100)
+                                if (ids.isEmpty()) {
+                                    0 to 0
+                                } else {
+                                    db.withTransaction {
+                                        db.tagDao().deleteCrossRefsByMessageIds(ids)
+                                        db.messageDao().deleteByIds(ids)
+                                    }
+                                    val rem = db.messageDao().countDeletableByApps(pkgs)
+                                    ids.size to rem
+                                }
+                            }
+                            StatsForegroundService.startOrRefresh(appCtx)
+                            showAppBatchDeleteConfirm = false
+                            if (remainingCount <= 0) {
+                                isAppMultiSelectMode = false
+                                selectedAppPackages = emptySet()
+                            }
+                            refreshTrigger++
+                            val msg = when {
+                                deletedCount == 0 -> resCtx.getString(R.string.batch_app_delete_none)
+                                remainingCount > 0 -> resCtx.getString(R.string.batch_app_delete_done_more, deletedCount, remainingCount)
+                                else -> resCtx.getString(R.string.batch_app_delete_done, deletedCount)
+                            }
+                            snackbarHostState.showSnackbar(msg)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text(stringResource(R.string.common_confirm_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAppBatchDeleteConfirm = false }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             }
@@ -1576,6 +1657,45 @@ private fun PhantomCheckApp(
                                     selectedMessageIds = emptySet()
                                 }
                             ) { Text(stringResource(R.string.common_cancel)) }
+                        }
+                    }
+                } else if (isAppMultiSelectMode) {
+                    Surface(
+                        tonalElevation = 6.dp,
+                        shadowElevation = 8.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    R.string.batch_app_selected_summary,
+                                    selectedAppPackages.size,
+                                    estimatedAppBatchDeleteCount
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(
+                                enabled = selectedAppPackages.isNotEmpty(),
+                                onClick = { showAppBatchDeleteConfirm = true }
+                            ) {
+                                Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
+                            }
+                            TextButton(
+                                onClick = {
+                                    isAppMultiSelectMode = false
+                                    selectedAppPackages = emptySet()
+                                }
+                            ) {
+                                Text(stringResource(R.string.common_cancel))
+                            }
                         }
                     }
                 } else if (LocalConfiguration.current.screenWidthDp < 600) {
@@ -2007,6 +2127,15 @@ private fun PhantomCheckApp(
                         },
                         onReportBounds = { key, rect ->
                             targetBounds = targetBounds + (key to rect)
+                        },
+                        isAppMultiSelectMode = isAppMultiSelectMode,
+                        selectedAppPackages = selectedAppPackages,
+                        onToggleAppSelect = { pkg ->
+                            selectedAppPackages = if (pkg in selectedAppPackages) {
+                                selectedAppPackages - pkg
+                            } else {
+                                selectedAppPackages + pkg
+                            }
                         }
                     )
                     MainTab.ASSISTANT -> Column(
