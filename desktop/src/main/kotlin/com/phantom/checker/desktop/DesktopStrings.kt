@@ -585,4 +585,14 @@ object DesktopStrings {
     val reportsTitle get() = t("群組 AI 報告（#509 同步自手機）", "Group AI Reports (#509 Synced from Phone)")
     val reportsRefreshBtn get() = t("重新整理", "Refresh")
     val reportsEmpty get() = t("尚未同步到群組報告，請確認手機已連線且已於手機設定啟用群組報告。", "No group reports synced yet. Connect your phone and configure Group Reports in phone Settings.")
+
+    // #520 v5.0.0 Orchestration (Home, Animation Mode, Settings Search, Tray)
+    val tabHome get() = t("總覽", "Home")
+    val animModeTitle get() = t("全域動畫模式（立即生效）", "Global Animation Mode (Instant)")
+    val animModeBalanced get() = t("平衡模式（完整動效）", "Balanced (Full Motion)")
+    val animModePowerSaver get() = t("省電模式（瞬切／零無限動畫）", "Power-saver (Minimal / Zero Loops)")
+    val animModePowerSaverNote get() = t("省電模式下所有頁面轉場固定瞬切，並關閉無限呼吸動畫以降低閒置 CPU。", "In Power-saver mode, transitions snap instantly and infinite pulse loops are disabled.")
+    val settingsSearchHint get() = t("搜尋設定（中／英關鍵字）…", "Search settings (EN / 中文)…")
+    val trayQuickGo get() = t("快速前往", "Quick Go")
+    fun trayFloatingOrb(enabled: Boolean) = if (enabled) t("☑ 顯示懸浮球", "☑ Floating Orb") else t("☐ 顯示懸浮球", "☐ Floating Orb")
 }

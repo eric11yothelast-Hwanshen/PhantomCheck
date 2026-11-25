@@ -107,7 +107,7 @@ import java.util.Locale
 import java.util.UUID
 
 private enum class DesktopTab {
-    MESSAGES, STATS, TODOS, CHAT, RULES, SETTINGS, REPORTS, TOOLS
+    MESSAGES, STATS, TODOS, CHAT, RULES, SETTINGS, REPORTS, TOOLS, HOME
 }
 
 private const val MAX_CACHED_MESSAGES = 240
@@ -201,7 +201,7 @@ fun DesktopApp(
 
     var activeTab by remember {
         val initial = runCatching { DesktopTab.valueOf(settings.defaultStartupTab) }.getOrDefault(DesktopTab.MESSAGES)
-        mutableStateOf(if (uiState.isPaired) initial else DesktopTab.SETTINGS)
+        mutableStateOf(if (uiState.isPaired) initial else DesktopTab.HOME)
     }
 
     // Messages Master-Detail state (#494 conversation-grouped)
@@ -839,6 +839,7 @@ fun DesktopApp(
                             actionFeedback = null
                             true
                         }
+                        tabMod && ev.key == Key.Zero -> { activeTab = DesktopTab.HOME; true }
                         tabMod && ev.key == Key.One -> { activeTab = DesktopTab.MESSAGES; true }
                         tabMod && ev.key == Key.Two -> { activeTab = DesktopTab.STATS; true }
                         tabMod && ev.key == Key.Three -> { activeTab = DesktopTab.TODOS; true }
@@ -918,6 +919,7 @@ fun DesktopApp(
                         HorizontalDivider(color = tokens.border, modifier = Modifier.padding(vertical = 4.dp))
 
                         val navItems = listOf(
+                            Triple(DesktopTab.HOME, DesktopStrings.tabHome, DesktopIcons.Messages),
                             Triple(DesktopTab.MESSAGES, DesktopStrings.navMessages, DesktopIcons.Messages),
                             Triple(DesktopTab.REPORTS, DesktopStrings.tabReports, DesktopIcons.Stats),
                             Triple(DesktopTab.STATS, DesktopStrings.navStats, DesktopIcons.Stats),
@@ -1177,7 +1179,7 @@ fun DesktopApp(
                             }
                         }
 
-                        if (uiState.connState != LinkConnState.CONNECTED && activeTab != DesktopTab.SETTINGS) {
+                        if (uiState.connState != LinkConnState.CONNECTED && activeTab != DesktopTab.SETTINGS && activeTab != DesktopTab.HOME) {
                             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 GlassCard {
                                     Column(
@@ -1186,8 +1188,16 @@ fun DesktopApp(
                                         verticalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
                                         Text(DesktopStrings.notConnectedHint, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
-                                        SpringButton(onClick = { activeTab = DesktopTab.SETTINGS }, animationsEnabled = settings.animationsEnabled) {
-                                            Text(DesktopStrings.navSettings)
+                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            SpringButton(onClick = { activeTab = DesktopTab.HOME }, animationsEnabled = settings.animationsEnabled, containerColor = accentColor) {
+                                                Text(DesktopStrings.tabHome)
+                                            }
+                                            SpringOutlinedButton(onClick = { server.restart(uiState.port) }, animationsEnabled = settings.animationsEnabled) {
+                                                Text(DesktopStrings.serverRestartBtn)
+                                            }
+                                            SpringOutlinedButton(onClick = { activeTab = DesktopTab.SETTINGS }, animationsEnabled = settings.animationsEnabled) {
+                                                Text(DesktopStrings.navSettings)
+                                            }
                                         }
                                     }
                                 }
@@ -2264,6 +2274,26 @@ fun DesktopApp(
                                         )
                                     }
 
+                                    DesktopTab.HOME -> {
+                                        androidx.compose.foundation.layout.BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                                            val wClass = remember(maxWidth) { DesktopWindowClass.fromWidth(maxWidth) }
+                                            DesktopHomePage(
+                                                settings = settings,
+                                                tokens = tokens,
+                                                accentColor = accentColor,
+                                                windowClass = wClass,
+                                                uiState = uiState,
+                                                stats = stats,
+                                                recentMessages = messages,
+                                                server = server,
+                                                onNavigateTab = { tabKey ->
+                                                    runCatching { DesktopTab.valueOf(tabKey) }.getOrNull()?.let { activeTab = it }
+                                                },
+                                                onFeedback = { actionFeedback = it }
+                                            )
+                                        }
+                                    }
+
                                     DesktopTab.SETTINGS -> {
                                         DesktopSettingsCenter(
                                             settings = settings,
@@ -2565,8 +2595,8 @@ private fun StatBox(
 }
 
 /**
- * #489 隔離式 draw-phase 呼吸點：僅於 pulsing && animationsEnabled 時啟動 rememberInfiniteTransition，
- * 連線中或縮至系統匣時零影格喚醒，且僅於 graphicsLayer lambda 讀取動畫值（零重組）。
+ * #489 / #520 隔離式 draw-phase 呼吸點：三閘門（pulsing ∧ animationsEnabled ∧ 未逾 120 秒），
+ * 省電模式或逾時零 rememberInfiniteTransition，且僅於 graphicsLayer lambda 讀取動畫值（零重組）。
  */
 @Composable
 private fun PulsingStatusDot(
@@ -2574,7 +2604,15 @@ private fun PulsingStatusDot(
     pulsing: Boolean,
     animationsEnabled: Boolean
 ) {
-    if (!pulsing || !animationsEnabled) {
+    var timedOut by remember(pulsing) { mutableStateOf(false) }
+    LaunchedEffect(pulsing, animationsEnabled) {
+        timedOut = false
+        if (pulsing && animationsEnabled) {
+            delay(120_000L)
+            timedOut = true
+        }
+    }
+    if (!pulsing || !animationsEnabled || timedOut) {
         Box(
             modifier = Modifier
                 .size(9.dp)
@@ -2608,7 +2646,15 @@ private fun PulsingThinkingLabel(
     color: Color,
     animationsEnabled: Boolean
 ) {
-    if (!animationsEnabled) {
+    var timedOut by remember(text) { mutableStateOf(false) }
+    LaunchedEffect(text, animationsEnabled) {
+        timedOut = false
+        if (animationsEnabled) {
+            delay(130_000L)
+            timedOut = true
+        }
+    }
+    if (!animationsEnabled || timedOut) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelSmall,
