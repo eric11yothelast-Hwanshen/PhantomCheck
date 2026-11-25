@@ -3,6 +3,63 @@
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses Semantic Versioning.
 
+## [4.9.0] - 2026-11-24
+
+- **Tag 對照**：[`v4.8.0...v4.9.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.8.0...v4.9.0)（`versionCode = 57`、`versionName = "4.9.0"`；桌面端 `desktopVersion = "0.6.0"`）
+- **發佈資產（雙 APK ＋ 桌面端 Windows Inno Setup 單一安裝檔）**：
+  - `app-release.apk`：正式簽章＋R8 程式碼縮減與資源壓縮（`isMinifyEnabled = true`、`isShrinkResources = true`），供一般使用者安裝與原簽章覆蓋升級。
+  - `app-debug.apk`：除錯建置版本，供開發測試與排錯使用。
+  - `PhantomCheckDesktop-0.6.0-setup.exe`：Windows 桌面端連線與訊息管理安裝檔（Compose Multiplatform，`desktopVersion = "0.6.0"`；`.msi` 通道已正式退場）。
+
+### 行為變更（Behavior Changes）
+- **#496 MSI 通道退場與 Inno 原地升級保留資料（PR #506）**：Windows 桌面端僅產出並透過 `PhantomCheckDesktop-0.6.0-setup.exe` 更新（`release.yml` 已停產 `.msi`）；安裝程式 `PrepareToInstall` 自動優雅結束執行中實例、靜默清理舊版 MSI（`msiexec /x /qn`）與舊 Inno（`unins*.exe /VERYSILENT`），並完整保留 `%APPDATA%\PhantomCheckDesktop` 設定與配對資料。
+- **#495 單實例防雙開與開機自啟動驗證（PR #506）**：桌面端新增 NIO `FileLock`＋`127.0.0.1` IPC 單實例防護（第二實例自動聚焦既有主視窗後退出）；Windows 開機自啟動寫入後執行 `reg query` 讀回驗證並自動修復失效路徑，同時偵測工作管理員 `StartupApproved\Run` 停用狀態並提供開啟啟動設定指引。
+- **#501 「規則與靜音」更名「過濾與專注 / Filters & Focus」（PR #506）**：手機端與桌面端統一頁面命名為「過濾與專注 / Filters & Focus」，且手機端低頻設定分類收納進預設收合之「進階與系統」群組。
+- **#502 英文文案本地化審校（PR #506）**：審校手機端 `values/strings.xml`（88 處）與桌面端 `DesktopStrings.kt`（13 處）英文文案以對齊平台官方慣用語（Android 句首大寫、桌面 Title Case），繁體中文語意維持不變。
+- **#498 / #499 / #503 / #504 協定加法式擴充（PR #506）**：`PROTOCOL_VERSION` 維持 `2` 不變，全部新增 DTO 欄位皆提供 Kotlin/Gson 預設值與 R8 keep 規則，確保新舊版本混連向下相容。
+- **#494 / #497–#504 雙端體驗與同步行為升級（PR #506）**：桌面端升級通知四合一（自動收回頂部橫幅、全螢幕抑止之右下角 Toast、可拖曳吸邊懸浮助手球、8 項系統匣右鍵選單）、訊息對話串化與智慧捲動、統計友善 App 名稱與 7/30 日／每小時切換、淺色玻璃主題／`Alt/Ctrl` 快捷鍵／訊息批次多選、待辦記事完整 CRUD 雙端同步與 AI 引用最新通知；手機端連線改採 60 秒 mDNS TTL／憑證指紋動態解析／六大失敗診斷、支援 `DESKTOP_SETTINGS_SYNC` 語意與手機同步桌面通知設定，以及 `WidgetUpdater` 事件驅動小工具（≤5 秒刷新）＋30 分鐘 WorkManager 兜底。
+
+### 新增、變更與修正
+- **#494 桌面端訊息對話串化與智慧捲動（PR #506）**：左欄改以 `packageName::conversationKey` 分組顯示 App 名稱／寄件人／單行預覽／相對時間／未讀數／風險色點，右側展開完整對話串（`ConversationReq` 上限 100 則），支援對話級 5 過濾與不干擾閱讀之智慧自動捲動。
+- **#495 桌面開機自啟驗證與單實例防雙開（PR #506）**：新增 `DesktopSingleInstance.kt` 實作 `FileLock`＋loopback IPC 單實例與聚焦喚醒；強化 `DesktopSettingsStore` 之 Windows `HKCU\...\Run` 寫入讀回驗證、失效路徑修復與 `StartupApproved\Run` 停用偵測。
+- **#496 Inno 升級防衝突與 MSI 退場（PR #506）**：更新 `PhantomCheckDesktop.iss` 清理舊 MSI/舊 Inno 並保留 `%APPDATA%` 設定與配對；`.github/workflows/build.yml` 與 `release.yml` 停產 `.msi` 并補齊 `README.md`／`README.zh-TW.md` 雙語升級排解。
+- **#497 桌面通知體驗四合一（PR #506）**：新增 `DesktopNotificationCenter.kt`，整合自動收回頂部橫幅（3/5/8/不收回＋覆寫重置計時）、無邊框右下 Toast（Windows `SHQueryUserNotificationState` 全螢幕不彈＋hover 暫停＋點擊跳轉對話）、可拖曳吸邊記憶位置之懸浮助手球（小型 AI 對話＋自適應氣泡＋勿擾僅徽章）與 8 項系統匣右鍵選單／左鍵單擊開窗。
+- **#498 桌面全面圖示化與統計友善 App 名稱（PR #506）**：新增零依賴 `DesktopIcons.kt` 向量圖示系統與 `DesktopAppLabels.kt`；加法式擴充 `StatsSnapshotDto` 與 `ActiveAppStatDto`，手機端以 `PackageManager` 快取解析友善 App 名稱（附離線映射表），桌面統計頁支援 7 日／30 日／每小時圖表切換、風險比例條、今日活躍 App 與本週 Top 5。
+- **#499 記事待辦完整 CRUD 雙端同步與 AI 引用通知（PR #506）**：修復手機端 `NotesTab` 手動與桌面新增記事未綁定 `clickable` 導致無法點擊編輯之問題；協定加法式補齊待辦優先級／備註／到期時間與記事編輯／刪除／置頂／色標（`NOTE_EDIT`/`DELETE`/`PIN_TOGGLE`）；桌面端升級完整待辦與記事表單、去重到期系統匣提醒，AI 助手新增引用最新通知與未讀摘要快捷指令。
+- **#500 手機連線 60 秒 TTL、指紋動態解析與六大診斷（PR #506）**：`DesktopLinkClient` 新增 60 秒 mDNS TTL 自動過期清掃與生命週期安全之 `ConnectivityManager.NetworkCallback` 換網清空重掃；已配對電腦改以憑證指紋／`instanceId` 為主鍵動態解析最新 IP:port（解決埠漂移）；擴充六大失敗診斷分類與一鍵動作並重編排 `LinkHubContent` 為單頁可捲動卡片介面。
+- **#501 過濾與專注頁面重整與手機設定收納（PR #506）**：雙端統一「過濾與專注 / Filters & Focus」，實作白名單／靜音與專注／標籤管理三區可收合且記憶展開偏好，手機端新增臨時靜音 1 小時＋即時倒數、標籤改名／刪除提醒／依風險建議，並將手機設定低頻分類收納進預設收合之「進階與系統」群組。
+- **#502 英文 UI 文案本地化審校（PR #506）**：審校 `app/src/main/res/values/strings.xml`（88 處）與 `DesktopStrings.kt`（13 處）英文文案（如 Allowlist、Launch at startup、To-Do & Notes、Mute notifications、Connected devices、System tray、Filters & Focus），消除中式直譯並保留繁體中文原意。
+- **#503 事件驅動小工具、語意設定同步與健檢防護（PR #506）**：新增 `WidgetUpdater.kt`（1.5 秒防抖確保 ≤5 秒刷新＋30 分鐘 `WidgetPeriodicRefreshWorker` 兜底，掛載於新通知與桌面異動點）；協定加法式新增 `DESKTOP_SETTINGS_SYNC` 支援手機端與語意同步桌面通知中心設定；強化 `GlobalSearchOverlay` 120 字查詢上限並驗證 R8／快取上限。
+- **#504 桌面淺色主題、快捷鍵與訊息批次操作（PR #506）**：桌面端補齊淺色玻璃主題開關（`DesktopThemeTokens`）、`Alt+1..6` 快捷鍵（並存 `Ctrl+1..6`／`Ctrl+F`／`Esc`）與訊息頁批次多選（批次已讀／批次靜音 App），並驗證全部新增 DTO 欄位具 Gson 預設值向下相容與三廠牌 OEM 矩陣。
+
+### English
+- **Tag Compare**: [`v4.8.0...v4.9.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.8.0...v4.9.0) (`versionCode = 57`, `versionName = "4.9.0"`; Desktop `desktopVersion = "0.6.0"`)
+- **Release Assets (Dual APKs + Single Desktop Windows Inno Setup Installer)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`), for general users and in-place signature upgrades.
+  - `app-debug.apk`: Debug build for development testing and troubleshooting.
+  - `PhantomCheckDesktop-0.6.0-setup.exe`: Windows desktop companion installer (Compose Multiplatform, `desktopVersion = "0.6.0"`; legacy `.msi` channel retired).
+
+**Behavior Changes**
+- **#496 Legacy `.msi` Channel Retired & Inno In-Place Upgrade Preservation (PR #506)**: Windows desktop now ships exclusively via `PhantomCheckDesktop-0.6.0-setup.exe` (`release.yml` no longer produces `.msi`); `PrepareToInstall` automatically requests a graceful shutdown, silently uninstalls legacy MSI (`msiexec /x /qn`) and older Inno (`unins*.exe /VERYSILENT`) installs, and preserves all settings and pairings in `%APPDATA%\PhantomCheckDesktop`.
+- **#495 Single-Instance Guard & Startup Verification (PR #506)**: Desktop adds an NIO `FileLock` + `127.0.0.1` IPC single-instance guard (second launch focuses the existing window and exits); Windows startup registration performs `reg query` read-back verification with stale-path repair and detects `StartupApproved\Run` Task Manager disablement with guidance.
+- **#501 Renamed "Rules & Mute" to "Filters & Focus" (PR #506)**: Unified cross-end page naming to `過濾與專注` / `Filters & Focus`, and consolidated low-frequency Android Settings categories into a default-collapsed `Advanced & System` group.
+- **#502 English UI Localization Audit (PR #506)**: Audited 88 Android (`values/strings.xml`) and 13 Desktop (`DesktopStrings.kt`) English strings to native platform idioms (sentence case on Android, Title Case on Desktop) without altering Traditional Chinese meanings.
+- **#498 / #499 / #503 / #504 Additive-Only Protocol Extensions (PR #506)**: `PROTOCOL_VERSION` remains `2` unchanged; all new DTO fields provide Kotlin/Gson default values and R8 keep rules for seamless mixed-version backward compatibility.
+- **#494 / #497–#504 Cross-End UX & Sync Upgrades (PR #506)**: Desktop adds 4-in-1 notifications (auto-dismissing top banner, fullscreen-aware bottom-right toast, draggable floating AI orb, 8-item tray menu), threaded messages with smart auto-scroll, friendly app names in stats with 7d/30d/Hourly switching, Light Mode frosted theme + `Alt/Ctrl` shortcuts + batch selection, full CRUD to-dos/notes sync + AI quote latest notification; Android adds 60s mDNS TTL / fingerprint-keyed dynamic resolution / 6 failure diagnostics, `DESKTOP_SETTINGS_SYNC` semantic/phone-to-desktop sync, and event-driven `WidgetUpdater` (≤5s refresh) + 30-min WorkManager backup.
+
+**Added, Changed & Fixed**
+- **#494 Desktop Threaded Messages & Smart Auto-Scroll (PR #506)**: Grouped the left pane by `packageName::conversationKey` (app label, sender, single-line ellipsis preview, relative time, unread badge, risk dot), expanded full threads on the right (`ConversationReq` limit 100), and added conversation-level 5-filter pills plus non-intrusive smart auto-scroll.
+- **#495 Desktop Startup Verification & Single-Instance Guard (PR #506)**: Added `DesktopSingleInstance.kt` (`FileLock` + loopback IPC focus-and-exit) and enhanced `DesktopSettingsStore` with `HKCU\...\Run` read-back verification, stale-path repair, and `StartupApproved\Run` disabled detection.
+- **#496 Inno Upgrade Hardening & `.msi` Retirement (PR #506)**: Updated `PhantomCheckDesktop.iss` to clean legacy MSI/Inno installs while preserving `%APPDATA%` data, retired `.msi` from `.github/workflows/build.yml` and `release.yml`, and added bilingual upgrade troubleshooting to `README.md` and `README.zh-TW.md`.
+- **#497 4-in-1 Desktop Notification Experience (PR #506)**: Added `DesktopNotificationCenter.kt` combining an auto-dismissing top banner (3/5/8s/never with timer reset), borderless bottom-right toast (`SHQueryUserNotificationState` fullscreen suppression + hover pause + click-to-thread), draggable edge-snapping floating AI orb (mini AI chat + adaptive bubble + DND badge-only mode), and an 8-item system tray menu with left-click open.
+- **#498 Desktop Vector Icons & Friendly App Names in Stats (PR #506)**: Added zero-dependency `DesktopIcons.kt` and `DesktopAppLabels.kt`; additively extended `StatsSnapshotDto` and `ActiveAppStatDto` with `PackageManager`-resolved friendly app names (plus offline fallback), 7d/30d/Hourly chart switcher, risk distribution bar, Today's Active Apps, and Weekly Top 5.
+- **#499 Full To-Do/Note CRUD Two-Way Sync & AI Quote Notification (PR #506)**: Fixed Android `NotesTab` unclickable manual/desktop notes; additively extended Todo/Note DTOs (`priority`, `notes`, `NOTE_EDIT`/`DELETE`/`PIN_TOGGLE`, `colorHex`); upgraded Desktop Todos/Notes to full CRUD forms with deduplicated due tray reminders and added "Quote Latest Notification" and unread summary quick actions in Desktop AI Chat.
+- **#500 Phone Link 60s TTL, Fingerprint Resolution & 6 Diagnostics (PR #506)**: Added 60s mDNS TTL auto-expiry and lifecycle-safe `ConnectivityManager.NetworkCallback` reset on network changes in `DesktopLinkClient`; keyed paired desktops by certificate fingerprint/`instanceId` with dynamic mDNS IP:port resolution (fixing port drift); expanded 6 failure diagnostic categories with one-tap actions and redesigned `LinkHubContent` into a single scrollable card layout.
+- **#501 Filters & Focus Redesign & Android Settings Consolidation (PR #506)**: Unified cross-end `過濾與專注` / `Filters & Focus` with persistent collapsible Allowlist, Muted Apps, and Tag Management sections, added 1-hour quick mute with live countdown, tag rename/delete warnings/risk suggestions on Android, and consolidated low-frequency Android Settings into a collapsible `Advanced & System` group.
+- **#502 English UI Localization Audit (PR #506)**: Audited 88 strings in `app/src/main/res/values/strings.xml` and 13 strings in `DesktopStrings.kt` (e.g., Allowlist, Launch at startup, To-Do & Notes, Mute notifications, Connected devices, System tray, Filters & Focus) to eliminate literal translations while keeping Traditional Chinese intact.
+- **#503 Event-Driven `WidgetUpdater`, Semantic Settings Sync & Hardening (PR #506)**: Added `WidgetUpdater.kt` (1.5s debounce ensuring ≤5s refresh + 30-min `WidgetPeriodicRefreshWorker` fallback hooked into notifications and desktop mutations); added additive `DESKTOP_SETTINGS_SYNC` protocol for semantic/phone-to-desktop notification center sync; capped `GlobalSearchOverlay` queries at 120 chars and verified R8/cache limits.
+- **#504 Desktop Light Theme, Shortcuts & Batch Message Actions (PR #506)**: Added Desktop Light Mode frosted theme toggle (`DesktopThemeTokens`), `Alt+1..6` shortcuts alongside `Ctrl+1..6`/`Ctrl+F`/`Esc`, and Messages batch multi-select (mark read / mute apps), plus Gson default backward-compatibility and OEM matrix verification.
+
 ## [4.8.0] - 2026-11-24
 
 - **Tag 對照**：[`v4.7.0...v4.8.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.7.0...v4.8.0)（`versionCode = 56`、`versionName = "4.8.0"`；桌面端 `desktopVersion = "0.5.0"`）
