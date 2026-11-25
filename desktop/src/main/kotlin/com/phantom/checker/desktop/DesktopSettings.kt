@@ -35,6 +35,12 @@ enum class FullscreenHideMode(val key: String) {
     HIDE_WITH_HINT("hide_with_hint")
 }
 
+/** #520 全域動畫模式（平衡＝完整 draw-phase 動效；省電＝瞬切／短 fade、零無限迴圈） */
+enum class AnimationMode(val key: String) {
+    BALANCED("balanced"),
+    POWER_SAVER("power_saver")
+}
+
 /**
  * #468 / #479 / #488 / #497 桌機端設定資料模型（10 系統設定＋16 既有自訂設定＋#488 轉場與深淺＋#497 通知中心四合一＋視窗位置記憶）。
  */
@@ -121,6 +127,8 @@ data class DesktopSettings(
     val clipboardMaxChars: Int = 5000,
     val clipboardOtpGuard: Boolean = true,
     val clipboardOnlyWhenFocused: Boolean = true,
+    // #520 Global Animation Mode (migrated from animationsEnabled; dual-written for downgrade compatibility)
+    val animationMode: AnimationMode = if (animationsEnabled) AnimationMode.BALANCED else AnimationMode.POWER_SAVER,
     // Window geometry persistence
     val windowX: Int = Int.MIN_VALUE,
     val windowY: Int = Int.MIN_VALUE,
@@ -153,7 +161,7 @@ object DesktopSettingsStore {
     const val CURRENT_DESKTOP_VERSION = "0.6.0"
     private const val WIN_RUN_REG_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
     private const val WIN_RUN_VALUE_NAME = "PhantomCheckDesktop"
-    private val validStartupTabs = setOf("MESSAGES", "STATS", "TODOS", "CHAT", "RULES", "SETTINGS")
+    private val validStartupTabs = setOf("MESSAGES", "STATS", "TODOS", "CHAT", "RULES", "SETTINGS", "HOME", "REPORTS", "TOOLS")
 
     private val _state = MutableStateFlow(loadFromDisk())
     val state: StateFlow<DesktopSettings> = _state.asStateFlow()
@@ -239,16 +247,34 @@ object DesktopSettingsStore {
             clipboardMaxChars = p.getProperty("clipboardMaxChars", "5000").toIntOrNull()?.coerceIn(500, 5000) ?: 5000,
             clipboardOtpGuard = p.getProperty("clipboardOtpGuard", "true").toBoolean(),
             clipboardOnlyWhenFocused = p.getProperty("clipboardOnlyWhenFocused", "true").toBoolean(),
+            animationMode = run {
+                val rawMode = p.getProperty("animationMode")
+                if (!rawMode.isNullOrBlank()) {
+                    AnimationMode.entries.firstOrNull { it.key == rawMode } ?: AnimationMode.BALANCED
+                } else {
+                    val legacyAnim = p.getProperty("animationsEnabled", "true").toBoolean()
+                    if (legacyAnim) AnimationMode.BALANCED else AnimationMode.POWER_SAVER
+                }
+            },
             windowX = p.getProperty("windowX", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowY = p.getProperty("windowY", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
-            windowWidth = p.getProperty("windowWidth", "1280").toIntOrNull()?.coerceAtLeast(1024) ?: 1280,
-            windowHeight = p.getProperty("windowHeight", "820").toIntOrNull()?.coerceAtLeast(680) ?: 820
+            windowWidth = p.getProperty("windowWidth", "1280").toIntOrNull()?.coerceAtLeast(880) ?: 1280,
+            windowHeight = p.getProperty("windowHeight", "820").toIntOrNull()?.coerceAtLeast(560) ?: 820
         )
     }
 
     @Synchronized
     fun update(transform: (DesktopSettings) -> DesktopSettings) {
-        val next = transform(_state.value)
+        val rawNext = transform(_state.value)
+        // Dual-sync animationMode <-> animationsEnabled so legacy callers & new callers stay consistent
+        val prev = _state.value
+        val next = when {
+            rawNext.animationMode != prev.animationMode ->
+                rawNext.copy(animationsEnabled = rawNext.animationMode == AnimationMode.BALANCED)
+            rawNext.animationsEnabled != prev.animationsEnabled ->
+                rawNext.copy(animationMode = if (rawNext.animationsEnabled) AnimationMode.BALANCED else AnimationMode.POWER_SAVER)
+            else -> rawNext
+        }
         _state.value = next
         DesktopStrings.syncLanguage(next.language)
         saveToDisk(next)
@@ -280,7 +306,8 @@ object DesktopSettingsStore {
             p.setProperty("mirrorMode", s.mirrorMode.key)
             p.setProperty("bgTheme", s.bgTheme.key)
             p.setProperty("customBgImagePath", s.customBgImagePath)
-            p.setProperty("animationsEnabled", s.animationsEnabled.toString())
+            p.setProperty("animationsEnabled", (s.animationMode == AnimationMode.BALANCED).toString())
+            p.setProperty("animationMode", s.animationMode.key)
             p.setProperty("use24HourTime", s.use24HourTime.toString())
             p.setProperty("messageCardCornerDp", s.messageCardCornerDp.toString())
             p.setProperty("glassBlurLevel", s.glassBlurLevel.key)

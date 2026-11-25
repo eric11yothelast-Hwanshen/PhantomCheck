@@ -48,15 +48,16 @@ import org.jetbrains.skia.Image as SkiaImage
 import java.io.File
 
 /**
- * #488 桌面端深淺維度設計 Token（單一色彩來源）：
- * - 由 surfaceOpacity (0.55..0.96)、bgScrimAlpha (0.15..0.85)、highContrastText 驅動
- * - 所有卡片、側欄、對話框、Canvas 圖表、Markdown 區塊皆透過 LocalDesktopTokens.current 取色
+ * #488 / #520 桌面端設計 Token v2（深色／淺色／高對比深／高對比淺，含 popupBg、accentText、onAccent、語意色、focusRing、hover/pressed）：
+ * - 由 surfaceOpacity (0.55..0.96)、bgScrimAlpha (0.15..0.85)、highContrastText、lightTheme、accent 驅動
+ * - 所有卡片、側欄、對話框、浮動視窗、Canvas 圖表、Markdown 區塊皆透過 LocalDesktopTokens.current 取色
  */
 @Immutable
 data class DesktopThemeTokens(
     val sidebarBg: Color,
     val surface: Color,
     val surfaceElevated: Color,
+    val popupBg: Color,
     val border: Color,
     val textPrimary: Color,
     val textSecondary: Color,
@@ -64,51 +65,214 @@ data class DesktopThemeTokens(
     val codeBg: Color,
     val scrimColor: Color,
     val dialogContainer: Color,
-    val chartGridLine: Color
+    val chartGridLine: Color,
+    val accent: Color,
+    val accentText: Color,
+    val onAccent: Color,
+    val success: Color,
+    val warning: Color,
+    val error: Color,
+    val focusRing: Color,
+    val hoverOverlay: Color,
+    val pressedOverlay: Color,
+    val selectedBg: Color,
+    val disabledAlpha: Float,
+    val isLight: Boolean,
+    val isHighContrast: Boolean
 ) {
     companion object {
         val Default = from(DesktopSettings())
+
+        /** WCAG 2.1 相對亮度（0..1） */
+        fun relativeLuminance(c: Color): Double {
+            fun lin(v: Float): Double =
+                if (v <= 0.03928f) v / 12.92 else Math.pow(((v + 0.055) / 1.055), 2.4)
+            return 0.2126 * lin(c.red) + 0.7152 * lin(c.green) + 0.0722 * lin(c.blue)
+        }
+
+        /** 將前景合成至不透明底色後計算 WCAG 2.1 對比度 */
+        fun compositeOver(fg: Color, bg: Color): Color {
+            val a = fg.alpha.coerceIn(0f, 1f)
+            val inv = 1f - a
+            return Color(
+                red = (fg.red * a + bg.red * inv).coerceIn(0f, 1f),
+                green = (fg.green * a + bg.green * inv).coerceIn(0f, 1f),
+                blue = (fg.blue * a + bg.blue * inv).coerceIn(0f, 1f),
+                alpha = 1f
+            )
+        }
+
+        fun contrastRatio(fg: Color, bg: Color): Double {
+            val effBg = if (bg.alpha < 1f) compositeOver(bg, Color.Black) else bg
+            val effFg = if (fg.alpha < 1f) compositeOver(fg, effBg) else fg
+            val l1 = relativeLuminance(effFg)
+            val l2 = relativeLuminance(effBg)
+            val lighter = maxOf(l1, l2)
+            val darker = minOf(l1, l2)
+            return (lighter + 0.05) / (darker + 0.05)
+        }
+
+        private fun blendColor(a: Color, b: Color, weightA: Float): Color {
+            val wa = weightA.coerceIn(0f, 1f)
+            val wb = 1f - wa
+            return Color(
+                red = (a.red * wa + b.red * wb).coerceIn(0f, 1f),
+                green = (a.green * wa + b.green * wb).coerceIn(0f, 1f),
+                blue = (a.blue * wa + b.blue * wb).coerceIn(0f, 1f),
+                alpha = 1f
+            )
+        }
+
+        /** 調整顏色明度以保證在實際底色上達到指定 WCAG 對比門檻 */
+        private fun ensureContrast(color: Color, bg: Color, minRatio: Double, darken: Boolean): Color {
+            if (contrastRatio(color, bg) >= minRatio) return color
+            val target = if (darken) Color.Black else Color.White
+            var lo = 0f
+            var hi = 1f
+            var best = target
+            repeat(14) {
+                val mid = (lo + hi) * 0.5f
+                val candidate = blendColor(color, target, 1f - mid)
+                if (contrastRatio(candidate, bg) >= minRatio) {
+                    best = candidate
+                    hi = mid
+                } else {
+                    lo = mid
+                }
+            }
+            return best
+        }
 
         fun from(settings: DesktopSettings): DesktopThemeTokens {
             val opacity = settings.surfaceOpacity.coerceIn(0.55f, 0.96f)
             val scrim = settings.bgScrimAlpha.coerceIn(0.15f, 0.85f)
             val hc = settings.highContrastText
+            val accent = DesktopPalette.resolveAccentColor(settings.accentPreset, settings.customAccentHex)
             val (_, bgBottom) = DesktopPalette.bgGradientColors(settings.bgTheme)
             val elevatedAlpha = (opacity + 0.08f).coerceAtMost(0.98f)
             val sidebarAlpha = (opacity + 0.10f).coerceAtMost(0.96f)
+            val minTextRatio = if (hc) 7.0 else 4.5
+
+            // onAccent: choose #0B1020 or #FFFFFF with higher contrast (WCAG >= 4.5, HC >= 7.0 if reachable)
+            val darkInk = Color(0xFF0B1020)
+            val lightInk = Color(0xFFFFFFFF)
+            val onAccent = if (contrastRatio(darkInk, accent) >= contrastRatio(lightInk, accent)) darkInk else lightInk
+
             if (settings.lightTheme) {
+                val surfBase = Color(0xFFFFFFFF)
+                val surfAlpha = if (hc) opacity.coerceAtLeast(0.96f) else opacity
+                val effectiveBg = compositeOver(surfBase.copy(alpha = surfAlpha), Color(0xFFE8EEF7))
+                val initialAccentText = if (hc) blendColor(accent, Color.Black, 0.45f) else blendColor(accent, Color.Black, 0.65f)
+                val accentText = ensureContrast(initialAccentText, effectiveBg, minTextRatio, darken = true)
                 return DesktopThemeTokens(
-                    sidebarBg = Color(0xFFF1F5F9).copy(alpha = sidebarAlpha),
-                    surface = Color(0xFFFFFFFF).copy(alpha = opacity),
-                    surfaceElevated = Color(0xFFF8FAFC).copy(alpha = elevatedAlpha),
-                    border = Color(0xFF0F172A).copy(alpha = if (hc) 0.22f else 0.12f),
+                    sidebarBg = if (hc) Color(0xFFFFFFFF) else Color(0xFFF1F5F9).copy(alpha = sidebarAlpha),
+                    surface = surfBase.copy(alpha = surfAlpha),
+                    surfaceElevated = if (hc) Color(0xFFF8FAFC).copy(alpha = 0.98f) else Color(0xFFF8FAFC).copy(alpha = elevatedAlpha),
+                    popupBg = if (hc) Color(0xFFFFFFFF) else Color(0xFFFFFFFF).copy(alpha = maxOf(0.94f, elevatedAlpha)),
+                    border = Color(0xFF0F172A).copy(alpha = if (hc) 0.60f else 0.12f),
                     textPrimary = if (hc) Color(0xFF000000) else Color(0xFF0F172A),
                     textSecondary = if (hc) Color(0xFF1E293B) else Color(0xFF334155),
-                    textMuted = if (hc) Color(0xFF475569) else Color(0xFF64748B),
-                    codeBg = Color(0xFF0F172A).copy(alpha = 0.08f),
-                    scrimColor = Color(0xFFE2E8F0).copy(alpha = scrim),
-                    dialogContainer = Color(0xFFF8FAFC).copy(alpha = 0.98f),
-                    chartGridLine = Color(0xFF0F172A).copy(alpha = if (hc) 0.18f else 0.10f)
+                    textMuted = if (hc) Color(0xFF334155) else Color(0xFF475569),
+                    codeBg = Color(0xFF0F172A).copy(alpha = if (hc) 0.12f else 0.08f),
+                    scrimColor = if (hc) Color(0xFFFFFFFF).copy(alpha = scrim.coerceAtLeast(0.70f)) else Color(0xFFE2E8F0).copy(alpha = scrim),
+                    dialogContainer = if (hc) Color(0xFFFFFFFF) else Color(0xFFF8FAFC).copy(alpha = 0.98f),
+                    chartGridLine = Color(0xFF0F172A).copy(alpha = if (hc) 0.18f else 0.10f),
+                    accent = accent,
+                    accentText = accentText,
+                    onAccent = onAccent,
+                    success = if (hc) Color(0xFF14532D) else Color(0xFF15803D),
+                    warning = if (hc) Color(0xFF78350F) else Color(0xFFB45309),
+                    error = if (hc) Color(0xFF991B1B) else Color(0xFFB91C1C),
+                    focusRing = if (hc) Color(0xFF000000) else accentText,
+                    hoverOverlay = Color.Black.copy(alpha = if (hc) 0.10f else 0.05f),
+                    pressedOverlay = Color.Black.copy(alpha = if (hc) 0.16f else 0.09f),
+                    selectedBg = accent.copy(alpha = if (hc) 0.22f else 0.14f),
+                    disabledAlpha = if (hc) 0.55f else 0.38f,
+                    isLight = true,
+                    isHighContrast = hc
                 )
             }
+            val surfBase = if (hc) Color(0xFF0F1626) else Color(0xFF182032)
+            val surfAlpha = if (hc) opacity.coerceAtLeast(0.96f) else opacity
+            val effectiveBg = compositeOver(surfBase.copy(alpha = surfAlpha), Color(0xFF0A0E17))
+            val initialAccentText = if (hc) blendColor(accent, Color.White, 0.85f) else accent
+            val accentText = ensureContrast(initialAccentText, effectiveBg, minTextRatio, darken = false)
             return DesktopThemeTokens(
-                sidebarBg = Color(0xFF121826).copy(alpha = sidebarAlpha),
-                surface = Color(0xFF182032).copy(alpha = opacity),
-                surfaceElevated = Color(0xFF202A40).copy(alpha = elevatedAlpha),
-                border = Color.White.copy(alpha = if (hc) 0.20f else 0.09f),
+                sidebarBg = if (hc) Color(0xFF0B0F1A) else Color(0xFF121826).copy(alpha = sidebarAlpha),
+                surface = surfBase.copy(alpha = surfAlpha),
+                surfaceElevated = if (hc) Color(0xFF18223A).copy(alpha = 0.98f) else Color(0xFF202A40).copy(alpha = elevatedAlpha),
+                popupBg = if (hc) Color(0xFF0F1626) else Color(0xFF202A40).copy(alpha = maxOf(0.94f, elevatedAlpha)),
+                border = Color.White.copy(alpha = if (hc) 0.55f else 0.09f),
                 textPrimary = if (hc) Color(0xFFFFFFFF) else Color(0xFFEBF1F8),
                 textSecondary = if (hc) Color(0xFFDDE7F5) else Color(0xFFB4C0D3),
-                textMuted = if (hc) Color(0xFFAAB8CE) else Color(0xFF7D8AA1),
+                textMuted = if (hc) Color(0xFFAAB8CE) else Color(0xFF8A97AE),
                 codeBg = Color.Black.copy(alpha = if (hc) 0.54f else 0.38f),
-                scrimColor = Color.Black.copy(alpha = scrim),
-                dialogContainer = bgBottom.copy(alpha = 0.97f),
-                chartGridLine = Color.White.copy(alpha = if (hc) 0.22f else 0.11f)
+                scrimColor = Color.Black.copy(alpha = if (hc) scrim.coerceAtLeast(0.70f) else scrim),
+                dialogContainer = if (hc) Color(0xFF000000) else bgBottom.copy(alpha = 0.97f),
+                chartGridLine = Color.White.copy(alpha = if (hc) 0.22f else 0.11f),
+                accent = accent,
+                accentText = accentText,
+                onAccent = onAccent,
+                success = if (hc) Color(0xFF86EFAC) else Color(0xFF4ADE80),
+                warning = if (hc) Color(0xFFFCD34D) else Color(0xFFFBBF24),
+                error = if (hc) Color(0xFFFFA198) else Color(0xFFFF7B72),
+                focusRing = if (hc) Color(0xFFFFFFFF) else accent,
+                hoverOverlay = Color.White.copy(alpha = if (hc) 0.12f else 0.06f),
+                pressedOverlay = Color.White.copy(alpha = if (hc) 0.18f else 0.10f),
+                selectedBg = accent.copy(alpha = if (hc) 0.28f else 0.18f),
+                disabledAlpha = if (hc) 0.55f else 0.38f,
+                isLight = false,
+                isHighContrast = hc
             )
         }
     }
 }
 
 val LocalDesktopTokens = staticCompositionLocalOf { DesktopThemeTokens.Default }
+
+/**
+ * #520 桌面端動效規格層（D1–D27）：平衡模式＝完整 draw-phase 動效；省電模式＝瞬切／80ms 短 fade、零無限迴圈。
+ */
+@Immutable
+data class DesktopMotionProfile(
+    val mode: AnimationMode
+) {
+    val isBalanced: Boolean get() = mode == AnimationMode.BALANCED
+    val isPowerSaver: Boolean get() = mode == AnimationMode.POWER_SAVER
+    val fadeShortMs: Int get() = if (isBalanced) 160 else 80
+    val colorTransitionMs: Int get() = if (isBalanced) 150 else 0
+    val heroTintMs: Int get() = if (isBalanced) 240 else 0
+    val allowInfiniteLoops: Boolean get() = isBalanced
+    val showToastCountdownBar: Boolean get() = isBalanced
+    val allowPressScale: Boolean get() = isBalanced
+}
+
+val LocalDesktopMotion = staticCompositionLocalOf { DesktopMotionProfile(AnimationMode.BALANCED) }
+
+/**
+ * #520 統一主題提供者：主視窗、Toast 視窗、懸浮球視窗、對話框共用，確保深/淺/高對比與雙動畫模式不重啟即刻全域生效。
+ */
+@Composable
+fun ProvideDesktopTheme(
+    settings: DesktopSettings,
+    content: @Composable () -> Unit
+) {
+    val tokens = remember(
+        settings.surfaceOpacity,
+        settings.bgScrimAlpha,
+        settings.highContrastText,
+        settings.bgTheme,
+        settings.lightTheme,
+        settings.accentPreset,
+        settings.customAccentHex
+    ) { DesktopThemeTokens.from(settings) }
+    val motion = remember(settings.animationMode) { DesktopMotionProfile(settings.animationMode) }
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalDesktopTokens provides tokens,
+        LocalDesktopMotion provides motion,
+        content = content
+    )
+}
 
 /**
  * #488 桌面端頁面切換動效常數（draw-phase 友善、全常數化、無布林階躍切換參數）。
