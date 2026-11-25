@@ -53,17 +53,20 @@ object DesktopStrings {
     // Messages
     val filterAll get() = t("全部", "All")
     val filterUnread get() = t("未讀", "Unread")
-    val filterStarred get() = t("星號", "Starred")
+    val filterStarred get() = t("星標", "Starred")
+    val filterGroup get() = t("群組", "Groups")
     val filterScam get() = t("詐騙", "Scam")
     val markAllRead get() = t("全部標已讀", "Mark All Read")
     val markRead get() = t("標已讀", "Mark Read")
+    val conversationMarkRead get() = t("對話標已讀", "Mark Thread Read")
     val markReadNote get() = t("僅標記幻訊列表已讀（不清除原 App 未讀）", "Marks read in PhantomCheck list only")
     val replyPlaceholder get() = t("快速回覆內容…", "Quick reply text…")
     val sendReply get() = t("回覆", "Reply")
     val newMessageMirror get() = t("新訊息鏡射：", "New message: ")
     val refresh get() = t("重新整理", "Refresh")
-    val searchMessagesHint get() = t("搜尋寄件者或預覽內容 (Ctrl+F)…", "Search sender or preview (Ctrl+F)…")
-    val selectMessageHint get() = t("請在左側點選一則訊息檢視詳情與對話串", "Select a message on the left to view details & thread")
+    val searchMessagesHint get() = t("搜尋 App、寄件人或預覽內容 (Ctrl+F)…", "Search app, sender, or preview (Ctrl+F)…")
+    val selectMessageHint get() = t("請在左側點選一則對話檢視詳情與完整對話串", "Select a conversation on the left to view details & full thread")
+    val groupBadge get() = t("群組", "Group")
 
     // Stats
     val statsTotal get() = t("總訊息", "Total")

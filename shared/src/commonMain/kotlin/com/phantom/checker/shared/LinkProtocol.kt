@@ -200,7 +200,9 @@ data class MessageSummaryDto(
     val isStarred: Boolean = false,
     val isRead: Boolean = false,
     val conversationKey: String = "",
-    val tagIds: List<Long> = emptyList()
+    val tagIds: List<Long> = emptyList(),
+    val appLabel: String = "",
+    val isGroup: Boolean = false
 )
 
 data class MessagesListReq(
