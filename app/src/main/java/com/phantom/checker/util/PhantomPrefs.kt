@@ -2881,6 +2881,30 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
             PhantomSettingsBus.notifyChanged()
         }
     }
+
+    // ---- #501 Filters & Focus collapsible sections, 1h focus mute, and Settings advanced collapse ----
+
+    fun isFilterSectionExpanded(ctx: Context, sectionKey: String, defaultExpanded: Boolean = true): Boolean =
+        prefs(ctx).getBoolean("filter_sec_exp_$sectionKey", defaultExpanded)
+
+    fun setFilterSectionExpanded(ctx: Context, sectionKey: String, expanded: Boolean) {
+        prefs(ctx).edit().putBoolean("filter_sec_exp_$sectionKey", expanded).apply()
+    }
+
+    fun getFocusMuteUntilMs(ctx: Context): Long =
+        prefs(ctx).getLong("focus_mute_until_ms", 0L)
+
+    fun setFocusMuteUntilMs(ctx: Context, untilMs: Long) {
+        prefs(ctx).edit().putLong("focus_mute_until_ms", untilMs).apply()
+        PhantomSettingsBus.notifyChanged()
+    }
+
+    fun isSettingsAdvancedExpanded(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("settings_home_advanced_expanded", false)
+
+    fun setSettingsAdvancedExpanded(ctx: Context, expanded: Boolean) {
+        prefs(ctx).edit().putBoolean("settings_home_advanced_expanded", expanded).apply()
+    }
 }
 
 

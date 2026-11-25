@@ -47,7 +47,7 @@ object DesktopStrings {
     val navStats get() = t("統計", "Stats")
     val navTodos get() = t("待辦與記事", "Todos & Notes")
     val navChat get() = t("AI 助手", "AI Assistant")
-    val navRules get() = t("規則與靜音", "Rules & Mute")
+    val navRules get() = t("過濾與專注", "Filters & Focus")
     val navSettings get() = t("設定中心", "Settings")
 
     // Messages

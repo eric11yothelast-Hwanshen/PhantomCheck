@@ -1013,7 +1013,7 @@
     <string name="catalog_ai_rules_title">自訂標籤規則管理</string>
     <string name="catalog_ai_rules_desc">管理自訂標籤、App 分類與使用者標籤規則</string>
     <string name="catalog_ai_rules_aliases">標籤|規則|分類|標籤管理|自訂分類|郵件標籤|app歸類|條件貼標</string>
-    <string name="catalog_whitelist_management_title">白名單管理</string>
+    <string name="catalog_whitelist_management_title">過濾與專注</string>
     <string name="catalog_whitelist_management_desc">依 App 分組檢視、新增、啟停或刪除寄件者與訊息白名單</string>
     <string name="catalog_whitelist_management_aliases">白名單|whitelist|信任|寄件者|免警示|略過詐騙|誤判排除|安全名單|信任聯絡人</string>
     <string name="catalog_data_export_clear_title">匯出資料與清除紀錄</string>
@@ -3044,4 +3044,25 @@
     <string name="link_hub_diag_action_wifi">開啟 Wi-Fi 設定</string>
     <string name="link_hub_diag_action_scan_qr">重新掃描 QR</string>
     <string name="link_hub_diag_action_probe">立即探測</string>
+    <!-- #501 過濾與專注＋設定收納 -->
+    <string name="filters_sec_allowlist">白名單規則</string>
+    <string name="filters_sec_muted_apps">靜音應用與專注</string>
+    <string name="filters_sec_tags">標籤管理</string>
+    <string name="filters_focus_mute_1h">臨時靜音 1 小時</string>
+    <string name="filters_focus_mute_active">專注靜音中 · 剩餘 %1$d 分鐘</string>
+    <string name="filters_focus_mute_cancel">提前結束</string>
+    <string name="filters_muted_empty">目前尚無靜音的應用程式</string>
+    <string name="filters_unmute">取消靜音</string>
+    <string name="filters_edit_rule">編輯規則</string>
+    <string name="filters_rule_schedule_hint">生效時段（選填，如 09:00-18:00）</string>
+    <string name="filters_tag_rename">重新命名標籤</string>
+    <string name="filters_tag_delete_warn">確定刪除標籤「%1$s」？已貼標訊息內容會保留，但會移除此標籤。</string>
+    <string name="filters_tag_suggest_title">依風險建議常用標籤</string>
+    <string name="filters_tag_added">已新增標籤：%1$s</string>
+    <string name="settings_advanced_group_title">進階與系統</string>
+    <string name="settings_advanced_group_desc">權限管理、資料匯出清除與關於</string>
+    <string name="filters_suggest_high_risk">高風險追蹤</string>
+    <string name="filters_suggest_finance">帳務／驗證碼</string>
+    <string name="filters_suggest_vip">重要聯絡人</string>
+    <string name="filters_suggest_work">工作專案</string>
 </resources>

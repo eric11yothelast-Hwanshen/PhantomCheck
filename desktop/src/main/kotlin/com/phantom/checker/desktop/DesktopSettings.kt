@@ -83,6 +83,10 @@ data class DesktopSettings(
     val floatingClickAction: FloatingClickAction = FloatingClickAction.OPEN_AI,
     val floatingOrbX: Int = Int.MIN_VALUE,
     val floatingOrbY: Int = Int.MIN_VALUE,
+    // #501 Filters & Focus collapsible section persistence
+    val rulesCollapseAllowlist: Boolean = false,
+    val rulesCollapseTags: Boolean = false,
+    val rulesCollapseMuted: Boolean = false,
     // Window geometry persistence
     val windowX: Int = Int.MIN_VALUE,
     val windowY: Int = Int.MIN_VALUE,
@@ -171,6 +175,9 @@ object DesktopSettingsStore {
             floatingClickAction = FloatingClickAction.entries.firstOrNull { it.key == p.getProperty("floatingClickAction", "open_ai") } ?: FloatingClickAction.OPEN_AI,
             floatingOrbX = p.getProperty("floatingOrbX", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             floatingOrbY = p.getProperty("floatingOrbY", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
+            rulesCollapseAllowlist = p.getProperty("rulesCollapseAllowlist", "false").toBoolean(),
+            rulesCollapseTags = p.getProperty("rulesCollapseTags", "false").toBoolean(),
+            rulesCollapseMuted = p.getProperty("rulesCollapseMuted", "false").toBoolean(),
             windowX = p.getProperty("windowX", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowY = p.getProperty("windowY", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowWidth = p.getProperty("windowWidth", "1280").toIntOrNull()?.coerceAtLeast(1024) ?: 1280,
@@ -236,6 +243,9 @@ object DesktopSettingsStore {
             p.setProperty("floatingClickAction", s.floatingClickAction.key)
             p.setProperty("floatingOrbX", s.floatingOrbX.toString())
             p.setProperty("floatingOrbY", s.floatingOrbY.toString())
+            p.setProperty("rulesCollapseAllowlist", s.rulesCollapseAllowlist.toString())
+            p.setProperty("rulesCollapseTags", s.rulesCollapseTags.toString())
+            p.setProperty("rulesCollapseMuted", s.rulesCollapseMuted.toString())
             p.setProperty("windowX", s.windowX.toString())
             p.setProperty("windowY", s.windowY.toString())
             p.setProperty("windowWidth", s.windowWidth.toString())

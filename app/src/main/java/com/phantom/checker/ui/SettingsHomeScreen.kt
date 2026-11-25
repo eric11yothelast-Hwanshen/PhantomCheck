@@ -391,35 +391,115 @@ internal fun SettingsHomeScreen(
                         }
                     }
 
-                    // ── 8 大分類清單 ──
+                    // ── 主要設定分類（常用一鍵可及 #501） ──
                     item(key = "settings_categories_section") {
+                        var advancedExpanded by remember {
+                            mutableStateOf(com.phantom.checker.util.PhantomPrefs.isSettingsAdvancedExpanded(appCtx))
+                        }
+                        val primaryCategories = remember {
+                            listOf(
+                                SettingsCategory.QUICK,
+                                SettingsCategory.AI,
+                                SettingsCategory.NOTIF,
+                                SettingsCategory.ASSISTANT,
+                                SettingsCategory.APPEARANCE
+                            )
+                        }
+                        val advancedCategories = remember {
+                            listOf(
+                                SettingsCategory.PERMISSIONS,
+                                SettingsCategory.DATA,
+                                SettingsCategory.ABOUT
+                            )
+                        }
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .onGloballyPositioned { onReportTourBounds("categories", it.boundsInRoot()) },
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            SettingsSectionHeader(title = stringResource(R.string.settings_home_s_d72af3))
-                            val categories = SettingsCategory.entries
-                            SettingsSegmentedGroup {
-                                categories.forEachIndexed { idx, category ->
-                                    val (summary, badge) = when (category) {
-                                        SettingsCategory.QUICK -> summaries.quickSummary to null
-                                        SettingsCategory.AI -> summaries.aiSummary to null
-                                        SettingsCategory.NOTIF -> summaries.notifSummary to null
-                                        SettingsCategory.ASSISTANT -> summaries.assistantSummary to null
-                                        SettingsCategory.PERMISSIONS -> summaries.permissionsSummary to summaries.permissionsBadge
-                                        SettingsCategory.APPEARANCE -> summaries.appearanceSummary to null
-                                        SettingsCategory.DATA -> summaries.dataSummary to null
-                                        SettingsCategory.ABOUT -> summaries.aboutSummary to null
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                SettingsSectionHeader(title = stringResource(R.string.settings_home_s_d72af3))
+                                SettingsSegmentedGroup {
+                                    primaryCategories.forEachIndexed { idx, category ->
+                                        val (summary, badge) = when (category) {
+                                            SettingsCategory.QUICK -> summaries.quickSummary to null
+                                            SettingsCategory.AI -> summaries.aiSummary to null
+                                            SettingsCategory.NOTIF -> summaries.notifSummary to null
+                                            SettingsCategory.ASSISTANT -> summaries.assistantSummary to null
+                                            SettingsCategory.APPEARANCE -> summaries.appearanceSummary to null
+                                            else -> "" to null
+                                        }
+                                        SettingsNavigationRow(
+                                            title = category.title,
+                                            subtitle = summary,
+                                            icon = categoryIcon(category),
+                                            badgeText = badge,
+                                            shape = AuroraTokens.segmentedItemShape(idx, primaryCategories.size),
+                                            onClick = { onOpenCategory(category) },
+                                        )
                                     }
-                                    SettingsNavigationRow(
-                                        title = category.title,
-                                        subtitle = summary,
-                                        icon = categoryIcon(category),
-                                        badgeText = badge,
-                                        shape = AuroraTokens.segmentedItemShape(idx, categories.size),
-                                        onClick = { onOpenCategory(category) },
-                                    )
+                                }
+                            }
+
+                            // #501 低頻設定收納為預設收合之「進階與系統」群組（搜尋仍可一鍵命中）
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                advancedExpanded = !advancedExpanded
+                                                com.phantom.checker.util.PhantomPrefs.setSettingsAdvancedExpanded(appCtx, advancedExpanded)
+                                            }
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = stringResource(R.string.settings_advanced_group_title),
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text(
+                                                text = stringResource(R.string.settings_advanced_group_desc),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        com.phantom.checker.ui.components.PhantomChevron(expanded = advancedExpanded)
+                                    }
+                                    androidx.compose.animation.AnimatedVisibility(
+                                        visible = advancedExpanded,
+                                        enter = PhantomMotion.ExpandEnter,
+                                        exit = PhantomMotion.ExpandExit
+                                    ) {
+                                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                                            SettingsSegmentedGroup {
+                                                advancedCategories.forEachIndexed { idx, category ->
+                                                    val (summary, badge) = when (category) {
+                                                        SettingsCategory.PERMISSIONS -> summaries.permissionsSummary to summaries.permissionsBadge
+                                                        SettingsCategory.DATA -> summaries.dataSummary to null
+                                                        SettingsCategory.ABOUT -> summaries.aboutSummary to null
+                                                        else -> "" to null
+                                                    }
+                                                    SettingsNavigationRow(
+                                                        title = category.title,
+                                                        subtitle = summary,
+                                                        icon = categoryIcon(category),
+                                                        badgeText = badge,
+                                                        shape = AuroraTokens.segmentedItemShape(idx, advancedCategories.size),
+                                                        onClick = { onOpenCategory(category) },
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

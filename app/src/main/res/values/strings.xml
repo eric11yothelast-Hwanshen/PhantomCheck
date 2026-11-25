@@ -1013,7 +1013,7 @@
     <string name="catalog_ai_rules_title">Custom Tag Rules Management</string>
     <string name="catalog_ai_rules_desc">Manage custom tags, app categories, and user tag rules</string>
     <string name="catalog_ai_rules_aliases">tag|rule|category|tag management|custom category|email tag|app classification|conditional tagging</string>
-    <string name="catalog_whitelist_management_title">Whitelist Management</string>
+    <string name="catalog_whitelist_management_title">Filters &amp; Focus</string>
     <string name="catalog_whitelist_management_desc">View, add, toggle, or delete sender and message whitelist rules grouped by app</string>
     <string name="catalog_whitelist_management_aliases">whitelist|trust|sender|exempt alert|skip scam|false positive exclusion|safe list|trusted contact</string>
     <string name="catalog_data_export_clear_title">Export Data &amp; Clear History</string>
@@ -3044,4 +3044,25 @@
     <string name="link_hub_diag_action_wifi">Open Wi-Fi Settings</string>
     <string name="link_hub_diag_action_scan_qr">Scan New QR</string>
     <string name="link_hub_diag_action_probe">Run Probe</string>
+    <!-- #501 Filters & Focus + Settings Consolidation -->
+    <string name="filters_sec_allowlist">Allowlist Rules</string>
+    <string name="filters_sec_muted_apps">Muted Apps &amp; Focus</string>
+    <string name="filters_sec_tags">Tag Management</string>
+    <string name="filters_focus_mute_1h">Quick Mute 1 Hour</string>
+    <string name="filters_focus_mute_active">Focus mute active · %1$d min remaining</string>
+    <string name="filters_focus_mute_cancel">End Mute</string>
+    <string name="filters_muted_empty">No muted apps yet</string>
+    <string name="filters_unmute">Unmute</string>
+    <string name="filters_edit_rule">Edit Rule</string>
+    <string name="filters_rule_schedule_hint">Active hours (optional, e.g. 09:00-18:00)</string>
+    <string name="filters_tag_rename">Rename Tag</string>
+    <string name="filters_tag_delete_warn">Delete tag \"%1$s\"? Tagged messages will keep their content but lose this tag.</string>
+    <string name="filters_tag_suggest_title">Risk-based Tag Suggestions</string>
+    <string name="filters_tag_added">Tag added: %1$s</string>
+    <string name="settings_advanced_group_title">Advanced &amp; System</string>
+    <string name="settings_advanced_group_desc">Permissions, data management, and app info</string>
+    <string name="filters_suggest_high_risk">High-risk Watch</string>
+    <string name="filters_suggest_finance">Finance &amp; OTP</string>
+    <string name="filters_suggest_vip">VIP Contacts</string>
+    <string name="filters_suggest_work">Work</string>
 </resources>

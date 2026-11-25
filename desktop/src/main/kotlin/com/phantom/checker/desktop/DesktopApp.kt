@@ -1884,32 +1884,49 @@ fun DesktopApp(
                                             modifier = Modifier.fillMaxSize().verticalScroll(rulesScrollState),
                                             verticalArrangement = Arrangement.spacedBy(16.dp)
                                         ) {
+                                            // 1. Collapsible Allowlist Rules (#501)
                                             GlassCard(modifier = Modifier.fillMaxWidth()) {
                                                 Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                    Text(DesktopStrings.whitelistTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
-                                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                        OutlinedTextField(value = newRuleSender, onValueChange = { newRuleSender = it }, label = { Text(DesktopStrings.whitelistSenderHint) }, modifier = Modifier.weight(1f), singleLine = true)
-                                                        OutlinedTextField(value = newRulePkg, onValueChange = { newRulePkg = it }, label = { Text(DesktopStrings.whitelistPkgHint) }, modifier = Modifier.weight(1f), singleLine = true)
-                                                        SpringButton(onClick = {
-                                                            if (newRuleSender.isNotBlank()) {
-                                                                scope.launch {
-                                                                    if (sendOrNotify(LinkMsgType.WHITELIST_ADD, WhitelistAddReq(sender = newRuleSender, packageName = newRulePkg, ruleText = newRuleSender))) {
-                                                                        newRuleSender = ""
-                                                                        newRulePkg = ""
-                                                                    }
-                                                                }
-                                                            }
-                                                        }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.add) }
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable { DesktopSettingsStore.update { it.copy(rulesCollapseAllowlist = !it.rulesCollapseAllowlist) } },
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                            Icon(DesktopIcons.Rules, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
+                                                            Text("${DesktopStrings.whitelistTitle} (${whitelistRules.size})", style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
+                                                        }
+                                                        Text(if (settings.rulesCollapseAllowlist) "▸" else "▾", color = tokens.textMuted)
                                                     }
-                                                    if (whitelistRules.isEmpty()) {
-                                                        Text(DesktopStrings.emptyWhitelist, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
-                                                    } else {
-                                                        whitelistRules.forEach { r ->
-                                                            HorizontalDivider(color = tokens.border)
-                                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                                Text("${r.ruleText} ${if (r.packageName.isNotBlank()) "(${r.packageName})" else ""}", style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
-                                                                TextButton(onClick = { scope.launch { sendOrNotify(LinkMsgType.WHITELIST_REMOVE, RuleRemoveReq(r.id)) } }) {
-                                                                    Text(DesktopStrings.remove, color = DesktopPalette.GlassError)
+                                                    AnimatedVisibility(visible = !settings.rulesCollapseAllowlist) {
+                                                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                                OutlinedTextField(value = newRuleSender, onValueChange = { newRuleSender = it }, label = { Text(DesktopStrings.whitelistSenderHint) }, modifier = Modifier.weight(1f), singleLine = true)
+                                                                OutlinedTextField(value = newRulePkg, onValueChange = { newRulePkg = it }, label = { Text(DesktopStrings.whitelistPkgHint) }, modifier = Modifier.weight(1f), singleLine = true)
+                                                                SpringButton(onClick = {
+                                                                    if (newRuleSender.isNotBlank()) {
+                                                                        scope.launch {
+                                                                            if (sendOrNotify(LinkMsgType.WHITELIST_ADD, WhitelistAddReq(sender = newRuleSender, packageName = newRulePkg, ruleText = newRuleSender))) {
+                                                                                newRuleSender = ""
+                                                                                newRulePkg = ""
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.add) }
+                                                            }
+                                                            if (whitelistRules.isEmpty()) {
+                                                                Text(DesktopStrings.emptyWhitelist, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
+                                                            } else {
+                                                                whitelistRules.forEach { r ->
+                                                                    HorizontalDivider(color = tokens.border)
+                                                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                                        Text("${r.ruleText} ${if (r.packageName.isNotBlank()) "(${r.packageName})" else ""}", style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
+                                                                        TextButton(onClick = { scope.launch { sendOrNotify(LinkMsgType.WHITELIST_REMOVE, RuleRemoveReq(r.id)) } }) {
+                                                                            Text(DesktopStrings.remove, color = DesktopPalette.GlassError)
+                                                                        }
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -1917,28 +1934,45 @@ fun DesktopApp(
                                                 }
                                             }
 
+                                            // 2. Collapsible Tags (#501)
                                             GlassCard(modifier = Modifier.fillMaxWidth()) {
                                                 Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                    Text(DesktopStrings.tagsTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
-                                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                                        OutlinedTextField(value = newTagName, onValueChange = { newTagName = it }, label = { Text(DesktopStrings.tagNameHint) }, modifier = Modifier.weight(1f), singleLine = true)
-                                                        SpringButton(onClick = {
-                                                            if (newTagName.isNotBlank()) {
-                                                                scope.launch {
-                                                                    if (sendOrNotify(LinkMsgType.TAGS_ADD, TagAddReq(name = newTagName))) newTagName = ""
-                                                                }
-                                                            }
-                                                        }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.add) }
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable { DesktopSettingsStore.update { it.copy(rulesCollapseTags = !it.rulesCollapseTags) } },
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                            Icon(DesktopIcons.Tag, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
+                                                            Text("${DesktopStrings.tagsTitle} (${tags.size})", style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
+                                                        }
+                                                        Text(if (settings.rulesCollapseTags) "▸" else "▾", color = tokens.textMuted)
                                                     }
-                                                    if (tags.isEmpty()) {
-                                                        Text(DesktopStrings.emptyTags, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
-                                                    } else {
-                                                        tags.forEach { t ->
-                                                            HorizontalDivider(color = tokens.border)
-                                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                                Text(t.name, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
-                                                                TextButton(onClick = { scope.launch { sendOrNotify(LinkMsgType.TAGS_REMOVE, TagRemoveReq(t.id)) } }) {
-                                                                    Text(DesktopStrings.remove, color = DesktopPalette.GlassError)
+                                                    AnimatedVisibility(visible = !settings.rulesCollapseTags) {
+                                                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                                OutlinedTextField(value = newTagName, onValueChange = { newTagName = it }, label = { Text(DesktopStrings.tagNameHint) }, modifier = Modifier.weight(1f), singleLine = true)
+                                                                SpringButton(onClick = {
+                                                                    if (newTagName.isNotBlank()) {
+                                                                        scope.launch {
+                                                                            if (sendOrNotify(LinkMsgType.TAGS_ADD, TagAddReq(name = newTagName))) newTagName = ""
+                                                                        }
+                                                                    }
+                                                                }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.add) }
+                                                            }
+                                                            if (tags.isEmpty()) {
+                                                                Text(DesktopStrings.emptyTags, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
+                                                            } else {
+                                                                tags.forEach { t ->
+                                                                    HorizontalDivider(color = tokens.border)
+                                                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                                        Text(t.name, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
+                                                                        TextButton(onClick = { scope.launch { sendOrNotify(LinkMsgType.TAGS_REMOVE, TagRemoveReq(t.id)) } }) {
+                                                                            Text(DesktopStrings.remove, color = DesktopPalette.GlassError)
+                                                                        }
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -1946,25 +1980,42 @@ fun DesktopApp(
                                                 }
                                             }
 
+                                            // 3. Collapsible Muted Apps (#501)
                                             GlassCard(modifier = Modifier.fillMaxWidth()) {
                                                 Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                                    Text(DesktopStrings.mutedAppsTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
-                                                    if (mutedApps.isEmpty()) {
-                                                        Text(DesktopStrings.mutedAppsEmpty, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
-                                                    } else {
-                                                        mutedApps.forEach { app ->
-                                                            HorizontalDivider(color = tokens.border)
-                                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                                                Column(modifier = Modifier.weight(1f)) {
-                                                                    Text(app.appLabel, style = MaterialTheme.typography.bodySmall, color = tokens.textPrimary)
-                                                                    Text(app.packageName, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted, fontFamily = FontFamily.Monospace)
-                                                                }
-                                                                Switch(
-                                                                    checked = app.muted,
-                                                                    onCheckedChange = { checked ->
-                                                                        scope.launch { sendOrNotify(LinkMsgType.MUTED_APPS_TOGGLE, MutedAppToggleReq(packageName = app.packageName, muted = checked)) }
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable { DesktopSettingsStore.update { it.copy(rulesCollapseMuted = !it.rulesCollapseMuted) } },
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                            Icon(DesktopIcons.Bell, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
+                                                            Text("${DesktopStrings.mutedAppsTitle} (${mutedApps.count { it.muted }})", style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
+                                                        }
+                                                        Text(if (settings.rulesCollapseMuted) "▸" else "▾", color = tokens.textMuted)
+                                                    }
+                                                    AnimatedVisibility(visible = !settings.rulesCollapseMuted) {
+                                                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                            if (mutedApps.isEmpty()) {
+                                                                Text(DesktopStrings.mutedAppsEmpty, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
+                                                            } else {
+                                                                mutedApps.forEach { app ->
+                                                                    HorizontalDivider(color = tokens.border)
+                                                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                                        Column(modifier = Modifier.weight(1f)) {
+                                                                            Text(DesktopAppLabels.resolveLabel(app.packageName, app.appLabel), style = MaterialTheme.typography.bodySmall, color = tokens.textPrimary)
+                                                                            Text(app.packageName, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted, fontFamily = FontFamily.Monospace)
+                                                                        }
+                                                                        Switch(
+                                                                            checked = app.muted,
+                                                                            onCheckedChange = { checked ->
+                                                                                scope.launch { sendOrNotify(LinkMsgType.MUTED_APPS_TOGGLE, MutedAppToggleReq(packageName = app.packageName, muted = checked)) }
+                                                                            }
+                                                                        )
                                                                     }
-                                                                )
+                                                                }
                                                             }
                                                         }
                                                     }
