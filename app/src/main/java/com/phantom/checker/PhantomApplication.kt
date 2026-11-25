@@ -28,6 +28,7 @@ class PhantomApplication : Application() {
         com.phantom.checker.service.CalendarInsightScheduler.scheduleOrUpdate(this)
         com.phantom.checker.service.DiaryPolicy.schedule(this)
         com.phantom.checker.service.DiaryPolicy.maybeCatchUp(this)
+        com.phantom.checker.widget.WidgetUpdater.ensurePeriodicBackupScheduled(this)
     }
 
     override fun onTrimMemory(level: Int) {

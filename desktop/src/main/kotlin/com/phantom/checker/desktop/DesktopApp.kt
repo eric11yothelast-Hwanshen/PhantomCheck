@@ -542,6 +542,18 @@ fun DesktopApp(
                         scope.launch { server.sendCommand(LinkMsgType.NOTES_LIST, reqId(), NotesListReq(limit = 50)) }
                     } else actionFeedback = res.errorMessage
                 }
+                LinkMsgType.DESKTOP_SETTINGS_SYNC -> {
+                    val push = runCatching { gson.fromJson(env.payloadJson, DesktopSettingsSyncPush::class.java) }.getOrNull() ?: return@collect
+                    DesktopSettingsStore.update { cur ->
+                        cur.copy(
+                            mirrorMode = MirrorDisplayMode.entries.firstOrNull { it.key == push.mirrorMode } ?: cur.mirrorMode,
+                            dndEnabled = push.dndEnabled ?: cur.dndEnabled,
+                            floatingAssistantEnabled = push.floatingAssistantEnabled ?: cur.floatingAssistantEnabled,
+                            bannerDurationSec = push.bannerDurationSec?.takeIf { it in listOf(0, 3, 5, 8) } ?: cur.bannerDurationSec
+                        )
+                    }
+                    actionFeedback = DesktopStrings.notifCenterTitle
+                }
                 LinkMsgType.MESSAGE_DEEP_ANALYZE_RES -> {
                     val res = runCatching { gson.fromJson(env.payloadJson, DeepAnalyzeRes::class.java) }.getOrNull() ?: return@collect
                     deepAnalyzingMsgId = -1L

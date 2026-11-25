@@ -347,6 +347,29 @@ object DesktopLinkClient {
         )
     }
 
+    /**
+     * #503 手機端設定或 AI 語意改設定後即時同步桌面端通知中心設定（鏡射模式、勿擾、懸浮助手、橫幅秒數）。
+     */
+    fun pushDesktopSettingsSync(
+        mirrorMode: String = "",
+        dndEnabled: Boolean? = null,
+        floatingAssistantEnabled: Boolean? = null,
+        bannerDurationSec: Int? = null
+    ): Boolean {
+        val ws = activeWs ?: return false
+        return sendEnvelope(
+            ws,
+            LinkMsgType.DESKTOP_SETTINGS_SYNC,
+            "",
+            DesktopSettingsSyncPush(
+                mirrorMode = mirrorMode,
+                dndEnabled = dndEnabled,
+                floatingAssistantEnabled = floatingAssistantEnabled,
+                bannerDurationSec = bannerDurationSec
+            )
+        )
+    }
+
     fun unpairDesktop(ctx: Context, instanceId: String) {
         val appCtx = ctx.applicationContext
         val ws = activeWs
@@ -925,6 +948,7 @@ object DesktopLinkClient {
                     }
                 }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.MESSAGES_MARK_READ, true, "count=$updated")
+                com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx)
                 sendEnvelope(ws, LinkMsgType.MESSAGES_MARK_READ_RES, env.reqId, MarkReadRes(ok = true, updatedCount = updated, note = "Marked read in PhantomCheck list only"))
             }
 

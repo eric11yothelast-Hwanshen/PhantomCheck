@@ -143,7 +143,7 @@ internal fun PhantomGlobalSearchOverlay(
         }
     }
 
-    val trimmedQuery = query.trim()
+    val trimmedQuery = query.trim().take(120)
 
     val localSettingMatches = remember(trimmedQuery) {
         if (trimmedQuery.isEmpty()) emptyList() else SettingsCatalog.searchByKeywords(trimmedQuery)

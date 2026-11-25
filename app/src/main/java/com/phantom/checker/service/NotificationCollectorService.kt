@@ -377,6 +377,7 @@ class NotificationCollectorService : NotificationListenerService() {
 
             if (!silentMuted) {
                 StatsForegroundService.startOrRefresh(applicationContext, force = true)
+                com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(applicationContext)
             }
 
             // 即時提醒關鍵字檢查（與過濾規則獨立）
@@ -725,6 +726,7 @@ class NotificationCollectorService : NotificationListenerService() {
         }
         if (hasNewScam) {
             StatsForegroundService.startOrRefresh(applicationContext, force = true)
+            com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(applicationContext)
         }
     }
 

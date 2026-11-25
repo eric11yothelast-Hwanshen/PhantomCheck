@@ -124,6 +124,9 @@ object LinkMsgType {
     const val NOTE_DELETE_RES = "note.delete.res"
     const val NOTE_PIN_TOGGLE = "note.pin.toggle"
     const val NOTE_PIN_TOGGLE_RES = "note.pin.toggle.res"
+
+    // #503 AI semantic / phone-to-desktop notification settings sync (additive)
+    const val DESKTOP_SETTINGS_SYNC = "desktop.settings.sync"
 }
 
 data class LinkEnvelope(
@@ -593,5 +596,12 @@ data class ChatSessionNewRes(
     val ok: Boolean = false,
     val session: ChatSessionSummaryDto? = null,
     val errorMessage: String = ""
+)
+
+data class DesktopSettingsSyncPush(
+    val mirrorMode: String = "",
+    val dndEnabled: Boolean? = null,
+    val floatingAssistantEnabled: Boolean? = null,
+    val bannerDurationSec: Int? = null
 )
 
