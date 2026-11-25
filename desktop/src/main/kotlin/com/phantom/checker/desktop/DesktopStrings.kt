@@ -74,11 +74,15 @@ object DesktopStrings {
     val statsUnread get() = t("未讀數", "Unread")
     val statsScam get() = t("詐騙攔截", "Scam")
     val statsRecentApps get() = t("今日活躍來源 App", "Active Apps Today")
+    val statsWeeklyTopApps get() = t("本週活躍 App Top 5", "Weekly Top 5 Active Apps")
     val stats7DayChart get() = t("近 7 日訊息趨勢", "7-Day Message Volume")
+    val stats30DayChart get() = t("近 30 日訊息趨勢", "30-Day Message Volume")
     val statsHourlyChart get() = t("今日 24 小時分佈", "Today's Hourly Volume")
     val stats7DayMode get() = t("7 日", "7 Days")
+    val stats30DayMode get() = t("30 日", "30 Days")
     val statsHourlyMode get() = t("每小時", "Hourly")
     val statsRiskDist get() = t("風險分類分佈", "Risk Distribution")
+    fun statsMsgCount(n: Int): String = t("$n 則", "$n msgs")
 
     // Todos
     val todosEmpty get() = t("目前無待辦事項", "No todos")

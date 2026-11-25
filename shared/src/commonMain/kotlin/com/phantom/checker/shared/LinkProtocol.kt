@@ -251,6 +251,13 @@ data class HourCountDto(
     val count: Int = 0
 )
 
+data class ActiveAppStatDto(
+    val packageName: String = "",
+    val appLabel: String = "",
+    val count: Int = 0,
+    val colorHex: String = ""
+)
+
 data class StatsSnapshotDto(
     val total: Int = 0,
     val today: Int = 0,
@@ -260,7 +267,10 @@ data class StatsSnapshotDto(
     val recentPackages: List<String> = emptyList(),
     val suspicious: Int = 0,
     val dailyCounts: List<DayCountDto> = emptyList(),
-    val hourlyCounts: List<HourCountDto> = emptyList()
+    val hourlyCounts: List<HourCountDto> = emptyList(),
+    val dailyCounts30: List<DayCountDto> = emptyList(),
+    val activeAppsToday: List<ActiveAppStatDto> = emptyList(),
+    val weeklyTopApps: List<ActiveAppStatDto> = emptyList()
 )
 
 data class ChatSendReq(

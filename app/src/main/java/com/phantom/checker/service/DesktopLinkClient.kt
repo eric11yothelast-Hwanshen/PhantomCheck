@@ -842,7 +842,9 @@ object DesktopLinkClient {
                         isStarred = m.isStarred,
                         isRead = m.isRead,
                         conversationKey = m.conversationKey,
-                        tagIds = tagMap[m.id].orEmpty()
+                        tagIds = tagMap[m.id].orEmpty(),
+                        appLabel = resolveAppDisplayLabel(appCtx, m.packageName, m.appLabel),
+                        isGroup = m.conversationKey.isNotBlank() && m.conversationKey != m.sender
                     )
                 }
                 val latestCursor = items.maxOfOrNull { it.id } ?: req.sinceCursor
@@ -896,16 +898,57 @@ object DesktopLinkClient {
                     add(java.util.Calendar.DAY_OF_YEAR, -6)
                 }
                 val sevenDaysAgo = cal.timeInMillis
-                val dayMap = runCatching { db.messageDao().countByDaySince(sevenDaysAgo).associate { it.dayKey to it.cnt } }.getOrDefault(emptyMap())
+                val cal30 = java.util.Calendar.getInstance().apply {
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                    add(java.util.Calendar.DAY_OF_YEAR, -29)
+                }
+                val thirtyDaysAgo = cal30.timeInMillis
+                val dayMap30 = runCatching { db.messageDao().countByDaySince(thirtyDaysAgo).associate { it.dayKey to it.cnt } }.getOrDefault(emptyMap())
                 val keyFmt = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
                 val labelFmt = java.text.SimpleDateFormat("M/d", java.util.Locale.getDefault())
                 val dailyCounts = (0..6).map { offset ->
                     val c = (cal.clone() as java.util.Calendar).apply { add(java.util.Calendar.DAY_OF_YEAR, offset) }
                     val key = keyFmt.format(c.time)
-                    DayCountDto(label = labelFmt.format(c.time), count = dayMap[key] ?: 0)
+                    DayCountDto(label = labelFmt.format(c.time), count = dayMap30[key] ?: 0)
+                }
+                val dailyCounts30 = (0..29).map { offset ->
+                    val c = (cal30.clone() as java.util.Calendar).apply { add(java.util.Calendar.DAY_OF_YEAR, offset) }
+                    val key = keyFmt.format(c.time)
+                    DayCountDto(label = labelFmt.format(c.time), count = dayMap30[key] ?: 0)
                 }
                 val hourMap = runCatching { db.messageDao().countByHourSince(startOfDay).associate { it.hour to it.cnt } }.getOrDefault(emptyMap())
                 val hourlyCounts = (0..23).map { h -> HourCountDto(hour = h, count = hourMap[h] ?: 0) }
+                // #498 Active apps today & Weekly Top 5 with resolved display labels
+                val recentForStats = runCatching { db.messageDao().paged(600, 0) }.getOrDefault(emptyList())
+                val activeAppsToday = recentForStats
+                    .filter { it.timestamp >= startOfDay && it.packageName.isNotBlank() }
+                    .groupBy { it.packageName }
+                    .map { (pkg, list) ->
+                        val sampleLabel = list.firstOrNull { it.appLabel.isNotBlank() }?.appLabel.orEmpty()
+                        ActiveAppStatDto(
+                            packageName = pkg,
+                            appLabel = resolveAppDisplayLabel(appCtx, pkg, sampleLabel),
+                            count = list.size
+                        )
+                    }
+                    .sortedByDescending { it.count }
+                    .take(12)
+                val weeklyTopApps = recentForStats
+                    .filter { it.timestamp >= sevenDaysAgo && it.packageName.isNotBlank() }
+                    .groupBy { it.packageName }
+                    .map { (pkg, list) ->
+                        val sampleLabel = list.firstOrNull { it.appLabel.isNotBlank() }?.appLabel.orEmpty()
+                        ActiveAppStatDto(
+                            packageName = pkg,
+                            appLabel = resolveAppDisplayLabel(appCtx, pkg, sampleLabel),
+                            count = list.size
+                        )
+                    }
+                    .sortedByDescending { it.count }
+                    .take(5)
                 sendEnvelope(
                     ws,
                     LinkMsgType.STATS_SNAPSHOT_RES,
@@ -919,7 +962,10 @@ object DesktopLinkClient {
                         recentPackages = snap.recentPackages(),
                         suspicious = suspicious,
                         dailyCounts = dailyCounts,
-                        hourlyCounts = hourlyCounts
+                        hourlyCounts = hourlyCounts,
+                        dailyCounts30 = dailyCounts30,
+                        activeAppsToday = activeAppsToday,
+                        weeklyTopApps = weeklyTopApps
                     )
                 )
             }
@@ -1354,7 +1400,7 @@ object DesktopLinkClient {
                     sendEnvelope(ws, LinkMsgType.MESSAGES_CONVERSATION_RES, env.reqId, ConversationRes())
                     return
                 }
-                val limit = req.limit.coerceIn(1, 60)
+                val limit = req.limit.coerceIn(1, 100)
                 val offset = req.offset.coerceAtLeast(0)
                 val raw = db.messageDao().byConversationPaged(req.packageName, req.conversationKey, limit, offset)
                 val tagMap = if (raw.isNotEmpty()) {
@@ -1375,7 +1421,9 @@ object DesktopLinkClient {
                         isStarred = m.isStarred,
                         isRead = m.isRead,
                         conversationKey = m.conversationKey,
-                        tagIds = tagMap[m.id].orEmpty()
+                        tagIds = tagMap[m.id].orEmpty(),
+                        appLabel = resolveAppDisplayLabel(appCtx, m.packageName, m.appLabel),
+                        isGroup = m.conversationKey.isNotBlank() && m.conversationKey != m.sender
                     )
                 }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.MESSAGES_CONVERSATION, true, "count=${items.size}")
@@ -1460,7 +1508,9 @@ object DesktopLinkClient {
                         riskLabel = m.riskLabel,
                         isStarred = m.isStarred,
                         isRead = m.isRead,
-                        conversationKey = m.conversationKey
+                        conversationKey = m.conversationKey,
+                        appLabel = resolveAppDisplayLabel(appCtx, m.packageName, m.appLabel),
+                        isGroup = m.conversationKey.isNotBlank() && m.conversationKey != m.sender
                     )
                 }
                 if (sendEnvelope(ws, LinkMsgType.MESSAGE_NEW, "", MessageNewPush(items = dtos, latestCursor = nextCursor))) {
@@ -1468,6 +1518,24 @@ object DesktopLinkClient {
                 }
             }
         }
+    }
+
+    private val appLabelCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    private fun resolveAppDisplayLabel(appCtx: Context, packageName: String, dbLabel: String): String {
+        val cleanDb = dbLabel.trim()
+        if (cleanDb.isNotEmpty() && cleanDb != packageName) return cleanDb
+        if (packageName.isBlank()) return ""
+        appLabelCache[packageName]?.let { return it }
+        val resolved = runCatching {
+            val pm = appCtx.packageManager
+            val appInfo = pm.getApplicationInfo(packageName, 0)
+            pm.getApplicationLabel(appInfo)?.toString()?.trim().orEmpty()
+        }.getOrDefault("").ifBlank { packageName }
+        if (appLabelCache.size < 256) {
+            appLabelCache[packageName] = resolved
+        }
+        return resolved
     }
 
     // ---- Android NsdManager LAN Discovery for Desktop WSS Servers (#490 E1 serialized resolve queue) ----

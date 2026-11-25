@@ -51,6 +51,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -58,6 +59,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -767,14 +769,14 @@ fun DesktopApp(
                         HorizontalDivider(color = tokens.border, modifier = Modifier.padding(vertical = 4.dp))
 
                         val navItems = listOf(
-                            Triple(DesktopTab.MESSAGES, DesktopStrings.navMessages, "1"),
-                            Triple(DesktopTab.STATS, DesktopStrings.navStats, "2"),
-                            Triple(DesktopTab.TODOS, DesktopStrings.navTodos, "3"),
-                            Triple(DesktopTab.CHAT, DesktopStrings.navChat, "4"),
-                            Triple(DesktopTab.RULES, DesktopStrings.navRules, "5"),
-                            Triple(DesktopTab.SETTINGS, DesktopStrings.navSettings, "6")
+                            Triple(DesktopTab.MESSAGES, DesktopStrings.navMessages, DesktopIcons.Messages),
+                            Triple(DesktopTab.STATS, DesktopStrings.navStats, DesktopIcons.Stats),
+                            Triple(DesktopTab.TODOS, DesktopStrings.navTodos, DesktopIcons.Todos),
+                            Triple(DesktopTab.CHAT, DesktopStrings.navChat, DesktopIcons.Chat),
+                            Triple(DesktopTab.RULES, DesktopStrings.navRules, DesktopIcons.Rules),
+                            Triple(DesktopTab.SETTINGS, DesktopStrings.navSettings, DesktopIcons.Settings)
                         )
-                        navItems.forEach { (tab, label, shortBadge) ->
+                        navItems.forEach { (tab, label, tabIcon) ->
                             val selected = activeTab == tab
                             val navInteraction = remember { MutableInteractionSource() }
                             val navPressed by navInteraction.collectIsPressedAsState()
@@ -804,14 +806,34 @@ fun DesktopApp(
                                     .padding(horizontal = if (settings.sidebarCollapsed) 8.dp else 14.dp, vertical = 11.dp),
                                 contentAlignment = if (settings.sidebarCollapsed) Alignment.Center else Alignment.CenterStart
                             ) {
-                                Text(
-                                    text = if (settings.sidebarCollapsed) shortBadge else label,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (selected) accentColor else tokens.textSecondary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                if (settings.sidebarCollapsed) {
+                                    Icon(
+                                        imageVector = tabIcon,
+                                        contentDescription = label,
+                                        tint = if (selected) accentColor else tokens.textSecondary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                } else {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = tabIcon,
+                                            contentDescription = null,
+                                            tint = if (selected) accentColor else tokens.textSecondary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (selected) accentColor else tokens.textSecondary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
                             }
                         }
 
@@ -998,6 +1020,7 @@ fun DesktopApp(
                                                 OutlinedTextField(
                                                     value = msgSearch,
                                                     onValueChange = { msgSearch = it },
+                                                    leadingIcon = { Icon(DesktopIcons.Search, contentDescription = null, tint = tokens.textMuted, modifier = Modifier.size(18.dp)) },
                                                     placeholder = { Text(DesktopStrings.searchMessagesHint, style = MaterialTheme.typography.bodySmall) },
                                                     singleLine = true,
                                                     modifier = Modifier.weight(1f).focusRequester(searchFocusRequester)
@@ -1005,7 +1028,11 @@ fun DesktopApp(
                                                 SpringOutlinedButton(
                                                     onClick = { scope.launch { sendOrNotify(LinkMsgType.MESSAGES_MARK_READ, MarkReadReq(all = true)) } },
                                                     animationsEnabled = settings.animationsEnabled
-                                                ) { Text(DesktopStrings.markAllRead) }
+                                                ) {
+                                                    Icon(DesktopIcons.MarkRead, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Text(DesktopStrings.markAllRead)
+                                                }
                                                 SpringOutlinedButton(
                                                     onClick = {
                                                         messages = emptyList()
@@ -1017,7 +1044,11 @@ fun DesktopApp(
                                                         }
                                                     },
                                                     animationsEnabled = settings.animationsEnabled
-                                                ) { Text(DesktopStrings.refresh) }
+                                                ) {
+                                                    Icon(DesktopIcons.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Text(DesktopStrings.refresh)
+                                                }
                                             }
                                             Text(DesktopStrings.markReadNote, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
 
@@ -1397,19 +1428,12 @@ fun DesktopApp(
                                             verticalArrangement = Arrangement.spacedBy(14.dp)
                                         ) {
                                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                                                StatBox(DesktopStrings.statsTotal, stats.total.toString(), Modifier.weight(1f))
-                                                StatBox(DesktopStrings.statsToday, stats.today.toString(), Modifier.weight(1f))
-                                                StatBox(DesktopStrings.statsUnread, stats.unread.toString(), Modifier.weight(1f))
-                                                StatBox(DesktopStrings.statsScam, stats.scam.toString(), Modifier.weight(1f))
+                                                StatBox(DesktopStrings.statsTotal, stats.total.toString(), Modifier.weight(1f), icon = DesktopIcons.Messages, iconTint = accentColor)
+                                                StatBox(DesktopStrings.statsToday, stats.today.toString(), Modifier.weight(1f), icon = DesktopIcons.Stats, iconTint = DesktopPalette.GlassSuccess)
+                                                StatBox(DesktopStrings.statsUnread, stats.unread.toString(), Modifier.weight(1f), icon = DesktopIcons.Bell, iconTint = DesktopPalette.GlassWarning)
+                                                StatBox(DesktopStrings.statsScam, stats.scam.toString(), Modifier.weight(1f), icon = DesktopIcons.Warning, iconTint = DesktopPalette.GlassError)
                                             }
                                             DesktopStatsCharts(stats = stats, accentColor = accentColor)
-                                            GlassCard(modifier = Modifier.fillMaxWidth()) {
-                                                Column(modifier = Modifier.fillMaxWidth().padding(18.dp)) {
-                                                    Text(DesktopStrings.statsRecentApps, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
-                                                    Spacer(Modifier.height(8.dp))
-                                                    Text(stats.recentPackages.joinToString(" · ").ifBlank { "-" }, style = MaterialTheme.typography.bodyMedium, color = tokens.textSecondary)
-                                                }
-                                            }
                                         }
                                     }
 
@@ -1835,11 +1859,27 @@ fun DesktopApp(
 }
 
 @Composable
-private fun StatBox(label: String, value: String, modifier: Modifier = Modifier) {
+private fun StatBox(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    iconTint: Color = Color.Unspecified
+) {
     val tokens = LocalDesktopTokens.current
     GlassCard(modifier = modifier) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(label, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = if (iconTint == Color.Unspecified) tokens.textMuted else iconTint,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Text(label, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+            }
             Spacer(Modifier.height(6.dp))
             Text(value, style = MaterialTheme.typography.headlineSmall, color = tokens.textPrimary)
         }
