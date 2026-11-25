@@ -34,6 +34,7 @@ dependencies {
     implementation("org.jmdns:jmdns:3.6.5")
     implementation("com.google.zxing:core:3.5.4")
     implementation("com.google.code.gson:gson:2.15.0")
+    testImplementation(kotlin("test"))
 }
 
 compose.desktop {
