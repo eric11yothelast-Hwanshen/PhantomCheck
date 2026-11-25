@@ -581,8 +581,45 @@ fun DesktopToastOverlayWindow(
     }
 }
 
+internal fun allMonitorWorkAreas(): List<Rectangle> = runCatching {
+    val toolkit = java.awt.Toolkit.getDefaultToolkit()
+    val ge = GraphicsEnvironment.getLocalGraphicsEnvironment()
+    ge.screenDevices.map { dev ->
+        val gc = dev.defaultConfiguration
+        val b = gc.bounds
+        val insets = runCatching { toolkit.getScreenInsets(gc) }.getOrNull()
+        if (insets != null) {
+            Rectangle(
+                b.x + insets.left,
+                b.y + insets.top,
+                (b.width - insets.left - insets.right).coerceAtLeast(320),
+                (b.height - insets.top - insets.bottom).coerceAtLeast(240)
+            )
+        } else b
+    }.ifEmpty { listOf(primaryWorkAreaBounds()) }
+}.getOrDefault(listOf(primaryWorkAreaBounds()))
+
+internal fun workAreaContaining(x: Int, y: Int): Rectangle {
+    val monitors = allMonitorWorkAreas()
+    monitors.firstOrNull { it.contains(x, y) }?.let { return it }
+    return monitors.minByOrNull { r ->
+        val cx = r.x + r.width / 2
+        val cy = r.y + r.height / 2
+        val dx = (x - cx).toLong()
+        val dy = (y - cy).toLong()
+        dx * dx + dy * dy
+    } ?: primaryWorkAreaBounds()
+}
+
+internal fun clampToAllMonitors(x: Int, y: Int, w: Int, h: Int): Pair<Int, Int> {
+    val target = workAreaContaining(x + w / 2, y + h / 2)
+    val cx = x.coerceIn(target.x, (target.x + target.width - w).coerceAtLeast(target.x))
+    val cy = y.coerceIn(target.y, (target.y + target.height - h).coerceAtLeast(target.y))
+    return cx to cy
+}
+
 /**
- * #497 C：懸浮助手球（可拖曳＋放開吸附螢幕四邊＋位置持久化＋小型 AI 對話窗＋自適應方向氣泡通知）。
+ * #497 C / #514：懸浮助手球（AWT MouseInfo 固定抓取點螢幕座標拖曳、多螢幕 DPI 零漂移、鬆手 8px 邊距 spring 吸附）。
  */
 @Composable
 fun DesktopFloatingAssistantWindow(
@@ -595,28 +632,31 @@ fun DesktopFloatingAssistantWindow(
 
     val gson = remember { Gson() }
     val scope = rememberCoroutineScope()
-    val tokens = remember(settings.surfaceOpacity, settings.bgScrimAlpha, settings.highContrastText, settings.bgTheme) {
+    val tokens = remember(settings.surfaceOpacity, settings.bgScrimAlpha, settings.highContrastText, settings.bgTheme, settings.lightTheme) {
         DesktopThemeTokens.from(settings)
     }
     val accentColor = remember(settings.accentPreset, settings.customAccentHex) {
         DesktopPalette.resolveAccentColor(settings.accentPreset, settings.customAccentHex)
     }
 
-    val bounds = remember { primaryWorkAreaBounds() }
+    val initialBounds = remember { primaryWorkAreaBounds() }
     val orbSize = settings.floatingOrbSizeDp.coerceIn(28, 56)
 
     var orbX by remember {
         mutableIntStateOf(
-            if (settings.floatingOrbX != Int.MIN_VALUE) settings.floatingOrbX.coerceIn(bounds.x, bounds.x + bounds.width - orbSize - 16)
-            else bounds.x + bounds.width - orbSize - 24
+            if (settings.floatingOrbX != Int.MIN_VALUE) {
+                clampToAllMonitors(settings.floatingOrbX, settings.floatingOrbY.takeIf { it != Int.MIN_VALUE } ?: initialBounds.y, orbSize + 18, orbSize + 18).first
+            } else initialBounds.x + initialBounds.width - orbSize - 26
         )
     }
     var orbY by remember {
         mutableIntStateOf(
-            if (settings.floatingOrbY != Int.MIN_VALUE) settings.floatingOrbY.coerceIn(bounds.y, bounds.y + bounds.height - orbSize - 16)
-            else bounds.y + bounds.height - orbSize - 120
+            if (settings.floatingOrbY != Int.MIN_VALUE) {
+                clampToAllMonitors(settings.floatingOrbX.takeIf { it != Int.MIN_VALUE } ?: initialBounds.x, settings.floatingOrbY, orbSize + 18, orbSize + 18).second
+            } else initialBounds.y + initialBounds.height - orbSize - 120
         )
     }
+    val activeMonitor = remember(orbX, orbY, orbSize) { workAreaContaining(orbX + orbSize / 2, orbY + orbSize / 2) }
 
     var aiExpanded by remember { mutableStateOf(false) }
     var miniChatInput by remember { mutableStateOf("") }
@@ -656,8 +696,8 @@ fun DesktopFloatingAssistantWindow(
         DesktopNotificationBus.clearFloatingBubble()
     }
 
-    val isOnRightHalf = orbX > bounds.x + bounds.width / 2
-    val isOnBottomHalf = orbY > bounds.y + bounds.height / 2
+    val isOnRightHalf = orbX + orbSize / 2 > activeMonitor.x + activeMonitor.width / 2
+    val isOnBottomHalf = orbY + orbSize / 2 > activeMonitor.y + activeMonitor.height / 2
 
     val winW: Int
     val winH: Int
@@ -667,20 +707,21 @@ fun DesktopFloatingAssistantWindow(
         aiExpanded -> {
             winW = 360
             winH = 440
-            winX = (if (isOnRightHalf) orbX + orbSize - winW else orbX).coerceIn(bounds.x, (bounds.x + bounds.width - winW).coerceAtLeast(bounds.x))
-            winY = (if (isOnBottomHalf) orbY + orbSize - winH else orbY).coerceIn(bounds.y, (bounds.y + bounds.height - winH).coerceAtLeast(bounds.y))
+            winX = (if (isOnRightHalf) orbX + orbSize - winW else orbX).coerceIn(activeMonitor.x, (activeMonitor.x + activeMonitor.width - winW).coerceAtLeast(activeMonitor.x))
+            winY = (if (isOnBottomHalf) orbY + orbSize - winH else orbY).coerceIn(activeMonitor.y, (activeMonitor.y + activeMonitor.height - winH).coerceAtLeast(activeMonitor.y))
         }
         bubbleEvent != null -> {
             winW = orbSize + 296
             winH = maxOf(orbSize + 24, 108)
-            winX = (if (isOnRightHalf) orbX + orbSize - winW else orbX).coerceIn(bounds.x, (bounds.x + bounds.width - winW).coerceAtLeast(bounds.x))
-            winY = (if (isOnBottomHalf) orbY + orbSize - winH else orbY).coerceIn(bounds.y, (bounds.y + bounds.height - winH).coerceAtLeast(bounds.y))
+            winX = (if (isOnRightHalf) orbX + orbSize - winW else orbX).coerceIn(activeMonitor.x, (activeMonitor.x + activeMonitor.width - winW).coerceAtLeast(activeMonitor.x))
+            winY = (if (isOnBottomHalf) orbY + orbSize - winH else orbY).coerceIn(activeMonitor.y, (activeMonitor.y + activeMonitor.height - winH).coerceAtLeast(activeMonitor.y))
         }
         else -> {
             winW = orbSize + 18
             winH = orbSize + 18
-            winX = orbX.coerceIn(bounds.x, (bounds.x + bounds.width - winW).coerceAtLeast(bounds.x))
-            winY = orbY.coerceIn(bounds.y, (bounds.y + bounds.height - winH).coerceAtLeast(bounds.y))
+            val clamped = clampToAllMonitors(orbX, orbY, winW, winH)
+            winX = clamped.first
+            winY = clamped.second
         }
     }
 
@@ -693,19 +734,60 @@ fun DesktopFloatingAssistantWindow(
         floatingState.size = DpSize(winW.dp, winH.dp)
     }
 
-    fun snapOrbToNearestEdge() {
-        val leftDist = orbX - bounds.x
-        val rightDist = (bounds.x + bounds.width - orbSize - 18) - orbX
-        val topDist = orbY - bounds.y
-        val bottomDist = (bounds.y + bounds.height - orbSize - 18) - orbY
-        val minDist = minOf(leftDist, rightDist, topDist, bottomDist)
-        when (minDist) {
-            leftDist -> orbX = bounds.x + 8
-            rightDist -> orbX = bounds.x + bounds.width - orbSize - 24
-            topDist -> orbY = bounds.y + 8
-            else -> orbY = bounds.y + bounds.height - orbSize - 24
+    var snapJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
+    fun finishDragAndSnap() {
+        val mon = workAreaContaining(orbX + orbSize / 2, orbY + orbSize / 2)
+        val margin = 8
+        val maxX = (mon.x + mon.width - (orbSize + 18) - margin).coerceAtLeast(mon.x + margin)
+        val maxY = (mon.y + mon.height - (orbSize + 18) - margin).coerceAtLeast(mon.y + margin)
+        if (!settings.floatingSnapToEdge) {
+            orbX = orbX.coerceIn(mon.x + margin, maxX)
+            orbY = orbY.coerceIn(mon.y + margin, maxY)
+            DesktopSettingsStore.update { it.copy(floatingOrbX = orbX, floatingOrbY = orbY) }
+            return
         }
-        DesktopSettingsStore.update { it.copy(floatingOrbX = orbX, floatingOrbY = orbY) }
+        val leftDist = (orbX - (mon.x + margin)).coerceAtLeast(0)
+        val rightDist = (maxX - orbX).coerceAtLeast(0)
+        val topDist = (orbY - (mon.y + margin)).coerceAtLeast(0)
+        val bottomDist = (maxY - orbY).coerceAtLeast(0)
+        val minDist = minOf(leftDist, rightDist, topDist, bottomDist)
+        val targetX = when (minDist) {
+            leftDist -> mon.x + margin
+            rightDist -> maxX
+            else -> orbX.coerceIn(mon.x + margin, maxX)
+        }
+        val targetY = when (minDist) {
+            topDist -> mon.y + margin
+            bottomDist -> maxY
+            else -> orbY.coerceIn(mon.y + margin, maxY)
+        }
+        snapJob?.cancel()
+        if (!settings.animationsEnabled) {
+            orbX = targetX
+            orbY = targetY
+            DesktopSettingsStore.update { it.copy(floatingOrbX = orbX, floatingOrbY = orbY) }
+        } else {
+            val startX = orbX.toFloat()
+            val startY = orbY.toFloat()
+            snapJob = scope.launch {
+                val anim = androidx.compose.animation.core.Animatable(0f)
+                anim.animateTo(
+                    targetValue = 1f,
+                    animationSpec = androidx.compose.animation.core.spring(
+                        dampingRatio = 0.75f,
+                        stiffness = 380f
+                    )
+                ) {
+                    val p = value
+                    orbX = (startX + (targetX - startX) * p).toInt()
+                    orbY = (startY + (targetY - startY) * p).toInt()
+                }
+                orbX = targetX
+                orbY = targetY
+                DesktopSettingsStore.update { it.copy(floatingOrbX = orbX, floatingOrbY = orbY) }
+            }
+        }
     }
 
     Window(
@@ -856,14 +938,37 @@ fun DesktopFloatingAssistantWindow(
                                 .size((orbSize + 8).dp)
                                 .graphicsLayer { alpha = idleAlpha }
                                 .hoverable(orbHoverSource)
-                                .pointerInput(orbSize) {
+                                .pointerInput(orbSize, settings.floatingSnapToEdge) {
+                                    var dragStartPointerX = 0
+                                    var dragStartPointerY = 0
+                                    var dragStartOrbX = 0
+                                    var dragStartOrbY = 0
+                                    var lastFrameNs = 0L
                                     detectDragGestures(
-                                        onDragEnd = { snapOrbToNearestEdge() },
-                                        onDragCancel = { snapOrbToNearestEdge() },
-                                        onDrag = { change, dragAmount ->
+                                        onDragStart = {
+                                            snapJob?.cancel()
+                                            val pt = runCatching { java.awt.MouseInfo.getPointerInfo()?.location }.getOrNull()
+                                            if (pt != null) {
+                                                dragStartPointerX = pt.x
+                                                dragStartPointerY = pt.y
+                                            }
+                                            dragStartOrbX = orbX
+                                            dragStartOrbY = orbY
+                                            lastFrameNs = 0L
+                                        },
+                                        onDragEnd = { finishDragAndSnap() },
+                                        onDragCancel = { finishDragAndSnap() },
+                                        onDrag = { change, _ ->
                                             change.consume()
-                                            orbX = (orbX + dragAmount.x.toInt()).coerceIn(bounds.x, bounds.x + bounds.width - orbSize - 18)
-                                            orbY = (orbY + dragAmount.y.toInt()).coerceIn(bounds.y, bounds.y + bounds.height - orbSize - 18)
+                                            val nowNs = System.nanoTime()
+                                            if (nowNs - lastFrameNs < 14_000_000L) return@detectDragGestures
+                                            lastFrameNs = nowNs
+                                            val pt = runCatching { java.awt.MouseInfo.getPointerInfo()?.location }.getOrNull() ?: return@detectDragGestures
+                                            val rawX = dragStartOrbX + (pt.x - dragStartPointerX)
+                                            val rawY = dragStartOrbY + (pt.y - dragStartPointerY)
+                                            val clamped = clampToAllMonitors(rawX, rawY, orbSize + 18, orbSize + 18)
+                                            orbX = clamped.first
+                                            orbY = clamped.second
                                         }
                                     )
                                 }

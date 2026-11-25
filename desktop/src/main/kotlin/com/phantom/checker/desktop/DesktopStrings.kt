@@ -530,4 +530,7 @@ object DesktopStrings {
     val testNotifSuppressedDnd get() = t("勿擾模式開啟中：測試通知已靜音記錄（不彈出）", "DND active: test notification recorded silently (suppressed)")
     val toastAggregatedTitle get() = t("聚合摘要", "Summary")
     fun toastAggregatedBody(count: Int) = t("最近收到 $count 則新訊息，點擊查看", "$count new messages received — click to view")
+
+    // #514 Floating Orb Drag & Edge Snap
+    val floatingSnapToEdgeLabel get() = t("鬆手自動吸附最近螢幕邊緣（8px 邊距）", "Auto-snap to nearest screen edge on release (8px margin)")
 }

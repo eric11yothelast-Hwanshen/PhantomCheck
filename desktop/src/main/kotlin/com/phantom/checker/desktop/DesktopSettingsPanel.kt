@@ -819,6 +819,11 @@ fun DesktopSettingsCenter(
                                         )
                                     }
                                 }
+                                FilterChip(
+                                    selected = settings.floatingSnapToEdge,
+                                    onClick = { DesktopSettingsStore.update { it.copy(floatingSnapToEdge = !it.floatingSnapToEdge) } },
+                                    label = { Text(DesktopStrings.floatingSnapToEdgeLabel) }
+                                )
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Text(DesktopStrings.floatingOrbOpacityLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
                                     listOf(0.45f to "45%", 0.72f to "72%", 0.95f to "95%").forEach { (op, lbl) ->

@@ -106,6 +106,8 @@ data class DesktopSettings(
     val toastOnlyStarred: Boolean = false,
     val floatingMaxPerMinute: Int = 0, // 0 = unlimited, 1..20
     val floatingOnlyStarred: Boolean = false,
+    // #514 Floating orb edge-snap toggle
+    val floatingSnapToEdge: Boolean = true,
     // Window geometry persistence
     val windowX: Int = Int.MIN_VALUE,
     val windowY: Int = Int.MIN_VALUE,
@@ -217,6 +219,7 @@ object DesktopSettingsStore {
             toastOnlyStarred = p.getProperty("toastOnlyStarred", "false").toBoolean(),
             floatingMaxPerMinute = p.getProperty("floatingMaxPerMinute", "0").toIntOrNull()?.coerceIn(0, 20) ?: 0,
             floatingOnlyStarred = p.getProperty("floatingOnlyStarred", "false").toBoolean(),
+            floatingSnapToEdge = p.getProperty("floatingSnapToEdge", "true").toBoolean(),
             windowX = p.getProperty("windowX", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowY = p.getProperty("windowY", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowWidth = p.getProperty("windowWidth", "1280").toIntOrNull()?.coerceAtLeast(1024) ?: 1280,
@@ -302,6 +305,7 @@ object DesktopSettingsStore {
             p.setProperty("toastOnlyStarred", s.toastOnlyStarred.toString())
             p.setProperty("floatingMaxPerMinute", s.floatingMaxPerMinute.toString())
             p.setProperty("floatingOnlyStarred", s.floatingOnlyStarred.toString())
+            p.setProperty("floatingSnapToEdge", s.floatingSnapToEdge.toString())
             p.setProperty("windowX", s.windowX.toString())
             p.setProperty("windowY", s.windowY.toString())
             p.setProperty("windowWidth", s.windowWidth.toString())
