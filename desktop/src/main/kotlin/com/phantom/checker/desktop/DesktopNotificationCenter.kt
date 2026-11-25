@@ -361,7 +361,8 @@ object DesktopSoundPlayer {
 }
 
 /**
- * #497 前景全螢幕偵測器（Windows 使用 SHQueryUserNotificationState 並快取 2 秒；非 Windows 退回 GraphicsDevice；僅於彈出 Toast 前按需檢查，零輪詢）。
+ * #497 / #515 前景全螢幕偵測器（Windows 使用 SHQueryUserNotificationState 並快取 2 秒；非 Windows 退回 GraphicsDevice；
+ * Toast 路徑於彈出前按需檢查；懸浮球自動隱藏路徑於啟用時每 15 秒低頻檢查一次）。
  */
 object DesktopFullscreenDetector {
     @Volatile
@@ -689,7 +690,7 @@ fun DesktopFloatingAssistantWindow(
     val serverState by server.state.collectAsState()
     val phoneStatus by DesktopDeviceStatusHolder.status.collectAsState()
 
-    // #515 Fullscreen auto-hide (5s cadence only when enabled & not in NEVER_HIDE mode; zero tight polling)
+    // #515 Fullscreen auto-hide (15s low-frequency check only when enabled & not in NEVER_HIDE mode)
     var isFullscreenHidden by remember { mutableStateOf(false) }
     LaunchedEffect(settings.floatingFullscreenMode) {
         if (settings.floatingFullscreenMode == FullscreenHideMode.NEVER_HIDE) {
@@ -704,7 +705,7 @@ fun DesktopFloatingAssistantWindow(
                     DesktopDiagnostics.info("FloatingOrb", "Hidden while fullscreen app is active")
                 }
             }
-            delay(5_000L)
+            delay(15_000L)
         }
     }
     if (isFullscreenHidden) return
