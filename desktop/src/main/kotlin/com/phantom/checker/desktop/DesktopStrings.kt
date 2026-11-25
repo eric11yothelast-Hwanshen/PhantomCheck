@@ -503,4 +503,10 @@ object DesktopStrings {
     val batchDoneBtn get() = t("完成選取", "Done")
     val batchMarkReadBtn get() = t("批次已讀", "Mark Selected Read")
     val batchMuteAppsBtn get() = t("批次靜音 App", "Mute Selected Apps")
+
+    // #517 Phone Device Status Sync
+    val chargeWireless get() = t("無線充電", "Wireless")
+    val lastKnownAt get() = t("最後已知", "Last known")
+    val storageAvail get() = t("可用空間", "Storage")
+    val dndShort get() = t("勿擾", "DND")
 }

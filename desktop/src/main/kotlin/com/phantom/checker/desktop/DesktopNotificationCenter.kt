@@ -89,6 +89,30 @@ data class MirrorNotificationEvent(
 )
 
 /**
+ * #517 手機端即時裝置狀態持有者（主視窗側欄／總覽／懸浮球 Tooltip／Tray 共用；斷線保留最後已知時間）。
+ */
+object DesktopDeviceStatusHolder {
+    private val _status = MutableStateFlow<com.phantom.checker.shared.DeviceStatusPush?>(null)
+    val status: StateFlow<com.phantom.checker.shared.DeviceStatusPush?> = _status.asStateFlow()
+
+    fun update(push: com.phantom.checker.shared.DeviceStatusPush) {
+        _status.value = push.copy(
+            updatedAtMs = if (push.updatedAtMs > 0L) push.updatedAtMs else System.currentTimeMillis()
+        )
+    }
+
+    fun updateFromLegacy(ps: com.phantom.checker.shared.PhoneStatusDto) {
+        val cur = _status.value
+        _status.value = (cur ?: com.phantom.checker.shared.DeviceStatusPush()).copy(
+            batteryLevel = ps.batteryPercent,
+            isCharging = ps.isCharging,
+            deviceName = ps.deviceName.ifBlank { cur?.deviceName.orEmpty() },
+            updatedAtMs = System.currentTimeMillis()
+        )
+    }
+}
+
+/**
  * #497 桌面通知匯流排（application scope 單例，不干擾主視窗生命週期）。
  */
 object DesktopNotificationBus {

@@ -583,7 +583,23 @@ fun DesktopApp(
                     }
                 }
                 LinkMsgType.PHONE_STATUS_RES -> {
-                    phoneStatus = runCatching { gson.fromJson(env.payloadJson, PhoneStatusDto::class.java) }.getOrNull() ?: phoneStatus
+                    val ps = runCatching { gson.fromJson(env.payloadJson, PhoneStatusDto::class.java) }.getOrNull()
+                    if (ps != null) {
+                        phoneStatus = ps
+                        DesktopDeviceStatusHolder.updateFromLegacy(ps)
+                    }
+                }
+                LinkMsgType.DEVICE_STATUS -> {
+                    val ds = runCatching { gson.fromJson(env.payloadJson, DeviceStatusPush::class.java) }.getOrNull()
+                    if (ds != null) {
+                        DesktopDeviceStatusHolder.update(ds)
+                        phoneStatus = PhoneStatusDto(
+                            batteryPercent = ds.batteryLevel,
+                            isCharging = ds.isCharging,
+                            serverUptimeMs = phoneStatus?.serverUptimeMs ?: 0L,
+                            deviceName = ds.deviceName.ifBlank { phoneStatus?.deviceName.orEmpty() }
+                        )
+                    }
                 }
                 LinkMsgType.CHAT_SESSIONS_LIST_RES -> {
                     val res = runCatching { gson.fromJson(env.payloadJson, ChatSessionsListRes::class.java) }.getOrNull() ?: return@collect
@@ -967,10 +983,48 @@ fun DesktopApp(
                                     }
                                 }
                                 if (!settings.sidebarCollapsed) {
+                                    val ds by DesktopDeviceStatusHolder.status.collectAsState()
                                     val ps = phoneStatus
-                                    if (uiState.connState == LinkConnState.CONNECTED && ps != null && ps.batteryPercent >= 0) {
-                                        val chargeTag = if (ps.isCharging) " · ${DesktopStrings.charging}" else ""
-                                        Text("${DesktopStrings.phoneBattery}: ${ps.batteryPercent}%$chargeTag", style = MaterialTheme.typography.labelSmall, color = DesktopPalette.GlassSuccess)
+                                    val batPct = ds?.batteryLevel?.takeIf { it >= 0 } ?: ps?.batteryPercent ?: -1
+                                    val isChg = ds?.isCharging ?: ps?.isCharging ?: false
+                                    if (batPct >= 0) {
+                                        val chargeLabel = if (isChg) {
+                                            when (ds?.chargeType) {
+                                                "usb" -> " ⚡USB"
+                                                "wireless" -> " ⚡${DesktopStrings.chargeWireless}"
+                                                else -> " ⚡${DesktopStrings.charging}"
+                                            }
+                                        } else ""
+                                        val netTag = when (ds?.networkType) {
+                                            "wifi" -> " · Wi-Fi"
+                                            "cellular" -> " · 5G/4G"
+                                            else -> ""
+                                        }
+                                        val isOnline = uiState.connState == LinkConnState.CONNECTED
+                                        val statusLine = if (isOnline) {
+                                            "${DesktopStrings.phoneBattery}: $batPct%$chargeLabel$netTag"
+                                        } else {
+                                            val lastAt = ds?.updatedAtMs?.takeIf { it > 0L }?.let { formatRelativeConvTime(it, settings.use24HourTime) }.orEmpty()
+                                            "${DesktopStrings.phoneBattery}: $batPct% (${DesktopStrings.lastKnownAt} $lastAt)"
+                                        }
+                                        Text(
+                                            statusLine,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isOnline) DesktopPalette.GlassSuccess else tokens.textMuted,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        if (isOnline && ds != null && ds!!.storageAvailMb > 0L) {
+                                            val gb = String.format("%.1f GB", ds!!.storageAvailMb / 1024.0)
+                                            val dndTag = if (ds!!.isDndActive) " · ${DesktopStrings.dndShort}" else ""
+                                            Text(
+                                                "${DesktopStrings.storageAvail}: $gb$dndTag",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = tokens.textMuted,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                     }
                                     uiState.lastError?.takeIf { it.isNotBlank() }?.let { err ->
                                         Text(err, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.GlassError, maxLines = 3, overflow = TextOverflow.Ellipsis)

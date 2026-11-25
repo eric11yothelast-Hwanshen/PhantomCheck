@@ -149,6 +149,18 @@ object DesktopLinkClient {
     @Volatile
     private var discoveryRequested: Boolean = false
 
+    // #517 事件驅動電量與裝置狀態監聽（僅連線時動態註冊，斷線立即反註冊，零秒級輪詢）
+    @Volatile
+    private var batteryStatusReceiver: android.content.BroadcastReceiver? = null
+    @Volatile
+    private var batteryStatusAppCtx: Context? = null
+    @Volatile
+    private var lastPushedBatteryLevel: Int = -1
+    @Volatile
+    private var lastPushedCharging: Boolean? = null
+    @Volatile
+    private var lastPushedChargeType: String = ""
+
     @Volatile
     private var discoveryAppCtx: Context? = null
 
@@ -648,6 +660,7 @@ object DesktopLinkClient {
                                         connectedDesktopName = finalName,
                                         connectedHostPort = "${target.host}:${target.port}"
                                     )
+                                    startBatteryStatusMonitor(appCtx, webSocket)
                                 } else {
                                     val errCode = resp.errorCode.ifBlank { LinkErrorCode.AUTH_FAILED }
                                     DesktopLinkStore.recordDiagnostic(appCtx, "HANDSHAKE", errCode, resp.errorMessage)
@@ -682,6 +695,7 @@ object DesktopLinkClient {
                                         connectedDesktopName = finalName,
                                         connectedHostPort = "${target.host}:${target.port}"
                                     )
+                                    startBatteryStatusMonitor(appCtx, webSocket)
                                 } else {
                                     val errCode = resp.errorCode.ifBlank { LinkErrorCode.AUTH_FAILED }
                                     DesktopLinkStore.recordDiagnostic(appCtx, "HANDSHAKE", errCode, resp.errorMessage)
@@ -746,6 +760,7 @@ object DesktopLinkClient {
                     messagePushJob?.cancel()
                     messagePushJob = null
                     isSubscribedToMessages = false
+                    stopBatteryStatusMonitor()
                 }
                 DesktopLinkStore.recordDiagnostic(appCtx, "TCP", "CLOSED", "code=$code $reason")
                 val maxCap = if (isScreenOff) SCREEN_OFF_BACKOFF_CAP_SEC else SCREEN_ON_BACKOFF_CAP_SEC
@@ -763,6 +778,7 @@ object DesktopLinkClient {
                     messagePushJob?.cancel()
                     messagePushJob = null
                     isSubscribedToMessages = false
+                    stopBatteryStatusMonitor()
                 }
                 val (stage, code) = classifyThrowable(t)
                 val diagCode = if (t is ConnectException || t.cause is ConnectException) "REFUSED" else code
@@ -1637,25 +1653,21 @@ object DesktopLinkClient {
             }
 
             LinkMsgType.PHONE_STATUS_GET -> {
-                val batteryIntent = runCatching { appCtx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) }.getOrNull()
-                val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
-                val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
-                val pct = if (level >= 0 && scale > 0) ((level * 100) / scale).coerceIn(0, 100) else -1
-                val statusExtra = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-                val charging = statusExtra == BatteryManager.BATTERY_STATUS_CHARGING || statusExtra == BatteryManager.BATTERY_STATUS_FULL
+                val ds = collectDeviceStatus(appCtx)
                 val uptime = if (connectedAtMs > 0L) (System.currentTimeMillis() - connectedAtMs).coerceAtLeast(0L) else 0L
-                DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.PHONE_STATUS_GET, true, "bat=$pct%")
+                DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.PHONE_STATUS_GET, true, "bat=${ds.batteryLevel}% chg=${ds.chargeType}")
                 sendEnvelope(
                     ws,
                     LinkMsgType.PHONE_STATUS_RES,
                     env.reqId,
                     PhoneStatusDto(
-                        batteryPercent = pct,
-                        isCharging = charging,
+                        batteryPercent = ds.batteryLevel,
+                        isCharging = ds.isCharging,
                         serverUptimeMs = uptime,
-                        deviceName = Build.MODEL.ifBlank { "Android" }
+                        deviceName = ds.deviceName
                     )
                 )
+                sendEnvelope(ws, LinkMsgType.DEVICE_STATUS, "", ds)
             }
 
             LinkMsgType.CHAT_SESSIONS_LIST -> {
@@ -1965,5 +1977,134 @@ object DesktopLinkClient {
         discoveryRequested = false
         pauseDiscoveryForScreenOff()
         unregisterNetworkCallback()
+    }
+
+    // ---- #517 Phone Device Status (event-driven ACTION_BATTERY_CHANGED, zero second-level polling) ----
+
+    internal suspend fun collectDeviceStatus(appCtx: Context, batteryIntentOverride: Intent? = null): DeviceStatusPush {
+        val batteryIntent = batteryIntentOverride
+            ?: runCatching { appCtx.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) }.getOrNull()
+        val level = batteryIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+        val scale = batteryIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+        val pct = if (level >= 0 && scale > 0) ((level * 100) / scale).coerceIn(0, 100) else -1
+        val statusExtra = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+        val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+        val charging = statusExtra == BatteryManager.BATTERY_STATUS_CHARGING ||
+            statusExtra == BatteryManager.BATTERY_STATUS_FULL ||
+            plugged > 0
+        val chargeType = when {
+            (plugged and BatteryManager.BATTERY_PLUGGED_AC) != 0 -> "ac"
+            (plugged and BatteryManager.BATTERY_PLUGGED_USB) != 0 -> "usb"
+            (plugged and BatteryManager.BATTERY_PLUGGED_WIRELESS) != 0 -> "wireless"
+            charging -> "ac"
+            else -> "none"
+        }
+        val cm = appCtx.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val caps = runCatching { cm?.getNetworkCapabilities(cm.activeNetwork) }.getOrNull()
+        val netType = when {
+            caps == null -> "none"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+            else -> "unknown"
+        }
+        val availMb = runCatching {
+            android.os.StatFs(appCtx.filesDir.absolutePath).availableBytes / (1024L * 1024L)
+        }.getOrDefault(-1L)
+        val (totalMsgs, unreadMsgs) = runCatching {
+            val db = AppDatabaseHolder.db(appCtx)
+            db.messageDao().todayCount(0L) to db.messageDao().unreadCount()
+        }.getOrDefault(-1 to -1)
+        val isDnd = runCatching {
+            val nm = appCtx.getSystemService(android.app.NotificationManager::class.java)
+            val sysDnd = nm != null && nm.currentInterruptionFilter != android.app.NotificationManager.INTERRUPTION_FILTER_ALL
+            sysDnd || PhantomPrefs.isInQuietHoursNow(appCtx)
+        }.getOrDefault(false)
+        val appVer = runCatching {
+            appCtx.packageManager.getPackageInfo(appCtx.packageName, 0).versionName.orEmpty()
+        }.getOrDefault("")
+        return DeviceStatusPush(
+            batteryLevel = pct,
+            isCharging = charging,
+            chargeType = chargeType,
+            networkType = netType,
+            wifiSsid = "",
+            storageAvailMb = availMb,
+            totalMessages = totalMsgs,
+            unreadMessages = unreadMsgs,
+            isDndActive = isDnd,
+            appVersion = appVer,
+            deviceName = Build.MODEL.ifBlank { "Android" },
+            updatedAtMs = System.currentTimeMillis()
+        )
+    }
+
+    @Synchronized
+    private fun startBatteryStatusMonitor(appCtx: Context, ws: WebSocket) {
+        stopBatteryStatusMonitor()
+        lastPushedBatteryLevel = -1
+        lastPushedCharging = null
+        lastPushedChargeType = ""
+        // 連線/重連後立即推送一次（保證 3 秒內刷新）
+        scope.launch {
+            if (activeWs !== ws) return@launch
+            val ds = collectDeviceStatus(appCtx)
+            lastPushedBatteryLevel = ds.batteryLevel
+            lastPushedCharging = ds.isCharging
+            lastPushedChargeType = ds.chargeType
+            sendEnvelope(ws, LinkMsgType.DEVICE_STATUS, "", ds)
+        }
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val curWs = activeWs ?: return
+                if (intent?.action != Intent.ACTION_BATTERY_CHANGED) return
+                val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100)
+                val pct = if (level >= 0 && scale > 0) ((level * 100) / scale).coerceIn(0, 100) else -1
+                val statusExtra = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)
+                val charging = statusExtra == BatteryManager.BATTERY_STATUS_CHARGING ||
+                    statusExtra == BatteryManager.BATTERY_STATUS_FULL ||
+                    plugged > 0
+                val chargeType = when {
+                    (plugged and BatteryManager.BATTERY_PLUGGED_AC) != 0 -> "ac"
+                    (plugged and BatteryManager.BATTERY_PLUGGED_USB) != 0 -> "usb"
+                    (plugged and BatteryManager.BATTERY_PLUGGED_WIRELESS) != 0 -> "wireless"
+                    charging -> "ac"
+                    else -> "none"
+                }
+                val levelChanged = lastPushedBatteryLevel < 0 || kotlin.math.abs(pct - lastPushedBatteryLevel) >= 2
+                val chargeChanged = lastPushedCharging != charging || lastPushedChargeType != chargeType
+                if (!levelChanged && !chargeChanged) return
+                lastPushedBatteryLevel = pct
+                lastPushedCharging = charging
+                lastPushedChargeType = chargeType
+                scope.launch {
+                    if (activeWs !== curWs) return@launch
+                    val ds = collectDeviceStatus(appCtx, batteryIntentOverride = intent)
+                    sendEnvelope(curWs, LinkMsgType.DEVICE_STATUS, "", ds)
+                }
+            }
+        }
+        runCatching {
+            androidx.core.content.ContextCompat.registerReceiver(
+                appCtx,
+                receiver,
+                IntentFilter(Intent.ACTION_BATTERY_CHANGED),
+                androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+            batteryStatusReceiver = receiver
+            batteryStatusAppCtx = appCtx
+        }
+    }
+
+    @Synchronized
+    private fun stopBatteryStatusMonitor() {
+        val r = batteryStatusReceiver
+        val c = batteryStatusAppCtx
+        batteryStatusReceiver = null
+        batteryStatusAppCtx = null
+        if (r != null && c != null) {
+            runCatching { c.unregisterReceiver(r) }
+        }
     }
 }

@@ -127,6 +127,9 @@ object LinkMsgType {
 
     // #503 AI semantic / phone-to-desktop notification settings sync (additive)
     const val DESKTOP_SETTINGS_SYNC = "desktop.settings.sync"
+
+    // #517 Phone device status push event (additive, backwards-compatible, no PROTOCOL_VERSION bump)
+    const val DEVICE_STATUS = "device.status"
 }
 
 data class LinkEnvelope(
@@ -604,4 +607,21 @@ data class DesktopSettingsSyncPush(
     val floatingAssistantEnabled: Boolean? = null,
     val bannerDurationSec: Int? = null
 )
+
+/** #517 手機裝置狀態推送（事件驅動：電量變化 ≥2%、充電切換即時、重連補齊；向後相容） */
+data class DeviceStatusPush(
+    val batteryLevel: Int = -1,
+    val isCharging: Boolean = false,
+    val chargeType: String = "none", // ac | usb | wireless | none
+    val networkType: String = "unknown", // wifi | cellular | none | unknown
+    val wifiSsid: String = "",
+    val storageAvailMb: Long = -1L,
+    val totalMessages: Int = -1,
+    val unreadMessages: Int = -1,
+    val isDndActive: Boolean = false,
+    val appVersion: String = "",
+    val deviceName: String = "",
+    val updatedAtMs: Long = 0L
+)
+
 
