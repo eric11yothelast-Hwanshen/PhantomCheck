@@ -2927,6 +2927,26 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     fun setSettingsAdvancedExpanded(ctx: Context, expanded: Boolean) {
         prefs(ctx).edit().putBoolean("settings_home_advanced_expanded", expanded).apply()
     }
+
+    // ---- #518 Cross-End Clipboard Sync (opt-in, default OFF, OTP guard ON) ----
+
+    fun isClipboardSyncEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("cross_end_clipboard_sync_enabled", false)
+
+    fun setClipboardSyncEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("cross_end_clipboard_sync_enabled", enabled).apply()
+        PhantomSettingsBus.notifyChanged()
+    }
+
+    fun isClipboardOtpGuardEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean("cross_end_clipboard_otp_guard", true)
+
+    fun setClipboardOtpGuardEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean("cross_end_clipboard_otp_guard", enabled).apply()
+    }
+
+    fun getClipboardMaxChars(ctx: Context): Int =
+        prefs(ctx).getInt("cross_end_clipboard_max_chars", 5000).coerceIn(500, 5000)
 }
 
 

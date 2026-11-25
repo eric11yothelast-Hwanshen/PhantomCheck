@@ -116,6 +116,11 @@ data class DesktopSettings(
     // #515 Floating orb radial menu order & fullscreen auto-hide mode
     val floatingFullscreenMode: FullscreenHideMode = FullscreenHideMode.AUTO_HIDE,
     val floatingMenuOrder: String = "ai,main,search,todos,dnd,note,clipboard,settings",
+    // #518 Cross-end clipboard sync (opt-in, default OFF)
+    val clipboardSyncEnabled: Boolean = false,
+    val clipboardMaxChars: Int = 5000,
+    val clipboardOtpGuard: Boolean = true,
+    val clipboardOnlyWhenFocused: Boolean = true,
     // Window geometry persistence
     val windowX: Int = Int.MIN_VALUE,
     val windowY: Int = Int.MIN_VALUE,
@@ -230,6 +235,10 @@ object DesktopSettingsStore {
             floatingSnapToEdge = p.getProperty("floatingSnapToEdge", "true").toBoolean(),
             floatingFullscreenMode = FullscreenHideMode.entries.firstOrNull { it.key == p.getProperty("floatingFullscreenMode", "auto_hide") } ?: FullscreenHideMode.AUTO_HIDE,
             floatingMenuOrder = p.getProperty("floatingMenuOrder", "ai,main,search,todos,dnd,note,clipboard,settings").ifBlank { "ai,main,search,todos,dnd,note,clipboard,settings" },
+            clipboardSyncEnabled = p.getProperty("clipboardSyncEnabled", "false").toBoolean(),
+            clipboardMaxChars = p.getProperty("clipboardMaxChars", "5000").toIntOrNull()?.coerceIn(500, 5000) ?: 5000,
+            clipboardOtpGuard = p.getProperty("clipboardOtpGuard", "true").toBoolean(),
+            clipboardOnlyWhenFocused = p.getProperty("clipboardOnlyWhenFocused", "true").toBoolean(),
             windowX = p.getProperty("windowX", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowY = p.getProperty("windowY", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowWidth = p.getProperty("windowWidth", "1280").toIntOrNull()?.coerceAtLeast(1024) ?: 1280,
@@ -318,6 +327,10 @@ object DesktopSettingsStore {
             p.setProperty("floatingSnapToEdge", s.floatingSnapToEdge.toString())
             p.setProperty("floatingFullscreenMode", s.floatingFullscreenMode.key)
             p.setProperty("floatingMenuOrder", s.floatingMenuOrder)
+            p.setProperty("clipboardSyncEnabled", s.clipboardSyncEnabled.toString())
+            p.setProperty("clipboardMaxChars", s.clipboardMaxChars.toString())
+            p.setProperty("clipboardOtpGuard", s.clipboardOtpGuard.toString())
+            p.setProperty("clipboardOnlyWhenFocused", s.clipboardOnlyWhenFocused.toString())
             p.setProperty("windowX", s.windowX.toString())
             p.setProperty("windowY", s.windowY.toString())
             p.setProperty("windowWidth", s.windowWidth.toString())

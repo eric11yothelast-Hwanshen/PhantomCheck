@@ -3134,4 +3134,19 @@
     <!-- #516 mDNS Discovery Reliability -->
     <string name="link_hub_mdns_scanning">Scanning…</string>
     <string name="link_hub_mdns_fallback_manual">Can\'t find PC? Use Manual Pairing →</string>
+    <!-- #518 Cross-End Utility Pack (Clipboard Sync & Open URL) -->
+    <string name="cross_end_tools_title">Cross-End Tools</string>
+    <string name="cross_end_clipboard_sync_title">Clipboard Sync (LAN TLS only)</string>
+    <string name="cross_end_clipboard_sync_desc">Off by default. Syncs plain text (max 5,000 chars) over your paired LAN TLS tunnel. OTP/verification codes are automatically blocked. Due to Android 10+ restrictions, phone clipboard can only be pushed while this app is in the foreground.</string>
+    <string name="cross_end_clipboard_otp_guard">Block OTP / verification codes</string>
+    <string name="cross_end_clipboard_push_btn">Push Phone Clipboard to PC</string>
+    <string name="cross_end_clipboard_sent">Clipboard pushed to PC</string>
+    <string name="cross_end_clipboard_otp_blocked">Blocked: OTP / verification code detected</string>
+    <string name="cross_end_clipboard_empty">Phone clipboard is empty</string>
+    <string name="cross_end_clipboard_too_long">Clipboard exceeds 5,000-character limit</string>
+    <string name="cross_end_clipboard_disabled">Enable Clipboard Sync first</string>
+    <string name="cross_end_open_url_hint">https://example.com</string>
+    <string name="cross_end_open_url_btn">Open on PC</string>
+    <string name="cross_end_open_url_sent">URL sent to PC browser</string>
+    <string name="cross_end_open_url_invalid">Only http:// or https:// URLs are allowed</string>
 </resources>

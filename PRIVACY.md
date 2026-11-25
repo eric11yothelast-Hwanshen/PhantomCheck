@@ -79,6 +79,18 @@
 - **App 內清理**：您可於 App 內單筆刪除、批次刪除訊息，或透過「訊息保留政策」定期自動清理過期資料（受保護之高風險詐騙證據可依設定保留）。
 - **解除安裝即全面刪除**：由於所有資料庫、快取、設定與加密儲存的 API Key 皆存放於本 App 的裝置私有空間，**當您解除安裝本 App 時，系統即會刪除全部本機資料與金鑰**（您先前主動匯出至系統 `Downloads` 資料夾的 CSV 檔案除外，需由您自行管理刪除）。
 
+### 9. 跨端剪貼簿同步與跨端實用工具（#518）／ Cross-End Clipboard Sync & Utility Tools
+
+- **預設關閉（Opt-in）**：跨端剪貼簿同步於手機與電腦端皆**預設關閉**，須由使用者於雙端主動開啟後才會運作。
+- **僅限區網 TLS 配對通道**：所有剪貼簿文字、快速筆記、手機通知推送、尋找手機響鈴與網址互開指令，皆僅透過使用者本機區域網路內之 WSS + 憑證指紋釘選（TLS Pinning）配對連線直接點對點傳輸，**不經過任何雲端伺服器或第三方中繼**。
+- **安全與隱私防護**：
+  - 剪貼簿同步僅支援純文字，單筆上限 5,000 字元；
+  - 內建**敏感格式保護**（預設開啟），沿用本機 `OtpDetector` 規則自動辨識並攔截一次性驗證碼（OTP）／4–8 位數驗證碼，絕不推送至對端；
+  - 受限於 Android 10+ 系統隱私規範，手機端剪貼簿僅於 App 位於前景時由使用者主動推送，絕不在背景靜默監聽剪貼簿；
+  - 網址互開嚴格驗證僅允許 `http://` 與 `https://` 協定，封鎖 `file://`、`javascript:`、`intent://` 等危險協定；所有跨端指令均寫入本機連線審計紀錄並受既有速率限制保護。
+
+**English**: Cross-end clipboard sync is **disabled by default** on both phone and desktop. When explicitly enabled, plain text (capped at 5,000 characters) and cross-end utility commands (quick notes, phone notifications, Find-My-Phone ring, and `http://`/`https://`-only URL handoff) travel strictly over your paired local-network TLS-pinned WebSocket connection with **zero cloud relay**. Built-in OTP protection (enabled by default, reusing `OtpDetector`) automatically blocks one-time verification codes from being pushed. Respecting Android 10+ system privacy restrictions, phone clipboard reading occurs only in the foreground upon explicit user action.
+
 ---
 
 ## 四、聯絡管道與問題回報

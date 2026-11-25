@@ -3134,4 +3134,19 @@
     <!-- #516 區網 mDNS 探索可靠性 -->
     <string name="link_hub_mdns_scanning">掃描中…</string>
     <string name="link_hub_mdns_fallback_manual">找不到電腦？改用手動配對 →</string>
+    <!-- #518 跨端實用功能包（剪貼簿同步與網址互開） -->
+    <string name="cross_end_tools_title">跨端實用工具</string>
+    <string name="cross_end_clipboard_sync_title">剪貼簿雙向同步（僅限區網 TLS）</string>
+    <string name="cross_end_clipboard_sync_desc">預設關閉。僅於已配對之區網 TLS 加密通道傳輸純文字（上限 5,000 字元），自動攔截 OTP／驗證碼不推送。受限於 Android 10+ 系統權限，手機剪貼簿僅能於 App 前景時手動或即時推送。</string>
+    <string name="cross_end_clipboard_otp_guard">敏感格式保護（阻擋 OTP／驗證碼）</string>
+    <string name="cross_end_clipboard_push_btn">推送手機剪貼簿至電腦</string>
+    <string name="cross_end_clipboard_sent">已推送剪貼簿至電腦</string>
+    <string name="cross_end_clipboard_otp_blocked">已攔截：偵測到 OTP／驗證碼，不予推送</string>
+    <string name="cross_end_clipboard_empty">手機剪貼簿為空</string>
+    <string name="cross_end_clipboard_too_long">剪貼簿內容超過 5,000 字元上限</string>
+    <string name="cross_end_clipboard_disabled">請先開啟剪貼簿同步開關</string>
+    <string name="cross_end_open_url_hint">https://example.com</string>
+    <string name="cross_end_open_url_btn">在電腦開啟</string>
+    <string name="cross_end_open_url_sent">已傳送網址至電腦瀏覽器開啟</string>
+    <string name="cross_end_open_url_invalid">僅允許 http:// 或 https:// 網址</string>
 </resources>

@@ -949,6 +949,128 @@ fun LinkHubContent(
             }
         }
 
+        // 8.5 #518 跨端實用工具（剪貼簿雙向同步＋網址互開）
+        item {
+            var clipEnabled by remember { mutableStateOf(com.phantom.checker.util.PhantomPrefs.isClipboardSyncEnabled(appCtx)) }
+            var otpGuard by remember { mutableStateOf(com.phantom.checker.util.PhantomPrefs.isClipboardOtpGuardEnabled(appCtx)) }
+            var clipFeedback by remember { mutableStateOf<String?>(null) }
+            var urlInput by remember { mutableStateOf("") }
+            var urlFeedback by remember { mutableStateOf<String?>(null) }
+            val strSent = stringResource(R.string.cross_end_clipboard_sent)
+            val strOtpBlocked = stringResource(R.string.cross_end_clipboard_otp_blocked)
+            val strEmpty = stringResource(R.string.cross_end_clipboard_empty)
+            val strTooLong = stringResource(R.string.cross_end_clipboard_too_long)
+            val strDisabled = stringResource(R.string.cross_end_clipboard_disabled)
+            val strUrlSent = stringResource(R.string.cross_end_open_url_sent)
+            val strUrlInvalid = stringResource(R.string.cross_end_open_url_invalid)
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f))),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = stringResource(R.string.cross_end_tools_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.cross_end_clipboard_sync_title),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Switch(
+                            checked = clipEnabled,
+                            onCheckedChange = { v ->
+                                clipEnabled = v
+                                com.phantom.checker.util.PhantomPrefs.setClipboardSyncEnabled(appCtx, v)
+                            }
+                        )
+                    }
+                    Text(
+                        text = stringResource(R.string.cross_end_clipboard_sync_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (clipEnabled) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.cross_end_clipboard_otp_guard),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Switch(
+                                checked = otpGuard,
+                                onCheckedChange = { v ->
+                                    otpGuard = v
+                                    com.phantom.checker.util.PhantomPrefs.setClipboardOtpGuardEnabled(appCtx, v)
+                                }
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                val clipText = cm?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(ctx)?.toString().orEmpty()
+                                clipFeedback = when (DesktopLinkClient.pushClipboardToDesktop(appCtx, clipText)) {
+                                    "sent" -> strSent
+                                    "otp_blocked" -> strOtpBlocked
+                                    "empty" -> strEmpty
+                                    "too_long" -> strTooLong
+                                    "disabled" -> strDisabled
+                                    else -> strDisabled
+                                }
+                            },
+                            enabled = clientStatus.connState == PhoneLinkConnState.CONNECTED
+                        ) {
+                            Text(stringResource(R.string.cross_end_clipboard_push_btn))
+                        }
+                        clipFeedback?.let { fb ->
+                            Text(fb, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = urlInput,
+                            onValueChange = { urlInput = it },
+                            placeholder = { Text(stringResource(R.string.cross_end_open_url_hint)) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = {
+                                val ok = DesktopLinkClient.sendOpenUrlToDesktop(urlInput)
+                                urlFeedback = if (ok) {
+                                    urlInput = ""
+                                    strUrlSent
+                                } else strUrlInvalid
+                            },
+                            enabled = clientStatus.connState == PhoneLinkConnState.CONNECTED && urlInput.isNotBlank()
+                        ) {
+                            Text(stringResource(R.string.cross_end_open_url_btn))
+                        }
+                    }
+                    urlFeedback?.let { fb ->
+                        Text(fb, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+
         // 9. Doze 與電池最佳化豁免引導
         item {
             val pm = remember { runCatching { ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager }.getOrNull() }

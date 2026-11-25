@@ -107,7 +107,7 @@ import java.util.Locale
 import java.util.UUID
 
 private enum class DesktopTab {
-    MESSAGES, STATS, TODOS, CHAT, RULES, SETTINGS
+    MESSAGES, STATS, TODOS, CHAT, RULES, SETTINGS, REPORTS, TOOLS
 }
 
 private const val MAX_CACHED_MESSAGES = 240
@@ -178,6 +178,8 @@ fun DesktopApp(
     }
     var batchSelectMode by remember { mutableStateOf(false) }
     var selectedBatchKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var latestReceivedClipboard by remember { mutableStateOf("") }
+    var groupReports by remember { mutableStateOf<List<GroupReportSummaryDto>>(emptyList()) }
     val customBgBitmap = remember(settings.customBgImagePath) { DesktopPalette.loadBackgroundImage(settings.customBgImagePath) }
     val cardPad = DesktopPalette.cardPadding(settings.density)
     val listSpace = DesktopPalette.listSpacing(settings.density)
@@ -654,6 +656,33 @@ fun DesktopApp(
                     actionFeedback = res.message
                     scope.launch { server.sendCommand(LinkMsgType.TAGS_LIST, reqId(), emptyMap<String, String>()) }
                 }
+                LinkMsgType.CLIPBOARD_SYNC -> {
+                    val payload = runCatching { gson.fromJson(env.payloadJson, ClipboardSyncPayload::class.java) }.getOrNull() ?: return@collect
+                    if (settings.clipboardSyncEnabled && payload.text.isNotBlank()) {
+                        if (settings.clipboardOnlyWhenFocused && !isWindowVisible) return@collect
+                        val text = payload.text.take(settings.clipboardMaxChars)
+                        if (settings.clipboardOtpGuard && DesktopClipboardGuard.looksLikeOtp(text)) return@collect
+                        latestReceivedClipboard = text
+                        runCatching {
+                            Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
+                        }
+                    }
+                }
+                LinkMsgType.OPEN_URL_ON_PEER -> {
+                    val req = runCatching { gson.fromJson(env.payloadJson, OpenUrlReq::class.java) }.getOrNull() ?: return@collect
+                    val url = req.url.trim().take(2048)
+                    if (url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)) {
+                        runCatching {
+                            if (java.awt.Desktop.isDesktopSupported()) {
+                                java.awt.Desktop.getDesktop().browse(java.net.URI(url))
+                            }
+                        }
+                    }
+                }
+                LinkMsgType.GROUP_REPORTS_LIST_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, GroupReportsListRes::class.java) }.getOrNull() ?: return@collect
+                    groupReports = res.items
+                }
                 LinkMsgType.ERROR -> {
                     val err = runCatching { gson.fromJson(env.payloadJson, ErrorPayload::class.java) }.getOrNull() ?: return@collect
                     if (err.errorCode == LinkErrorCode.TIMEOUT) {
@@ -811,6 +840,8 @@ fun DesktopApp(
                         tabMod && ev.key == Key.Four -> { activeTab = DesktopTab.CHAT; true }
                         tabMod && ev.key == Key.Five -> { activeTab = DesktopTab.RULES; true }
                         tabMod && ev.key == Key.Six -> { activeTab = DesktopTab.SETTINGS; true }
+                        tabMod && ev.key == Key.Seven -> { activeTab = DesktopTab.REPORTS; true }
+                        tabMod && ev.key == Key.Eight -> { activeTab = DesktopTab.TOOLS; true }
                         ev.isCtrlPressed && ev.key == Key.F -> {
                             activeTab = DesktopTab.MESSAGES
                             runCatching { searchFocusRequester.requestFocus() }
@@ -883,9 +914,11 @@ fun DesktopApp(
 
                         val navItems = listOf(
                             Triple(DesktopTab.MESSAGES, DesktopStrings.navMessages, DesktopIcons.Messages),
+                            Triple(DesktopTab.REPORTS, DesktopStrings.tabReports, DesktopIcons.Stats),
                             Triple(DesktopTab.STATS, DesktopStrings.navStats, DesktopIcons.Stats),
                             Triple(DesktopTab.TODOS, DesktopStrings.navTodos, DesktopIcons.Todos),
                             Triple(DesktopTab.CHAT, DesktopStrings.navChat, DesktopIcons.Chat),
+                            Triple(DesktopTab.TOOLS, DesktopStrings.tabTools, DesktopIcons.Rules),
                             Triple(DesktopTab.RULES, DesktopStrings.navRules, DesktopIcons.Rules),
                             Triple(DesktopTab.SETTINGS, DesktopStrings.navSettings, DesktopIcons.Settings)
                         )
@@ -2192,6 +2225,38 @@ fun DesktopApp(
                                                 }
                                             }
                                         }
+                                    }
+
+                                    DesktopTab.REPORTS -> {
+                                        LaunchedEffect(uiState.connState) {
+                                            if (uiState.connState == LinkConnState.CONNECTED) {
+                                                server.sendCommand(LinkMsgType.GROUP_REPORTS_LIST, reqId(), emptyMap<String, String>())
+                                            }
+                                        }
+                                        DesktopGroupReportsPage(
+                                            settings = settings,
+                                            tokens = tokens,
+                                            accentColor = accentColor,
+                                            isConnected = uiState.connState == LinkConnState.CONNECTED,
+                                            reports = groupReports,
+                                            onRefresh = {
+                                                scope.launch {
+                                                    server.sendCommand(LinkMsgType.GROUP_REPORTS_LIST, reqId(), emptyMap<String, String>())
+                                                }
+                                            }
+                                        )
+                                    }
+
+                                    DesktopTab.TOOLS -> {
+                                        DesktopToolsPage(
+                                            settings = settings,
+                                            tokens = tokens,
+                                            accentColor = accentColor,
+                                            isConnected = uiState.connState == LinkConnState.CONNECTED,
+                                            latestReceivedClipboard = latestReceivedClipboard,
+                                            server = server,
+                                            onFeedback = { actionFeedback = it }
+                                        )
                                     }
 
                                     DesktopTab.SETTINGS -> {

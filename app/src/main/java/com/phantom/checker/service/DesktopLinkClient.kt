@@ -390,6 +390,50 @@ object DesktopLinkClient {
         )
     }
 
+    @Volatile
+    private var lastReceivedClipHash: Int = 0
+
+    /**
+     * #518 手機端手動/前景推送剪貼簿至已配對電腦（預設關、僅 TLS 配對連線、5000 字上限、OtpDetector 驗證碼保護）。
+     * 回傳狀態碼：sent | disabled | disconnected | empty | too_long | otp_blocked | echo_skipped
+     */
+    fun pushClipboardToDesktop(ctx: Context, rawText: String): String {
+        val appCtx = ctx.applicationContext
+        if (!PhantomPrefs.isClipboardSyncEnabled(appCtx)) return "disabled"
+        val ws = activeWs ?: return "disconnected"
+        val trimmed = rawText.trim()
+        if (trimmed.isEmpty()) return "empty"
+        val maxChars = PhantomPrefs.getClipboardMaxChars(appCtx)
+        if (trimmed.length > maxChars) return "too_long"
+        if (PhantomPrefs.isClipboardOtpGuardEnabled(appCtx)) {
+            if (com.phantom.checker.util.OtpDetector.extractOtp(trimmed) != null ||
+                trimmed.matches(Regex("^\\d{4,8}$"))
+            ) {
+                return "otp_blocked"
+            }
+        }
+        val hash = trimmed.hashCode()
+        if (hash == lastReceivedClipHash) return "echo_skipped"
+        lastReceivedClipHash = hash
+        val ok = sendEnvelope(
+            ws,
+            LinkMsgType.CLIPBOARD_SYNC,
+            "",
+            ClipboardSyncPayload(text = trimmed, source = "phone", timestampMs = System.currentTimeMillis())
+        )
+        return if (ok) "sent" else "disconnected"
+    }
+
+    /** #518 手機端推送網址至桌面瀏覽器開啟（嚴格限制 http:// 或 https://） */
+    fun sendOpenUrlToDesktop(rawUrl: String): Boolean {
+        val url = rawUrl.trim()
+        if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
+            return false
+        }
+        val ws = activeWs ?: return false
+        return sendEnvelope(ws, LinkMsgType.OPEN_URL_ON_PEER, "", OpenUrlReq(url = url.take(2048)))
+    }
+
     fun unpairDesktop(ctx: Context, instanceId: String) {
         val appCtx = ctx.applicationContext
         val ws = activeWs
@@ -1724,6 +1768,103 @@ object DesktopLinkClient {
                     env.reqId,
                     ChatSessionNewRes(ok = true, session = ChatSessionSummaryDto(id = id, title = title.take(30), updatedAt = System.currentTimeMillis()))
                 )
+            }
+
+            LinkMsgType.CLIPBOARD_SYNC -> {
+                val payload = runCatching { gson.fromJson(env.payloadJson, ClipboardSyncPayload::class.java) }.getOrNull()
+                if (payload != null && PhantomPrefs.isClipboardSyncEnabled(appCtx)) {
+                    val maxChars = PhantomPrefs.getClipboardMaxChars(appCtx)
+                    val text = payload.text.take(maxChars)
+                    if (text.isNotBlank()) {
+                        lastReceivedClipHash = text.hashCode()
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            runCatching {
+                                val cm = appCtx.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                                cm?.setPrimaryClip(android.content.ClipData.newPlainText("PhantomCheck", text))
+                            }
+                        }
+                        DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.CLIPBOARD_SYNC, true, "len=${text.length}")
+                    }
+                } else {
+                    DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.CLIPBOARD_SYNC, false, "disabled_or_empty")
+                }
+            }
+
+            LinkMsgType.FIND_PHONE_RING -> {
+                val ok = runCatching {
+                    val uri = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
+                        ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION)
+                    val ringtone = android.media.RingtoneManager.getRingtone(appCtx, uri)
+                    ringtone?.play()
+                    scope.launch {
+                        delay(3_000L)
+                        runCatching { ringtone?.stop() }
+                    }
+                    val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+                    val notif = androidx.core.app.NotificationCompat.Builder(appCtx, ProactiveEngine.CHANNEL_ASSISTANT_BRIEFING)
+                        .setSmallIcon(com.phantom.checker.R.drawable.ic_launcher_foreground)
+                        .setContentTitle("PhantomCheck")
+                        .setContentText("Find My Phone")
+                        .setAutoCancel(true)
+                        .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                        .build()
+                    nm?.notify(1151, notif)
+                    true
+                }.getOrDefault(false)
+                DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.FIND_PHONE_RING, ok, "")
+                sendEnvelope(ws, LinkMsgType.FIND_PHONE_RING_RES, env.reqId, CrossEndActionRes(ok = ok, message = if (ok) "ringing" else "failed"))
+            }
+
+            LinkMsgType.SEND_PHONE_NOTIF -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, SendPhoneNotifReq::class.java) }.getOrNull() ?: SendPhoneNotifReq()
+                val title = req.title.trim().take(120).ifBlank { "PhantomCheck Desktop" }
+                val body = req.body.trim().take(400)
+                val ok = if (body.isBlank()) false else runCatching {
+                    val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+                    val notif = androidx.core.app.NotificationCompat.Builder(appCtx, ProactiveEngine.CHANNEL_ASSISTANT_BRIEFING)
+                        .setSmallIcon(com.phantom.checker.R.drawable.ic_launcher_foreground)
+                        .setContentTitle(title)
+                        .setContentText(body)
+                        .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(body))
+                        .setAutoCancel(true)
+                        .build()
+                    nm?.notify(1152, notif)
+                    true
+                }.getOrDefault(false)
+                DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.SEND_PHONE_NOTIF, ok, "len=${body.length}")
+                sendEnvelope(ws, LinkMsgType.SEND_PHONE_NOTIF_RES, env.reqId, CrossEndActionRes(ok = ok, message = if (ok) "sent" else "empty_or_failed"))
+            }
+
+            LinkMsgType.OPEN_URL_ON_PEER -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, OpenUrlReq::class.java) }.getOrNull() ?: OpenUrlReq()
+                val url = req.url.trim().take(2048)
+                val validScheme = url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)
+                val ok = if (!validScheme) false else runCatching {
+                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
+                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    appCtx.startActivity(intent)
+                    true
+                }.getOrDefault(false)
+                DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.OPEN_URL_ON_PEER, ok, if (validScheme) "http_ok" else "blocked_scheme")
+                sendEnvelope(ws, LinkMsgType.OPEN_URL_ON_PEER_RES, env.reqId, CrossEndActionRes(ok = ok, message = if (ok) "opened" else "invalid_url"))
+            }
+
+            LinkMsgType.GROUP_REPORTS_LIST -> {
+                val reports = runCatching { db.groupReportDao().recentReports(30) }.getOrDefault(emptyList())
+                val dtos = reports.map { r ->
+                    GroupReportSummaryDto(
+                        id = r.id,
+                        appLabel = r.appLabel,
+                        conversationTitle = r.conversationKey,
+                        summaryMarkdown = r.summaryText,
+                        messageCount = r.messageCount,
+                        triggerType = "group_report",
+                        createdAt = r.createdAt
+                    )
+                }
+                DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.GROUP_REPORTS_LIST, true, "count=${dtos.size}")
+                sendEnvelope(ws, LinkMsgType.GROUP_REPORTS_LIST_RES, env.reqId, GroupReportsListRes(items = dtos))
             }
 
             else -> {
