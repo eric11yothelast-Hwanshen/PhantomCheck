@@ -496,4 +496,11 @@ object DesktopStrings {
     val noteDeleted get() = t("記事已刪除", "Note deleted")
     val chatQuoteLatest get() = t("引用最新通知", "Quote Latest Notification")
     val quickPromptUnread get() = t("幫我整理所有未讀訊息重點", "Summarize all unread notifications")
+
+    // #504 Cross-End Parity (Light Mode & Batch Multi-Select)
+    val custLightThemeTitle get() = t("淺色模式（亮色玻璃主題）", "Light Mode (Frosted Light Theme)")
+    val batchSelectBtn get() = t("批次選取", "Batch Select")
+    val batchDoneBtn get() = t("完成選取", "Done")
+    val batchMarkReadBtn get() = t("批次已讀", "Mark Selected Read")
+    val batchMuteAppsBtn get() = t("批次靜音 App", "Mute Selected Apps")
 }

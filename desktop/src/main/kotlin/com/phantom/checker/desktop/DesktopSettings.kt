@@ -87,6 +87,8 @@ data class DesktopSettings(
     val rulesCollapseAllowlist: Boolean = false,
     val rulesCollapseTags: Boolean = false,
     val rulesCollapseMuted: Boolean = false,
+    // #504 Light/Dark theme mode toggle
+    val lightTheme: Boolean = false,
     // Window geometry persistence
     val windowX: Int = Int.MIN_VALUE,
     val windowY: Int = Int.MIN_VALUE,
@@ -178,6 +180,7 @@ object DesktopSettingsStore {
             rulesCollapseAllowlist = p.getProperty("rulesCollapseAllowlist", "false").toBoolean(),
             rulesCollapseTags = p.getProperty("rulesCollapseTags", "false").toBoolean(),
             rulesCollapseMuted = p.getProperty("rulesCollapseMuted", "false").toBoolean(),
+            lightTheme = p.getProperty("lightTheme", "false").toBoolean(),
             windowX = p.getProperty("windowX", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowY = p.getProperty("windowY", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowWidth = p.getProperty("windowWidth", "1280").toIntOrNull()?.coerceAtLeast(1024) ?: 1280,
@@ -246,6 +249,7 @@ object DesktopSettingsStore {
             p.setProperty("rulesCollapseAllowlist", s.rulesCollapseAllowlist.toString())
             p.setProperty("rulesCollapseTags", s.rulesCollapseTags.toString())
             p.setProperty("rulesCollapseMuted", s.rulesCollapseMuted.toString())
+            p.setProperty("lightTheme", s.lightTheme.toString())
             p.setProperty("windowX", s.windowX.toString())
             p.setProperty("windowY", s.windowY.toString())
             p.setProperty("windowWidth", s.windowWidth.toString())

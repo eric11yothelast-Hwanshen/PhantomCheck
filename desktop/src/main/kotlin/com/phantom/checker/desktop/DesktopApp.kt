@@ -85,6 +85,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -171,7 +172,12 @@ fun DesktopApp(
     val accentColor = remember(settings.accentPreset, settings.customAccentHex) {
         DesktopPalette.resolveAccentColor(settings.accentPreset, settings.customAccentHex)
     }
-    val (bgTop, bgBottom) = remember(settings.bgTheme) { DesktopPalette.bgGradientColors(settings.bgTheme) }
+    val (bgTop, bgBottom) = remember(settings.bgTheme, settings.lightTheme) {
+        if (settings.lightTheme) Color(0xFFE8EEF7) to Color(0xFFDDE6F2)
+        else DesktopPalette.bgGradientColors(settings.bgTheme)
+    }
+    var batchSelectMode by remember { mutableStateOf(false) }
+    var selectedBatchKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     val customBgBitmap = remember(settings.customBgImagePath) { DesktopPalette.loadBackgroundImage(settings.customBgImagePath) }
     val cardPad = DesktopPalette.cardPadding(settings.density)
     val listSpace = DesktopPalette.listSpacing(settings.density)
@@ -736,8 +742,20 @@ fun DesktopApp(
     }
 
     CompositionLocalProvider(LocalDesktopTokens provides tokens) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
+    val activeColorScheme = if (settings.lightTheme) {
+        androidx.compose.material3.lightColorScheme(
+            background = Color(0xFFE2E8F0),
+            surface = tokens.surface,
+            surfaceVariant = tokens.surfaceElevated,
+            primary = accentColor,
+            onPrimary = Color.White,
+            onBackground = tokens.textPrimary,
+            onSurface = tokens.textPrimary,
+            onSurfaceVariant = tokens.textSecondary,
+            error = DesktopPalette.GlassError
+        )
+    } else {
+        darkColorScheme(
             background = bgTop,
             surface = tokens.surface,
             surfaceVariant = tokens.surfaceElevated,
@@ -747,7 +765,10 @@ fun DesktopApp(
             onSurface = tokens.textPrimary,
             onSurfaceVariant = tokens.textSecondary,
             error = DesktopPalette.GlassError
-        ),
+        )
+    }
+    MaterialTheme(
+        colorScheme = activeColorScheme,
         typography = typography
     ) {
         Surface(
@@ -755,22 +776,25 @@ fun DesktopApp(
                 .fillMaxSize()
                 .onPreviewKeyEvent { ev ->
                     if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    val tabMod = ev.isCtrlPressed || ev.isAltPressed
                     when {
                         ev.key == Key.Escape -> {
                             deepAnalysisResult = null
                             editingTodo = null
+                            showNewTodoDialog = false
+                            editingNote = null
                             pendingUpdateDialog = null
                             mirrorToast = null
                             DesktopNotificationBus.clearBanner()
                             actionFeedback = null
                             true
                         }
-                        ev.isCtrlPressed && ev.key == Key.One -> { activeTab = DesktopTab.MESSAGES; true }
-                        ev.isCtrlPressed && ev.key == Key.Two -> { activeTab = DesktopTab.STATS; true }
-                        ev.isCtrlPressed && ev.key == Key.Three -> { activeTab = DesktopTab.TODOS; true }
-                        ev.isCtrlPressed && ev.key == Key.Four -> { activeTab = DesktopTab.CHAT; true }
-                        ev.isCtrlPressed && ev.key == Key.Five -> { activeTab = DesktopTab.RULES; true }
-                        ev.isCtrlPressed && ev.key == Key.Six -> { activeTab = DesktopTab.SETTINGS; true }
+                        tabMod && ev.key == Key.One -> { activeTab = DesktopTab.MESSAGES; true }
+                        tabMod && ev.key == Key.Two -> { activeTab = DesktopTab.STATS; true }
+                        tabMod && ev.key == Key.Three -> { activeTab = DesktopTab.TODOS; true }
+                        tabMod && ev.key == Key.Four -> { activeTab = DesktopTab.CHAT; true }
+                        tabMod && ev.key == Key.Five -> { activeTab = DesktopTab.RULES; true }
+                        tabMod && ev.key == Key.Six -> { activeTab = DesktopTab.SETTINGS; true }
                         ev.isCtrlPressed && ev.key == Key.F -> {
                             activeTab = DesktopTab.MESSAGES
                             runCatching { searchFocusRequester.requestFocus() }
@@ -1108,6 +1132,15 @@ fun DesktopApp(
                                                 }
                                                 SpringOutlinedButton(
                                                     onClick = {
+                                                        batchSelectMode = !batchSelectMode
+                                                        if (!batchSelectMode) selectedBatchKeys = emptySet()
+                                                    },
+                                                    animationsEnabled = settings.animationsEnabled
+                                                ) {
+                                                    Text(if (batchSelectMode) DesktopStrings.batchDoneBtn else DesktopStrings.batchSelectBtn)
+                                                }
+                                                SpringOutlinedButton(
+                                                    onClick = {
                                                         messages = emptyList()
                                                         scope.launch {
                                                             sendOrNotify(
@@ -1143,6 +1176,48 @@ fun DesktopApp(
                                                 }
                                             }
 
+                                            // #504 Batch Multi-Select Action Bar
+                                            AnimatedVisibility(visible = batchSelectMode && selectedBatchKeys.isNotEmpty()) {
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    SpringButton(
+                                                        onClick = {
+                                                            val targets = visibleConversations.filter { it.groupKey in selectedBatchKeys }
+                                                            scope.launch {
+                                                                targets.forEach { c ->
+                                                                    sendOrNotify(
+                                                                        LinkMsgType.MESSAGES_MARK_READ,
+                                                                        MarkReadReq(packageName = c.packageName, conversationKey = c.conversationKey)
+                                                                    )
+                                                                }
+                                                                selectedBatchKeys = emptySet()
+                                                                batchSelectMode = false
+                                                            }
+                                                        },
+                                                        animationsEnabled = settings.animationsEnabled
+                                                    ) { Text("${DesktopStrings.batchMarkReadBtn} (${selectedBatchKeys.size})") }
+                                                    SpringOutlinedButton(
+                                                        onClick = {
+                                                            val pkgs = visibleConversations
+                                                                .filter { it.groupKey in selectedBatchKeys }
+                                                                .map { it.packageName }
+                                                                .distinct()
+                                                            scope.launch {
+                                                                pkgs.forEach { pkg ->
+                                                                    sendOrNotify(LinkMsgType.MUTED_APPS_TOGGLE, MutedAppToggleReq(packageName = pkg, muted = true))
+                                                                }
+                                                                selectedBatchKeys = emptySet()
+                                                                batchSelectMode = false
+                                                            }
+                                                        },
+                                                        animationsEnabled = settings.animationsEnabled
+                                                    ) { Text(DesktopStrings.batchMuteAppsBtn) }
+                                                }
+                                            }
+
                                             Row(modifier = Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                                 // Left Master List: Conversation List
                                                 Box(modifier = Modifier.weight(0.46f).fillMaxHeight()) {
@@ -1157,7 +1232,8 @@ fun DesktopApp(
                                                         ) {
                                                             items(visibleConversations, key = { it.groupKey }) { conv ->
                                                                 val isSelected = conv.groupKey == selectedConvKey
-                                                                val cardBg = if (isSelected) accentColor.copy(alpha = 0.16f) else tokens.surface
+                                                                val isBatchChecked = conv.groupKey in selectedBatchKeys
+                                                                val cardBg = if (isSelected || isBatchChecked) accentColor.copy(alpha = 0.16f) else tokens.surface
                                                                 val corner = if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST) {
                                                                     (settings.messageCardCornerDp - 4).coerceAtLeast(8).dp
                                                                 } else {
@@ -1177,17 +1253,29 @@ fun DesktopApp(
                                                                         .background(cardBg)
                                                                         .border(
                                                                             1.dp,
-                                                                            if (isSelected) accentColor.copy(alpha = 0.5f) else tokens.border,
+                                                                            if (isSelected || isBatchChecked) accentColor.copy(alpha = 0.5f) else tokens.border,
                                                                             RoundedCornerShape(corner)
                                                                         )
                                                                         .clickable {
-                                                                            selectedConvKey = conv.groupKey
-                                                                            selectedMsgId = conv.latestMessage.id
+                                                                            if (batchSelectMode) {
+                                                                                selectedBatchKeys = if (isBatchChecked) selectedBatchKeys - conv.groupKey else selectedBatchKeys + conv.groupKey
+                                                                            } else {
+                                                                                selectedConvKey = conv.groupKey
+                                                                                selectedMsgId = conv.latestMessage.id
+                                                                            }
                                                                         }
                                                                         .padding(if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST) 10.dp else cardPad),
                                                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                                                     verticalAlignment = Alignment.CenterVertically
                                                                 ) {
+                                                                    if (batchSelectMode) {
+                                                                        Checkbox(
+                                                                            checked = isBatchChecked,
+                                                                            onCheckedChange = { checked ->
+                                                                                selectedBatchKeys = if (checked) selectedBatchKeys + conv.groupKey else selectedBatchKeys - conv.groupKey
+                                                                            }
+                                                                        )
+                                                                    }
                                                                     // Circular Avatar with risk indicator dot
                                                                     Box(modifier = Modifier.size(38.dp), contentAlignment = Alignment.Center) {
                                                                         Box(

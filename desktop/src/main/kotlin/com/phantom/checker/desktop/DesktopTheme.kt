@@ -76,6 +76,21 @@ data class DesktopThemeTokens(
             val (_, bgBottom) = DesktopPalette.bgGradientColors(settings.bgTheme)
             val elevatedAlpha = (opacity + 0.08f).coerceAtMost(0.98f)
             val sidebarAlpha = (opacity + 0.10f).coerceAtMost(0.96f)
+            if (settings.lightTheme) {
+                return DesktopThemeTokens(
+                    sidebarBg = Color(0xFFF1F5F9).copy(alpha = sidebarAlpha),
+                    surface = Color(0xFFFFFFFF).copy(alpha = opacity),
+                    surfaceElevated = Color(0xFFF8FAFC).copy(alpha = elevatedAlpha),
+                    border = Color(0xFF0F172A).copy(alpha = if (hc) 0.22f else 0.12f),
+                    textPrimary = if (hc) Color(0xFF000000) else Color(0xFF0F172A),
+                    textSecondary = if (hc) Color(0xFF1E293B) else Color(0xFF334155),
+                    textMuted = if (hc) Color(0xFF475569) else Color(0xFF64748B),
+                    codeBg = Color(0xFF0F172A).copy(alpha = 0.08f),
+                    scrimColor = Color(0xFFE2E8F0).copy(alpha = scrim),
+                    dialogContainer = Color(0xFFF8FAFC).copy(alpha = 0.98f),
+                    chartGridLine = Color(0xFF0F172A).copy(alpha = if (hc) 0.18f else 0.10f)
+                )
+            }
             return DesktopThemeTokens(
                 sidebarBg = Color(0xFF121826).copy(alpha = sidebarAlpha),
                 surface = Color(0xFF182032).copy(alpha = opacity),

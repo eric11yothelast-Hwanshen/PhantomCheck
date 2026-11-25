@@ -1146,6 +1146,15 @@ fun DesktopSettingsCenter(
                                 )
                             }
                             HorizontalDivider(color = tokens.border)
+                            // #504 Light Mode Toggle
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(DesktopStrings.custLightThemeTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary, modifier = Modifier.weight(1f))
+                                Switch(
+                                    checked = settings.lightTheme,
+                                    onCheckedChange = { lt -> DesktopSettingsStore.update { it.copy(lightTheme = lt) } }
+                                )
+                            }
+                            HorizontalDivider(color = tokens.border)
                             // #488 Page Transition Style Selector (4+ styles + Off)
                             Text(DesktopStrings.custTransitionTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                             @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
