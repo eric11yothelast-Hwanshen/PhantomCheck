@@ -1715,7 +1715,8 @@ object AppDatabaseHolder {
                 AppDatabase.MIGRATION_19_20,
                 AppDatabase.MIGRATION_20_21,
                 AppDatabase.MIGRATION_21_22,
-                AppDatabase.MIGRATION_22_23
+                AppDatabase.MIGRATION_22_23,
+                AppDatabase.MIGRATION_23_24
             ).addCallback(object : androidx.room.RoomDatabase.Callback() {
                 override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                     super.onOpen(db)

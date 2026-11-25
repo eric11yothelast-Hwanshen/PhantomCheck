@@ -2244,7 +2244,14 @@ fun FilterSettingsScreen(
                     ) {
                         Text(stringResource(R.string.settings_s_7263f2))
                     }
-                    Spacer(Modifier.height(8.dp))
+                    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+                    GroupReportSettingsSection(
+                        onShowMessage = { msg ->
+                            scope.launch { snackbarHostState.showSnackbar(msg) }
+                        }
+                    )
+                    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+                    Spacer(Modifier.height(4.dp))
 
                     var tagDispatchTesting by remember { mutableStateOf(false) }
                     var tagDispatchResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }

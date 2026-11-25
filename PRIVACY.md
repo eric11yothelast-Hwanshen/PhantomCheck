@@ -63,6 +63,14 @@
 - **Windows 防火牆一鍵放行（僅手動觸發）**：桌面端「設定中心 → 連線配對」提供免管理員之防火牆規則與網路分類（Private / Public）唯讀檢查；僅於您主動點擊「一鍵允許防火牆」時，才會透過系統 UAC 提權執行 `New-NetFirewallRule`，專門新增 PhantomCheck 的 TCP 輸入允許規則（`PhantomCheck Desktop (Link)` 與 `PhantomCheck Desktop (App)`），**絕不停用系統防火牆、絕不修改其他程式規則、絕不於背景自行提權**，且診斷紀錄僅記載規則狀態與埠號。
   *(**Windows Firewall One-Click Allow (User-Triggered Only)**: Desktop Settings → Connection performs a read-only, non-admin check of firewall rules and network profile categories (Private / Public). Only when you explicitly click "One-Click Allow Firewall" does it request UAC elevation to run `New-NetFirewallRule` solely for PhantomCheck's dedicated inbound TCP allow rules (`PhantomCheck Desktop (Link)` and `PhantomCheck Desktop (App)`). It **never disables Windows Firewall, never modifies other rules, and never elevates in the background**; diagnostic logs record only rule status and port numbers.)*
 
+### 8. 指定來源 AI 分析（群組報告）／ Designated Source AI Analysis (Group Reports)
+- **預設關閉、手動選定**：群組報告功能不會自動監控任何 App 或群組；僅於您在設定頁手動選定特定 App 與群組並啟用後，背景排程（WorkManager）才會針對該群組自上次報告以來的新訊息（雙層硬排除您自行回覆之 `isOwn=true` 訊息）進行摘要。
+  *(**Opt-in Only**: Group Reports never monitor any app or group automatically. Only after you manually select specific apps and groups and enable them in Settings does a background WorkManager job summarize new messages received since the last report, strictly excluding your own replies (`isOwn=true`) at both SQL and application layers.)*
+- **BYOK 直連與額度保護**：選定群組的訊息經提示詞淨化（`sanitizeForPrompt`）後，直接從您的手機傳送至您自行設定的 AI 服務商（BYOK，不經開發者伺服器），並受「省 Token 模式」與每日 AI 額度上限控管；超額或無網路時自動順延，絕不額外外傳其他未選定之群組或敏感記憶。
+  *(**BYOK Direct & Quota-Gated**: Selected group messages are sanitized via `sanitizeForPrompt` and sent directly from your phone to your configured BYOK AI provider (never through developer servers), gated by Token Saver mode and daily AI quotas. Other unselected groups and sensitive memories are never included.)*
+- **本機儲存與隨時關閉**：生成的報告依您的選擇儲存於本機獨立報告檢視（`group_reports`）或記事（`notes`），您可隨時停用或刪除任何目標與報告紀錄。
+  *(**On-Device Storage & Instant Control**: Generated reports are stored locally either in the dedicated report viewer (`group_reports`) or in Notes (`notes`) per your choice, and you can disable or delete any target or report at any time.)*
+
 ---
 
 ## 三、資料匯出與刪除

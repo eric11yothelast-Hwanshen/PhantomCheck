@@ -34,6 +34,7 @@ object SettingsCatalog {
         SettingSearchItem("quick_scam_popup", "quick", R.string.catalog_quick_scam_popup_title, R.string.catalog_quick_scam_popup_desc, R.string.catalog_quick_scam_popup_aliases),
         SettingSearchItem("ai_auto_tag", "quick", R.string.catalog_ai_auto_tag_title, R.string.catalog_ai_auto_tag_desc, R.string.catalog_ai_auto_tag_aliases),
         SettingSearchItem("ai_providers", "ai", R.string.catalog_ai_providers_title, R.string.catalog_ai_providers_desc, R.string.catalog_ai_providers_aliases, page = "ApiKeySettingsActivity"),
+        SettingSearchItem("ai_group_reports", "ai", R.string.group_report_title, R.string.group_report_subtitle, R.string.group_report_aliases),
         SettingSearchItem("ai_tag_dispatch_test", "ai", R.string.catalog_ai_tag_dispatch_test_title, R.string.catalog_ai_tag_dispatch_test_desc, R.string.catalog_ai_tag_dispatch_test_aliases),
         SettingSearchItem("ai_chat_suggestions", "ai", R.string.catalog_ai_chat_suggestions_title, R.string.catalog_ai_chat_suggestions_desc, R.string.catalog_ai_chat_suggestions_aliases),
         SettingSearchItem("ai_chat_tab_behavior", "ai", R.string.catalog_ai_chat_tab_behavior_title, R.string.catalog_ai_chat_tab_behavior_desc, R.string.catalog_ai_chat_tab_behavior_aliases),

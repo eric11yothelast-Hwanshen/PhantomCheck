@@ -1091,6 +1091,7 @@ data class NoteEntity(
     companion object {
         const val SOURCE_MANUAL = "manual"
         const val SOURCE_AUTO = "auto"
+        const val SOURCE_GROUP_REPORT = "group_report"
     }
 }
 
@@ -1661,6 +1662,166 @@ interface WatchTopicDao {
     suspend fun deleteById(id: Long)
 }
 
+/** #509 群組報告監控目標（以 DB 實測 packageName + conversationKey 為主鍵組合） */
+@Entity(
+    tableName = "group_report_targets",
+    indices = [
+        Index(value = ["packageName", "conversationKey"], unique = true),
+        Index(value = ["enabled"])
+    ]
+)
+data class GroupReportTargetEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val packageName: String,
+    val appLabel: String,
+    val conversationKey: String,
+    val enabled: Boolean = true,
+    val scheduleEnabled: Boolean = true,
+    val scheduleHour: Int = 21,
+    val scheduleMinute: Int = 0,
+    val countEnabled: Boolean = false,
+    val countThreshold: Int = 50,
+    val outputMode: String = OUTPUT_REPORT_PAGE,
+    val lastReportAt: Long = 0L,
+    val lastStatus: String = STATUS_IDLE,
+    val lastError: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+) {
+    companion object {
+        const val OUTPUT_REPORT_PAGE = "report_page"
+        const val OUTPUT_NOTE = "note"
+        const val STATUS_IDLE = "idle"
+        const val STATUS_OK = "ok"
+        const val STATUS_DEFERRED = "deferred"
+        const val STATUS_FAILED = "failed"
+    }
+}
+
+/** #509 獨立群組報告實體 */
+@Entity(
+    tableName = "group_reports",
+    indices = [
+        Index(value = ["targetId"]),
+        Index(value = ["createdAt"])
+    ]
+)
+data class GroupReportEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val targetId: Long,
+    val packageName: String,
+    val appLabel: String,
+    val conversationKey: String,
+    val messageCount: Int,
+    val periodStartMs: Long,
+    val periodEndMs: Long,
+    val summaryText: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+data class ObservedGroupAppRow(
+    val packageName: String,
+    val appLabel: String,
+    val groupCount: Int
+)
+
+data class ObservedGroupRow(
+    val conversationKey: String,
+    val messageCount: Int,
+    val latestAt: Long
+)
+
+@Dao
+interface GroupReportDao {
+    @Query(
+        """
+        SELECT packageName, MAX(appLabel) AS appLabel, COUNT(DISTINCT conversationKey) AS groupCount
+        FROM messages
+        WHERE conversationKey IS NOT NULL AND TRIM(conversationKey) != ''
+        GROUP BY packageName
+        ORDER BY MAX(timestamp) DESC
+        """
+    )
+    suspend fun observedGroupApps(): List<ObservedGroupAppRow>
+
+    @Query(
+        """
+        SELECT conversationKey, COUNT(*) AS messageCount, MAX(timestamp) AS latestAt
+        FROM messages
+        WHERE packageName = :packageName
+          AND conversationKey IS NOT NULL AND TRIM(conversationKey) != ''
+        GROUP BY conversationKey
+        ORDER BY MAX(timestamp) DESC
+        """
+    )
+    suspend fun observedGroupsForApp(packageName: String): List<ObservedGroupRow>
+
+    @Query(
+        """
+        SELECT * FROM messages
+        WHERE packageName = :packageName
+          AND conversationKey = :conversationKey
+          AND timestamp > :sinceMs
+          AND isOwn = 0
+        ORDER BY timestamp ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun messagesForGroupSince(
+        packageName: String,
+        conversationKey: String,
+        sinceMs: Long,
+        limit: Int = 200
+    ): List<MessageEntity>
+
+    @Query(
+        """
+        SELECT COUNT(*) FROM messages
+        WHERE packageName = :packageName
+          AND conversationKey = :conversationKey
+          AND timestamp > :sinceMs
+          AND isOwn = 0
+        """
+    )
+    suspend fun countNonOwnSince(
+        packageName: String,
+        conversationKey: String,
+        sinceMs: Long
+    ): Int
+
+    @Query("SELECT * FROM group_report_targets ORDER BY createdAt DESC")
+    fun observeTargets(): Flow<List<GroupReportTargetEntity>>
+
+    @Query("SELECT * FROM group_report_targets ORDER BY createdAt DESC")
+    suspend fun allTargets(): List<GroupReportTargetEntity>
+
+    @Query("SELECT * FROM group_report_targets WHERE enabled = 1 ORDER BY id ASC")
+    suspend fun enabledTargets(): List<GroupReportTargetEntity>
+
+    @Query("SELECT * FROM group_report_targets WHERE id = :id LIMIT 1")
+    suspend fun targetById(id: Long): GroupReportTargetEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertTarget(target: GroupReportTargetEntity): Long
+
+    @Update
+    suspend fun updateTarget(target: GroupReportTargetEntity)
+
+    @Query("DELETE FROM group_report_targets WHERE id = :id")
+    suspend fun deleteTargetById(id: Long)
+
+    @Query("SELECT * FROM group_reports ORDER BY createdAt DESC LIMIT :limit")
+    fun observeReports(limit: Int = 100): Flow<List<GroupReportEntity>>
+
+    @Query("SELECT * FROM group_reports ORDER BY createdAt DESC LIMIT :limit")
+    suspend fun recentReports(limit: Int = 50): List<GroupReportEntity>
+
+    @Insert
+    suspend fun insertReport(report: GroupReportEntity): Long
+
+    @Query("DELETE FROM group_reports WHERE id = :id")
+    suspend fun deleteReportById(id: Long)
+}
+
 @Database(
     entities = [
         MessageEntity::class,
@@ -1687,9 +1848,11 @@ interface WatchTopicDao {
         DiaryDayEntity::class,
         GoalEntity::class,
         GoalProgressEntity::class,
-        WatchTopicEntity::class
+        WatchTopicEntity::class,
+        GroupReportTargetEntity::class,
+        GroupReportEntity::class
     ],
-    version = 23,
+    version = 24,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -1714,6 +1877,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun diaryDao(): DiaryDao
     abstract fun goalDao(): GoalDao
     abstract fun watchTopicDao(): WatchTopicDao
+    abstract fun groupReportDao(): GroupReportDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -2182,6 +2346,61 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "CREATE INDEX IF NOT EXISTS `index_watch_topics_status` ON `watch_topics` (`status`)"
+                )
+            }
+        }
+
+        /** #509 群組報告非破壞性遷移 23→24：純 CREATE TABLE group_report_targets 與 group_reports */
+        val MIGRATION_23_24 = object : Migration(23, 24) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `group_report_targets` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `packageName` TEXT NOT NULL,
+                        `appLabel` TEXT NOT NULL,
+                        `conversationKey` TEXT NOT NULL,
+                        `enabled` INTEGER NOT NULL,
+                        `scheduleEnabled` INTEGER NOT NULL,
+                        `scheduleHour` INTEGER NOT NULL,
+                        `scheduleMinute` INTEGER NOT NULL,
+                        `countEnabled` INTEGER NOT NULL,
+                        `countThreshold` INTEGER NOT NULL,
+                        `outputMode` TEXT NOT NULL,
+                        `lastReportAt` INTEGER NOT NULL,
+                        `lastStatus` TEXT NOT NULL,
+                        `lastError` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_group_report_targets_packageName_conversationKey` ON `group_report_targets` (`packageName`, `conversationKey`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_report_targets_enabled` ON `group_report_targets` (`enabled`)"
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `group_reports` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `targetId` INTEGER NOT NULL,
+                        `packageName` TEXT NOT NULL,
+                        `appLabel` TEXT NOT NULL,
+                        `conversationKey` TEXT NOT NULL,
+                        `messageCount` INTEGER NOT NULL,
+                        `periodStartMs` INTEGER NOT NULL,
+                        `periodEndMs` INTEGER NOT NULL,
+                        `summaryText` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_reports_targetId` ON `group_reports` (`targetId`)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_group_reports_createdAt` ON `group_reports` (`createdAt`)"
                 )
             }
         }

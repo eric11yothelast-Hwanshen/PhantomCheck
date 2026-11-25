@@ -327,6 +327,7 @@ class MainActivity : ComponentActivity() {
         HeartbeatPolicy.schedule(applicationContext)
         com.phantom.checker.data.MemoryExpiryPolicy.schedule(applicationContext)
         com.phantom.checker.data.ScamImmunityPolicy.schedule(applicationContext)
+        com.phantom.checker.service.GroupReportEngine.scheduleOrCancel(applicationContext)
         StatsForegroundService.startOrRefresh(applicationContext)
         parseIntentTab(intent)
         setContent {

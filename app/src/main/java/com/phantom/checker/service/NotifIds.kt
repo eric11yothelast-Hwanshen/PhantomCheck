@@ -37,6 +37,9 @@ object NotifIds {
     private const val PROACTIVE_PUSH_BASE = 1090
     private const val PROACTIVE_PUSH_SPAN = 10
 
+    private const val GROUP_REPORT_BASE = 1100
+    private const val GROUP_REPORT_SPAN = 40L
+
     fun calendarInsight(hash: Int): Int =
         CALENDAR_INSIGHT_BASE + Math.floorMod(hash, CALENDAR_INSIGHT_SPAN)
 
@@ -45,6 +48,9 @@ object NotifIds {
 
     fun proactivePush(contentHash: Int): Int =
         PROACTIVE_PUSH_BASE + Math.floorMod(contentHash, PROACTIVE_PUSH_SPAN)
+
+    fun groupReport(targetId: Long): Int =
+        GROUP_REPORT_BASE + Math.floorMod(targetId, GROUP_REPORT_SPAN).toInt()
 
     private const val SCAM_ALERT_BASE = 2000
     private const val SCAM_ALERT_SPAN = 20000L
