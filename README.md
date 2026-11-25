@@ -51,7 +51,7 @@ Before use, please read the [Privacy Policy (PRIVACY.md)](PRIVACY.md) and [Discl
 
 For the complete changelog, see [CHANGELOG.md](CHANGELOG.md).
 
-### v4.9.0 Release Highlights (versionCode 57, Desktop 0.6.0, 2026-11-24)
+### v4.9.0 Release Highlights (versionCode 57, Desktop 0.6.0, 2026-11-25)
 
 - **#494–#504 Cross-End Desktop & Android Upgrades (PR #506)**:
   - **Desktop Messaging, Notifications & Themes (#494, #497, #498, #504)**: Grouped Desktop Messages into conversation threads (`packageName::conversationKey`) with smart auto-scroll and batch multi-select (mark read / mute apps); added 4-in-1 Desktop Notification Center (auto-dismissing top banner, fullscreen-aware bottom-right toast, draggable edge-snapping floating AI orb, 8-item system tray menu); added zero-dep `DesktopIcons`, `PackageManager`-resolved friendly app names in stats (7d/30d/Hourly, Today's Active Apps, Weekly Top 5), Light Mode frosted theme toggle, and `Alt+1..6` shortcuts.

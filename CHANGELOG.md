@@ -3,7 +3,7 @@
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses Semantic Versioning.
 
-## [4.9.0] - 2026-11-24
+## [4.9.0] - 2026-11-25
 
 - **Tag 對照**：[`v4.8.0...v4.9.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.8.0...v4.9.0)（`versionCode = 57`、`versionName = "4.9.0"`；桌面端 `desktopVersion = "0.6.0"`）
 - **發佈資產（雙 APK ＋ 桌面端 Windows Inno Setup 單一安裝檔）**：
@@ -22,7 +22,7 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 ### 新增、變更與修正
 - **#494 桌面端訊息對話串化與智慧捲動（PR #506）**：左欄改以 `packageName::conversationKey` 分組顯示 App 名稱／寄件人／單行預覽／相對時間／未讀數／風險色點，右側展開完整對話串（`ConversationReq` 上限 100 則），支援對話級 5 過濾與不干擾閱讀之智慧自動捲動。
 - **#495 桌面開機自啟驗證與單實例防雙開（PR #506）**：新增 `DesktopSingleInstance.kt` 實作 `FileLock`＋loopback IPC 單實例與聚焦喚醒；強化 `DesktopSettingsStore` 之 Windows `HKCU\...\Run` 寫入讀回驗證、失效路徑修復與 `StartupApproved\Run` 停用偵測。
-- **#496 Inno 升級防衝突與 MSI 退場（PR #506）**：更新 `PhantomCheckDesktop.iss` 清理舊 MSI/舊 Inno 並保留 `%APPDATA%` 設定與配對；`.github/workflows/build.yml` 與 `release.yml` 停產 `.msi` 并補齊 `README.md`／`README.zh-TW.md` 雙語升級排解。
+- **#496 Inno 升級防衝突與 MSI 退場（PR #506）**：更新 `PhantomCheckDesktop.iss` 清理舊 MSI/舊 Inno 並保留 `%APPDATA%` 設定與配對；`.github/workflows/build.yml` 與 `release.yml` 停產 `.msi` 並補齊 `README.md`／`README.zh-TW.md` 雙語升級排解。
 - **#497 桌面通知體驗四合一（PR #506）**：新增 `DesktopNotificationCenter.kt`，整合自動收回頂部橫幅（3/5/8/不收回＋覆寫重置計時）、無邊框右下 Toast（Windows `SHQueryUserNotificationState` 全螢幕不彈＋hover 暫停＋點擊跳轉對話）、可拖曳吸邊記憶位置之懸浮助手球（小型 AI 對話＋自適應氣泡＋勿擾僅徽章）與 8 項系統匣右鍵選單／左鍵單擊開窗。
 - **#498 桌面全面圖示化與統計友善 App 名稱（PR #506）**：新增零依賴 `DesktopIcons.kt` 向量圖示系統與 `DesktopAppLabels.kt`；加法式擴充 `StatsSnapshotDto` 與 `ActiveAppStatDto`，手機端以 `PackageManager` 快取解析友善 App 名稱（附離線映射表），桌面統計頁支援 7 日／30 日／每小時圖表切換、風險比例條、今日活躍 App 與本週 Top 5。
 - **#499 記事待辦完整 CRUD 雙端同步與 AI 引用通知（PR #506）**：修復手機端 `NotesTab` 手動與桌面新增記事未綁定 `clickable` 導致無法點擊編輯之問題；協定加法式補齊待辦優先級／備註／到期時間與記事編輯／刪除／置頂／色標（`NOTE_EDIT`/`DELETE`/`PIN_TOGGLE`）；桌面端升級完整待辦與記事表單、去重到期系統匣提醒，AI 助手新增引用最新通知與未讀摘要快捷指令。
