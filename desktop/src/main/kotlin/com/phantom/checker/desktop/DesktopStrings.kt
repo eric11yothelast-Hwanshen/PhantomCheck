@@ -533,4 +533,23 @@ object DesktopStrings {
 
     // #514 Floating Orb Drag & Edge Snap
     val floatingSnapToEdgeLabel get() = t("鬆手自動吸附最近螢幕邊緣（8px 邊距）", "Auto-snap to nearest screen edge on release (8px margin)")
+
+    // #515 Floating Orb AI Sync, Radial Menu & Fullscreen Auto-Hide
+    val floatingFullscreenLabel get() = t("全螢幕自動隱藏懸浮球", "Fullscreen orb auto-hide")
+    val fullscreenAutoHide get() = t("自動隱藏（預設）", "Auto-hide (Default)")
+    val fullscreenNeverHide get() = t("永不隱藏", "Never hide")
+    val fullscreenHideHint get() = t("隱藏並提示", "Hide with hint")
+    val floatingMenuCustomize get() = t("半圓快捷選單自訂（點擊開關）", "Radial menu actions (click to toggle)")
+    val radialAi get() = t("AI 對話", "AI Chat")
+    val radialMain get() = t("主視窗", "Main")
+    val radialSearch get() = t("搜尋", "Search")
+    val radialTodos get() = t("待辦", "Todos")
+    val radialDnd get() = t("勿擾", "DND")
+    val radialNote get() = t("筆記", "Note")
+    val radialClipboard get() = t("剪貼簿", "Clip")
+    val radialSettings get() = t("設定", "Settings")
+    val enterSendHint get() = t("Enter 送出 · Shift+Enter 換行", "Enter to send · Shift+Enter newline")
+    val copyBtn get() = t("複製", "Copy")
+    val copiedFeedback get() = t("已複製", "Copied")
+    val syncedWithPhoneChip get() = t("已同步手機會話", "Synced w/ phone")
 }

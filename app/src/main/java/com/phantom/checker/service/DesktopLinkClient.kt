@@ -1095,8 +1095,35 @@ object DesktopLinkClient {
                     }
                     val existing = db.chatDao().messagesForSession(sid).takeLast(12).map { ChatMessage(it.role, it.content) }
                     db.chatDao().insertMessage(ChatMessageEntity(sessionId = sid, role = ChatMessageEntity.ROLE_USER, content = text))
+                    // #515 修正懸浮球與桌面端 AI 訊息計數失真：直接自手機 Room 注入精確統計與近 30 則淨化摘要
+                    val calToday = java.util.Calendar.getInstance().apply {
+                        set(java.util.Calendar.HOUR_OF_DAY, 0)
+                        set(java.util.Calendar.MINUTE, 0)
+                        set(java.util.Calendar.SECOND, 0)
+                        set(java.util.Calendar.MILLISECOND, 0)
+                    }.timeInMillis
+                    val totalMsgs = runCatching { db.messageDao().todayCount(0L) }.getOrDefault(0)
+                    val todayMsgs = runCatching { db.messageDao().todayCount(calToday) }.getOrDefault(0)
+                    val unreadMsgs = runCatching { db.messageDao().unreadCount() }.getOrDefault(0)
+                    val recentMsgs = runCatching { db.messageDao().recent().take(30) }.getOrDefault(emptyList())
+                    val contextBlock = buildString {
+                        append(AiClient.buildRagSummaryPrompt())
+                        append("\n\n<本機訊息快照>\n")
+                        append("總訊息數：$totalMsgs 則；今日訊息數：$todayMsgs 則；未讀訊息數：$unreadMsgs 則。\n")
+                        if (recentMsgs.isNotEmpty()) {
+                            append("最近 ${recentMsgs.size} 則訊息（最新在前）：\n")
+                            recentMsgs.forEach { m ->
+                                val app = AiClient.sanitizeForPrompt(m.appLabel.ifBlank { m.packageName }).take(20)
+                                val sender = AiClient.sanitizeForPrompt(m.sender).take(24)
+                                val body = AiClient.sanitizeForPrompt(m.content).replace("\n", " ").take(120)
+                                val readTag = if (m.isRead) "已讀" else "未讀"
+                                append("- [$app] $sender ($readTag/${m.riskLabel}): $body\n")
+                            }
+                        }
+                        append("</本機訊息快照>")
+                    }
                     val result = AiClient.chatAssistant(
-                        systemPrompt = AiClient.buildRagSummaryPrompt(),
+                        systemPrompt = contextBlock,
                         history = existing,
                         userMessage = text,
                         context = appCtx

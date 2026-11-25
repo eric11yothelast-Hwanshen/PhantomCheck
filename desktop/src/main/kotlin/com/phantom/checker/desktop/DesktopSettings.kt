@@ -29,6 +29,11 @@ enum class PageTransitionStyle(val key: String) {
     SCALE_FADE("scale_fade"),
     NONE("none")
 }
+enum class FullscreenHideMode(val key: String) {
+    AUTO_HIDE("auto_hide"),
+    NEVER_HIDE("never_hide"),
+    HIDE_WITH_HINT("hide_with_hint")
+}
 
 /**
  * #468 / #479 / #488 / #497 桌機端設定資料模型（10 系統設定＋16 既有自訂設定＋#488 轉場與深淺＋#497 通知中心四合一＋視窗位置記憶）。
@@ -108,6 +113,9 @@ data class DesktopSettings(
     val floatingOnlyStarred: Boolean = false,
     // #514 Floating orb edge-snap toggle
     val floatingSnapToEdge: Boolean = true,
+    // #515 Floating orb radial menu order & fullscreen auto-hide mode
+    val floatingFullscreenMode: FullscreenHideMode = FullscreenHideMode.AUTO_HIDE,
+    val floatingMenuOrder: String = "ai,main,search,todos,dnd,note,clipboard,settings",
     // Window geometry persistence
     val windowX: Int = Int.MIN_VALUE,
     val windowY: Int = Int.MIN_VALUE,
@@ -220,6 +228,8 @@ object DesktopSettingsStore {
             floatingMaxPerMinute = p.getProperty("floatingMaxPerMinute", "0").toIntOrNull()?.coerceIn(0, 20) ?: 0,
             floatingOnlyStarred = p.getProperty("floatingOnlyStarred", "false").toBoolean(),
             floatingSnapToEdge = p.getProperty("floatingSnapToEdge", "true").toBoolean(),
+            floatingFullscreenMode = FullscreenHideMode.entries.firstOrNull { it.key == p.getProperty("floatingFullscreenMode", "auto_hide") } ?: FullscreenHideMode.AUTO_HIDE,
+            floatingMenuOrder = p.getProperty("floatingMenuOrder", "ai,main,search,todos,dnd,note,clipboard,settings").ifBlank { "ai,main,search,todos,dnd,note,clipboard,settings" },
             windowX = p.getProperty("windowX", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowY = p.getProperty("windowY", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowWidth = p.getProperty("windowWidth", "1280").toIntOrNull()?.coerceAtLeast(1024) ?: 1280,
@@ -306,6 +316,8 @@ object DesktopSettingsStore {
             p.setProperty("floatingMaxPerMinute", s.floatingMaxPerMinute.toString())
             p.setProperty("floatingOnlyStarred", s.floatingOnlyStarred.toString())
             p.setProperty("floatingSnapToEdge", s.floatingSnapToEdge.toString())
+            p.setProperty("floatingFullscreenMode", s.floatingFullscreenMode.key)
+            p.setProperty("floatingMenuOrder", s.floatingMenuOrder)
             p.setProperty("windowX", s.windowX.toString())
             p.setProperty("windowY", s.windowY.toString())
             p.setProperty("windowWidth", s.windowWidth.toString())

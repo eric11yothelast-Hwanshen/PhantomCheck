@@ -23,11 +23,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -49,18 +52,30 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import com.google.gson.Gson
 import com.phantom.checker.shared.ChatBubbleDto
+import com.phantom.checker.shared.ChatHistoryReq
+import com.phantom.checker.shared.ChatHistoryRes
 import com.phantom.checker.shared.ChatReplyRes
 import com.phantom.checker.shared.ChatSendReq
+import com.phantom.checker.shared.ChatSessionSummaryDto
+import com.phantom.checker.shared.ChatSessionsListRes
 import com.phantom.checker.shared.LinkMsgType
 import com.phantom.checker.shared.MessageSummaryDto
 import kotlinx.coroutines.Dispatchers
@@ -72,7 +87,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.GraphicsEnvironment
 import java.awt.Rectangle
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 import java.util.UUID
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * #497 桌面通知事件負載（供頂部橫幅、右下 Toast、懸浮助手氣泡共用，僅含既有鏡射欄位、嚴守隱私紅線）。
@@ -618,15 +639,29 @@ internal fun clampToAllMonitors(x: Int, y: Int, w: Int, h: Int): Pair<Int, Int> 
     return cx to cy
 }
 
+private fun mergeChatBubblesDedup(existing: List<ChatBubbleDto>, incoming: List<ChatBubbleDto>): List<ChatBubbleDto> {
+    val result = existing.toMutableList()
+    for (b in incoming) {
+        val dup = result.any {
+            (b.id > 0L && it.id == b.id && it.role == b.role) ||
+                (it.role == b.role && it.content == b.content && kotlin.math.abs(it.createdAt - b.createdAt) < 5_000L)
+        }
+        if (!dup) result.add(b)
+    }
+    return result.sortedBy { it.createdAt }.takeLast(60)
+}
+
 /**
- * #497 C / #514：懸浮助手球（AWT MouseInfo 固定抓取點螢幕座標拖曳、多螢幕 DPI 零漂移、鬆手 8px 邊距 spring 吸附）。
+ * #497 C / #514 / #515：懸浮助手球（AWT MouseInfo 固定抓取點螢幕座標拖曳、多螢幕 DPI 零漂移、鬆手 8px 邊距 spring 吸附、
+ * 半圓 180° 快捷扇形選單、與手機雙向同步 AI 對話、Enter 送出 / Shift+Enter 換行、全螢幕自動隱藏）。
  */
 @Composable
 fun DesktopFloatingAssistantWindow(
     settings: DesktopSettings,
     server: DesktopLinkServer,
     onOpenMainWindow: () -> Unit,
-    onOpenConversation: (MirrorNotificationEvent) -> Unit
+    onOpenConversation: (MirrorNotificationEvent) -> Unit,
+    onOpenTab: (String) -> Unit = { onOpenMainWindow() }
 ) {
     if (!settings.floatingAssistantEnabled) return
 
@@ -638,6 +673,29 @@ fun DesktopFloatingAssistantWindow(
     val accentColor = remember(settings.accentPreset, settings.customAccentHex) {
         DesktopPalette.resolveAccentColor(settings.accentPreset, settings.customAccentHex)
     }
+
+    val serverState by server.state.collectAsState()
+    val phoneStatus by DesktopDeviceStatusHolder.status.collectAsState()
+
+    // #515 Fullscreen auto-hide (5s cadence only when enabled & not in NEVER_HIDE mode; zero tight polling)
+    var isFullscreenHidden by remember { mutableStateOf(false) }
+    LaunchedEffect(settings.floatingFullscreenMode) {
+        if (settings.floatingFullscreenMode == FullscreenHideMode.NEVER_HIDE) {
+            isFullscreenHidden = false
+            return@LaunchedEffect
+        }
+        while (true) {
+            val fs = withContext(Dispatchers.IO) { DesktopFullscreenDetector.isFullscreenAppActive() }
+            if (fs != isFullscreenHidden) {
+                isFullscreenHidden = fs
+                if (fs && settings.floatingFullscreenMode == FullscreenHideMode.HIDE_WITH_HINT) {
+                    DesktopDiagnostics.info("FloatingOrb", "Hidden while fullscreen app is active")
+                }
+            }
+            delay(5_000L)
+        }
+    }
+    if (isFullscreenHidden) return
 
     val initialBounds = remember { primaryWorkAreaBounds() }
     val orbSize = settings.floatingOrbSizeDp.coerceIn(28, 56)
@@ -659,10 +717,14 @@ fun DesktopFloatingAssistantWindow(
     val activeMonitor = remember(orbX, orbY, orbSize) { workAreaContaining(orbX + orbSize / 2, orbY + orbSize / 2) }
 
     var aiExpanded by remember { mutableStateOf(false) }
+    var radialOpen by remember { mutableStateOf(false) }
     var miniChatInput by remember { mutableStateOf("") }
     var miniChatSending by remember { mutableStateOf(false) }
     var miniChatSessionId by remember { mutableLongStateOf(0L) }
+    var miniChatSessions by remember { mutableStateOf<List<ChatSessionSummaryDto>>(emptyList()) }
     var miniChatBubbles by remember { mutableStateOf<List<ChatBubbleDto>>(emptyList()) }
+    var miniFontDeltaSp by remember { mutableIntStateOf(0) }
+    var copiedBubbleId by remember { mutableLongStateOf(-1L) }
 
     val bubbleEvent by DesktopNotificationBus.latestFloatingBubble.collectAsState()
     val unreadBadge by DesktopNotificationBus.floatingUnreadBadge.collectAsState()
@@ -672,17 +734,59 @@ fun DesktopFloatingAssistantWindow(
     val bubbleHoverSource = remember { MutableInteractionSource() }
     val bubbleHovered by bubbleHoverSource.collectIsHoveredAsState()
 
-    // Collect CHAT_REPLY for mini AI popup
+    // #515 Sync sessions & history with phone whenever AI popup expands or reconnects
+    LaunchedEffect(aiExpanded, serverState.connectedPhones.size) {
+        if (aiExpanded && serverState.connectedPhones.isNotEmpty()) {
+            server.sendCommand(LinkMsgType.CHAT_SESSIONS_LIST, UUID.randomUUID().toString(), emptyMap<String, String>())
+            if (miniChatSessionId > 0L) {
+                server.sendCommand(LinkMsgType.CHAT_HISTORY, UUID.randomUUID().toString(), ChatHistoryReq(sessionId = miniChatSessionId))
+            }
+        }
+    }
+
+    // Safety timeout for miniChatSending (130s)
+    LaunchedEffect(miniChatSending) {
+        if (miniChatSending) {
+            delay(130_000L)
+            if (miniChatSending) {
+                miniChatSending = false
+            }
+        }
+    }
+
+    // Collect CHAT_SESSIONS_LIST_RES, CHAT_HISTORY_RES, CHAT_REPLY for bidirectional sync
     LaunchedEffect(server) {
         server.events.collect { env ->
-            if (env.type == LinkMsgType.CHAT_REPLY) {
-                val res = runCatching { gson.fromJson(env.payloadJson, ChatReplyRes::class.java) }.getOrNull() ?: return@collect
-                if (miniChatSending) {
-                    miniChatSending = false
-                    if (res.sessionId > 0L) miniChatSessionId = res.sessionId
-                    val content = if (res.ok) res.content else "${res.errorCode}: ${res.errorMessage}"
-                    miniChatBubbles = (miniChatBubbles + ChatBubbleDto(System.currentTimeMillis(), "assistant", content, System.currentTimeMillis()))
-                        .takeLast(40)
+            when (env.type) {
+                LinkMsgType.CHAT_SESSIONS_LIST_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, ChatSessionsListRes::class.java) }.getOrNull() ?: return@collect
+                    miniChatSessions = res.sessions
+                    if (miniChatSessionId == 0L && res.sessions.isNotEmpty()) {
+                        miniChatSessionId = res.sessions.first().id
+                        if (aiExpanded) {
+                            server.sendCommand(LinkMsgType.CHAT_HISTORY, UUID.randomUUID().toString(), ChatHistoryReq(sessionId = miniChatSessionId))
+                        }
+                    }
+                }
+                LinkMsgType.CHAT_HISTORY_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, ChatHistoryRes::class.java) }.getOrNull() ?: return@collect
+                    if (res.sessionId == miniChatSessionId || miniChatSessionId == 0L) {
+                        miniChatSessionId = res.sessionId
+                        miniChatBubbles = mergeChatBubblesDedup(emptyList(), res.messages)
+                    }
+                }
+                LinkMsgType.CHAT_REPLY -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, ChatReplyRes::class.java) }.getOrNull() ?: return@collect
+                    if (miniChatSending || (res.sessionId > 0L && res.sessionId == miniChatSessionId)) {
+                        miniChatSending = false
+                        if (res.sessionId > 0L) miniChatSessionId = res.sessionId
+                        val content = if (res.ok) res.content else "${res.errorCode}: ${res.errorMessage}"
+                        val now = System.currentTimeMillis()
+                        miniChatBubbles = mergeChatBubblesDedup(
+                            miniChatBubbles,
+                            listOf(ChatBubbleDto(now, "assistant", content, now))
+                        )
+                    }
                 }
             }
         }
@@ -699,22 +803,73 @@ fun DesktopFloatingAssistantWindow(
     val isOnRightHalf = orbX + orbSize / 2 > activeMonitor.x + activeMonitor.width / 2
     val isOnBottomHalf = orbY + orbSize / 2 > activeMonitor.y + activeMonitor.height / 2
 
+    val radialItems = remember(settings.floatingMenuOrder) {
+        val parsed = settings.floatingMenuOrder.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        if (parsed.isEmpty()) listOf("ai", "main", "search", "todos", "dnd", "note", "clipboard", "settings") else parsed.take(8)
+    }
+
+    fun sendMiniChat(rawText: String) {
+        val text = rawText.trim()
+        if (text.isBlank() || miniChatSending) return
+        miniChatInput = ""
+        miniChatSending = true
+        val now = System.currentTimeMillis()
+        miniChatBubbles = mergeChatBubblesDedup(miniChatBubbles, listOf(ChatBubbleDto(now, "user", text, now)))
+        scope.launch {
+            val ok = server.sendCommand(LinkMsgType.CHAT_SEND, UUID.randomUUID().toString(), ChatSendReq(text = text, sessionId = miniChatSessionId))
+            if (!ok) {
+                miniChatSending = false
+                miniChatBubbles = mergeChatBubblesDedup(
+                    miniChatBubbles,
+                    listOf(ChatBubbleDto(System.currentTimeMillis(), "assistant", DesktopStrings.commandNotSentDisconnected, System.currentTimeMillis()))
+                )
+            }
+        }
+    }
+
+    fun executeRadialAction(actionKey: String) {
+        radialOpen = false
+        when (actionKey) {
+            "ai" -> aiExpanded = true
+            "main" -> onOpenMainWindow()
+            "search" -> onOpenTab("MESSAGES")
+            "todos" -> onOpenTab("TODOS")
+            "dnd" -> DesktopSettingsStore.update { it.copy(quickDndActive = !it.quickDndActive) }
+            "note" -> onOpenTab("TODOS")
+            "clipboard" -> onOpenTab("TOOLS")
+            "settings" -> onOpenTab("SETTINGS")
+            else -> onOpenMainWindow()
+        }
+    }
+
     val winW: Int
     val winH: Int
     val winX: Int
     val winY: Int
     when {
         aiExpanded -> {
-            winW = 360
-            winH = 440
+            winW = 400
+            winH = 500
             winX = (if (isOnRightHalf) orbX + orbSize - winW else orbX).coerceIn(activeMonitor.x, (activeMonitor.x + activeMonitor.width - winW).coerceAtLeast(activeMonitor.x))
             winY = (if (isOnBottomHalf) orbY + orbSize - winH else orbY).coerceIn(activeMonitor.y, (activeMonitor.y + activeMonitor.height - winH).coerceAtLeast(activeMonitor.y))
+        }
+        radialOpen -> {
+            winW = 240
+            winH = 260
+            winX = (if (isOnRightHalf) orbX + orbSize + 18 - winW else orbX).coerceIn(activeMonitor.x, (activeMonitor.x + activeMonitor.width - winW).coerceAtLeast(activeMonitor.x))
+            winY = (orbY + orbSize / 2 - winH / 2).coerceIn(activeMonitor.y, (activeMonitor.y + activeMonitor.height - winH).coerceAtLeast(activeMonitor.y))
         }
         bubbleEvent != null -> {
             winW = orbSize + 296
             winH = maxOf(orbSize + 24, 108)
             winX = (if (isOnRightHalf) orbX + orbSize - winW else orbX).coerceIn(activeMonitor.x, (activeMonitor.x + activeMonitor.width - winW).coerceAtLeast(activeMonitor.x))
             winY = (if (isOnBottomHalf) orbY + orbSize - winH else orbY).coerceIn(activeMonitor.y, (activeMonitor.y + activeMonitor.height - winH).coerceAtLeast(activeMonitor.y))
+        }
+        orbHovered -> {
+            winW = orbSize + 200
+            winH = maxOf(orbSize + 22, 64)
+            winX = (if (isOnRightHalf) orbX + orbSize + 18 - winW else orbX).coerceIn(activeMonitor.x, (activeMonitor.x + activeMonitor.width - winW).coerceAtLeast(activeMonitor.x))
+            winY = orbY.coerceIn(activeMonitor.y, (activeMonitor.y + activeMonitor.height - winH).coerceAtLeast(activeMonitor.y))
         }
         else -> {
             winW = orbSize + 18
@@ -790,13 +945,15 @@ fun DesktopFloatingAssistantWindow(
         }
     }
 
+    val popupBgColor = if (settings.lightTheme) Color(0xF5FFFFFF) else Color(0xF5121826)
+
     Window(
-        onCloseRequest = { aiExpanded = false },
+        onCloseRequest = { aiExpanded = false; radialOpen = false },
         state = floatingState,
         undecorated = true,
         transparent = true,
         resizable = false,
-        focusable = aiExpanded,
+        focusable = aiExpanded || radialOpen,
         alwaysOnTop = true,
         title = DesktopStrings.floatingAssistantTitle
     ) {
@@ -808,12 +965,12 @@ fun DesktopFloatingAssistantWindow(
             )
         ) {
             if (aiExpanded) {
-                // Compact AI Chat Popup
+                // #515 Upgraded AI Chat Popup (bidirectional sync, Enter/Shift+Enter, quick commands, copy, font size)
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(18.dp))
-                        .background(Color(0xF5121826))
+                        .background(popupBgColor)
                         .border(1.dp, accentColor.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -823,12 +980,63 @@ fun DesktopFloatingAssistantWindow(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(DesktopStrings.floatingAssistantTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary, fontWeight = FontWeight.SemiBold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(DesktopStrings.floatingAssistantTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary, fontWeight = FontWeight.SemiBold)
+                            if (serverState.connectedPhones.isNotEmpty()) {
+                                Text(
+                                    text = DesktopStrings.syncedWithPhoneChip,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = DesktopPalette.GlassSuccess,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(DesktopPalette.GlassSuccess.copy(alpha = 0.14f))
+                                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { miniFontDeltaSp = (miniFontDeltaSp - 1).coerceAtLeast(-2) }) { Text("A-") }
+                            TextButton(onClick = { miniFontDeltaSp = (miniFontDeltaSp + 1).coerceAtMost(4) }) { Text("A+") }
                             TextButton(onClick = { aiExpanded = false; onOpenMainWindow() }) { Text(DesktopStrings.trayOpen) }
                             TextButton(onClick = { aiExpanded = false }) { Text("✕") }
                         }
                     }
+
+                    // Session switcher row (synced with phone AI Assistant)
+                    if (miniChatSessions.isNotEmpty()) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            items(miniChatSessions.take(6), key = { it.id }) { sess ->
+                                FilterChip(
+                                    selected = sess.id == miniChatSessionId,
+                                    onClick = {
+                                        miniChatSessionId = sess.id
+                                        scope.launch {
+                                            server.sendCommand(LinkMsgType.CHAT_HISTORY, UUID.randomUUID().toString(), ChatHistoryReq(sessionId = sess.id))
+                                        }
+                                    },
+                                    label = { Text(sess.title.ifBlank { "#${sess.id}" }.take(12), maxLines = 1) }
+                                )
+                            }
+                        }
+                    }
+
+                    // Quick command chips
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val quickPrompts = listOf(
+                            DesktopStrings.t("今日訊息摘要", "Today's summary") to DesktopStrings.t("請摘要我今天的訊息重點與未讀數", "Summarize my messages today and unread count"),
+                            DesktopStrings.t("可疑/詐騙檢查", "Scam check") to DesktopStrings.t("今天有可疑或詐騙訊息嗎？", "Are there any suspicious or scam messages today?"),
+                            DesktopStrings.t("重要待辦", "Action items") to DesktopStrings.t("幫我整理今天訊息中的待辦事項", "Extract action items from today's messages")
+                        )
+                        items(quickPrompts) { (label, prompt) ->
+                            FilterChip(
+                                selected = false,
+                                enabled = !miniChatSending,
+                                onClick = { sendMiniChat(prompt) },
+                                label = { Text(label, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+
                     LazyColumn(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -845,12 +1053,33 @@ fun DesktopFloatingAssistantWindow(
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
                                         .background(if (isUser) accentColor.copy(alpha = 0.18f) else tokens.surfaceElevated)
-                                        .padding(8.dp)
+                                        .padding(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     if (isUser) {
-                                        Text(b.content, style = MaterialTheme.typography.bodySmall, color = tokens.textPrimary)
+                                        Text(
+                                            text = b.content,
+                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = (13 + miniFontDeltaSp).sp),
+                                            color = tokens.textPrimary
+                                        )
                                     } else {
                                         DesktopMarkdownText(markdown = b.content, textColor = tokens.textPrimary, accentColor = accentColor)
+                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                            Text(
+                                                text = if (copiedBubbleId == b.id) DesktopStrings.copiedFeedback else DesktopStrings.copyBtn,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = accentColor,
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .clickable {
+                                                        runCatching {
+                                                            Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(b.content), null)
+                                                            copiedBubbleId = b.id
+                                                        }
+                                                    }
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -861,38 +1090,104 @@ fun DesktopFloatingAssistantWindow(
                             }
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
                         OutlinedTextField(
                             value = miniChatInput,
                             onValueChange = { miniChatInput = it },
-                            placeholder = { Text(DesktopStrings.floatingAiHint, style = MaterialTheme.typography.bodySmall) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
+                            placeholder = { Text(DesktopStrings.enterSendHint, style = MaterialTheme.typography.labelSmall) },
+                            maxLines = 4,
+                            modifier = Modifier
+                                .weight(1f)
+                                .onPreviewKeyEvent { keyEvent ->
+                                    if (keyEvent.type == KeyEventType.KeyDown &&
+                                        (keyEvent.key == Key.Enter || keyEvent.key == Key.NumPadEnter) &&
+                                        !keyEvent.isShiftPressed
+                                    ) {
+                                        sendMiniChat(miniChatInput)
+                                        true
+                                    } else false
+                                }
                         )
                         SpringButton(
                             enabled = miniChatInput.isNotBlank() && !miniChatSending,
                             animationsEnabled = settings.animationsEnabled,
-                            onClick = {
-                                val text = miniChatInput.trim()
-                                if (text.isNotBlank()) {
-                                    miniChatInput = ""
-                                    miniChatSending = true
-                                    val now = System.currentTimeMillis()
-                                    miniChatBubbles = (miniChatBubbles + ChatBubbleDto(now, "user", text, now)).takeLast(40)
-                                    scope.launch {
-                                        val ok = server.sendCommand(LinkMsgType.CHAT_SEND, UUID.randomUUID().toString(), ChatSendReq(text = text, sessionId = miniChatSessionId))
-                                        if (!ok) {
-                                            miniChatSending = false
-                                            miniChatBubbles = (miniChatBubbles + ChatBubbleDto(System.currentTimeMillis(), "assistant", DesktopStrings.commandNotSentDisconnected, System.currentTimeMillis())).takeLast(40)
-                                        }
-                                    }
-                                }
-                            }
+                            onClick = { sendMiniChat(miniChatInput) }
                         ) { Text(DesktopStrings.chatSend) }
                     }
                 }
+            } else if (radialOpen) {
+                // #515 Semi-circular 180-deg radial fan-out menu with spring(0.62f, 380f) & i*24ms stagger
+                val radiusPx = 86f
+                val centerX = if (isOnRightHalf) (winW - orbSize / 2 - 14) else (orbSize / 2 + 14)
+                val centerY = winH / 2
+                Box(modifier = Modifier.fillMaxSize()) {
+                    radialItems.forEachIndexed { idx, actionKey ->
+                        val progress = remember(radialOpen, idx) { androidx.compose.animation.core.Animatable(if (settings.animationsEnabled) 0f else 1f) }
+                        LaunchedEffect(radialOpen, settings.animationsEnabled) {
+                            if (settings.animationsEnabled) {
+                                delay(idx * 24L)
+                                progress.animateTo(
+                                    1f,
+                                    androidx.compose.animation.core.spring(dampingRatio = 0.62f, stiffness = 380f)
+                                )
+                            } else {
+                                progress.snapTo(1f)
+                            }
+                        }
+                        val count = radialItems.size.coerceAtLeast(1)
+                        val frac = if (count == 1) 0.5f else idx.toFloat() / (count - 1).toFloat()
+                        // Left semicircle [90°, 270°] if orb is on right half; right semicircle [-90°, 90°] if on left half
+                        val angleDeg = if (isOnRightHalf) (105.0 + frac * 150.0) else (-75.0 + frac * 150.0)
+                        val rad = angleDeg * PI / 180.0
+                        val p = progress.value
+                        val dx = (cos(rad) * radiusPx * p).roundToInt()
+                        val dy = (sin(rad) * radiusPx * p).roundToInt()
+                        val label = when (actionKey) {
+                            "ai" -> DesktopStrings.radialAi
+                            "main" -> DesktopStrings.radialMain
+                            "search" -> DesktopStrings.radialSearch
+                            "todos" -> DesktopStrings.radialTodos
+                            "dnd" -> if (settings.quickDndActive) "${DesktopStrings.radialDnd}✓" else DesktopStrings.radialDnd
+                            "note" -> DesktopStrings.radialNote
+                            "clipboard" -> DesktopStrings.radialClipboard
+                            "settings" -> DesktopStrings.radialSettings
+                            else -> actionKey
+                        }
+                        Box(
+                            modifier = Modifier
+                                .offset { IntOffset(centerX + dx - 30, centerY + dy - 16) }
+                                .graphicsLayer {
+                                    alpha = p.coerceIn(0f, 1f)
+                                    scaleX = 0.7f + 0.3f * p
+                                    scaleY = 0.7f + 0.3f * p
+                                }
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(popupBgColor)
+                                .border(1.dp, accentColor.copy(alpha = 0.65f), RoundedCornerShape(14.dp))
+                                .clickable { executeRadialAction(actionKey) }
+                                .padding(horizontal = 8.dp, vertical = 5.dp)
+                        ) {
+                            Text(label, style = MaterialTheme.typography.labelSmall, color = tokens.textPrimary, maxLines = 1)
+                        }
+                    }
+
+                    // Center close orb
+                    Box(
+                        modifier = Modifier
+                            .offset { IntOffset(centerX - orbSize / 2, centerY - orbSize / 2) }
+                            .size(orbSize.dp)
+                            .clip(CircleShape)
+                            .background(popupBgColor)
+                            .border(2.dp, accentColor, CircleShape)
+                            .clickable { radialOpen = false },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("✕", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = accentColor)
+                    }
+                }
             } else {
-                // Orb + Adaptive Direction Notification Bubble
+                // Orb + Adaptive Direction Notification Bubble + Hover Tooltip (#517 battery)
                 val currentBubble = bubbleEvent
                 Row(
                     modifier = Modifier.fillMaxSize().padding(4.dp),
@@ -910,7 +1205,7 @@ fun DesktopFloatingAssistantWindow(
                                 modifier = Modifier
                                     .width(272.dp)
                                     .clip(RoundedCornerShape(14.dp))
-                                    .background(Color(0xEE151C2C))
+                                    .background(popupBgColor)
                                     .border(1.dp, accentColor.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
                                     .hoverable(bubbleHoverSource)
                                     .clickable {
@@ -925,6 +1220,36 @@ fun DesktopFloatingAssistantWindow(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = tokens.textPrimary,
                                     maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
+                    val renderHoverTooltip: @Composable () -> Unit = {
+                        if (orbHovered && currentBubble == null) {
+                            val battStr = phoneStatus?.let { st ->
+                                val ch = if (st.isCharging) " ⚡" else ""
+                                "${st.batteryLevel}%$ch"
+                            } ?: "--"
+                            val connStr = if (serverState.connectedPhones.isNotEmpty()) {
+                                "${serverState.pairedDeviceName.ifBlank { "Phone" }} · $battStr"
+                            } else {
+                                DesktopStrings.t("未連線", "Disconnected")
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .width(184.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(popupBgColor)
+                                    .border(1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = connStr,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = tokens.textPrimary,
+                                    maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
@@ -974,11 +1299,7 @@ fun DesktopFloatingAssistantWindow(
                                 }
                                 .clickable {
                                     DesktopNotificationBus.clearFloatingBadge()
-                                    if (settings.floatingClickAction == FloatingClickAction.OPEN_AI) {
-                                        aiExpanded = true
-                                    } else {
-                                        onOpenMainWindow()
-                                    }
+                                    radialOpen = true
                                 },
                             contentAlignment = Alignment.Center
                         ) {
@@ -986,7 +1307,7 @@ fun DesktopFloatingAssistantWindow(
                                 modifier = Modifier
                                     .size(orbSize.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xEE101726))
+                                    .background(popupBgColor)
                                     .border(2.dp, accentColor, CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -1017,11 +1338,11 @@ fun DesktopFloatingAssistantWindow(
                     }
 
                     if (isOnRightHalf) {
-                        if (currentBubble != null) renderBubble()
+                        if (currentBubble != null) renderBubble() else renderHoverTooltip()
                         renderOrb()
                     } else {
                         renderOrb()
-                        if (currentBubble != null) renderBubble()
+                        if (currentBubble != null) renderBubble() else renderHoverTooltip()
                     }
                 }
             }

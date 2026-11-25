@@ -865,6 +865,53 @@ fun DesktopSettingsCenter(
                                         )
                                     }
                                 }
+                                // #515 Fullscreen Auto-Hide Mode
+                                @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(DesktopStrings.floatingFullscreenLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                    listOf(
+                                        FullscreenHideMode.AUTO_HIDE to DesktopStrings.fullscreenAutoHide,
+                                        FullscreenHideMode.NEVER_HIDE to DesktopStrings.fullscreenNeverHide,
+                                        FullscreenHideMode.HIDE_WITH_HINT to DesktopStrings.fullscreenHideHint
+                                    ).forEach { (mode, lbl) ->
+                                        FilterChip(
+                                            selected = settings.floatingFullscreenMode == mode,
+                                            onClick = { DesktopSettingsStore.update { it.copy(floatingFullscreenMode = mode) } },
+                                            label = { Text(lbl) }
+                                        )
+                                    }
+                                }
+                                // #515 Radial Menu 8 Customizable Actions
+                                Text(DesktopStrings.floatingMenuCustomize, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                val allRadialActions = listOf(
+                                    "ai" to DesktopStrings.radialAi,
+                                    "main" to DesktopStrings.radialMain,
+                                    "search" to DesktopStrings.radialSearch,
+                                    "todos" to DesktopStrings.radialTodos,
+                                    "dnd" to DesktopStrings.radialDnd,
+                                    "note" to DesktopStrings.radialNote,
+                                    "clipboard" to DesktopStrings.radialClipboard,
+                                    "settings" to DesktopStrings.radialSettings
+                                )
+                                val activeRadialKeys = settings.floatingMenuOrder.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                                @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    allRadialActions.forEach { (key, lbl) ->
+                                        val isSelected = activeRadialKeys.contains(key)
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = {
+                                                val next = if (isSelected) {
+                                                    if (activeRadialKeys.size > 1) activeRadialKeys - key else activeRadialKeys
+                                                } else {
+                                                    activeRadialKeys + key
+                                                }
+                                                DesktopSettingsStore.update { it.copy(floatingMenuOrder = next.joinToString(",")) }
+                                            },
+                                            label = { Text(lbl) }
+                                        )
+                                    }
+                                }
                             }
 
                             HorizontalDivider(color = tokens.border)

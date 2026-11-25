@@ -227,7 +227,8 @@ fun main(args: Array<String>) {
             onOpenConversation = { ev ->
                 DesktopNotificationBus.requestNavigateTo(ev)
                 showAndFocusMainWindow("MESSAGES")
-            }
+            },
+            onOpenTab = { tabKey -> showAndFocusMainWindow(tabKey) }
         )
 
         Window(
