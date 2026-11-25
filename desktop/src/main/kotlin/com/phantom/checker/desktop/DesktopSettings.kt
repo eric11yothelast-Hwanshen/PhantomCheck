@@ -216,38 +216,251 @@ object DesktopSettingsStore {
     }
 
     /**
-     * #468 系統設定 2：Windows 開機自動啟動（HKCU\...\Run 機碼，reg.exe 實作，開關可互逆，啟動參數 --minimized 進系統匣）。
+     * #495 Windows 開機自啟動診斷狀態：
+     * - ENABLED：Run 機碼存在、目標 exe 存在、且未被工作管理員（StartupApproved\Run）停用
+     * - DISABLED：Run 機碼未設定
+     * - DISABLED_BY_TASK_MANAGER：Run 機碼存在，但 StartupApproved\Run 旗標被工作管理員設為停用
+     * - PATH_MISMATCH：Run 機碼存在，但指向的 exe 檔案不存在或為錯誤路徑
      */
-    fun applyWindowsAutoStart(enable: Boolean): Result<String> = runCatching {
-        val os = System.getProperty("os.name").orEmpty().lowercase()
-        if (!os.contains("win")) {
-            throw UnsupportedOperationException("Windows HKCU Run auto-start is only supported on Windows")
+    enum class AutoStartStatus {
+        ENABLED,
+        DISABLED,
+        DISABLED_BY_TASK_MANAGER,
+        PATH_MISMATCH,
+        NOT_WINDOWS,
+        ERROR
+    }
+
+    data class AutoStartDiagnostic(
+        val status: AutoStartStatus,
+        val registeredCommand: String = "",
+        val resolvedExe: String = "",
+        val detail: String = ""
+    )
+
+    private const val WIN_STARTUP_APPROVED_KEY =
+        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run"
+
+    fun isWindowsOs(): Boolean = System.getProperty("os.name").orEmpty().lowercase().contains("win")
+
+    /**
+     * #495 查詢目前 HKCU\...\Run 與 StartupApproved\Run 的真實狀態（讀回驗證）。
+     */
+    fun queryWindowsAutoStartStatus(): AutoStartDiagnostic {
+        if (!isWindowsOs()) return AutoStartDiagnostic(AutoStartStatus.NOT_WINDOWS)
+        val resolvedExe = resolveCurrentWindowsExecutable()
+        val runQuery = runRegCommand(listOf("reg.exe", "query", WIN_RUN_REG_KEY, "/v", WIN_RUN_VALUE_NAME))
+        if (runQuery.first != 0) {
+            return AutoStartDiagnostic(AutoStartStatus.DISABLED, resolvedExe = resolvedExe)
         }
-        val cmd = if (enable) {
-            val exePath = resolveCurrentWindowsExecutable()
-            listOf("reg.exe", "add", WIN_RUN_REG_KEY, "/v", WIN_RUN_VALUE_NAME, "/t", "REG_SZ", "/d", "\"$exePath\" --minimized", "/f")
+        val regValue = parseRegSzValue(runQuery.second, WIN_RUN_VALUE_NAME)
+        if (regValue.isBlank()) {
+            return AutoStartDiagnostic(AutoStartStatus.DISABLED, resolvedExe = resolvedExe)
+        }
+        val registeredExe = extractExePathFromCommand(regValue)
+        if (registeredExe.isBlank() || !File(registeredExe).exists()) {
+            return AutoStartDiagnostic(
+                status = AutoStartStatus.PATH_MISMATCH,
+                registeredCommand = regValue,
+                resolvedExe = resolvedExe,
+                detail = registeredExe
+            )
+        }
+        // Check Windows Task Manager StartupApproved\Run binary flag (02/06 = enabled; 03/odd/other = disabled)
+        val approvedQuery = runRegCommand(listOf("reg.exe", "query", WIN_STARTUP_APPROVED_KEY, "/v", WIN_RUN_VALUE_NAME))
+        if (approvedQuery.first == 0) {
+            val hex = parseRegBinaryHex(approvedQuery.second, WIN_RUN_VALUE_NAME)
+            if (isStartupApprovedDisabled(hex)) {
+                return AutoStartDiagnostic(
+                    status = AutoStartStatus.DISABLED_BY_TASK_MANAGER,
+                    registeredCommand = regValue,
+                    resolvedExe = resolvedExe,
+                    detail = hex.take(8)
+                )
+            }
+        }
+        return AutoStartDiagnostic(
+            status = AutoStartStatus.ENABLED,
+            registeredCommand = regValue,
+            resolvedExe = resolvedExe
+        )
+    }
+
+    /**
+     * #468 / #495 系統設定 2：Windows 開機自動啟動（寫入後 reg query 讀回驗證 + StartupApproved 偵測 + 錯誤誠實回報）。
+     */
+    fun applyWindowsAutoStart(enable: Boolean): Result<AutoStartDiagnostic> = runCatching {
+        if (!isWindowsOs()) {
+            throw UnsupportedOperationException(DesktopStrings.autoStartNotWindows)
+        }
+        val exePath = resolveCurrentWindowsExecutable()
+        if (enable) {
+            if (exePath.isBlank() || (!File(exePath).exists() && !exePath.endsWith(".exe", ignoreCase = true))) {
+                throw IllegalStateException(DesktopStrings.autoStartExeNotFound(exePath))
+            }
+            val cmd = listOf(
+                "reg.exe", "add", WIN_RUN_REG_KEY,
+                "/v", WIN_RUN_VALUE_NAME,
+                "/t", "REG_SZ",
+                "/d", "\"$exePath\" --minimized",
+                "/f"
+            )
+            val (exit, output) = runRegCommand(cmd)
+            if (exit != 0) {
+                DesktopDiagnostics.error("AutoStart", "reg.exe add failed (exit=$exit): $output")
+                throw IllegalStateException(DesktopStrings.autoStartRegFailed(exit, output))
+            }
+            // Read-back verification
+            val verified = queryWindowsAutoStartStatus()
+            when (verified.status) {
+                AutoStartStatus.ENABLED -> {
+                    update { it.copy(autoStart = true) }
+                    DesktopDiagnostics.info("AutoStart", "Windows autoStart enabled & verified: ${verified.registeredCommand}")
+                    verified
+                }
+                AutoStartStatus.DISABLED_BY_TASK_MANAGER -> {
+                    // Honest state: do NOT pretend enabled when Task Manager blocks it
+                    update { it.copy(autoStart = false) }
+                    DesktopDiagnostics.warn("AutoStart", "HKCU Run written but disabled by Windows Task Manager (StartupApproved=${verified.detail})")
+                    verified
+                }
+                AutoStartStatus.PATH_MISMATCH -> {
+                    update { it.copy(autoStart = false) }
+                    DesktopDiagnostics.error("AutoStart", "Read-back exe path does not exist: ${verified.detail}")
+                    throw IllegalStateException(DesktopStrings.autoStartPathInvalid(verified.detail))
+                }
+                else -> {
+                    update { it.copy(autoStart = false) }
+                    DesktopDiagnostics.error("AutoStart", "Read-back verification failed: ${verified.status}")
+                    throw IllegalStateException(DesktopStrings.autoStartVerifyFailed)
+                }
+            }
         } else {
-            listOf("reg.exe", "delete", WIN_RUN_REG_KEY, "/v", WIN_RUN_VALUE_NAME, "/f")
+            val (exit, output) = runRegCommand(listOf("reg.exe", "delete", WIN_RUN_REG_KEY, "/v", WIN_RUN_VALUE_NAME, "/f"))
+            // delete returns non-zero when value doesn't exist — verify via read-back
+            val verified = queryWindowsAutoStartStatus()
+            if (verified.status == AutoStartStatus.ENABLED || verified.status == AutoStartStatus.PATH_MISMATCH) {
+                DesktopDiagnostics.error("AutoStart", "reg.exe delete failed (exit=$exit): $output")
+                throw IllegalStateException(DesktopStrings.autoStartRegFailed(exit, output))
+            }
+            update { it.copy(autoStart = false) }
+            DesktopDiagnostics.info("AutoStart", "Windows autoStart disabled & verified")
+            AutoStartDiagnostic(AutoStartStatus.DISABLED, resolvedExe = exePath)
         }
+    }
+
+    /**
+     * #495 啟動時自動校驗與修復：若 Run 指向舊路徑（例如更新換目錄）自動改寫為正確 exe；若被工作管理員停用則同步誠實狀態。
+     */
+    fun verifyAndRepairAutoStartOnLaunch(): AutoStartDiagnostic {
+        if (!isWindowsOs()) return AutoStartDiagnostic(AutoStartStatus.NOT_WINDOWS)
+        val diag = queryWindowsAutoStartStatus()
+        val cur = _state.value
+        when (diag.status) {
+            AutoStartStatus.PATH_MISMATCH -> {
+                if (cur.autoStart) {
+                    DesktopDiagnostics.warn("AutoStart", "Stale Run path detected (${diag.detail}); repairing to ${diag.resolvedExe}")
+                    return applyWindowsAutoStart(true).getOrDefault(diag)
+                }
+            }
+            AutoStartStatus.DISABLED_BY_TASK_MANAGER -> {
+                if (cur.autoStart) {
+                    update { it.copy(autoStart = false) }
+                    DesktopDiagnostics.warn("AutoStart", "Auto-start is disabled in Windows Task Manager; synced UI state to false")
+                }
+            }
+            AutoStartStatus.ENABLED -> {
+                if (!cur.autoStart) {
+                    update { it.copy(autoStart = true) }
+                }
+            }
+            else -> Unit
+        }
+        return diag
+    }
+
+    /**
+     * #495 引導使用者開啟 Windows「啟動應用程式」設定（備援開啟工作管理員）。
+     */
+    fun openWindowsStartupSettings(): Result<Unit> = runCatching {
+        if (!isWindowsOs()) throw UnsupportedOperationException(DesktopStrings.autoStartNotWindows)
+        val launched = runCatching {
+            ProcessBuilder("cmd.exe", "/c", "start", "", "ms-settings:startupapps").start()
+            true
+        }.getOrDefault(false)
+        if (!launched) {
+            ProcessBuilder("taskmgr.exe").start()
+        }
+    }
+
+    private fun runRegCommand(cmd: List<String>): Pair<Int, String> = runCatching {
         val proc = ProcessBuilder(cmd).redirectErrorStream(true).start()
         val output = proc.inputStream.bufferedReader().readText().trim()
         val exit = proc.waitFor()
-        // delete 若機碼本就不存在會回傳非 0，視為成功關閉
-        if (exit != 0 && enable) {
-            DesktopDiagnostics.error("AutoStart", "reg.exe failed (exit=$exit): $output")
-            throw IllegalStateException("reg.exe failed (exit=$exit): $output")
+        exit to output
+    }.getOrElse { err -> -1 to (err.message ?: err.javaClass.simpleName) }
+
+    internal fun parseRegSzValue(output: String, valueName: String): String {
+        val line = output.lineSequence()
+            .map { it.trim() }
+            .firstOrNull { it.startsWith(valueName, ignoreCase = true) && it.contains("REG_SZ", ignoreCase = true) }
+            ?: return ""
+        val idx = line.indexOf("REG_SZ", ignoreCase = true)
+        return if (idx >= 0) line.substring(idx + 6).trim() else ""
+    }
+
+    internal fun parseRegBinaryHex(output: String, valueName: String): String {
+        val line = output.lineSequence()
+            .map { it.trim() }
+            .firstOrNull { it.startsWith(valueName, ignoreCase = true) && it.contains("REG_BINARY", ignoreCase = true) }
+            ?: return ""
+        val idx = line.indexOf("REG_BINARY", ignoreCase = true)
+        return if (idx >= 0) line.substring(idx + 10).trim().replace(" ", "") else ""
+    }
+
+    internal fun isStartupApprovedDisabled(hex: String): Boolean {
+        if (hex.length < 2) return false
+        val firstByte = hex.take(2).toIntOrNull(16) ?: return false
+        // Windows Explorer StartupApproved: 0x02 or 0x06 = enabled; 0x03/0x01/0x07 (odd or other) = disabled
+        return firstByte != 0x02 && firstByte != 0x06
+    }
+
+    internal fun extractExePathFromCommand(cmd: String): String {
+        val trimmed = cmd.trim()
+        if (trimmed.isEmpty()) return ""
+        if (trimmed.startsWith("\"")) {
+            val endQuote = trimmed.indexOf('"', 1)
+            if (endQuote > 1) return trimmed.substring(1, endQuote).trim()
         }
-        update { it.copy(autoStart = enable) }
-        DesktopDiagnostics.info("AutoStart", "Windows autoStart set to $enable")
-        if (enable) "Enabled" else "Disabled"
+        return trimmed.substringBefore(" --").trim()
     }
 
     internal fun resolveCurrentWindowsExecutable(): String {
-        val jpackagePath = System.getProperty("jpackage.app-path").orEmpty().trim()
-        if (jpackagePath.isNotBlank() && File(jpackagePath).exists()) return jpackagePath
+        val candidates = buildList {
+            val jpackagePath = System.getProperty("jpackage.app-path").orEmpty().trim()
+            if (jpackagePath.isNotBlank()) add(jpackagePath)
+            val procCmd = ProcessHandle.current().info().command().orElse("").trim()
+            if (procCmd.isNotBlank() && procCmd.endsWith("PhantomCheckDesktop.exe", ignoreCase = true)) {
+                add(procCmd)
+            }
+            val localAppData = System.getenv("LOCALAPPDATA").orEmpty().trim()
+            if (localAppData.isNotBlank()) {
+                add(File(localAppData, "PhantomCheckDesktop\\PhantomCheckDesktop.exe").absolutePath)
+            }
+            val userDir = System.getProperty("user.dir").orEmpty().trim()
+            if (userDir.isNotBlank()) {
+                add(File(userDir, "PhantomCheckDesktop.exe").absolutePath)
+            }
+        }
+        val validPackaged = candidates.firstOrNull { path ->
+            val f = File(path)
+            f.exists() && f.isFile && !f.name.equals("java.exe", ignoreCase = true) && !f.name.equals("javaw.exe", ignoreCase = true)
+        }
+        if (validPackaged != null) return validPackaged
         val localAppData = System.getenv("LOCALAPPDATA").orEmpty().trim()
-        val defaultExe = File(localAppData, "PhantomCheckDesktop\\PhantomCheckDesktop.exe")
-        if (defaultExe.exists()) return defaultExe.absolutePath
+        if (localAppData.isNotBlank()) {
+            return File(localAppData, "PhantomCheckDesktop\\PhantomCheckDesktop.exe").absolutePath
+        }
         return ProcessHandle.current().info().command().orElse("PhantomCheckDesktop.exe")
     }
 

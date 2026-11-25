@@ -46,8 +46,12 @@ Source: "{#AppImageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdir
 Name: "{autoprograms}\PhantomCheck\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
+[InstallDelete]
+; #495 Remove stale IPC port file on install/upgrade; keep %APPDATA%\PhantomCheckDesktop user config & pairing intact
+Type: files; Name: "{userappdata}\PhantomCheckDesktop\instance.port"
+
 [Registry]
-; Ensure any user-enabled HKCU Run autostart key is cleanly removed on uninstall
+; #495 Ensure any user-enabled HKCU Run autostart key is cleanly removed on uninstall
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "PhantomCheckDesktop"; Flags: uninsdeletevalue
 
 [Run]

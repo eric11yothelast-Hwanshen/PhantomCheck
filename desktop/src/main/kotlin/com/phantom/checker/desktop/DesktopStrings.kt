@@ -402,4 +402,21 @@ object DesktopStrings {
     val bgPickerSaved get() = t("已套用並複製背景圖片至本機配置目錄", "Background image applied & copied to config folder")
     fun bgPickerFailed(err: String): String = t("載入背景圖片失敗：$err", "Failed to load background image: $err")
     val bgRemoved get() = t("已移除自訂背景圖並還原漸層", "Custom background removed; gradient restored")
+
+    // #495 Windows Auto-Start Read-back Verification, StartupApproved Detection & Single-Instance
+    val autoStartNotWindows get() = t("僅 Windows 支援開機自動啟動機碼設定", "Windows startup registry is only supported on Windows")
+    fun autoStartExeNotFound(path: String): String = t("找不到有效的執行檔路徑：$path", "Executable path not found: $path")
+    fun autoStartRegFailed(code: Int, detail: String): String = t("登錄檔寫入失敗（exit=$code）：$detail", "Registry update failed (exit=$code): $detail")
+    fun autoStartPathInvalid(path: String): String = t("開機啟動路徑失效（檔案不存在）：$path", "Startup target file does not exist: $path")
+    val autoStartVerifyFailed get() = t("登錄檔讀回驗證失敗，請確認權限或重試", "Registry read-back verification failed. Please retry.")
+    val autoStartVerifiedEnabled get() = t("✓ 已寫入並驗證開機自動啟動（啟動時常駐系統匣）", "✓ Launch at startup enabled and verified (starts in system tray)")
+    val autoStartDisabledByTaskMgrTitle get() = t("⚠ 已被 Windows 工作管理員停用開機啟動", "⚠ Disabled in Windows Startup Apps / Task Manager")
+    val autoStartDisabledByTaskMgrDesc get() = t(
+        "系統登錄檔的 StartupApproved 旗標顯示您曾在工作管理員停用 PhantomCheck 啟動。請開啟 Windows「啟動應用程式」或工作管理員的「啟動」分頁重新啟用。",
+        "Windows StartupApproved indicates PhantomCheck was disabled in Task Manager. Open Windows Startup Apps (or Task Manager → Startup) to re-enable it."
+    )
+    val autoStartOpenTaskMgrBtn get() = t("開啟 Windows 啟動設定", "Open Startup Settings")
+    val autoStartRecheckBtn get() = t("重新檢查狀態", "Re-check Status")
+    val autoStartPathMismatchDesc get() = t("偵測到舊版安裝路徑的啟動項目，點擊修復以指向目前執行檔。", "Detected stale startup path from a previous install. Click Repair to update it.")
+    val autoStartRepairBtn get() = t("立即修復路徑", "Repair Path")
 }
