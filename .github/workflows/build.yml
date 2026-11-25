@@ -92,7 +92,6 @@ jobs:
         with:
           name: phantomcheck-desktop-windows-${{ github.run_number }}
           path: |
-            desktop/build/compose/binaries/main/msi/*.msi
             desktop/build/compose/binaries/main/inno/*-setup.exe
           if-no-files-found: error
 

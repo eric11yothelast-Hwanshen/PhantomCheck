@@ -408,6 +408,10 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
    - 於 [Google Cloud Console](https://console.cloud.google.com/) 建立專案、啟用「Safe Browsing API」，並於「憑證 → 建立 API 金鑰」取得 key（金鑰僅加密儲存於本機）。
    - 於 App 內「設定 → 防詐情報 → Google Safe Browsing v4」欄位貼上該 key，加密儲存後即啟用；未輸入 key 時會誠實跳過 Safe Browsing 源，不影響其他情報來源。
 
+6. **Windows 桌面端安裝（`setup.exe`）與舊版升級疑難排解**
+   - `PhantomCheckDesktop-<版本>-setup.exe`（Inno Setup）現為**唯一官方 Windows 安裝與更新通道**（早期 `.msi` 套件已正式退場）。
+   - **已裝舊版 `.msi`（v0.2.0–v0.4.0）的使用者**：直接執行新版 `setup.exe` 一次即可。安裝程式會自動優雅關閉背景程式、靜默清理舊版 `.msi` 或衝突安裝項目，並**完整保留 `%APPDATA%\PhantomCheckDesktop` 中的所有設定與配對指紋**。
+
 ---
 
 ## 技術架構

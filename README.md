@@ -395,6 +395,10 @@ For the complete changelog, see [CHANGELOG.md](CHANGELOG.md).
    - Create a project in [Google Cloud Console](https://console.cloud.google.com/), enable "Safe Browsing API", and generate an API key under "Credentials → Create API Key" (stored encrypted locally only).
    - Paste the key in the app under "Settings → Anti-Scam Intel → Google Safe Browsing v4" to enable it; when left blank, Safe Browsing is skipped without affecting other intel sources.
 
+6. **Windows Desktop Companion (`setup.exe`) & Upgrade Troubleshooting**
+   - `PhantomCheckDesktop-<version>-setup.exe` (Inno Setup) is the **sole official Windows installer and update channel** (legacy `.msi` packages from older releases are retired).
+   - **Upgrading from a legacy `.msi` (v0.2.0–v0.4.0)**: Simply run the new `setup.exe` once. The installer automatically requests a graceful shutdown, silently removes any legacy `.msi` or conflicting older installation, and **preserves all settings and device pairings** stored in `%APPDATA%\PhantomCheckDesktop`.
+
 ---
 
 ## Technical Architecture

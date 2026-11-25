@@ -283,7 +283,8 @@ object DesktopUpdater {
             if (file.name.endsWith(".msi", ignoreCase = true)) {
                 ProcessBuilder("msiexec", "/i", file.absolutePath).start()
             } else {
-                ProcessBuilder(file.absolutePath).start()
+                // #496 Inno setup.exe handles graceful shutdown & legacy MSI cleanup automatically
+                ProcessBuilder(file.absolutePath, "/CLOSEAPPLICATIONS").start()
             }
         } else if (Desktop.isDesktopSupported()) {
             Desktop.getDesktop().open(file)
