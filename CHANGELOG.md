@@ -3,6 +3,59 @@
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses Semantic Versioning.
 
+## [5.0.0] - 2026-11-25
+
+- **Tag 對照**：[`v4.9.0...v5.0.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.9.0...v5.0.0)（`versionCode = 58`、`versionName = "5.0.0"`；桌面端 `desktopVersion = "0.7.0"`）
+- **發佈資產（雙 APK ＋ 桌面端 Windows Inno Setup 單一安裝檔）**：
+  - `app-release.apk`：正式簽章＋R8 程式碼縮減與資源壓縮（`isMinifyEnabled = true`、`isShrinkResources = true`），供一般使用者安裝與原簽章覆蓋升級。
+  - `app-debug.apk`：除錯建置版本，供開發測試與排錯使用。
+  - `PhantomCheckDesktop-0.7.0-setup.exe`：Windows 桌面端連線與訊息管理安裝檔（Compose Multiplatform，`desktopVersion = "0.7.0"`）。
+
+### 行為變更（Behavior Changes）
+- **#516 新增權限 `ACCESS_WIFI_STATE` 與 `CHANGE_WIFI_MULTICAST_STATE`（PR #521）**：兩者皆為 `normal` 級別，分別用於讀取 Wi-Fi 狀態，以及在 mDNS 區網探索期間取得 `MulticastLock` 以接收探索回應；除探索期間外不持續持有。
+- **#509 Room 資料庫 v23→v24（PR #521）**：新增群組報告相關資料表之非破壞性遷移 `MIGRATION_23_24`，升級過程不清除、不修改任何既有訊息與設定資料。
+- **#518 剪貼簿同步預設關閉（PR #521）**：雙向剪貼簿同步預設關閉，需於設定中手動開啟；開啟後僅走 TLS 配對通道、單次上限 5,000 字元，並以 `OtpDetector` 與既有規則阻擋 OTP 與 4–8 位驗證碼。
+
+### 新增、變更與修正
+- **#509 群組報告（PR #521）**：實作純 Worker 事後聚合（零通知收集熱路徑改動），支援 App／群組兩層挑選、每日指定整點與累計 N 則（10–500）雙觸發、獨立群組報告頁與寫入記事本（`SOURCE_GROUP_REPORT`）雙輸出模式、Token Saver 與每日 AI 額度閘門（額度耗盡自動順延且保留訊息不丟失），並於 `PRIVACY.md` 補上雙語資料流說明。
+- **#510 淺色全域對比度修復＋高對比開關（PR #521）**：修復淺色主題僅調整文字色彩、底層 scrim 與低不透明度表面仍為深色之根因（`windowBackground`、狀態列、玻璃卡不透明度 ≥0.92、淺色 scrim 等），新增深淺兩套之「高對比」設定開關（正文對比目標 7:1、可於設定搜尋直達），並全面以 `phantomSurfaceAlpha()` 取代 35+ 處半透明表面色。
+- **#511 跨 App 批次刪除（PR #521）**：主訊息頁長按功能表新增多選跨 App 批次刪除（未進多選時主畫面零變動、保留「刪除此 App」二次確認與底部摘要），嚴格沿用 `riskLabel = 'scam'` 排除、`isOwn` 排除、單批上限 100 則與 `message_tags` 交叉引用清理。
+- **#512 常駐通知連線狀態副標（PR #521）**：新增 `PersistentNotifSubtitleMode`（預設顯示配對連線狀態，可選未讀數、兩者並列或隱藏；未配對時自動回退未讀數），常駐通知透過 `DesktopLinkClient` 狀態流於連線狀態變化時即時刷新、零輪詢。
+- **#513 桌面彈窗完整自訂＋顯示頻率＋一鍵勿擾（PR #521）**：新增 16 個設定鍵（既有鍵值零搬移）：彈窗寬高調整與即時預覽、標題／來源／時間／行數開關、背景圖片與文字色彩、WAV 音效音量、彈窗與懸浮球各自獨立之每分鐘上限／N 則聚合／僅星標，側欄＋系統匣＋首頁一鍵勿擾同步（勿擾期間訊息記錄不中斷）與「發送測試通知」按鈕。
+- **#514 懸浮球拖曳 DPI 修復＋邊緣吸附（PR #521）**：修復 Windows 125–200% DPI 與多螢幕混合縮放下之拖曳飄移（改以 AWT 螢幕空間固定 offset 抓取、14ms 節流），新增多螢幕工作區夾限與鬆手 8px 距離 spring 吸附（可開關，省電模式直接定位）。
+- **#515 懸浮球 AI 修復＋半圓選單＋全螢幕自動隱藏（PR #521）**：修復 `CHAT_SEND` AI 訊息計數失真（改由手機 Room 注入精確總數／今日／未讀與近 30 則摘要）、與手機同 session 雙向同步與氣泡去重；升級迷你 AI 面板（會話切換、快速指令、複製、字級調整、Enter 送出與 Shift+Enter 換行、130 秒逾時復原）；新增點擊展開 180° 半圓快捷選單（8 項功能可自訂開關）與全螢幕自動隱藏（自動／永不／隱藏並提示）。
+- **#516 mDNS 區網探索可靠性（PR #521）**：探索期間取得／釋放 `MulticastLock`、新增 35 秒空清單自動重啟（熄屏提前退出）與 `FAILURE_ALREADY_ACTIVE`／`FAILURE_INTERNAL_ERROR` 最多 3 次重試、掃描狀態流與「掃描中…」UI 及手動配對引導；桌面端廣播改為持續廣告（`persistent = true`）。
+- **#517 手機裝置狀態同步（PR #521）**：協定附加 `DEVICE_STATUS`（向下相容、不 bump `PROTOCOL_VERSION`）；手機僅於連線期間註冊電池事件（變化 ≥2% 或充電狀態切換即時推送、重連立即補齊、零輪詢），桌面端側欄／首頁／懸浮球 Tooltip 即時呈現，離線顯示「最後已知時間」；同步補上 `PRIVACY.md` 雙語說明。
+- **#518 跨端功能包（PR #521）**：雙向剪貼簿同步（預設關閉，僅 TLS 配對通道、上限 5,000 字元、OTP／驗證碼阻擋、誠實標註 Android 10+ 僅前景可讀之系統限制）；四項自選跨端功能：快速筆記到手機（`NOTE_ADD`）、桌面發送通知到手機（`SEND_PHONE_NOTIF`）、尋找手機 3 秒響鈴（`FIND_PHONE_RING`）、雙向網址互開（`OPEN_URL_ON_PEER`，僅限 http/https）；桌面側欄新增 REPORTS 群組報告同步檢視與 TOOLS 跨端工具頁（既有 Tab 順序與鍵值保留），並補齊 `PRIVACY.md` §9。
+- **#519 雙端效能稽核（PR #521）**：全庫稽核：熱路徑 `SimpleDateFormat` 改為 `ThreadLocal` 常數、迴圈／方法內建構之 `Regex` 抽離為檔案層級常數、懸浮球 AI 補上 130 秒逾時復原；驗證配對碼燒毀與鎖定、`NsdManager` resolve 序列化上限、Installer SHA-256 sidecar 行為與零新增常駐輪詢，並確認跨廠牌（Xiaomi／Samsung／OPPO／vivo／Sony）相容路徑完整。
+- **#520 Phantom Aurora III 桌面全頁響應式重編（PR #521）**：桌面五頁（訊息／統計／待辦記事／AI 聊天／規則）依 `DesktopWindowClass` 全面重編（COMPACT 側欄自動收合、MEDIUM 雙欄、EXPANDED／LARGE 多窗格），全數對話框遷移至統一 `PhantomDialog` 外殼（Esc 關閉、HC 粗框零陰影、D8 動效），新增 `DesktopContrastTest` WCAG 對比測試（6 強調色 × 4 主題、一般 ≥4.5:1、HC ≥7:1）；手機端本輪零觸碰。
+
+### English
+- **Tag Compare**: [`v4.9.0...v5.0.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.9.0...v5.0.0) (`versionCode = 58`, `versionName = "5.0.0"`; Desktop `desktopVersion = "0.7.0"`)
+- **Release Assets (Dual APKs + Single Desktop Windows Inno Setup Installer)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`), for general users and in-place signature upgrades.
+  - `app-debug.apk`: Debug build for development testing and troubleshooting.
+  - `PhantomCheckDesktop-0.7.0-setup.exe`: Windows desktop companion installer (Compose Multiplatform, `desktopVersion = "0.7.0"`).
+
+**Behavior Changes**
+- **#516 New Permissions `ACCESS_WIFI_STATE` & `CHANGE_WIFI_MULTICAST_STATE` (PR #521)**: both are `normal`-level permissions, used to read Wi-Fi state and to acquire a `MulticastLock` during mDNS LAN discovery to receive discovery responses; the lock is not held outside the discovery window.
+- **#509 Room Database v23→v24 (PR #521)**: non-destructive `MIGRATION_23_24` adding group-report tables; upgrading neither deletes nor alters any existing messages or settings.
+- **#518 Clipboard Sync Default Off (PR #521)**: two-way clipboard sync is disabled by default and must be enabled in Settings; when enabled it uses the paired TLS channel only, caps each transfer at 5,000 characters, and blocks OTPs and 4–8 digit verification codes via `OtpDetector` and existing rules.
+
+**Added, Changed & Fixed**
+- **#509 Group Report (PR #521)**: Implemented pure Worker post-hoc aggregation (zero hot-path changes to the notification collector) with App/Group two-layer selection, dual triggers (daily at a specified hour or after N accumulated messages, 10–500), dual output modes (a dedicated Group Report page vs. writing into the notebook as `SOURCE_GROUP_REPORT`), a Token Saver and daily AI quota gate (auto-defer when the quota is exhausted while preserving messages), plus bilingual data-flow disclosure in `PRIVACY.md`.
+- **#510 Global Light-Mode Contrast Fix & High-Contrast Toggle (PR #521)**: Fixed the root cause of light mode adjusting only text colors while dark scrims and low-opacity surfaces remained (window background, status bar, glass-card opacity ≥0.92, light scrim, etc.); added a high-contrast toggle for both dark and light themes (body-text contrast target 7:1, searchable in Settings), and replaced 35+ semi-transparent surface colors with `phantomSurfaceAlpha()`.
+- **#511 Cross-App Batch Delete (PR #521)**: Added multi-select cross-app batch deletion via the long-press feature table on the Messages page (zero main-screen change until multi-select is entered; keeps the existing "delete this app" second confirmation and adds a bottom summary), strictly preserving `riskLabel = 'scam'` exclusion, `isOwn` exclusion, the 100-message single-batch cap, and `message_tags` cross-reference cleanup.
+- **#512 Persistent Notification Connection-Status Subtitle (PR #521)**: Added `PersistentNotifSubtitleMode` (defaults to paired link status; optionally unread count, both, or hidden; auto-falls back to unread count when unpaired); the persistent notification refreshes reactively from the `DesktopLinkClient` status flow on connection changes with zero polling.
+- **#513 Full Popup Customization, Display Frequency & One-Tap DND (PR #521)**: Added 16 settings keys (zero migration of existing keys): popup width/height sliders with live preview, title/source/time/line-count toggles, background image and custom text color, WAV sound volume, independent per-minute limits / N-message aggregation / starred-only rules for popup and floating orb, sidebar + tray + Home one-tap DND sync (message recording continues during DND), and a "send test notification" button.
+- **#514 Floating Orb Drag DPI Fix & Edge Snapping (PR #521)**: Fixed drag drift at Windows 125–200% DPI and mixed multi-monitor scaling (now using AWT screen-space fixed-offset pointer tracking with 14ms throttling); added all-monitor work-area clamping and 8px-margin spring edge snapping on release (toggleable, with hard positioning in power-saver mode).
+- **#515 Floating Orb AI Fix, Semicircle Menu & Fullscreen Auto-Hide (PR #521)**: Fixed `CHAT_SEND` AI message-count distortion (precise totals/today/unread plus a 30-message digest now injected from the phone Room database), and added same-session two-way chat sync and bubble de-duplication with the phone; upgraded the mini AI panel (session switching, quick commands, copy, font size, Enter-to-send with Shift+Enter newline, 130s timeout recovery); added a click-to-expand 180° semicircle quick menu (8 features, individually toggleable) and fullscreen auto-hide (auto / never / hide with hint).
+- **#516 mDNS LAN Discovery Reliability (PR #521)**: Acquire/release `MulticastLock` during discovery, a 35s empty-list auto-restart guard (early exit while the screen is off), up-to-3 retries for `FAILURE_ALREADY_ACTIVE`/`FAILURE_INTERNAL_ERROR`, a scanning state flow with a "Scanning…" UI and manual-pairing guidance; the desktop broadcaster now advertises persistently (`persistent = true`).
+- **#517 Phone Device Status Sync (PR #521)**: Additive `DEVICE_STATUS` protocol message (backward compatible, no `PROTOCOL_VERSION` bump); the phone registers battery events only while connected (pushes immediately on ≥2% change or charging-state switch, backfills on reconnect, zero polling); the desktop sidebar/Home/orb tooltip display it live and show "last known time" while offline; `PRIVACY.md` bilingual disclosure added.
+- **#518 Cross-End Feature Pack (PR #521)**: Two-way clipboard sync (default off; paired TLS channel only, 5,000-character cap, OTP/verification-code blocking, honest labeling of the Android 10+ foreground-only system limitation); four opted-in cross-end features: quick note to phone (`NOTE_ADD`), desktop-to-phone notification (`SEND_PHONE_NOTIF`), 3-second find-phone ring (`FIND_PHONE_RING`), and two-way URL opening (`OPEN_URL_ON_PEER`, http/https only); the desktop sidebar gains a REPORTS synced group-report view and a TOOLS cross-end tools page (existing tab order and keys preserved), with `PRIVACY.md` §9 supplemented.
+- **#519 Two-End Performance Audit (PR #521)**: Repo-wide audit: hot-path `SimpleDateFormat` moved to `ThreadLocal` constants, loop/method-local `Regex` hoisted to file-level constants, and a 130s timeout recovery added to the floating-orb AI; verified pairing-code burn and lockout, `NsdManager` resolve serialization limits, installer SHA-256 sidecar behavior, and zero new persistent polling, and confirmed cross-brand (Xiaomi/Samsung/OPPO/vivo/Sony) compatibility paths.
+- **#520 Phantom Aurora III Desktop Full-Page Responsive Rebuild (PR #521)**: Rebuilt all five desktop pages (Messages/Stats/Todos & Notes/AI Chat/Rules) around `DesktopWindowClass` (COMPACT auto-collapsed sidebar, MEDIUM two-pane, EXPANDED/LARGE multi-pane), migrated all dialogs to the unified `PhantomDialog` shell (Esc close, HC thick-border zero-shadow, D8 motion), and added the `DesktopContrastTest` WCAG contrast tests (6 accents × 4 themes, general ≥4.5:1, HC ≥7:1); the phone side was left untouched in this round.
+
 ## [4.9.0] - 2026-11-25
 
 - **Tag 對照**：[`v4.8.0...v4.9.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.8.0...v4.9.0)（`versionCode = 57`、`versionName = "4.9.0"`；桌面端 `desktopVersion = "0.6.0"`）
