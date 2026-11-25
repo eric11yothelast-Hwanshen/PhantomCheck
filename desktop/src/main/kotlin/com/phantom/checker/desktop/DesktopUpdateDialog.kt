@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -30,7 +29,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 /**
- * #478 桌面端更新對話框（版本號＋Release notes 雙語 Markdown 捲動瀏覽＋前往 Release 頁＋下載並執行安裝）。
+ * #478 / #520 桌面端更新對話框（PhantomDialog 統一外殼＋Release notes 雙語 Markdown 捲動瀏覽＋前往 Release 頁＋下載並執行安裝）。
  */
 @Composable
 fun DesktopUpdateDialog(
@@ -48,133 +47,118 @@ fun DesktopUpdateDialog(
     var downloadedFile by remember { mutableStateOf<File?>(null) }
     var downloadError by remember { mutableStateOf<String?>(null) }
 
-    AlertDialog(
+    PhantomDialog(
         onDismissRequest = { if (!downloading) onDismiss() },
-        containerColor = containerColor,
-        title = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(DesktopStrings.updateDialogTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
-                Text(
-                    text = "${update.currentVersion} → ${update.latestVersion} (${update.tagName} · ${update.publishedDate})",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = accentColor
-                )
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+        title = DesktopStrings.updateDialogTitle,
+        subtitle = "${update.currentVersion} → ${update.latestVersion} (${update.tagName} · ${update.publishedDate})",
+        subtitleColor = tokens.accentText,
+        maxWidth = 560.dp,
+        dismissible = !downloading,
+        containerColor = if (tokens.isLight || tokens.isHighContrast) tokens.dialogContainer else containerColor,
+        dismissButton = {
+            TextButton(
+                onClick = {
+                    DesktopUpdater.openExternalUrl(update.htmlUrl)
+                        .onFailure { onFeedback(it.message ?: DesktopStrings.openLinkFailed) }
+                }
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 120.dp, max = 300.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    DesktopMarkdownText(
-                        markdown = update.releaseNotes.ifBlank { DesktopStrings.updateNoNotes },
-                        accentColor = accentColor
-                    )
-                }
-
-                if (downloading) {
-                    HorizontalDivider(color = tokens.border)
-                    Text(
-                        text = DesktopStrings.updateDownloading((downloadProgress * 100f).toInt()),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = tokens.textSecondary
-                    )
-                    LinearProgressIndicator(
-                        progress = { downloadProgress },
-                        modifier = Modifier.fillMaxWidth(),
-                        color = accentColor,
-                        trackColor = tokens.border
-                    )
-                }
-
-                downloadedFile?.let { f ->
-                    HorizontalDivider(color = tokens.border)
-                    Text(
-                        text = DesktopStrings.updateReadyToLaunch(f.name),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = DesktopPalette.GlassSuccess
-                    )
-                }
-
-                downloadError?.let { err ->
-                    Text(
-                        text = err,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = DesktopPalette.GlassError
-                    )
-                }
+                Text(DesktopStrings.updateOpenReleaseBtn)
+            }
+            TextButton(enabled = !downloading, onClick = onDismiss) {
+                Text(DesktopStrings.dismiss)
             }
         },
         confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val ready = downloadedFile
-                if (ready != null) {
-                    SpringButton(
-                        onClick = {
-                            DesktopUpdater.launchInstaller(ready)
-                                .onSuccess {
-                                    onFeedback(DesktopStrings.updateInstallerLaunched)
-                                    onDismiss()
-                                }
-                                .onFailure { err ->
-                                    downloadError = err.message ?: err.javaClass.simpleName
-                                }
-                        },
-                        animationsEnabled = animationsEnabled,
-                        containerColor = accentColor
-                    ) {
-                        Text(DesktopStrings.updateRunInstallerBtn)
-                    }
-                } else if (!update.installerUrl.isNullOrBlank() && !update.installerFileName.isNullOrBlank()) {
-                    SpringButton(
-                        enabled = !downloading,
-                        onClick = {
-                            downloading = true
-                            downloadError = null
-                            downloadProgress = 0f
-                            scope.launch {
-                                DesktopUpdater.downloadInstaller(
-                                    url = update.installerUrl,
-                                    fileName = update.installerFileName,
-                                    onProgress = { p -> downloadProgress = p },
-                                    sha256Url = update.installerSha256Url
-                                ).onSuccess { file ->
-                                    downloading = false
-                                    downloadedFile = file
-                                }.onFailure { err ->
-                                    downloading = false
-                                    downloadError = err.message ?: err.javaClass.simpleName
-                                }
-                            }
-                        },
-                        animationsEnabled = animationsEnabled,
-                        containerColor = accentColor
-                    ) {
-                        Text(DesktopStrings.updateDownloadInstallBtn)
-                    }
-                }
-            }
-        },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                TextButton(
+            val ready = downloadedFile
+            if (ready != null) {
+                SpringButton(
                     onClick = {
-                        DesktopUpdater.openExternalUrl(update.htmlUrl)
-                            .onFailure { onFeedback(it.message ?: DesktopStrings.openLinkFailed) }
-                    }
+                        DesktopUpdater.launchInstaller(ready)
+                            .onSuccess {
+                                onFeedback(DesktopStrings.updateInstallerLaunched)
+                                onDismiss()
+                            }
+                            .onFailure { err ->
+                                downloadError = err.message ?: err.javaClass.simpleName
+                            }
+                    },
+                    animationsEnabled = animationsEnabled,
+                    containerColor = accentColor
                 ) {
-                    Text(DesktopStrings.updateOpenReleaseBtn)
+                    Text(DesktopStrings.updateRunInstallerBtn)
                 }
-                TextButton(enabled = !downloading, onClick = onDismiss) {
-                    Text(DesktopStrings.dismiss)
+            } else if (!update.installerUrl.isNullOrBlank() && !update.installerFileName.isNullOrBlank()) {
+                SpringButton(
+                    enabled = !downloading,
+                    onClick = {
+                        downloading = true
+                        downloadError = null
+                        downloadProgress = 0f
+                        scope.launch {
+                            DesktopUpdater.downloadInstaller(
+                                url = update.installerUrl,
+                                fileName = update.installerFileName,
+                                onProgress = { p -> downloadProgress = p },
+                                sha256Url = update.installerSha256Url
+                            ).onSuccess { file ->
+                                downloading = false
+                                downloadedFile = file
+                            }.onFailure { err ->
+                                downloading = false
+                                downloadError = err.message ?: err.javaClass.simpleName
+                            }
+                        }
+                    },
+                    animationsEnabled = animationsEnabled,
+                    containerColor = accentColor
+                ) {
+                    Text(DesktopStrings.updateDownloadInstallBtn)
                 }
             }
         }
-    )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 120.dp, max = 300.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            DesktopMarkdownText(
+                markdown = update.releaseNotes.ifBlank { DesktopStrings.updateNoNotes },
+                accentColor = accentColor
+            )
+        }
+
+        if (downloading) {
+            HorizontalDivider(color = tokens.border)
+            Text(
+                text = DesktopStrings.updateDownloading((downloadProgress * 100f).toInt()),
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.textSecondary
+            )
+            LinearProgressIndicator(
+                progress = { downloadProgress },
+                modifier = Modifier.fillMaxWidth(),
+                color = accentColor,
+                trackColor = tokens.border
+            )
+        }
+
+        downloadedFile?.let { f ->
+            HorizontalDivider(color = tokens.border)
+            Text(
+                text = DesktopStrings.updateReadyToLaunch(f.name),
+                style = MaterialTheme.typography.bodySmall,
+                color = tokens.success
+            )
+        }
+
+        downloadError?.let { err ->
+            Text(
+                text = err,
+                style = MaterialTheme.typography.bodySmall,
+                color = tokens.error
+            )
+        }
+    }
 }

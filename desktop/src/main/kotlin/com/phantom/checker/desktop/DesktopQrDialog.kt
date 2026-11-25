@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,13 +44,15 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.phantom.checker.shared.LinkProtocol
 import com.phantom.checker.shared.QrPairingPayloadV2
 import kotlinx.coroutines.delay
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
 import java.awt.image.BufferedImage
 
 /**
- * #477 桌面端「配置新手機」QR 配對對話框（ZXing core 3.5.4）：
+ * #477 / #520 桌面端「配置新手機」QR 配對對話框（PhantomDialog 外殼＋ZXing core 3.5.4）：
  * - 產生 JSON：{"v":2,"name":"<PC>","ip":"<LAN IP>","port":49515,"fp":"<64hex>","code":"<6digit>"}
  * - 多網卡時列出所有 site-local IPv4 供切換
- * - 6 位配對碼 3 分鐘單次效期、即時倒數、過期明確標示、支援手動重新產生
+ * - 6 位配對碼 3 分鐘單次效期、即時倒數、過期明確標示、支援手動重新產生與一鍵複製手動配對資訊
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -71,6 +72,7 @@ fun DesktopQrPairingDialog(
     var selectedIp by remember(ips) { mutableStateOf(ips.firstOrNull().orEmpty()) }
     var pairCodePair by remember { mutableStateOf(server.getOrGeneratePairCode()) }
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var copiedNotice by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         server.refreshLocalIps()
@@ -102,128 +104,152 @@ fun DesktopQrPairingDialog(
         if (qrPayloadJson.isBlank()) null else generateQrImageBitmap(qrPayloadJson, 320)
     }
 
-    AlertDialog(
+    PhantomDialog(
         onDismissRequest = onDismiss,
-        containerColor = containerColor,
-        title = {
-            Text(DesktopStrings.qrDialogTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = DesktopStrings.qrDialogHint,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = tokens.textSecondary,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                if (ips.size > 1) {
-                    Text(
-                        text = DesktopStrings.qrSelectNicLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = tokens.textMuted,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        ips.forEach { ip ->
-                            FilterChip(
-                                selected = selectedIp == ip,
-                                onClick = { selectedIp = ip },
-                                label = { Text(ip, fontFamily = FontFamily.Monospace) }
-                            )
-                        }
-                    }
-                } else if (selectedIp.isBlank()) {
-                    Text(
-                        text = DesktopStrings.qrNoLanIpError,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = DesktopPalette.GlassError,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(224.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(if (qrBitmap != null) Color.White else tokens.surfaceElevated)
-                        .padding(10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (qrBitmap != null) {
-                        Image(
-                            bitmap = qrBitmap,
-                            contentDescription = DesktopStrings.qrDialogTitle,
-                            modifier = Modifier.size(204.dp)
-                        )
-                    } else {
-                        Text(
-                            text = if (isExpired) DesktopStrings.pairCodeExpired else DesktopStrings.qrUnavailableHint,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = DesktopPalette.GlassError
-                        )
-                    }
-                }
-
-                Text(
-                    text = if (isExpired) "------" else pairCodePair.first,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isExpired) DesktopPalette.GlassError else accentColor
-                )
-
-                Text(
-                    text = if (!isExpired) {
-                        DesktopStrings.pairCodeRemaining("%d:%02d".format(remSec / 60L, remSec % 60L))
-                    } else {
-                        DesktopStrings.pairCodeExpired
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isExpired) DesktopPalette.GlassError else tokens.textSecondary
-                )
-
-                if (selectedIp.isNotBlank()) {
-                    Text(
-                        text = "$selectedIp:${uiState.port} · ${DesktopStrings.fingerprintPrefix}${uiState.certFingerprint.take(8)}…",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = tokens.textMuted
-                    )
-                }
-
-                Spacer(Modifier.height(2.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SpringButton(
-                        onClick = {
-                            server.refreshLocalIps()
-                            pairCodePair = server.generatePairCode()
-                            nowMs = System.currentTimeMillis()
-                        },
-                        animationsEnabled = animationsEnabled,
-                        containerColor = accentColor
-                    ) {
-                        Text(DesktopStrings.pairCodeRegenerate)
-                    }
-                }
-            }
-        },
+        title = DesktopStrings.qrDialogTitle,
+        maxWidth = 440.dp,
+        containerColor = if (tokens.isLight || tokens.isHighContrast) tokens.dialogContainer else containerColor,
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(DesktopStrings.dismiss)
             }
         }
-    )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(
+                text = DesktopStrings.qrDialogHint,
+                style = MaterialTheme.typography.bodySmall,
+                color = tokens.textSecondary,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (ips.size > 1) {
+                Text(
+                    text = DesktopStrings.qrSelectNicLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.textMuted,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    ips.forEach { ip ->
+                        FilterChip(
+                            selected = selectedIp == ip,
+                            onClick = { selectedIp = ip },
+                            label = { Text(ip, fontFamily = FontFamily.Monospace) }
+                        )
+                    }
+                }
+            } else if (selectedIp.isBlank()) {
+                Text(
+                    text = DesktopStrings.qrNoLanIpError,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tokens.error,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(224.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (qrBitmap != null) Color.White else tokens.surfaceElevated)
+                    .padding(10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (qrBitmap != null) {
+                    Image(
+                        bitmap = qrBitmap,
+                        contentDescription = DesktopStrings.qrDialogTitle,
+                        modifier = Modifier.size(204.dp)
+                    )
+                } else {
+                    Text(
+                        text = if (isExpired) DesktopStrings.pairCodeExpired else DesktopStrings.qrUnavailableHint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = tokens.error
+                    )
+                }
+            }
+
+            Text(
+                text = if (isExpired) "------" else pairCodePair.first,
+                style = MaterialTheme.typography.headlineSmall,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = if (isExpired) tokens.error else tokens.accentText
+            )
+
+            Text(
+                text = if (!isExpired) {
+                    DesktopStrings.pairCodeRemaining("%d:%02d".format(remSec / 60L, remSec % 60L))
+                } else {
+                    DesktopStrings.pairCodeExpired
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isExpired) tokens.error else tokens.textSecondary
+            )
+
+            if (selectedIp.isNotBlank()) {
+                Text(
+                    text = "$selectedIp:${uiState.port} · ${DesktopStrings.fingerprintPrefix}${uiState.certFingerprint.take(8)}…",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = tokens.textMuted
+                )
+            }
+
+            if (copiedNotice) {
+                Text(
+                    text = DesktopStrings.manualPairInfoCopied,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tokens.success
+                )
+            }
+
+            Spacer(Modifier.height(2.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                SpringButton(
+                    onClick = {
+                        server.refreshLocalIps()
+                        pairCodePair = server.generatePairCode()
+                        nowMs = System.currentTimeMillis()
+                        copiedNotice = false
+                    },
+                    animationsEnabled = animationsEnabled,
+                    containerColor = accentColor
+                ) {
+                    Text(DesktopStrings.pairCodeRegenerate)
+                }
+                if (selectedIp.isNotBlank() && !isExpired) {
+                    SpringOutlinedButton(
+                        onClick = {
+                            val manualInfo = "$selectedIp:${uiState.port}\nCode: ${pairCodePair.first}\nFP: ${uiState.certFingerprint.lowercase()}"
+                            runCatching {
+                                Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(manualInfo), null)
+                                copiedNotice = true
+                            }
+                        },
+                        animationsEnabled = animationsEnabled
+                    ) {
+                        Text(DesktopStrings.copyManualPairInfo)
+                    }
+                }
+            }
+        }
+    }
 }
 
 internal fun generateQrImageBitmap(content: String, sizePx: Int = 320): ImageBitmap? {

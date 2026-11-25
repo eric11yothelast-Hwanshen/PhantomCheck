@@ -47,7 +47,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -1512,126 +1511,31 @@ fun DesktopApp(
                 }
                 }
 
-                // Deep Analysis Result Dialog (rendered with Markdown)
+                // Deep Analysis Result Dialog (rendered with Markdown, PhantomDialog shell maxWidth=720dp)
                 deepAnalysisResult?.let { (_, markdown) ->
-                    AlertDialog(
+                    PhantomDialog(
                         onDismissRequest = { deepAnalysisResult = null },
-                        title = { Text(DesktopStrings.deepAnalysisTitle, color = tokens.textPrimary) },
-                        text = {
-                            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                                DesktopMarkdownText(markdown = markdown, accentColor = accentColor)
-                            }
-                        },
+                        title = DesktopStrings.deepAnalysisTitle,
+                        maxWidth = 720.dp,
                         confirmButton = {
                             TextButton(onClick = { deepAnalysisResult = null }) { Text(DesktopStrings.ok) }
-                        },
-                        containerColor = tokens.dialogContainer
-                    )
+                        }
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                            DesktopMarkdownText(markdown = markdown, accentColor = accentColor)
+                        }
+                    }
                 }
 
-                // #499 Full Todo Add / Edit Dialog (title, notes, dueAt, priority, repeatRule)
+                // #499 / #520 Full Todo Add / Edit Dialog (PhantomDialog shell maxWidth=560dp)
                 if (showNewTodoDialog) {
                     val target = editingTodo
-                    AlertDialog(
+                    PhantomDialog(
                         onDismissRequest = { showNewTodoDialog = false; editingTodo = null },
-                        title = { Text(if (target == null) DesktopStrings.todoAddFull else DesktopStrings.todoEdit, color = tokens.textPrimary) },
-                        text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                                OutlinedTextField(
-                                    value = editTodoTitle,
-                                    onValueChange = { editTodoTitle = it },
-                                    label = { Text(DesktopStrings.todoAddHint) },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                OutlinedTextField(
-                                    value = editTodoNotes,
-                                    onValueChange = { editTodoNotes = it },
-                                    label = { Text(DesktopStrings.todoNotesHint) },
-                                    maxLines = 3,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                // Priority chips
-                                Text(DesktopStrings.todoPriorityLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    listOf(
-                                        0 to DesktopStrings.todoPriorityLow,
-                                        1 to DesktopStrings.todoPriorityMed,
-                                        2 to DesktopStrings.todoPriorityHigh
-                                    ).forEach { (p, label) ->
-                                        FilterChip(
-                                            selected = editTodoPriority == p,
-                                            onClick = { editTodoPriority = p },
-                                            label = { Text(label) }
-                                        )
-                                    }
-                                }
-                                // Reminder time presets + custom input
-                                Text(DesktopStrings.todoDueLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    FilterChip(
-                                        selected = false,
-                                        onClick = {
-                                            editTodoDueAt = System.currentTimeMillis() + 60L * 60L * 1000L
-                                            editTodoDueCustom = formatDueTime(editTodoDueAt)
-                                        },
-                                        label = { Text(DesktopStrings.todoDue1h) }
-                                    )
-                                    FilterChip(
-                                        selected = false,
-                                        onClick = {
-                                            val cal = java.util.Calendar.getInstance().apply {
-                                                set(java.util.Calendar.HOUR_OF_DAY, 20)
-                                                set(java.util.Calendar.MINUTE, 0)
-                                                set(java.util.Calendar.SECOND, 0)
-                                                if (timeInMillis <= System.currentTimeMillis()) add(java.util.Calendar.DAY_OF_YEAR, 1)
-                                            }
-                                            editTodoDueAt = cal.timeInMillis
-                                            editTodoDueCustom = formatDueTime(editTodoDueAt)
-                                        },
-                                        label = { Text(DesktopStrings.todoDueTonight) }
-                                    )
-                                    FilterChip(
-                                        selected = false,
-                                        onClick = {
-                                            val cal = java.util.Calendar.getInstance().apply {
-                                                add(java.util.Calendar.DAY_OF_YEAR, 1)
-                                                set(java.util.Calendar.HOUR_OF_DAY, 9)
-                                                set(java.util.Calendar.MINUTE, 0)
-                                                set(java.util.Calendar.SECOND, 0)
-                                            }
-                                            editTodoDueAt = cal.timeInMillis
-                                            editTodoDueCustom = formatDueTime(editTodoDueAt)
-                                        },
-                                        label = { Text(DesktopStrings.todoDueTomorrow) }
-                                    )
-                                }
-                                OutlinedTextField(
-                                    value = editTodoDueCustom,
-                                    onValueChange = { raw ->
-                                        editTodoDueCustom = raw
-                                        parseDueTime(raw)?.let { editTodoDueAt = it }
-                                    },
-                                    label = { Text(DesktopStrings.todoDueCustomHint) },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                // Repeat rule chips
-                                Text(DesktopStrings.todoRepeatLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    listOf(
-                                        "" to DesktopStrings.todoRepeatNone,
-                                        "daily" to DesktopStrings.todoRepeatDaily,
-                                        "weekly" to DesktopStrings.todoRepeatWeekly
-                                    ).forEach { (rule, label) ->
-                                        FilterChip(
-                                            selected = editTodoRepeat == rule,
-                                            onClick = { editTodoRepeat = rule },
-                                            label = { Text(label) }
-                                        )
-                                    }
-                                }
-                            }
+                        title = if (target == null) DesktopStrings.todoAddFull else DesktopStrings.todoEdit,
+                        maxWidth = 560.dp,
+                        dismissButton = {
+                            TextButton(onClick = { showNewTodoDialog = false; editingTodo = null }) { Text(DesktopStrings.dismiss) }
                         },
                         confirmButton = {
                             TextButton(onClick = {
@@ -1671,50 +1575,116 @@ fun DesktopApp(
                                     }
                                 }
                             }) { Text(DesktopStrings.todoSave) }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showNewTodoDialog = false; editingTodo = null }) { Text(DesktopStrings.dismiss) }
-                        },
-                        containerColor = tokens.dialogContainer
-                    )
-                }
-
-                // #499 Edit Note Dialog
-                editingNote?.let { targetNote ->
-                    val noteColorChoices = listOf("", "#A78BFA", "#6EA8FE", "#34D399", "#FBBF24", "#FB7185")
-                    AlertDialog(
-                        onDismissRequest = { editingNote = null },
-                        title = { Text(DesktopStrings.noteEditTitle, color = tokens.textPrimary) },
-                        text = {
-                            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                                OutlinedTextField(
-                                    value = editNoteContent,
-                                    onValueChange = { editNoteContent = it },
-                                    minLines = 3,
-                                    maxLines = 8,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        }
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                            OutlinedTextField(
+                                value = editTodoTitle,
+                                onValueChange = { editTodoTitle = it },
+                                label = { Text(DesktopStrings.todoAddHint) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = editTodoNotes,
+                                onValueChange = { editTodoNotes = it },
+                                label = { Text(DesktopStrings.todoNotesHint) },
+                                maxLines = 3,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            // Priority chips
+                            Text(DesktopStrings.todoPriorityLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(
+                                    0 to DesktopStrings.todoPriorityLow,
+                                    1 to DesktopStrings.todoPriorityMed,
+                                    2 to DesktopStrings.todoPriorityHigh
+                                ).forEach { (p, label) ->
                                     FilterChip(
-                                        selected = editNotePinned,
-                                        onClick = { editNotePinned = !editNotePinned },
-                                        label = { Text(if (editNotePinned) DesktopStrings.noteUnpin else DesktopStrings.notePin) }
+                                        selected = editTodoPriority == p,
+                                        onClick = { editTodoPriority = p },
+                                        label = { Text(label) }
                                     )
-                                    Text(DesktopStrings.noteColorLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
-                                    noteColorChoices.forEach { hex ->
-                                        val selected = editNoteColor == hex
-                                        val swatch = DesktopPalette.parseHexColor(hex) ?: tokens.border
-                                        Box(
-                                            modifier = Modifier
-                                                .size(if (selected) 20.dp else 16.dp)
-                                                .clip(CircleShape)
-                                                .background(swatch)
-                                                .border(if (selected) 2.dp else 1.dp, if (selected) tokens.textPrimary else tokens.border, CircleShape)
-                                                .clickable { editNoteColor = hex }
-                                        )
-                                    }
                                 }
                             }
+                            // Reminder time presets + custom input
+                            Text(DesktopStrings.todoDueLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilterChip(
+                                    selected = false,
+                                    onClick = {
+                                        editTodoDueAt = System.currentTimeMillis() + 60L * 60L * 1000L
+                                        editTodoDueCustom = formatDueTime(editTodoDueAt)
+                                    },
+                                    label = { Text(DesktopStrings.todoDue1h) }
+                                )
+                                FilterChip(
+                                    selected = false,
+                                    onClick = {
+                                        val cal = java.util.Calendar.getInstance().apply {
+                                            set(java.util.Calendar.HOUR_OF_DAY, 20)
+                                            set(java.util.Calendar.MINUTE, 0)
+                                            set(java.util.Calendar.SECOND, 0)
+                                            if (timeInMillis <= System.currentTimeMillis()) add(java.util.Calendar.DAY_OF_YEAR, 1)
+                                        }
+                                        editTodoDueAt = cal.timeInMillis
+                                        editTodoDueCustom = formatDueTime(editTodoDueAt)
+                                    },
+                                    label = { Text(DesktopStrings.todoDueTonight) }
+                                )
+                                FilterChip(
+                                    selected = false,
+                                    onClick = {
+                                        val cal = java.util.Calendar.getInstance().apply {
+                                            add(java.util.Calendar.DAY_OF_YEAR, 1)
+                                            set(java.util.Calendar.HOUR_OF_DAY, 9)
+                                            set(java.util.Calendar.MINUTE, 0)
+                                            set(java.util.Calendar.SECOND, 0)
+                                        }
+                                        editTodoDueAt = cal.timeInMillis
+                                        editTodoDueCustom = formatDueTime(editTodoDueAt)
+                                    },
+                                    label = { Text(DesktopStrings.todoDueTomorrow) }
+                                )
+                            }
+                            OutlinedTextField(
+                                value = editTodoDueCustom,
+                                onValueChange = { raw ->
+                                    editTodoDueCustom = raw
+                                    parseDueTime(raw)?.let { editTodoDueAt = it }
+                                },
+                                label = { Text(DesktopStrings.todoDueCustomHint) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            // Repeat rule chips
+                            Text(DesktopStrings.todoRepeatLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(
+                                    "" to DesktopStrings.todoRepeatNone,
+                                    "daily" to DesktopStrings.todoRepeatDaily,
+                                    "weekly" to DesktopStrings.todoRepeatWeekly
+                                ).forEach { (rule, label) ->
+                                    FilterChip(
+                                        selected = editTodoRepeat == rule,
+                                        onClick = { editTodoRepeat = rule },
+                                        label = { Text(label) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // #499 / #520 Edit Note Dialog (PhantomDialog shell maxWidth=560dp)
+                editingNote?.let { targetNote ->
+                    val noteColorChoices = listOf("", "#A78BFA", "#6EA8FE", "#34D399", "#FBBF24", "#FB7185")
+                    PhantomDialog(
+                        onDismissRequest = { editingNote = null },
+                        title = DesktopStrings.noteEditTitle,
+                        maxWidth = 560.dp,
+                        dismissButton = {
+                            TextButton(onClick = { editingNote = null }) { Text(DesktopStrings.dismiss) }
                         },
                         confirmButton = {
                             TextButton(onClick = {
@@ -1727,12 +1697,38 @@ fun DesktopApp(
                                     }
                                 }
                             }) { Text(DesktopStrings.todoSave) }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { editingNote = null }) { Text(DesktopStrings.dismiss) }
-                        },
-                        containerColor = tokens.dialogContainer
-                    )
+                        }
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                            OutlinedTextField(
+                                value = editNoteContent,
+                                onValueChange = { editNoteContent = it },
+                                minLines = 3,
+                                maxLines = 8,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                FilterChip(
+                                    selected = editNotePinned,
+                                    onClick = { editNotePinned = !editNotePinned },
+                                    label = { Text(if (editNotePinned) DesktopStrings.noteUnpin else DesktopStrings.notePin) }
+                                )
+                                Text(DesktopStrings.noteColorLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                noteColorChoices.forEach { hex ->
+                                    val selected = editNoteColor == hex
+                                    val swatch = DesktopPalette.parseHexColor(hex) ?: tokens.border
+                                    Box(
+                                        modifier = Modifier
+                                            .size(if (selected) 20.dp else 16.dp)
+                                            .clip(CircleShape)
+                                            .background(swatch)
+                                            .border(if (selected) 2.dp else 1.dp, if (selected) tokens.textPrimary else tokens.border, CircleShape)
+                                            .clickable { editNoteColor = hex }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // #478 Desktop Update Available Dialog
