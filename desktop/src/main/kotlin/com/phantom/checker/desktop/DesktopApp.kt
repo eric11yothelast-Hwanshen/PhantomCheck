@@ -132,18 +132,23 @@ private fun conversationGroupKey(m: MessageSummaryDto): String =
     if (m.conversationKey.isNotBlank()) "${m.packageName}::${m.conversationKey}"
     else "${m.packageName}::${m.sender}"
 
+private val CONV_TIME_24_FMT = ThreadLocal.withInitial { SimpleDateFormat("HH:mm", Locale.getDefault()) }
+private val CONV_TIME_12_FMT = ThreadLocal.withInitial { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
+private val CONV_DATE_FMT = ThreadLocal.withInitial { SimpleDateFormat("MM/dd", Locale.getDefault()) }
+private val TODO_DUE_FMT = ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()) }
+
 private fun formatRelativeConvTime(timestamp: Long, use24Hour: Boolean): String {
     if (timestamp <= 0L) return ""
     val nowCal = java.util.Calendar.getInstance()
     val msgCal = java.util.Calendar.getInstance().apply { timeInMillis = timestamp }
     val sameDay = nowCal.get(java.util.Calendar.YEAR) == msgCal.get(java.util.Calendar.YEAR) &&
         nowCal.get(java.util.Calendar.DAY_OF_YEAR) == msgCal.get(java.util.Calendar.DAY_OF_YEAR)
-    val pattern = if (sameDay) {
-        if (use24Hour) "HH:mm" else "hh:mm a"
+    val fmt = if (sameDay) {
+        if (use24Hour) CONV_TIME_24_FMT.get() else CONV_TIME_12_FMT.get()
     } else {
-        "MM/dd"
+        CONV_DATE_FMT.get()
     }
-    return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(timestamp))
+    return fmt.format(Date(timestamp))
 }
 
 /**
@@ -2635,7 +2640,7 @@ private fun PulsingThinkingLabel(
 private fun formatDueTime(ts: Long): String {
     if (ts <= 0L) return ""
     return runCatching {
-        java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(ts))
+        TODO_DUE_FMT.get().format(java.util.Date(ts))
     }.getOrDefault("")
 }
 

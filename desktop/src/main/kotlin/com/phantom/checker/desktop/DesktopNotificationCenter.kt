@@ -408,6 +408,9 @@ internal fun primaryWorkAreaBounds(): Rectangle = runCatching {
     GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds
 }.getOrDefault(Rectangle(0, 0, 1920, 1040))
 
+private val TOAST_TIME_24_FMT = ThreadLocal.withInitial { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
+private val TOAST_TIME_12_FMT = ThreadLocal.withInitial { java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()) }
+
 /**
  * #497 B：獨立 always-on-top 無邊框右下 Toast 視窗（application scope）。
  */
@@ -574,7 +577,7 @@ fun DesktopToastOverlayWindow(
                                         )
                                         Spacer(Modifier.width(6.dp))
                                         val rightMeta = if (settings.toastShowTime) {
-                                            val sdf = java.text.SimpleDateFormat(if (settings.use24HourTime) "HH:mm" else "hh:mm a", java.util.Locale.getDefault())
+                                            val sdf = if (settings.use24HourTime) TOAST_TIME_24_FMT.get() else TOAST_TIME_12_FMT.get()
                                             "${sdf.format(java.util.Date(current.timestamp))} · ${DesktopStrings.riskLabelText(current.riskLabel)}"
                                         } else {
                                             DesktopStrings.riskLabelText(current.riskLabel)

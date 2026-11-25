@@ -34,6 +34,7 @@ class DesktopMdnsBroadcaster {
     private var stopped = false
 
     private val serviceType = "${LinkProtocol.MDNS_SERVICE_TYPE}local."
+    private val nonHostCharsRegex = Regex("[^A-Za-z0-9_-]")
 
     fun start(port: Int, fingerprint: String, desktopName: String) {
         stop()
@@ -46,7 +47,7 @@ class DesktopMdnsBroadcaster {
                     runCatching { instance.close() }
                     return@runCatching
                 }
-                val cleanHost = desktopName.replace(Regex("[^A-Za-z0-9_-]"), "").take(16).ifBlank { "PC" }
+                val cleanHost = desktopName.replace(nonHostCharsRegex, "").take(16).ifBlank { "PC" }
                 val svcName = "PhantomCheck-$cleanHost"
                 val txtProps = mapOf(
                     "fn" to desktopName.take(28),

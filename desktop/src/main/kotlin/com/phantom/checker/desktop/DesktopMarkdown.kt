@@ -126,6 +126,8 @@ private sealed interface MdBlock {
     data class Paragraph(val text: String) : MdBlock
 }
 
+private val ORDERED_LIST_REGEX = Regex("^\\d+\\.\\s+.*")
+
 private fun parseMarkdownBlocks(raw: String): List<MdBlock> {
     val lines = raw.lines()
     val result = mutableListOf<MdBlock>()
@@ -172,7 +174,7 @@ private fun parseMarkdownBlocks(raw: String): List<MdBlock> {
                 result.add(MdBlock.Bullet("•", trimmed.drop(2).trim()))
                 i++
             }
-            Regex("^\\d+\\.\\s+.*").matches(trimmed) -> {
+            ORDERED_LIST_REGEX.matches(trimmed) -> {
                 val dotIdx = trimmed.indexOf('.')
                 val marker = trimmed.substring(0, dotIdx + 1)
                 result.add(MdBlock.Bullet(marker, trimmed.substring(dotIdx + 1).trim()))

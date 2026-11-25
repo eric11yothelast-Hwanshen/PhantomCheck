@@ -392,6 +392,7 @@ object DesktopLinkClient {
 
     @Volatile
     private var lastReceivedClipHash: Int = 0
+    private val PURE_OTP_DIGITS_REGEX = Regex("^\\d{4,8}$")
 
     /**
      * #518 手機端手動/前景推送剪貼簿至已配對電腦（預設關、僅 TLS 配對連線、5000 字上限、OtpDetector 驗證碼保護）。
@@ -407,7 +408,7 @@ object DesktopLinkClient {
         if (trimmed.length > maxChars) return "too_long"
         if (PhantomPrefs.isClipboardOtpGuardEnabled(appCtx)) {
             if (com.phantom.checker.util.OtpDetector.extractOtp(trimmed) != null ||
-                trimmed.matches(Regex("^\\d{4,8}$"))
+                PURE_OTP_DIGITS_REGEX.matches(trimmed)
             ) {
                 return "otp_blocked"
             }
