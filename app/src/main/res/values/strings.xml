@@ -3065,4 +3065,8 @@
     <string name="filters_suggest_finance">Finance &amp; OTP</string>
     <string name="filters_suggest_vip">VIP Contacts</string>
     <string name="filters_suggest_work">Work</string>
+    <!-- #510 Light Mode Contrast Fix + High Contrast Toggle -->
+    <string name="catalog_appearance_high_contrast_title">High contrast</string>
+    <string name="catalog_appearance_high_contrast_desc">Boost text, card, and border contrast for both light and dark themes (WCAG 7:1 target)</string>
+    <string name="catalog_appearance_high_contrast_aliases">high contrast,accessibility,readability,wcag,border,clarity</string>
 </resources>

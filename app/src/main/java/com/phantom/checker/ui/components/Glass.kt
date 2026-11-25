@@ -61,16 +61,28 @@ fun Modifier.glassSurface(
     cornerRadius: Dp = 24.dp,
 ): Modifier {
     val shape = RoundedCornerShape(cornerRadius)
+    val highContrast = com.phantom.checker.ui.LocalHighContrast.current
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val resolvedOutline = outlineColor
-        ?: if (isDark) {
-            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
-        } else {
-            MaterialTheme.colorScheme.outlineVariant
-        }
+    val borderWidth = if (highContrast) 1.5.dp else 1.dp
+    val resolvedOutline = when {
+        highContrast -> MaterialTheme.colorScheme.outline
+        outlineColor != null -> outlineColor
+        isDark -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+        else -> MaterialTheme.colorScheme.outlineVariant
+    }
+    if (highContrast) {
+        return clip(shape)
+            .background(color = MaterialTheme.colorScheme.surface)
+            .border(width = borderWidth, color = resolvedOutline, shape = shape)
+    }
+    val effectiveFallback = if (!isDark && fallbackColor.alpha < 0.92f) {
+        fallbackColor.copy(alpha = 0.94f)
+    } else {
+        fallbackColor
+    }
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         val surfaceColor = MaterialTheme.colorScheme.surface
-        val blurStyle = remember(surfaceColor, isDark, fallbackColor) {
+        val blurStyle = remember(surfaceColor, isDark, effectiveFallback) {
             HazeBlurStyle {
                 blurEnabled(true)
                 blurRadius(20.dp)
@@ -78,11 +90,11 @@ fun Modifier.glassSurface(
                 colorEffects(
                     listOf(
                         HazeColorEffect.tint(
-                            surfaceColor.copy(alpha = if (isDark) 0.55f else 0.72f)
+                            surfaceColor.copy(alpha = if (isDark) 0.55f else 0.92f)
                         )
                     )
                 )
-                fallbackColorEffect(HazeColorEffect.tint(fallbackColor))
+                fallbackColorEffect(HazeColorEffect.tint(effectiveFallback))
             }
         }
         clip(shape)
@@ -90,11 +102,11 @@ fun Modifier.glassSurface(
                 input = HazeInput.Sources(state),
                 style = blurStyle,
             )
-            .border(width = 1.dp, color = resolvedOutline, shape = shape)
+            .border(width = borderWidth, color = resolvedOutline, shape = shape)
     } else {
         clip(shape)
-            .background(color = fallbackColor)
-            .border(width = 1.dp, color = resolvedOutline, shape = shape)
+            .background(color = effectiveFallback)
+            .border(width = borderWidth, color = resolvedOutline, shape = shape)
     }
 }
 

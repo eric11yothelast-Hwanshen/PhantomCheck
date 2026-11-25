@@ -1444,7 +1444,7 @@ private fun PhantomCheckApp(
                                 color = if (isSelected) {
                                     tagColor.copy(alpha = 0.16f)
                                 } else {
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f))
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()

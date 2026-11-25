@@ -49,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -201,13 +202,25 @@ fun LinkHubContent(
     ) {
         // 1. 即時連線狀態與六大失敗診斷引導卡 (#500)
         item {
+            val isDarkBg = MaterialTheme.colorScheme.background.luminance() < 0.5f
+            val isHc = com.phantom.checker.ui.LocalHighContrast.current
             val dotColor = when (clientStatus.connState) {
-                PhoneLinkConnState.CONNECTED -> Color(0xFF4ADE80)
-                PhoneLinkConnState.CONNECTING, PhoneLinkConnState.RECONNECTING -> Color(0xFFFBBF24)
+                PhoneLinkConnState.CONNECTED -> when {
+                    isHc && isDarkBg -> Color(0xFF86EFAC)
+                    isHc -> Color(0xFF166534)
+                    isDarkBg -> Color(0xFF4ADE80)
+                    else -> Color(0xFF15803D)
+                }
+                PhoneLinkConnState.CONNECTING, PhoneLinkConnState.RECONNECTING -> when {
+                    isHc && isDarkBg -> Color(0xFFFCD34D)
+                    isHc -> Color(0xFF92400E)
+                    isDarkBg -> Color(0xFFFBBF24)
+                    else -> Color(0xFFB45309)
+                }
                 PhoneLinkConnState.DISCONNECTED -> MaterialTheme.colorScheme.outline
             }
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.55f))),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -337,7 +350,7 @@ fun LinkHubContent(
         // 2. 自動連線總開關 + 主掃碼配對入口
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.5f))),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -391,7 +404,7 @@ fun LinkHubContent(
         if (cameraPermissionDenied) {
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f)),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f))),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -433,7 +446,7 @@ fun LinkHubContent(
                         (it.fingerprintPrefix.isBlank() || pending.fp.startsWith(it.fingerprintPrefix, ignoreCase = true))
                 }
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f))),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -492,7 +505,7 @@ fun LinkHubContent(
         // 3. 區網 mDNS 發現的桌面端（含 TTL 過期自動清理＋重新掃描鈕）
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.35f))),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
@@ -558,7 +571,7 @@ fun LinkHubContent(
         // 4. 可收合手動配對備援卡 (#500)
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.35f))),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(
@@ -634,7 +647,7 @@ fun LinkHubContent(
         // 5. 已配對電腦列表（以指紋/實例為主鍵動態解析 IP:port，離線淡出顯示待重新掃描，支援單筆刪除 #500）
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.35f))),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
@@ -667,11 +680,16 @@ fun LinkHubContent(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        val onlineDot = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) {
+                                            if (com.phantom.checker.ui.LocalHighContrast.current) Color(0xFF86EFAC) else Color(0xFF4ADE80)
+                                        } else {
+                                            if (com.phantom.checker.ui.LocalHighContrast.current) Color(0xFF166534) else Color(0xFF15803D)
+                                        }
                                         Box(
                                             modifier = Modifier
                                                 .size(8.dp)
                                                 .clip(CircleShape)
-                                                .background(if (isOnline) Color(0xFF4ADE80) else MaterialTheme.colorScheme.outline)
+                                                .background(if (isOnline) onlineDot else MaterialTheme.colorScheme.outline)
                                         )
                                         Text(dev.name.ifBlank { dev.host }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                                     }
@@ -730,7 +748,7 @@ fun LinkHubContent(
         // 6. 連線診斷紀錄（TCP/TLS/HANDSHAKE/PROTOCOL 階段與錯誤碼）
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.35f))),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
@@ -820,7 +838,7 @@ fun LinkHubContent(
         // 7. 未知連線嘗試紀錄
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.35f))),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
@@ -868,7 +886,7 @@ fun LinkHubContent(
         // 8. 指令審計紀錄（上限 200 筆）
         item {
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.35f))),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
@@ -919,7 +937,7 @@ fun LinkHubContent(
             val pm = remember { runCatching { ctx.getSystemService(Context.POWER_SERVICE) as? PowerManager }.getOrNull() }
             val isIgnoringBattery = runCatching { pm?.isIgnoringBatteryOptimizations(ctx.packageName) == true }.getOrDefault(false)
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.35f))),
                 shape = RoundedCornerShape(16.dp)
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {

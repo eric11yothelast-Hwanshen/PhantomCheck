@@ -188,19 +188,36 @@ fun Modifier.phantomGlassSurface(
         }
     }
     val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+    val highContrast = LocalHighContrast.current
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val glassStrength = ThemePreferences.getGlassStrengthPercent(ctx)
     val cardBgMode = ThemePreferences.getCardBgMode(ctx)
     val cardBgAlpha = (ThemePreferences.getCardBgAlphaPercent(ctx) / 100f).coerceAtLeast(0.15f)
-    val darkCardColor = if (isDark) {
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+    val effectiveCardBgMode = if (!isDark && cardBgMode == PhantomPrefs.CardBgMode.DARK) {
+        PhantomPrefs.CardBgMode.FOLLOW_GLASS
     } else {
-        Color(0xFF16181F).copy(alpha = 0.94f)
+        cardBgMode
     }
-    val resolvedFallback = when (cardBgMode) {
-        PhantomPrefs.CardBgMode.FOLLOW_GLASS -> fallbackColor
-        PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(alpha = cardBgAlpha.coerceAtLeast(0.35f))
-        PhantomPrefs.CardBgMode.DARK -> darkCardColor
+    val darkCardColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+    val lightSafeFallback = if (!isDark && fallbackColor.alpha < 0.92f) {
+        fallbackColor.copy(alpha = 0.94f)
+    } else {
+        fallbackColor
+    }
+    val resolvedFallback = when {
+        highContrast -> MaterialTheme.colorScheme.surface
+        effectiveCardBgMode == PhantomPrefs.CardBgMode.FOLLOW_GLASS -> lightSafeFallback
+        effectiveCardBgMode == PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(
+            alpha = if (isDark) cardBgAlpha.coerceAtLeast(0.35f) else cardBgAlpha.coerceAtLeast(0.86f)
+        )
+        else -> darkCardColor
+    }
+
+    if (highContrast) {
+        return this
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface, shape)
+            .border(width = 1.5.dp, color = MaterialTheme.colorScheme.outline, shape = shape)
     }
 
     return if (ThemePreferences.isGlassEffectEnabled(ctx) && !isPowerSave) {
@@ -211,11 +228,15 @@ fun Modifier.phantomGlassSurface(
             cornerRadius = cornerRadius
         ).clip(shape)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            val overlayColor: Color? = when (cardBgMode) {
-                PhantomPrefs.CardBgMode.FOLLOW_GLASS -> if (glassStrength > 0) {
+            val overlayColor: Color? = when (effectiveCardBgMode) {
+                PhantomPrefs.CardBgMode.FOLLOW_GLASS -> if (!isDark) {
+                    MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+                } else if (glassStrength > 0) {
                     MaterialTheme.colorScheme.surface.copy(alpha = (glassStrength / 100f) * 0.45f)
                 } else null
-                PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(alpha = cardBgAlpha)
+                PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(
+                    alpha = if (isDark) cardBgAlpha else cardBgAlpha.coerceAtLeast(0.86f)
+                )
                 PhantomPrefs.CardBgMode.DARK -> darkCardColor
             }
             if (overlayColor != null) {
@@ -251,20 +272,21 @@ fun PhantomFloatingSurface(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+    val highContrast = LocalHighContrast.current
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    val bgColor = if (isDark) {
-        Color(0xEB12151E)
-    } else {
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+    val bgColor = when {
+        highContrast -> MaterialTheme.colorScheme.surface
+        isDark -> Color(0xEB12151E)
+        else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
     }
     Box(
         modifier = modifier
             .clip(shape)
             .background(bgColor, shape)
-            .phantomSheen(cornerRadius, isDark)
+            .let { m -> if (highContrast) m else m.phantomSheen(cornerRadius, isDark) }
             .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant,
+                width = if (highContrast) 1.5.dp else 1.dp,
+                color = if (highContrast) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.outlineVariant,
                 shape = shape
             )
     ) {
@@ -295,51 +317,58 @@ fun PhantomGlassCard(
         }
     }
     val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
+    val highContrast = LocalHighContrast.current
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val glassStrength = ThemePreferences.getGlassStrengthPercent(ctx)
     val cardBgMode = ThemePreferences.getCardBgMode(ctx)
     val cardBgAlpha = (ThemePreferences.getCardBgAlphaPercent(ctx) / 100f).coerceAtLeast(0.15f)
-    val darkCardColor = if (isDark) {
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+    // #510 淺色模式下禁用深色卡面覆蓋，避免子元素使用 onSurface（深字）壓在深卡上造成低對比
+    val effectiveCardBgMode = if (!isDark && cardBgMode == PhantomPrefs.CardBgMode.DARK) {
+        PhantomPrefs.CardBgMode.FOLLOW_GLASS
     } else {
-        Color(0xFF16181F).copy(alpha = 0.94f)
+        cardBgMode
     }
+    val darkCardColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
     // #243/#244 重疊／堆疊模式防透字：深色不透明底提高至 0.96 以上 (#F6161822)
-    val boostedOverlay = if (isDark) {
-        Color(0xF6161822)
-    } else {
-        MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+    val boostedOverlay = when {
+        highContrast -> MaterialTheme.colorScheme.surface
+        isDark -> Color(0xF6161822)
+        else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
     }
-    val outline = if (overlapOpaqueBoost) {
-        if (isDark) Color.White.copy(alpha = 0.22f) else MaterialTheme.colorScheme.outlineVariant
-    } else if (isDark) {
-        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
-    } else {
-        MaterialTheme.colorScheme.outlineVariant
-    }
-
-    val cardContentColor = if (cardBgMode == PhantomPrefs.CardBgMode.DARK && !isDark) {
-        Color(0xFFF2F4F8)
-    } else {
-        MaterialTheme.colorScheme.onSurface
+    val borderWidth = if (highContrast) 1.5.dp else 1.dp
+    val outline = when {
+        highContrast -> MaterialTheme.colorScheme.outline
+        overlapOpaqueBoost -> if (isDark) Color.White.copy(alpha = 0.22f) else MaterialTheme.colorScheme.outlineVariant
+        isDark -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+        else -> MaterialTheme.colorScheme.outlineVariant
     }
 
-    if (ThemePreferences.isGlassEffectEnabled(ctx) && !isPowerSave) {
+    val cardContentColor = MaterialTheme.colorScheme.onSurface
+
+    if (!highContrast && ThemePreferences.isGlassEffectEnabled(ctx) && !isPowerSave) {
         val fallbackColor = if (overlapOpaqueBoost) {
             boostedOverlay
-        } else when (cardBgMode) {
-            PhantomPrefs.CardBgMode.FOLLOW_GLASS -> MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
-            PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(alpha = cardBgAlpha.coerceAtLeast(0.35f))
+        } else when (effectiveCardBgMode) {
+            PhantomPrefs.CardBgMode.FOLLOW_GLASS -> MaterialTheme.colorScheme.surface.copy(
+                alpha = if (isDark) 0.88f else 0.95f
+            )
+            PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(
+                alpha = if (isDark) cardBgAlpha.coerceAtLeast(0.35f) else cardBgAlpha.coerceAtLeast(0.86f)
+            )
             PhantomPrefs.CardBgMode.DARK -> darkCardColor
         }
         val overlayColor: Color? = if (overlapOpaqueBoost) {
             boostedOverlay
         } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            when (cardBgMode) {
-                PhantomPrefs.CardBgMode.FOLLOW_GLASS -> if (glassStrength > 0) {
+            when (effectiveCardBgMode) {
+                PhantomPrefs.CardBgMode.FOLLOW_GLASS -> if (!isDark) {
+                    MaterialTheme.colorScheme.surface.copy(alpha = 0.93f)
+                } else if (glassStrength > 0) {
                     MaterialTheme.colorScheme.surface.copy(alpha = (glassStrength / 100f) * 0.45f)
                 } else null
-                PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(alpha = cardBgAlpha)
+                PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(
+                    alpha = if (isDark) cardBgAlpha else cardBgAlpha.coerceAtLeast(0.86f)
+                )
                 PhantomPrefs.CardBgMode.DARK -> darkCardColor
             }
         } else {
@@ -364,7 +393,7 @@ fun PhantomGlassCard(
                 .let { m -> if (overlayColor != null) m.background(overlayColor, shape) else m }
                 .let { m -> if (tintColor != null) m.background(tintColor, shape) else m }
                 .phantomSheen(cornerRadius, isDark)
-                .let { m -> if (overlapOpaqueBoost) m.border(width = 1.dp, color = outline, shape = shape) else m }
+                .let { m -> if (overlapOpaqueBoost) m.border(width = borderWidth, color = outline, shape = shape) else m }
         ) {
             androidx.compose.runtime.CompositionLocalProvider(
                 androidx.compose.material3.LocalContentColor provides cardContentColor
@@ -376,21 +405,25 @@ fun PhantomGlassCard(
             }
         }
     } else {
-        val solidBg = if (overlapOpaqueBoost) {
-            boostedOverlay
-        } else when (cardBgMode) {
-            PhantomPrefs.CardBgMode.FOLLOW_GLASS -> MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
-            PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(alpha = cardBgAlpha.coerceAtLeast(0.35f))
-            PhantomPrefs.CardBgMode.DARK -> darkCardColor
+        val solidBg = when {
+            highContrast -> MaterialTheme.colorScheme.surface
+            overlapOpaqueBoost -> boostedOverlay
+            effectiveCardBgMode == PhantomPrefs.CardBgMode.FOLLOW_GLASS -> MaterialTheme.colorScheme.surface.copy(
+                alpha = if (isDark) 0.94f else 0.97f
+            )
+            effectiveCardBgMode == PhantomPrefs.CardBgMode.TRANSPARENT -> MaterialTheme.colorScheme.surface.copy(
+                alpha = if (isDark) cardBgAlpha.coerceAtLeast(0.35f) else cardBgAlpha.coerceAtLeast(0.88f)
+            )
+            else -> darkCardColor
         }
         Box(
             modifier = modifier
-                .let { m -> if (overlapOpaqueBoost) m.shadow(elevation = 8.dp, shape = shape, clip = false) else m }
+                .let { m -> if (overlapOpaqueBoost && !highContrast) m.shadow(elevation = 8.dp, shape = shape, clip = false) else m }
                 .clip(shape)
                 .background(solidBg, shape)
                 .let { m -> if (tintColor != null) m.background(tintColor, shape) else m }
-                .phantomSheen(cornerRadius, isDark)
-                .border(width = 1.dp, color = outline, shape = shape)
+                .let { m -> if (highContrast) m else m.phantomSheen(cornerRadius, isDark) }
+                .border(width = borderWidth, color = outline, shape = shape)
         ) {
             androidx.compose.runtime.CompositionLocalProvider(
                 androidx.compose.material3.LocalContentColor provides cardContentColor
@@ -667,12 +700,25 @@ fun PhantomBackgroundBox(
         return
     }
 
+    val highContrast = LocalHighContrast.current
     val isDark = fallbackBg.luminance() < 0.5f
     val scrimPref = ThemePreferences.getBackgroundScrimPercent(ctx)
+    val scrimColor = if (isDark) Color.Black else fallbackBg
     val scrimAlpha = if (scrimPref < 0) {
-        if (isDark) 0.60f else 0.35f
+        when {
+            highContrast && isDark -> 0.84f
+            highContrast && !isDark -> 0.94f
+            isDark -> 0.60f
+            else -> 0.84f
+        }
     } else {
-        (scrimPref / 100f).coerceIn(0f, 1f)
+        val raw = (scrimPref / 100f).coerceIn(0f, 1f)
+        when {
+            highContrast && isDark -> raw.coerceAtLeast(0.78f)
+            highContrast && !isDark -> raw.coerceAtLeast(0.88f)
+            !isDark -> raw.coerceAtLeast(0.72f)
+            else -> raw
+        }
     }
 
     BoxWithConstraints(
@@ -698,7 +744,7 @@ fun PhantomBackgroundBox(
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .background(Color.Black.copy(alpha = scrimAlpha))
+                    .background(scrimColor.copy(alpha = scrimAlpha))
             )
         }
         content()

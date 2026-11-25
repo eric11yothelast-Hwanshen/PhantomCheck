@@ -635,7 +635,7 @@ internal fun MemoryTab(
         ) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 6.dp)
@@ -861,7 +861,7 @@ internal fun MemoryTab(
                     color = if (isBatchMode) {
                         MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
                     } else {
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.5f))
                     },
                     border = BorderStroke(
                         width = 0.75.dp,
@@ -899,7 +899,7 @@ internal fun MemoryTab(
                     modifier = Modifier
                         .size(34.dp)
                         .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.5f)), CircleShape)
                         .clickable {
                             filterChipsCollapsed = !filterChipsCollapsed
                             PhantomPrefs.setMemoryFilterChipsCollapsed(ctx, filterChipsCollapsed)
@@ -1647,7 +1647,7 @@ internal fun MemoryTab(
                                     autoNotes.take(20).forEach { note ->
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f)),
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clickable {
@@ -1746,7 +1746,7 @@ internal fun MemoryTab(
                                     filteredWhitelists.take(20).forEach { rule ->
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f)),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Row(
@@ -1849,7 +1849,7 @@ internal fun MemoryTab(
                                         val condStr = TagRuleEngine.formatRuleConditions(ur)
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f)),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Row(
@@ -1903,7 +1903,7 @@ internal fun MemoryTab(
                                         val tagName = ar.targetTagId?.let { tagsById[it]?.name } ?: resCtx.getString(R.string.memory_s_374cb6)
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f)),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Row(
@@ -1983,7 +1983,7 @@ internal fun MemoryTab(
                                         val actLbl = MemoRuleEngine.actionLabel(mr.action)
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f)),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Row(
@@ -2158,7 +2158,7 @@ private fun MemoryItemCard(
             color = if (isSelected) {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
             } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f)
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.52f))
             },
             modifier = Modifier
                 .fillMaxWidth()

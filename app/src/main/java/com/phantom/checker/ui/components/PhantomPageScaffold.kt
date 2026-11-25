@@ -166,7 +166,7 @@ fun PhantomPageScaffold(
     actions: @Composable RowScope.() -> Unit = {},
     floatingActionButton: @Composable () -> Unit = {},
     snackbarHost: @Composable () -> Unit = {},
-    containerColor: Color = Color.Transparent,
+    containerColor: Color = MaterialTheme.colorScheme.background,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val scrollBehavior: TopAppBarScrollBehavior? = when (topBarStyle) {
@@ -175,8 +175,8 @@ fun PhantomPageScaffold(
             TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     }
     val topBarColors = TopAppBarDefaults.topAppBarColors(
-        containerColor = Color.Transparent,
-        scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.94f),
+        containerColor = if (containerColor == Color.Transparent) Color.Transparent else containerColor,
+        scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.96f),
         titleContentColor = MaterialTheme.colorScheme.onSurface,
         navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
         actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,

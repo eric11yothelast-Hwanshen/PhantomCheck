@@ -1269,7 +1269,7 @@ internal fun NotesTab(
                                 }
                                 Surface(
                                     shape = RoundedCornerShape(14.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f)),
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Row(

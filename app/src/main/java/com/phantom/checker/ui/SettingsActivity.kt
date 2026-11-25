@@ -26,6 +26,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
@@ -535,6 +536,7 @@ fun FilterSettingsScreen(
 
     // 外觀與互動
     val currentThemeMode = ThemePreferences.getThemeMode(appCtx)
+    val highContrastEnabled = ThemePreferences.isHighContrast(appCtx)
     val dynamicColorEnabled = ThemePreferences.isDynamicColor(appCtx)
     val fontScaleMode = ThemePreferences.getFontScaleMode(appCtx)
     var hapticEnabled by remember { mutableStateOf(PhantomPrefs.isHapticFeedbackEnabled(appCtx)) }
@@ -1130,7 +1132,11 @@ fun FilterSettingsScreen(
         )
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
         PhantomPredictiveBackContainer(
             enabled = activeCategory != null,
             onBack = {
@@ -4346,6 +4352,16 @@ fun FilterSettingsScreen(
                             )
                         }
                     }
+
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    SettingSwitchRow(
+                        title = stringResource(R.string.catalog_appearance_high_contrast_title),
+                        subtitle = stringResource(R.string.catalog_appearance_high_contrast_desc),
+                        checked = highContrastEnabled,
+                        onCheckedChange = { checked ->
+                            ThemePreferences.setHighContrast(appCtx, checked)
+                        }
+                    )
 
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     var currentLangMode by remember { mutableStateOf(com.phantom.checker.util.AppLocaleHelper.getEffectiveMode(appCtx)) }

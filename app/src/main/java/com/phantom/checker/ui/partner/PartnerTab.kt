@@ -356,7 +356,7 @@ internal fun PartnerTab(
                             .background(
                                 Brush.verticalGradient(
                                     colors = listOf(
-                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.35f)),
                                         pageBgColor
                                     )
                                 )
@@ -389,7 +389,7 @@ internal fun PartnerTab(
                             .clip(CircleShape)
                             .background(
                                 if (hasCustomBg) Color.Black.copy(alpha = 0.35f)
-                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.55f))
                             )
                     ) {
                         Icon(
@@ -511,7 +511,7 @@ internal fun PartnerTab(
                             onClick = onOpenPersonaSettings,
                             colors = if (hasCustomBg) {
                                 ButtonDefaults.outlinedButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
+                                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.78f)),
                                     contentColor = MaterialTheme.colorScheme.onSurface
                                 )
                             } else {
@@ -922,7 +922,7 @@ private fun IntimacyDetailSheet(
                         color = if (isCurrent) {
                             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
                         } else {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f))
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {

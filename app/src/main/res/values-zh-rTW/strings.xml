@@ -3065,4 +3065,8 @@
     <string name="filters_suggest_finance">帳務／驗證碼</string>
     <string name="filters_suggest_vip">重要聯絡人</string>
     <string name="filters_suggest_work">工作專案</string>
+    <!-- #510 淺色對比度修復＋高對比度開關 -->
+    <string name="catalog_appearance_high_contrast_title">高對比度</string>
+    <string name="catalog_appearance_high_contrast_desc">全面提升文字、卡片與邊框對比度（正文 7:1 目標），深淺模式皆生效</string>
+    <string name="catalog_appearance_high_contrast_aliases">高對比,高對比度,無障礙,可讀性,清楚,邊框,護眼</string>
 </resources>

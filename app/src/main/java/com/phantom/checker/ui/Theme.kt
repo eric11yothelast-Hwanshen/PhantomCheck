@@ -1,6 +1,9 @@
 package com.phantom.checker.ui
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -10,14 +13,41 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
+import androidx.core.view.WindowCompat
 import com.phantom.checker.util.FontScaleMode
 import com.phantom.checker.util.PhantomPrefs
 import androidx.annotation.StringRes
 import com.phantom.checker.R
+
+/** #510 全域高對比度模式狀態（深／淺雙模式皆生效） */
+val LocalHighContrast = staticCompositionLocalOf { false }
+
+/**
+ * #510 依深淺模式與高對比度回傳適當卡片／膠囊背景不透明度：
+ * 深色模式維持原值零回歸；淺色模式提升至 ≥0.92 防止底圖透出造成低對比；高對比度強制不透明 1.0。
+ */
+@Composable
+fun phantomSurfaceAlpha(darkAlpha: Float, lightAlpha: Float = 0.94f): Float {
+    if (LocalHighContrast.current) return 1.0f
+    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    return if (isDark) darkAlpha else lightAlpha.coerceAtLeast(0.92f)
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 enum class ThemeMode(val prefValue: String, @StringRes val labelRes: Int) {
     SYSTEM("system", R.string.theme_mode_system),
@@ -35,8 +65,10 @@ enum class ThemeMode(val prefValue: String, @StringRes val labelRes: Int) {
 object ThemePreferences {
     private const val PREFS_NAME = "phantom_theme_prefs"
     private const val KEY_THEME_MODE = "theme_mode"
+    private const val KEY_HIGH_CONTRAST = "high_contrast_enabled"
 
     private val _themeMode = mutableStateOf<ThemeMode?>(null)
+    private val _highContrast = mutableStateOf<Boolean?>(null)
     private val _dynamicColor = mutableStateOf<Boolean?>(null)
     private val _fontScaleMode = mutableStateOf<FontScaleMode?>(null)
     private val _glassEffectEnabled = mutableStateOf<Boolean?>(null)
@@ -61,6 +93,23 @@ object ThemePreferences {
             .putString(KEY_THEME_MODE, mode.prefValue)
             .apply()
         _themeMode.value = mode
+    }
+
+    fun isHighContrast(context: Context): Boolean {
+        val cached = _highContrast.value
+        if (cached != null) return cached
+        val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val loaded = prefs.getBoolean(KEY_HIGH_CONTRAST, false)
+        _highContrast.value = loaded
+        return loaded
+    }
+
+    fun setHighContrast(context: Context, enabled: Boolean) {
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(KEY_HIGH_CONTRAST, enabled)
+            .apply()
+        _highContrast.value = enabled
     }
 
     fun isDynamicColor(context: Context): Boolean {
@@ -207,12 +256,50 @@ private val PhantomLightColorScheme = lightColorScheme(
     errorContainer = PhantomColors.ScamAlertContainerLight,
     onErrorContainer = PhantomColors.ScamAlertOnContainerLight,
     background = Color(0xFFFAF8FF),
-    onBackground = Color(0xFF1A1526),
+    onBackground = Color(0xFF14101F),
     surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF1A1526),
-    surfaceVariant = Color(0xFFF3EFFB),
-    onSurfaceVariant = Color(0xFF4A4358),
-    outline = Color(0xFF7C738D)
+    onSurface = Color(0xFF14101F),
+    surfaceVariant = Color(0xFFEEEAF8),
+    onSurfaceVariant = Color(0xFF3E3650),
+    outline = Color(0xFF6B617D),
+    outlineVariant = Color(0xFFC7BEDB),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF7F4FC),
+    surfaceContainer = Color(0xFFF1ECF9),
+    surfaceContainerHigh = Color(0xFFEAE3F6),
+    surfaceContainerHighest = Color(0xFFE2D9F2)
+)
+
+private val PhantomHighContrastLightColorScheme = lightColorScheme(
+    primary = Color(0xFF3B0764),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFE9D5FF),
+    onPrimaryContainer = Color(0xFF1E0038),
+    secondary = Color(0xFF1E1B4B),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFDBEAFE),
+    onSecondaryContainer = Color(0xFF0F172A),
+    tertiary = Color(0xFF4C1D95),
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFEDE9FE),
+    onTertiaryContainer = Color(0xFF1E0038),
+    error = Color(0xFF991B1B),
+    onError = Color.White,
+    errorContainer = Color(0xFFFEE2E2),
+    onErrorContainer = Color(0xFF450A0A),
+    background = Color(0xFFFFFFFF),
+    onBackground = Color(0xFF000000),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF000000),
+    surfaceVariant = Color(0xFFF1F5F9),
+    onSurfaceVariant = Color(0xFF1E293B),
+    outline = Color(0xFF0F172A),
+    outlineVariant = Color(0xFF334155),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF8FAFC),
+    surfaceContainer = Color(0xFFF1F5F9),
+    surfaceContainerHigh = Color(0xFFE2E8F0),
+    surfaceContainerHighest = Color(0xFFCBD5E1)
 )
 
 private val PhantomDarkColorScheme = darkColorScheme(
@@ -239,6 +326,38 @@ private val PhantomDarkColorScheme = darkColorScheme(
     surfaceVariant = PhantomColors.ObsidianSurfaceVariant,
     onSurfaceVariant = Color(0xFFCAC2D9),
     outline = Color(0xFF938AA6)
+)
+
+private val PhantomHighContrastDarkColorScheme = darkColorScheme(
+    primary = Color(0xFFDDD6FE),
+    onPrimary = Color(0xFF1A0536),
+    primaryContainer = Color(0xFF3B0764),
+    onPrimaryContainer = Color.White,
+    secondary = Color(0xFFBFDBFE),
+    onSecondary = Color(0xFF0F172A),
+    secondaryContainer = Color(0xFF1E3A8A),
+    onSecondaryContainer = Color.White,
+    tertiary = Color(0xFFE9D5FF),
+    onTertiary = Color(0xFF1A0536),
+    tertiaryContainer = Color(0xFF4C1D95),
+    onTertiaryContainer = Color.White,
+    error = Color(0xFFFCA5A5),
+    onError = Color(0xFF450A0A),
+    errorContainer = Color(0xFF7F1D1D),
+    onErrorContainer = Color.White,
+    background = Color(0xFF000000),
+    onBackground = Color(0xFFFFFFFF),
+    surface = Color(0xFF0B0F1A),
+    onSurface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFF18223A),
+    onSurfaceVariant = Color(0xFFE2E8F0),
+    outline = Color(0xFFCBD5E1),
+    outlineVariant = Color(0xFF94A3B8),
+    surfaceContainerLowest = Color(0xFF000000),
+    surfaceContainerLow = Color(0xFF0B0F1A),
+    surfaceContainer = Color(0xFF111827),
+    surfaceContainerHigh = Color(0xFF18223A),
+    surfaceContainerHighest = Color(0xFF1E293B)
 )
 
 private fun TextStyle.scaled(factor: Float): TextStyle =
@@ -272,27 +391,44 @@ fun PhantomCheckTheme(
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val mode = ThemePreferences.getThemeMode(context)
+    val highContrast = ThemePreferences.isHighContrast(context)
     val useDarkTheme = darkTheme ?: when (mode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.DARK -> true
         ThemeMode.LIGHT -> false
     }
-    val useDynamic = ThemePreferences.isDynamicColor(context) &&
+    val useDynamic = !highContrast &&
+        ThemePreferences.isDynamicColor(context) &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val colorScheme = if (useDynamic) {
-        if (useDarkTheme) {
+    val colorScheme = when {
+        highContrast -> if (useDarkTheme) PhantomHighContrastDarkColorScheme else PhantomHighContrastLightColorScheme
+        useDynamic -> if (useDarkTheme) {
             dynamicDarkColorScheme(context).copy(primary = PhantomColors.SoftViolet)
         } else {
             dynamicLightColorScheme(context).copy(primary = PhantomColors.DeepPurple)
         }
-    } else {
-        if (useDarkTheme) PhantomDarkColorScheme else PhantomLightColorScheme
+        else -> if (useDarkTheme) PhantomDarkColorScheme else PhantomLightColorScheme
+    }
+    if (!view.isInEditMode) {
+        val bgArgb = colorScheme.background.toArgb()
+        SideEffect {
+            val window = context.findActivity()?.window
+            if (window != null) {
+                window.setBackgroundDrawable(ColorDrawable(bgArgb))
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.isAppearanceLightStatusBars = !useDarkTheme
+                controller.isAppearanceLightNavigationBars = !useDarkTheme
+            }
+        }
     }
     val fontScale = ThemePreferences.getFontScaleMode(context).scale
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = scaledTypography(fontScale),
-        content = content
-    )
+    CompositionLocalProvider(LocalHighContrast provides highContrast) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = scaledTypography(fontScale),
+            content = content
+        )
+    }
 }

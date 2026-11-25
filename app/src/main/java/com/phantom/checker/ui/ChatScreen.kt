@@ -1968,7 +1968,7 @@ fun ChatAssistantTab(
                     memList.forEach { mem ->
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
@@ -2386,7 +2386,7 @@ fun ChatAssistantTab(
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.surfaceVariant.copy(
-                                    alpha = if (todo.isDone) 0.25f else 0.45f
+                                    alpha = com.phantom.checker.ui.phantomSurfaceAlpha(if (todo.isDone) 0.25f else 0.45f)
                                 ),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -2868,7 +2868,7 @@ fun ChatAssistantTab(
                 color = if (isViewingProactiveRoom) {
                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f)
                 } else {
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.55f))
                 },
                 border = BorderStroke(
                     width = 0.75.dp,
@@ -3017,7 +3017,7 @@ fun ChatAssistantTab(
                         var capsuleExpanded by remember(todo.id) { mutableStateOf(false) }
                         Surface(
                             shape = RoundedCornerShape(14.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.55f)),
                             border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
                             modifier = Modifier
                                 .clip(RoundedCornerShape(14.dp))
@@ -3200,7 +3200,7 @@ fun ChatAssistantTab(
                                             var thinkingExpanded by remember(msg.id) { mutableStateOf(false) }
                                             Surface(
                                                 shape = RoundedCornerShape(12.dp),
-                                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.35f)),
                                                 border = BorderStroke(
                                                     width = 0.75.dp,
                                                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
@@ -3503,7 +3503,7 @@ fun ChatAssistantTab(
                                         }
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f)),
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clickable {
@@ -3888,7 +3888,7 @@ fun ChatAssistantTab(
                                         val currentOn = if (toggleable) SettingsCatalog.getBooleanState(appCtx, item.id) == true else false
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.55f)),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Row(
@@ -4020,7 +4020,7 @@ fun ChatAssistantTab(
                                             color = if (isSingleTarget && isPicked) {
                                                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
                                             } else {
-                                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f))
                                             },
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -4819,7 +4819,7 @@ fun ChatAssistantTab(
                                         val snippet = msg.content.replace("\n", " ").trim().take(60)
                                         Surface(
                                             shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.55f)),
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clickable {
@@ -5100,7 +5100,7 @@ fun ChatAssistantTab(
                                     Spacer(Modifier.height(6.dp))
                                     Surface(
                                         shape = RoundedCornerShape(10.dp),
-                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.55f)),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -5530,7 +5530,7 @@ fun ChatAssistantTab(
                                         val layerLbl = com.phantom.checker.data.MemoryEngine.layerLabel(m.layer)
                                         Surface(
                                             shape = RoundedCornerShape(10.dp),
-                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f)),
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clickable {
@@ -6032,7 +6032,7 @@ fun ChatAssistantTab(
                             }
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.55f)),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .heightIn(min = 48.dp)
