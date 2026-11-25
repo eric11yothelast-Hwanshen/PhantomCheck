@@ -45,7 +45,7 @@ object DesktopStrings {
     // Navigation
     val navMessages get() = t("訊息", "Messages")
     val navStats get() = t("統計", "Stats")
-    val navTodos get() = t("待辦與記事", "Todos & Notes")
+    val navTodos get() = t("待辦與記事", "To-Do & Notes")
     val navChat get() = t("AI 助手", "AI Assistant")
     val navRules get() = t("過濾與專注", "Filters & Focus")
     val navSettings get() = t("設定中心", "Settings")
@@ -85,7 +85,7 @@ object DesktopStrings {
     fun statsMsgCount(n: Int): String = t("$n 則", "$n msgs")
 
     // Todos
-    val todosEmpty get() = t("目前無待辦事項", "No todos")
+    val todosEmpty get() = t("目前無待辦事項", "No to-do items")
 
     // Chat
     val chatInputPlaceholder get() = t("輸入訊息給 AI 夥伴（Ctrl+Enter 送出）…", "Message AI Assistant (Ctrl+Enter to send)…")
@@ -97,10 +97,10 @@ object DesktopStrings {
     val chatCopied get() = t("已複製到剪貼簿", "Copied to clipboard")
     val quickPromptSummary get() = t("摘要今日重要訊息", "Summarize today's key messages")
     val quickPromptScam get() = t("幫我檢查近期可疑詐騙", "Check recent suspicious scams")
-    val quickPromptTodos get() = t("整理未完成待辦", "Review pending todos")
+    val quickPromptTodos get() = t("整理未完成待辦", "Review pending to-dos")
 
     // Whitelist & Tags
-    val whitelistTitle get() = t("白名單規則", "Whitelist Rules")
+    val whitelistTitle get() = t("白名單規則", "Allowlist Rules")
     val whitelistSenderHint get() = t("寄件者 / 關鍵字", "Sender / Keyword")
     val whitelistPkgHint get() = t("套件名稱（選填）", "Package name (optional)")
     val add get() = t("新增", "Add")
@@ -118,7 +118,7 @@ object DesktopStrings {
     val fingerprintPrefix get() = t("指紋：", "FP: ")
     val emptyMessages get() = t("目前無符合條件的訊息", "No messages match this filter")
     val emptyChat get() = t("開始與手機端 AI 夥伴對話", "Start chatting with your AI Assistant")
-    val emptyWhitelist get() = t("尚未設定白名單規則", "No whitelist rules yet")
+    val emptyWhitelist get() = t("尚未設定白名單規則", "No allowlist rules yet")
     val emptyTags get() = t("尚未建立標籤", "No tags yet")
     val versionLabel get() = t("桌面端 v${DesktopSettingsStore.CURRENT_DESKTOP_VERSION}", "Desktop v${DesktopSettingsStore.CURRENT_DESKTOP_VERSION}")
     val commandNotSentDisconnected get() = t("目前未連線手機，操作未送出", "Not connected to phone — action not sent")
@@ -153,7 +153,7 @@ object DesktopStrings {
     val settingsTabSystem get() = t("系統設定 (10)", "System (10)")
     val settingsTabCustom get() = t("介面自訂 (8)", "Customize (8)")
     val sysLangTitle get() = t("1. 界面語言（即時生效）", "1. Interface Language (Instant)")
-    val sysAutoStartTitle get() = t("2. 開機自動啟動（Windows HKCU\\Run，啟動縮至系統匣）", "2. Launch at Windows Startup (starts in tray)")
+    val sysAutoStartTitle get() = t("2. 開機自動啟動（Windows HKCU\\Run，啟動縮至系統匣）", "2. Launch at Startup (starts in system tray)")
     val sysCloseBehaviorTitle get() = t("3. 關閉視窗行為", "3. Window Close Behavior")
     val closeMinimizeTray get() = t("縮到系統匣背景運行（預設）", "Minimize to System Tray (Default)")
     val closeExitApp get() = t("直接結束程式", "Exit Application")
@@ -189,7 +189,7 @@ object DesktopStrings {
     // #469 Tray strings
     val trayOpen get() = t("開啟 PhantomCheck", "Open PhantomCheck")
     val trayExit get() = t("結束程式", "Exit")
-    val trayUnsupportedNotice get() = t("此系統環境不支援系統匣（SystemTray），關閉視窗將直接結束程式。", "SystemTray is not supported in this environment; closing will exit the app.")
+    val trayUnsupportedNotice get() = t("此系統環境不支援系統匣（SystemTray），關閉視窗將直接結束程式。", "System tray is not supported in this environment; closing will exit the app.")
 
     fun reconnectingCountdown(remSec: Int, totalSec: Int): String =
         t("將於 ${remSec}s 後重連（退避 ${totalSec}s）", "Reconnecting in ${remSec}s (backoff ${totalSec}s)")
@@ -219,8 +219,8 @@ object DesktopStrings {
     val pairNewPhoneTitle get() = t("配對新手機（單次 6 位碼，3 分鐘有效）", "Pair New Phone (Single-Use 6-Digit Code, 3 min)")
     val pairCodeRegenerate get() = t("重新產生配對碼", "Regenerate Code")
     val pairCodeExpired get() = t("配對碼已過期，請重新產生", "Pairing code expired — regenerate")
-    val pairedPhonesTitle get() = t("已配對手機", "Paired Phones")
-    val pairedPhonesEmpty get() = t("尚未配對任何手機（請在手機端「連線」分頁配對）", "No paired phones yet (pair from the Link tab on your phone)")
+    val pairedPhonesTitle get() = t("已配對手機", "Connected Devices")
+    val pairedPhonesEmpty get() = t("尚未配對任何手機（請在手機端「連線」分頁配對）", "No connected devices yet (pair from the Link tab on your phone)")
     val serverAuditTitle get() = t("伺服器連線與指令審計（上限 200 筆）", "Server Connection & Command Audit (max 200)")
     val serverAuditEmpty get() = t("尚無審計紀錄", "No audit entries yet")
     val clearLogsBtn get() = t("清除", "Clear")
@@ -257,8 +257,8 @@ object DesktopStrings {
     }
 
     // #477 QR Pairing Dialog
-    val qrConfigurePhoneBtn get() = t("配置新手機（顯示 QR Code）", "Configure New Phone (Show QR Code)")
-    val qrDialogTitle get() = t("掃描 QR Code 配對新手機", "Scan QR Code to Pair New Phone")
+    val qrConfigurePhoneBtn get() = t("配置新手機（顯示 QR Code）", "Pair New Device (Show QR Code)")
+    val qrDialogTitle get() = t("掃描 QR Code 配對新手機", "Scan QR Code to Pair")
     val qrDialogHint get() = t(
         "請在手機端開啟「幻訊 → 連線 → 掃描電腦 QR Code」，掃描下方條碼並確認電腦名稱與憑證指紋。",
         "Open PhantomCheck on your phone → Link → Scan Desktop QR Code, then verify the PC name and fingerprint."
@@ -300,7 +300,7 @@ object DesktopStrings {
     val feedbackOpenFailed get() = t("開啟資料夾失敗", "Failed to open folder")
     val feedbackExportFailed get() = t("匯出診斷報告失敗", "Failed to export diagnostics")
     fun feedbackAutoStart(enabled: Boolean): String =
-        if (enabled) t("已啟用開機自動啟動", "Windows auto-start enabled") else t("已停用開機自動啟動", "Windows auto-start disabled")
+        if (enabled) t("已啟用開機自動啟動", "Launch at startup enabled") else t("已停用開機自動啟動", "Launch at startup disabled")
     fun feedbackExported(path: String): String = t("已匯出診斷報告：$path", "Exported diagnostics: $path")
 
     val dndStartLabel get() = t("開始時間", "Start Hour")
