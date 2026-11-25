@@ -1,5 +1,8 @@
 package com.phantom.checker.desktop
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,21 +46,33 @@ import com.phantom.checker.shared.StatsSnapshotDto
 private enum class StatsChartMode { DAYS_7, DAYS_30, HOURLY }
 
 /**
- * #468 / #498 統計頁升級：Canvas 7日/30日/每小時柱狀圖＋風險分布比例條＋今日活躍 App 名稱＋本週活躍 Top 5。
+ * #468 / #498 / #520 統計頁升級：
+ * - EXPANDED/LARGE 採 2 欄格狀（左：趨勢/每小時；右：風險分布＋今日活躍 App＋本週 Top 5）
+ * - 色彩全面走 LocalDesktopTokens（淺色與高對比下清晰可讀）
+ * - D22 圖表進場一次性 grow 動畫（省電模式瞬切，資料刷新不重播）
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DesktopStatsCharts(
     stats: StatsSnapshotDto,
     accentColor: Color,
+    windowClass: DesktopWindowClass = DesktopWindowClass.MEDIUM,
     modifier: Modifier = Modifier
 ) {
     val tokens = LocalDesktopTokens.current
+    val motion = LocalDesktopMotion.current
     var chartMode by remember { mutableStateOf(StatsChartMode.DAYS_7) }
+    var chartAppeared by remember(chartMode) { mutableStateOf(false) }
+    LaunchedEffect(chartMode) { chartAppeared = true }
+    val barGrowProgress by animateFloatAsState(
+        targetValue = if (chartAppeared) 1f else 0f,
+        animationSpec = if (motion.isBalanced) tween(400, easing = FastOutSlowInEasing) else tween(0),
+        label = "stats_bar_grow"
+    )
 
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    val renderTrendCard: @Composable (Modifier) -> Unit = { cardMod ->
         // 1. 7 日 / 30 日 / 今日每小時切換柱狀圖
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
+        GlassCard(modifier = cardMod) {
             Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -64,7 +80,7 @@ fun DesktopStatsCharts(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(DesktopIcons.Stats, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
+                        Icon(DesktopIcons.Stats, contentDescription = null, tint = tokens.accentText, modifier = Modifier.size(18.dp))
                         Text(
                             text = when (chartMode) {
                                 StatsChartMode.DAYS_7 -> DesktopStrings.stats7DayChart
@@ -141,7 +157,7 @@ fun DesktopStatsCharts(
                     }
 
                     barValues.forEachIndexed { idx, (_, value) ->
-                        val ratio = value.toFloat() / maxVal.toFloat()
+                        val ratio = (value.toFloat() / maxVal.toFloat()) * barGrowProgress
                         val h = (chartH * ratio).coerceAtLeast(if (value > 0) 6f else 2f)
                         val x = idx * (barW + gap)
                         val y = chartH - h
@@ -182,12 +198,14 @@ fun DesktopStatsCharts(
                 }
             }
         }
+    }
 
-        // 2. 風險分布比例條 + 百分比圖例
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
+    val renderRiskCard: @Composable (Modifier) -> Unit = { cardMod ->
+        // 2. 風險分布比例條 + 百分比圖例（全面走 tokens 語意色）
+        GlassCard(modifier = cardMod) {
             Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(DesktopIcons.Rules, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
+                    Icon(DesktopIcons.Rules, contentDescription = null, tint = tokens.accentText, modifier = Modifier.size(18.dp))
                     Text(DesktopStrings.statsRiskDist, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                 }
                 val scam = stats.scam.coerceAtLeast(0)
@@ -204,22 +222,24 @@ fun DesktopStatsCharts(
                     val wSafe = size.width * (safe / sum)
                     val wSusp = size.width * (susp / sum)
                     val wScam = size.width * (scam / sum)
-                    drawRect(DesktopPalette.GlassSuccess, Offset(0f, 0f), Size(wSafe, size.height))
-                    drawRect(DesktopPalette.GlassWarning, Offset(wSafe, 0f), Size(wSusp, size.height))
-                    drawRect(DesktopPalette.GlassError, Offset(wSafe + wSusp, 0f), Size(wScam, size.height))
+                    drawRect(tokens.success, Offset(0f, 0f), Size(wSafe, size.height))
+                    drawRect(tokens.warning, Offset(wSafe, 0f), Size(wSusp, size.height))
+                    drawRect(tokens.error, Offset(wSafe + wSusp, 0f), Size(wScam, size.height))
                 }
 
                 val safePct = ((safe * 100f) / sum).toInt()
                 val suspPct = ((susp * 100f) / sum).toInt()
                 val scamPct = ((scam * 100f) / sum).toInt()
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    RiskLegendDot(DesktopPalette.GlassSuccess, "${DesktopStrings.riskLabelText("safe")}: $safe ($safePct%)")
-                    RiskLegendDot(DesktopPalette.GlassWarning, "${DesktopStrings.riskLabelText("suspicious")}: $susp ($suspPct%)")
-                    RiskLegendDot(DesktopPalette.GlassError, "${DesktopStrings.riskLabelText("scam")}: $scam ($scamPct%)")
+                    RiskLegendDot(tokens.success, "${DesktopStrings.riskLabelText("safe")}: $safe ($safePct%)")
+                    RiskLegendDot(tokens.warning, "${DesktopStrings.riskLabelText("suspicious")}: $susp ($suspPct%)")
+                    RiskLegendDot(tokens.error, "${DesktopStrings.riskLabelText("scam")}: $scam ($scamPct%)")
                 }
             }
         }
+    }
 
+    val renderTodayAppsCard: @Composable (Modifier) -> Unit = { cardMod ->
         // 3. #498 今日活躍來源 App（顯示 App 名稱而非 packageName + 活躍度排序 + 訊息數）
         val resolvedTodayApps: List<ActiveAppStatDto> = remember(stats.activeAppsToday, stats.recentPackages) {
             if (stats.activeAppsToday.isNotEmpty()) {
@@ -231,10 +251,10 @@ fun DesktopStatsCharts(
                     .map { pkg -> ActiveAppStatDto(packageName = pkg, appLabel = DesktopAppLabels.resolveLabel(pkg), count = 0) }
             }
         }
-        GlassCard(modifier = Modifier.fillMaxWidth()) {
+        GlassCard(modifier = cardMod) {
             Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(DesktopIcons.Messages, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
+                    Icon(DesktopIcons.Messages, contentDescription = null, tint = tokens.accentText, modifier = Modifier.size(18.dp))
                     Text(DesktopStrings.statsRecentApps, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                 }
                 if (resolvedTodayApps.isEmpty()) {
@@ -268,25 +288,37 @@ fun DesktopStatsCharts(
                 }
             }
         }
+    }
 
+    val renderWeeklyTop5Card: @Composable (Modifier) -> Unit = { cardMod ->
         // 4. #498 本週活躍 App Top 5
+        val resolvedTodayApps: List<ActiveAppStatDto> = remember(stats.activeAppsToday, stats.recentPackages) {
+            if (stats.activeAppsToday.isNotEmpty()) {
+                stats.activeAppsToday.sortedByDescending { it.count }
+            } else {
+                stats.recentPackages
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .map { pkg -> ActiveAppStatDto(packageName = pkg, appLabel = DesktopAppLabels.resolveLabel(pkg), count = 0) }
+            }
+        }
         val top5 = remember(stats.weeklyTopApps, resolvedTodayApps) {
             (if (stats.weeklyTopApps.isNotEmpty()) stats.weeklyTopApps else resolvedTodayApps)
                 .sortedByDescending { it.count }
                 .take(5)
         }
         if (top5.isNotEmpty()) {
-            GlassCard(modifier = Modifier.fillMaxWidth()) {
+            GlassCard(modifier = cardMod) {
                 Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(DesktopIcons.Star, contentDescription = null, tint = accentColor, modifier = Modifier.size(18.dp))
+                        Icon(DesktopIcons.Star, contentDescription = null, tint = tokens.accentText, modifier = Modifier.size(18.dp))
                         Text(DesktopStrings.statsWeeklyTopApps, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)
                     }
                     val maxAppCnt = (top5.maxOfOrNull { it.count } ?: 1).coerceAtLeast(1).toFloat()
                     top5.forEachIndexed { idx, app ->
                         val label = DesktopAppLabels.resolveLabel(app.packageName, app.appLabel)
                         val color = DesktopAppLabels.resolveColor(app.packageName, app.colorHex)
-                        val ratio = (app.count.toFloat() / maxAppCnt).coerceIn(0.06f, 1f)
+                        val ratio = ((app.count.toFloat() / maxAppCnt) * barGrowProgress).coerceIn(0.06f, 1f)
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -313,6 +345,26 @@ fun DesktopStatsCharts(
                     }
                 }
             }
+        }
+    }
+
+    if (windowClass == DesktopWindowClass.EXPANDED || windowClass == DesktopWindowClass.LARGE) {
+        Row(modifier = modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(modifier = Modifier.weight(1.1f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                renderTrendCard(Modifier.fillMaxWidth())
+                renderTodayAppsCard(Modifier.fillMaxWidth())
+            }
+            Column(modifier = Modifier.weight(0.9f), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                renderRiskCard(Modifier.fillMaxWidth())
+                renderWeeklyTop5Card(Modifier.fillMaxWidth())
+            }
+        }
+    } else {
+        Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            renderTrendCard(Modifier.fillMaxWidth())
+            renderRiskCard(Modifier.fillMaxWidth())
+            renderTodayAppsCard(Modifier.fillMaxWidth())
+            renderWeeklyTop5Card(Modifier.fillMaxWidth())
         }
     }
 }
