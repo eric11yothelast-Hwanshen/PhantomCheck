@@ -141,6 +141,10 @@ object LinkMsgType {
     const val OPEN_URL_ON_PEER_RES = "device.openUrl.res"
     const val GROUP_REPORTS_LIST = "groupReports.list"
     const val GROUP_REPORTS_LIST_RES = "groupReports.list.res"
+    // #532 Proactive Intel v3 desktop mirroring & mute writeback (additive, PROTOCOL_VERSION unchanged)
+    const val PROACTIVE_EVENT_PUSH = "proactive.event.push"
+    const val WATCH_TOPIC_MUTE = "watchTopic.mute"
+    const val WATCH_TOPIC_MUTE_RES = "watchTopic.mute.res"
 }
 
 data class LinkEnvelope(
@@ -672,6 +676,25 @@ data class GroupReportSummaryDto(
 
 data class GroupReportsListRes(
     val items: List<GroupReportSummaryDto> = emptyList()
+)
+
+/** #532 主動情報鏡射至桌面（標題＋≤60字摘要節錄，遵守桌面 toast 頻率／聚合） */
+data class ProactiveEventPush(
+    val id: Long = 0L,
+    val title: String = "",
+    val summary: String = "",
+    val topicIds: List<Long> = emptyList(),
+    val timestamp: Long = 0L
+)
+
+/** #532 桌面端「不再關注」回寫手機 */
+data class WatchTopicMuteReq(
+    val topicIds: List<Long> = emptyList()
+)
+
+data class WatchTopicMuteRes(
+    val ok: Boolean = false,
+    val mutedCount: Int = 0
 )
 
 

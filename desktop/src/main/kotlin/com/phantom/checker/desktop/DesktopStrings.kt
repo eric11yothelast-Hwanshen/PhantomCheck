@@ -667,4 +667,9 @@ object DesktopStrings {
         DesktopSettingsStore.AutoStartStatus.NOT_WINDOWS -> t("非 Windows", "Non-Windows")
         DesktopSettingsStore.AutoStartStatus.ERROR -> t("失敗", "Error")
     }
+
+    // #532 Proactive Intel v3 desktop mirror & mute writeback
+    val proactiveIntelMirrorTitle get() = t("主動情報推送", "Proactive Intel Alerts")
+    val proactiveIntelMuteBtn get() = t("不再關注", "Mute Topic")
+    val proactiveIntelMutedFeedback get() = t("已回寫手機：不再關注此主題", "Synced to phone: topic muted")
 }

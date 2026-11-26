@@ -3113,6 +3113,20 @@
     <string name="group_report_err_quota">Daily AI quota reached (will retry next cycle)</string>
     <string name="group_report_err_ai_failed">AI request failed after retries (messages kept for next run)</string>
     <string name="group_report_manage_settings">Manage Settings</string>
+    <!-- #532 Proactive Intel v3 Diagnostic Panel -->
+    <string name="proactive_intel_diag_title">Proactive Intel Diagnostics</string>
+    <string name="proactive_intel_diag_master">Master switch: %1$s</string>
+    <string name="proactive_intel_diag_on">ON</string>
+    <string name="proactive_intel_diag_off">OFF</string>
+    <string name="proactive_intel_diag_saver">Token Saver: %1$s</string>
+    <string name="proactive_intel_diag_saver_degraded">Degraded (1x/day, zero AI tokens)</string>
+    <string name="proactive_intel_diag_saver_normal">Normal</string>
+    <string name="proactive_intel_diag_topics">Confirmed watch topics: %1$d</string>
+    <string name="proactive_intel_diag_last_run">Last run: %1$s</string>
+    <string name="proactive_intel_diag_never">Never</string>
+    <string name="proactive_intel_diag_counts">Last cycle: %1$d queried · %2$d results</string>
+    <string name="proactive_intel_diag_last_error">Last error: %1$s</string>
+    <string name="proactive_intel_diag_no_error">None</string>
     <!-- #511 Cross-App Multi-Select Batch Delete -->
     <string name="batch_app_multi_select_btn">Multi-select apps</string>
     <string name="batch_app_selected_summary">%1$d app(s) · ~%2$d msgs</string>

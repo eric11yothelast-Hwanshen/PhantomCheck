@@ -79,6 +79,8 @@ internal fun DesktopChatPage(
     chatListState: LazyListState,
     onSendChatMessage: (String) -> Unit,
     onCopyToClipboard: (String) -> Unit,
+    proactiveEvents: List<com.phantom.checker.shared.ProactiveEventPush> = emptyList(),
+    onMuteProactiveTopics: (com.phantom.checker.shared.ProactiveEventPush) -> Unit = {},
     sendOrNotify: suspend (String, Any) -> Boolean
 ) {
     val scope = rememberCoroutineScope()
@@ -167,6 +169,56 @@ internal fun DesktopChatPage(
                             },
                             label = { Text(DesktopStrings.chatQuoteLatest, color = tokens.accentText) }
                         )
+                    }
+                }
+
+                // #532 Mirrored Proactive Intel Alerts section (with Mute Topic writeback to phone)
+                if (proactiveEvents.isNotEmpty()) {
+                    GlassCard(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                        containerColor = accentColor.copy(alpha = 0.10f)
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "${DesktopStrings.proactiveIntelMirrorTitle} (${proactiveEvents.size})",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = tokens.accentText
+                            )
+                            proactiveEvents.take(5).forEach { ev ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(tokens.surfaceElevated.copy(alpha = 0.7f))
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = ev.title,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = tokens.textPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = ev.summary,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = tokens.textSecondary,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    TextButton(onClick = { onMuteProactiveTopics(ev) }) {
+                                        Text(DesktopStrings.proactiveIntelMuteBtn, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 

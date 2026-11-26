@@ -3113,6 +3113,20 @@
     <string name="group_report_err_quota">今日 AI 額度已達上限，順延至下個週期</string>
     <string name="group_report_err_ai_failed">AI 請求重試後失敗（訊息已保留，待下次補跑）</string>
     <string name="group_report_manage_settings">管理設定</string>
+    <!-- #532 主動情報 v3 診斷面板 -->
+    <string name="proactive_intel_diag_title">主動情報診斷面板</string>
+    <string name="proactive_intel_diag_master">總開關：%1$s</string>
+    <string name="proactive_intel_diag_on">開啟</string>
+    <string name="proactive_intel_diag_off">關閉</string>
+    <string name="proactive_intel_diag_saver">省 Token 狀態：%1$s</string>
+    <string name="proactive_intel_diag_saver_degraded">降級運作（每日 1 輪，零 AI Token）</string>
+    <string name="proactive_intel_diag_saver_normal">正常</string>
+    <string name="proactive_intel_diag_topics">已確認關注主題：%1$d 個</string>
+    <string name="proactive_intel_diag_last_run">上輪執行：%1$s</string>
+    <string name="proactive_intel_diag_never">尚未執行</string>
+    <string name="proactive_intel_diag_counts">上輪查詢：%1$d 項 · 命中結果：%2$d 則</string>
+    <string name="proactive_intel_diag_last_error">最近錯誤：%1$s</string>
+    <string name="proactive_intel_diag_no_error">無</string>
     <!-- #511 主訊息頁跨 App 多選批次刪除 -->
     <string name="batch_app_multi_select_btn">多選</string>
     <string name="batch_app_selected_summary">已選 %1$d 個 App · 約 %2$d 則</string>

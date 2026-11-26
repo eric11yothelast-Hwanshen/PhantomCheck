@@ -45,11 +45,15 @@
 ### 5. 版本更新檢查
 - 當您使用手動「檢查更新」或開啟自動檢查更新時，本 App 僅會向 GitHub Releases API（`api.github.com`）發送**未認證（無帳號、無 Token）的公開 GET 請求**以取得最新版本號與發佈資訊，請求內容**不包含任何個人資料、訊息內容或裝置識別碼**。
 
-### 6. 主動情報查詢（預設關閉、外送最小化）
-- **預設關閉**：主動情報中樞（`proactive_intel_enabled`）預設為關閉；未開啟或啟用「省 Token 模式」時，背景 Worker 不會排程，亦不會發出任何 AI 呼叫或外部查詢。
-- **外送最小化**：開啟後，背景查詢僅將您「關注主題清單」中的查詢關鍵字字串（`queryHint`＋「最新動態」，上限 200 字）直接傳送至您自行設定的 AI 服務商（建議於「API 金鑰設定」將「主動情報萃取與摘要」綁定 Gemini 3+ 設定檔，或設定 BYOK 外部搜尋端點）；**絕不傳送原始通知全文、聯絡人清單或 `privacyTier=sensitive` 敏感記憶**。
-- **每日萃取隔離**：若開啟「每日自動萃取關注主題」，萃取階段會以本機 SQL 與程式碼雙層硬排除所有 `privacyTier=sensitive` 敏感記憶，所有素材經提示詞淨化（`sanitizeForPrompt`）後才送往您設定的 AI 服務商；萃取候選僅寫入本機資料庫待確認，絕不直接推播。
+### 6. 主動情報查詢（預設關閉、外送最小化）／ Proactive Intelligence Queries (Opt-In, Minimal Outbound Data)
+- **預設關閉與省 Token 降級**：主動情報中樞（`proactive_intel_enabled`）預設為關閉；關閉時背景 Worker 不會排程，亦不會發出任何 AI 呼叫或外部查詢。開啟後若同時啟用「省 Token 模式」，將降級為每日 1 輪、僅針對高優先關注主題透過免金鑰 Google News RSS 與本機規則層篩選（**零 AI Token 消耗**）。
+  *(Disabled by default. When disabled, no background worker or external queries run. When enabled together with Token Saver mode, it degrades to 1 daily cycle for high-priority topics using keyless Google News RSS and local rule-based filtering with **zero AI token usage**.)*
+- **Google News RSS（`news.google.com`）與外送最小化**：開啟主動情報後，系統可能向 `news.google.com` 傳送未認證的公開 RSS 請求（僅包含您確認之關注主題關鍵字 `queryHint` 或一般地區名稱，例如「台灣」），或將該關鍵字字串（上限 200 字）直接傳送至您自行設定的 AI 服務商（BYOK）；**絕不傳送原始通知全文、聯絡人清單、日曆原始內容或 `privacyTier=sensitive` 敏感記憶**。
+  *(When enabled, the app may send unauthenticated public RSS GET requests to `news.google.com` containing only your confirmed watch-topic keywords (`queryHint`) or a general region name (e.g., "Taiwan"), or send that keyword query (max 200 chars) directly to your configured BYOK AI provider. **Raw notification bodies, raw contacts, raw calendar entries, and `privacyTier=sensitive` memories are never transmitted.**)*
+- **每日萃取隔離與桌面鏡射**：若開啟「每日自動萃取關注主題」，萃取階段會以本機 SQL 與程式碼雙層硬排除所有 `privacyTier=sensitive` 敏感記憶，所有素材經提示詞淨化（`sanitizeForPrompt`）後才送往您設定的 AI 服務商；萃取候選與記憶庫高信心建議僅寫入本機資料庫待您確認，絕不自動啟用。若您同時已連線配對之區域網路桌面端，主動情報推播時僅會透過區網加密 `wss://` 鏡射標題與 ≤60 字摘要節錄。
+  *(Topic extraction strictly excludes `privacyTier=sensitive` memories at both SQL and application layers; extracted or memory-suggested topics are stored locally as unconfirmed candidates awaiting your explicit confirmation. When paired and connected over LAN `wss://`, only the alert title and a ≤60-char excerpt are mirrored to desktop.)*
 - **憑證與快取**：所有外部端點金鑰一律儲存於 Android `EncryptedSharedPreferences`，絕不寫入程式碼或日誌；查詢結果僅於本機 Room 資料庫暫存 12 小時供去重與簡報共用。
+  *(All API keys are stored in Android `EncryptedSharedPreferences` and never logged; query results are cached locally in Room for 12 hours for deduplication and briefings.)*
 
 ### 7. 區域網路連線（電腦端連結）／ LAN Connection (Desktop Link)
 - **僅限區域網路（LAN-only）**：電腦端連結功能預設關閉；啟用後僅於您的本地 Wi-Fi 區域網路開啟加密 WebSocket（`wss://`）伺服器，**無任何雲端中繼、外部伺服器或開發者節點介入**。

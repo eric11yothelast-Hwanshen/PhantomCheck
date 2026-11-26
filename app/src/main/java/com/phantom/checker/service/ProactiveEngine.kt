@@ -576,9 +576,22 @@ object ProactiveEngine {
                     .build()
                 try {
                     nm.notify(NotifIds.PROACTIVE_INTEL, notif)
-                } catch (_: SecurityException) {
+                } catch (e: SecurityException) {
+                    android.util.Log.w("ProactiveEngine", "Notification permission denied for proactive intel: ${e.message}")
                 }
             }
+        }
+        // #532 Mirror to connected desktop (title + <=60 char excerpt)
+        runCatching {
+            val excerpt = body.replace("**", "").replace("\n", " ").trim().take(60)
+            DesktopLinkClient.pushProactiveEventToDesktop(
+                title = title,
+                summary = excerpt,
+                topicIds = topicIds,
+                timestamp = nowMs
+            )
+        }.onFailure { err ->
+            android.util.Log.w("ProactiveEngine", "Desktop proactive mirror failed: ${err.message}")
         }
         true
     }

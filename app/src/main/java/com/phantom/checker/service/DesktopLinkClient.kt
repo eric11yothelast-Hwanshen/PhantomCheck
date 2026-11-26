@@ -435,6 +435,28 @@ object DesktopLinkClient {
         return sendEnvelope(ws, LinkMsgType.OPEN_URL_ON_PEER, "", OpenUrlReq(url = url.take(2048)))
     }
 
+    /** #532 主動情報鏡射至已連線桌面（標題＋≤60字節錄，遵守桌面 toast 頻率／聚合） */
+    fun pushProactiveEventToDesktop(
+        title: String,
+        summary: String,
+        topicIds: List<Long>,
+        timestamp: Long = System.currentTimeMillis()
+    ): Boolean {
+        val ws = activeWs ?: return false
+        return sendEnvelope(
+            ws,
+            LinkMsgType.PROACTIVE_EVENT_PUSH,
+            "",
+            ProactiveEventPush(
+                id = timestamp,
+                title = title.take(80),
+                summary = summary.take(60),
+                topicIds = topicIds,
+                timestamp = timestamp
+            )
+        )
+    }
+
     fun unpairDesktop(ctx: Context, instanceId: String) {
         val appCtx = ctx.applicationContext
         val ws = activeWs
@@ -1866,6 +1888,23 @@ object DesktopLinkClient {
                 }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.GROUP_REPORTS_LIST, true, "count=${dtos.size}")
                 sendEnvelope(ws, LinkMsgType.GROUP_REPORTS_LIST_RES, env.reqId, GroupReportsListRes(items = dtos))
+            }
+
+            LinkMsgType.WATCH_TOPIC_MUTE -> {
+                val req = runCatching { gson.fromJson(env.payloadJson, WatchTopicMuteReq::class.java) }.getOrNull()
+                val ids = req?.topicIds.orEmpty().filter { it > 0L }
+                var mutedCount = 0
+                runCatching {
+                    val dao = db.watchTopicDao()
+                    ids.forEach { id ->
+                        dao.updateStatus(id, com.phantom.checker.data.WatchTopicEntity.STATUS_MUTED)
+                        mutedCount++
+                    }
+                }.onFailure { err ->
+                    android.util.Log.w("DesktopLinkClient", "WATCH_TOPIC_MUTE failed: ${err.message}", err)
+                }
+                DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.WATCH_TOPIC_MUTE, true, "muted=$mutedCount")
+                sendEnvelope(ws, LinkMsgType.WATCH_TOPIC_MUTE_RES, env.reqId, WatchTopicMuteRes(ok = true, mutedCount = mutedCount))
             }
 
             else -> {

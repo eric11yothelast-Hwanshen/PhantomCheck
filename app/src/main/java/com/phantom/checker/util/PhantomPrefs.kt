@@ -468,6 +468,55 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putBoolean("proactive_intel_consent_seen", seen).apply()
     }
 
+    /** #532 主動情報 v3 診斷快照（零輪詢，由每次執行與例外回寫） */
+    data class ProactiveIntelDiagSnapshot(
+        val lastRunAtMs: Long = 0L,
+        val lastQueriedCount: Int = 0,
+        val lastResultCount: Int = 0,
+        val lastError: String = "",
+        val lastErrorAtMs: Long = 0L
+    )
+
+    fun recordProactiveIntelRun(
+        ctx: Context,
+        queriedCount: Int,
+        resultCount: Int,
+        errorMessage: String? = null,
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        val editor = prefs(ctx).edit()
+            .putLong("proactive_intel_last_run_ms", nowMs)
+            .putInt("proactive_intel_last_queried", queriedCount.coerceAtLeast(0))
+            .putInt("proactive_intel_last_results", resultCount.coerceAtLeast(0))
+        if (!errorMessage.isNullOrBlank()) {
+            editor.putString("proactive_intel_last_error", errorMessage.take(200))
+            editor.putLong("proactive_intel_last_error_ms", nowMs)
+        }
+        editor.apply()
+    }
+
+    fun recordProactiveIntelError(
+        ctx: Context,
+        errorMessage: String,
+        nowMs: Long = System.currentTimeMillis()
+    ) {
+        prefs(ctx).edit()
+            .putString("proactive_intel_last_error", errorMessage.take(200))
+            .putLong("proactive_intel_last_error_ms", nowMs)
+            .apply()
+    }
+
+    fun getProactiveIntelDiag(ctx: Context): ProactiveIntelDiagSnapshot {
+        val p = prefs(ctx)
+        return ProactiveIntelDiagSnapshot(
+            lastRunAtMs = p.getLong("proactive_intel_last_run_ms", 0L),
+            lastQueriedCount = p.getInt("proactive_intel_last_queried", 0),
+            lastResultCount = p.getInt("proactive_intel_last_results", 0),
+            lastError = p.getString("proactive_intel_last_error", "").orEmpty(),
+            lastErrorAtMs = p.getLong("proactive_intel_last_error_ms", 0L)
+        )
+    }
+
     fun getWatchTopicLastExtractDay(ctx: Context): String =
         prefs(ctx).getString("watch_topic_last_extract_day", "").orEmpty()
 

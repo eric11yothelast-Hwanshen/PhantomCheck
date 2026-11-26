@@ -225,6 +225,7 @@ fun DesktopApp(
     var selectedBatchKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var latestReceivedClipboard by remember { mutableStateOf("") }
     var groupReports by remember { mutableStateOf<List<GroupReportSummaryDto>>(emptyList()) }
+    var proactiveEvents by remember { mutableStateOf<List<com.phantom.checker.shared.ProactiveEventPush>>(emptyList()) }
     val customBgBitmap = remember(settings.customBgImagePath) { DesktopPalette.loadBackgroundImage(settings.customBgImagePath) }
     val cardPad = DesktopPalette.cardPadding(settings.density)
     val listSpace = DesktopPalette.listSpacing(settings.density)
@@ -824,6 +825,32 @@ fun DesktopApp(
                     groupReports = res.items
                     res.items.firstOrNull()?.let { first ->
                         DesktopHoverDataHolder.updateLatestIntelOrReport("${first.appLabel} · ${first.conversationTitle}: ${first.summaryMarkdown.take(60)}")
+                    }
+                }
+                LinkMsgType.PROACTIVE_EVENT_PUSH -> {
+                    val ev = runCatching { gson.fromJson(env.payloadJson, com.phantom.checker.shared.ProactiveEventPush::class.java) }.getOrNull() ?: return@collect
+                    proactiveEvents = (listOf(ev) + proactiveEvents).distinctBy { it.id }.take(30)
+                    DesktopHoverDataHolder.updateLatestIntelOrReport("${ev.title}: ${ev.summary}")
+                    val curSettings = DesktopSettingsStore.state.value
+                    DesktopNotificationBus.dispatchNewMessage(
+                        msg = MessageSummaryDto(
+                            id = ev.id,
+                            packageName = "com.phantom.checker.proactive",
+                            appLabel = DesktopStrings.proactiveIntelMirrorTitle,
+                            sender = ev.title,
+                            preview = ev.summary.take(60),
+                            riskLabel = "safe",
+                            conversationKey = "",
+                            timestamp = ev.timestamp.takeIf { it > 0L } ?: System.currentTimeMillis()
+                        ),
+                        settings = curSettings,
+                        onNativeTrayNotify = onMirrorNotification
+                    )
+                }
+                LinkMsgType.WATCH_TOPIC_MUTE_RES -> {
+                    val res = runCatching { gson.fromJson(env.payloadJson, com.phantom.checker.shared.WatchTopicMuteRes::class.java) }.getOrNull() ?: return@collect
+                    if (res.ok) {
+                        actionFeedback = DesktopStrings.proactiveIntelMutedFeedback
                     }
                 }
                 LinkMsgType.ERROR -> {
@@ -1555,6 +1582,18 @@ fun DesktopApp(
                                             chatListState = chatListState,
                                             onSendChatMessage = { sendChatMessage(it) },
                                             onCopyToClipboard = { copyToClipboard(it) },
+                                            proactiveEvents = proactiveEvents,
+                                            onMuteProactiveTopics = { ev ->
+                                                if (ev.topicIds.isNotEmpty()) {
+                                                    scope.launch {
+                                                        if (sendOrNotify(LinkMsgType.WATCH_TOPIC_MUTE, com.phantom.checker.shared.WatchTopicMuteReq(ev.topicIds))) {
+                                                            proactiveEvents = proactiveEvents.filterNot { it.id == ev.id }
+                                                        }
+                                                    }
+                                                } else {
+                                                    proactiveEvents = proactiveEvents.filterNot { it.id == ev.id }
+                                                }
+                                            },
                                             sendOrNotify = { type, payload -> sendOrNotify(type, payload) }
                                         )
                                     }

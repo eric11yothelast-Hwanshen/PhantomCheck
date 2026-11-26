@@ -5437,6 +5437,21 @@ private fun ProactiveIntelSettingsCard(
             }
         }
         Spacer(Modifier.height(8.dp))
+        var diagTick by remember { mutableIntStateOf(0) }
+        val watchTopicsList by remember(appCtx) {
+            AppDatabaseHolder.db(appCtx).watchTopicDao().observeAll()
+        }.collectAsState(initial = emptyList())
+        val confirmedTopicsCount = remember(watchTopicsList) {
+            watchTopicsList.count {
+                it.status == com.phantom.checker.data.WatchTopicEntity.STATUS_ACTIVE &&
+                    com.phantom.checker.data.WatchTopicEntity.confidenceRank(it.confidence) >= 2
+            }
+        }
+        val intelDiag = remember(diagTick, enabled, isQueryingNow) {
+            PhantomPrefs.getProactiveIntelDiag(appCtx)
+        }
+        val tokenSaverOn = PhantomPrefs.isTokenSaverEnabled(appCtx)
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -5458,6 +5473,7 @@ private fun ProactiveIntelSettingsCard(
                             previewStatus = res.statusMessage
                             previewDigest = res.digestMarkdown
                             isQueryingNow = false
+                            diagTick += 1
                         }
                     }
                 },
@@ -5471,6 +5487,52 @@ private fun ProactiveIntelSettingsCard(
                 } else {
                     Text(stringResource(R.string.settings_s_b6a76b))
                 }
+            }
+        }
+        // #532 Proactive Intel Diagnostic Panel
+        Spacer(Modifier.height(8.dp))
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = phantomSurfaceAlpha(0.45f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.proactive_intel_diag_title),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                val masterText = stringResource(if (enabled) R.string.proactive_intel_diag_on else R.string.proactive_intel_diag_off)
+                val saverText = stringResource(if (tokenSaverOn) R.string.proactive_intel_diag_saver_degraded else R.string.proactive_intel_diag_saver_normal)
+                val lastRunText = if (intelDiag.lastRunAtMs > 0L) {
+                    PhantomPrefs.formatMessageTime(appCtx, intelDiag.lastRunAtMs, includeDate = true)
+                } else {
+                    stringResource(R.string.proactive_intel_diag_never)
+                }
+                val lastErrText = if (intelDiag.lastError.isNotBlank()) {
+                    val errTime = if (intelDiag.lastErrorAtMs > 0L) {
+                        "${PhantomPrefs.formatMessageTime(appCtx, intelDiag.lastErrorAtMs, includeDate = true)} · "
+                    } else ""
+                    "$errTime${intelDiag.lastError}"
+                } else {
+                    stringResource(R.string.proactive_intel_diag_no_error)
+                }
+                Text(stringResource(R.string.proactive_intel_diag_master, masterText), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.proactive_intel_diag_saver, saverText), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.proactive_intel_diag_topics, confirmedTopicsCount), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.proactive_intel_diag_last_run, lastRunText), style = MaterialTheme.typography.bodySmall)
+                Text(
+                    stringResource(R.string.proactive_intel_diag_counts, intelDiag.lastQueriedCount, intelDiag.lastResultCount),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    stringResource(R.string.proactive_intel_diag_last_error, lastErrText),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (intelDiag.lastError.isNotBlank()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
         previewStatus?.let { status ->
