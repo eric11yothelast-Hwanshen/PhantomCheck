@@ -153,7 +153,7 @@ object DesktopStrings {
     val settingsTabSystem get() = t("系統設定 (10)", "System (10)")
     val settingsTabCustom get() = t("介面自訂 (8)", "Customize (8)")
     val sysLangTitle get() = t("1. 界面語言（即時生效）", "1. Interface Language (Instant)")
-    val sysAutoStartTitle get() = t("2. 開機自動啟動（Windows HKCU\\Run，啟動縮至系統匣）", "2. Launch at Startup (starts in system tray)")
+    val sysAutoStartTitle get() = t("2. 開機自動啟動（雙軌：HKCU\\Run＋排程器，啟動縮至系統匣）", "2. Launch at Startup (Dual-track: HKCU\\Run + Task Scheduler, starts in tray)")
     val sysCloseBehaviorTitle get() = t("3. 關閉視窗行為", "3. Window Close Behavior")
     val closeMinimizeTray get() = t("縮到系統匣背景運行（預設）", "Minimize to System Tray (Default)")
     val closeExitApp get() = t("直接結束程式", "Exit Application")
@@ -317,7 +317,7 @@ object DesktopStrings {
     val custGlassBlurTitle get() = t("12. 玻璃模糊通透強度", "12. Glass Blur / Translucency")
     val custChatFontSizeTitle get() = t("13. AI 聊天字級", "13. AI Chat Font Size")
     val custNotifSoundTitle get() = t("14. 新訊息通知音效", "14. Notification Sound")
-    val custAutoConnectTitle get() = t("15. 啟動時自動啟動伺服器接收已配對手機", "15. Auto-start Server for Paired Phone on Launch")
+    val custAutoConnectTitle get() = t("15. 開啟時自動監聽並等待已配對手機連線", "15. Auto-listen for Paired Phone on Launch")
     val custDefaultTabTitle get() = t("16. 啟動預設分頁", "16. Default Startup Tab")
 
     fun densityLabel(d: UiDensity): String = when (d) {
