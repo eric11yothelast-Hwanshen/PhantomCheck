@@ -3,6 +3,49 @@
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses Semantic Versioning.
 
+## [5.1.0] - 2026-11-26
+
+- **Tag 對照**：[`v5.0.0...v5.1.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.0.0...v5.1.0)（`versionCode = 59`、`versionName = "5.1.0"`；桌面端 `desktopVersion = "0.8.0"`）
+- **發佈資產（雙 APK ＋ 桌面端 Windows Inno Setup 單一安裝檔）**：
+  - `app-release.apk`：正式簽章＋R8 程式碼縮減與資源壓縮（`isMinifyEnabled = true`、`isShrinkResources = true`），供一般使用者安裝與原簽章覆蓋升級。
+  - `app-debug.apk`：除錯建置版本，供開發測試與排錯使用。
+  - `PhantomCheckDesktop-0.8.0-setup.exe`：Windows 桌面端連線與訊息管理安裝檔（Compose Multiplatform，`desktopVersion = "0.8.0"`）。
+
+### 行為變更（Behavior Changes）
+- **#530 開機自啟動升級雙軌（PR #534）**：Windows 開機自啟動保留軌道一 HKCU `Run` 機碼（含 `StartupApproved` 停用偵測），新增軌道二 per-user Task Scheduler 排程工作 `PhantomCheckDesktopLogon`（`LogonTrigger`、`LeastPrivilege` 免管理員與免 UAC、`Priority=4`、啟動參數 `--minimized`）；啟用時雙軌齊寫、停用時雙軌齊清，Inno Setup 解除安裝同步清除排程工作。
+- **#532 協定附加 `proactive.event.push`／`watchTopic.mute` 與新聞 RSS 請求（PR #534）**：`PROTOCOL_VERSION` 維持 `2` 不變，新增欄位均具預設值以確保新舊版本向下相容；開啟主動情報後新增對 `news.google.com` 之未認證公開 RSS 請求（僅傳送短關注主題字串或地區頭條查詢，不傳送個人資料）。
+- **#529 桌面彈窗顯示時長自由調整（PR #534）**：桌面彈窗顯示時長由固定 `3 | 5 | 8` 秒改為 `3–20` 秒自由調整（舊值 `5` 完整相容）。
+
+### 新增、變更與修正
+- **#531 訊息同步與標題修復（PR #534）**：桌面訊息列表新增分頁載入（每頁 60 筆、捲動觸底自動續載、顯示「已同步 N 則 · 上次同步 HH:mm」計數，斷線誠實顯示錯誤與手動重試）；同一 `id` 新舊合併不讓舊狀態覆蓋 `isRead`／`isStarred`；標題採三段回退鏈（寄件者 → App 名稱 → 未命名訊息）消除整排無標題列表；新增「對話檢視 / 依 App 分組」切換（含未讀徽章、風險色點與最新預覽）。
+- **#527 訊息頁群組報告入口（PR #534）**：手機訊息頁新增圖示＋文字按鈕開啟群組報告 `ModalBottomSheet`，與設定頁共用同一 `GroupReportsViewer`（零複製），內含「管理設定」跳轉。
+- **#528 懸浮球拖曳與懸停根因修復（PR #534）**：新增唯一 AWT px ↔ Compose dp 換算層（`DesktopScreenMetrics`），修正 100%／125%／150% DPI 與多螢幕混合縮放之拖曳漂移；懸浮球主視窗幾何於懸停與通知期間恆定不變，懸停資訊卡與通知氣泡移至獨立第二視窗，根治 resize → 失焦 → 回縮抽搐回饋環；拖曳改同步定位（移除 14ms 節流與一幀延遲）；新增 6 種自訂懸停動作（連線與電量／最近一則訊息／今日統計／最近情報或群組報告／時鐘與日期／自訂文字 ≤40 字）。
+- **#529 彈窗背景圖自訂 UI 與懸停續計（PR #534）**：設定中心新增背景圖選擇（png／jpg／jpeg／webp、≤5MB 超限誠實拒絕、壞圖回退純色）、背景遮罩濃度滑桿（0.30–0.90）、文字色 HEX 輸入與 6 組預設色票及即時預覽；右下角彈窗改 `remainingMs` 狀態機，滑鼠懸停真正暫停、離開後從剩餘秒數續計（不再整段重計）；新增剩餘秒數倒數角標開關；顯示時長改為 3–20 秒自由調整。
+- **#530 Splash 啟動畫面與雙軌開機自啟（PR #534）**：新增純 JDK AWT 無邊框置中啟動載入畫面（含版本號與載入條、8 秒保險自動關閉、`--minimized`／`--tray` 不顯示、建立失敗降級不擋啟動）；開機自啟動升級雙軌（HKCU `Run` ＋ per-user Task Scheduler `PhantomCheckDesktopLogon`），設定頁顯示雙軌狀態。
+- **#532 主動情報 v3（PR #534）**：省 Token 模式由整段停用改為降級不停機（每日 1 輪、僅高優先主題、Google News RSS＋本機規則層判決、零 AI Token）；新增 Google News RSS 引擎（免 API Key、`<48h` 新鮮度過濾、URL＋標題 SHA-256 去重、沿用網域品質分層，支援搜尋與地區頭條 feed）；記憶庫高信心主題僅建議為低信心候選走確認卡，絕不自動啟用；設定頁新增主動情報診斷面板（開關、降級狀態、已確認主題數、上輪執行時間、查詢與結果數、最近錯誤）；主動情報推播鏡射至已連線桌面（標題＋≤60 字節錄）並支援桌面端「不再關注」回寫手機靜音主題；`PRIVACY.md` 第六節中英雙語同步補齊。
+- **#533 雙端同步稽核與 UI/Copy 修整（PR #534）**：完成 16 項雙端功能同步稽核表、修整重複用詞文案（「開啟時自動監聽並等待已配對手機連線」）、雙語字串桶完全對齊，並完成零新增常駐秒級輪詢自查。
+
+### English
+- **Tag Compare**: [`v5.0.0...v5.1.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.0.0...v5.1.0) (`versionCode = 59`, `versionName = "5.1.0"`; Desktop `desktopVersion = "0.8.0"`)
+- **Release Assets (Dual APKs + Single Desktop Windows Inno Setup Installer)**:
+  - `app-release.apk`: Release-signed with R8 code shrinking and resource shrinking (`isMinifyEnabled = true`, `isShrinkResources = true`), for general users and in-place signature upgrades.
+  - `app-debug.apk`: Debug build for development testing and troubleshooting.
+  - `PhantomCheckDesktop-0.8.0-setup.exe`: Windows desktop companion installer (Compose Multiplatform, `desktopVersion = "0.8.0"`).
+
+**Behavior Changes**
+- **#530 Dual-Track Launch at Startup (PR #534)**: Windows startup preserves Track 1 HKCU `Run` registry entry (with `StartupApproved` disabled detection) and adds Track 2 per-user Task Scheduler task `PhantomCheckDesktopLogon` (`LogonTrigger`, `LeastPrivilege` without admin/UAC, `Priority=4`, `--minimized` argument); enabling writes both tracks, disabling removes both tracks, and Inno Setup uninstall cleans up the scheduled task.
+- **#532 Additive `proactive.event.push` / `watchTopic.mute` Protocol & News RSS Requests (PR #534)**: `PROTOCOL_VERSION` remains `2` unchanged with default values on all new fields for backward compatibility; enabling Proactive Intel introduces unauthenticated public RSS requests to `news.google.com` (sending only short watch-topic strings or regional headline feeds, never personal data).
+- **#529 Free-Range Desktop Popup Display Duration (PR #534)**: Popup display duration changes from fixed `3 | 5 | 8` seconds to a free-range `3–20` seconds (legacy value `5` remains fully compatible).
+
+**Added, Changed & Fixed**
+- **#531 Message Sync & Title Fix (PR #534)**: Added paginated loading to the desktop message list (60 messages per page, auto-load on scroll-to-bottom, "Synced N · Last sync HH:mm" counter, and honest offline error display with manual retry); merging records with the same `id` prevents stale state from overwriting `isRead`/`isStarred`; added a 3-tier title fallback chain (sender → app name → unnamed message) to eliminate blank-title rows; added a "Conversation View / Group by App" toggle (with unread badges, risk color dots, and latest preview).
+- **#527 Messages Page Group Report Entry (PR #534)**: Added an icon + text button on the Android Messages page to open the Group Report `ModalBottomSheet`, reusing the shared `GroupReportsViewer` with Settings (zero duplication) and including a "Manage Settings" shortcut.
+- **#528 Floating Orb Drag & Hover Root-Cause Fix (PR #534)**: Added a single-source AWT px ↔ Compose dp conversion layer (`DesktopScreenMetrics`) fixing drag drift under 100%/125%/150% DPI and mixed multi-monitor scaling; kept the floating orb main window geometry constant during hover and notifications by moving the hover info card and notification bubble to a separate secondary window, eliminating the resize → focus-loss → shrink twitch feedback loop; switched dragging to synchronous positioning (removing 14ms throttling and one-frame delay); added 6 custom hover actions (connection & battery / latest message / today's stats / latest intel or group report / clock & date / custom text ≤40 chars).
+- **#529 Popup Background Image Custom UI & Hover Resume (PR #534)**: Added background image picker in Settings (png/jpg/jpeg/webp, honest rejection above 5 MB, solid-color fallback on corrupt images), background scrim opacity slider (0.30–0.90), text color HEX input with 6 preset color swatches, and live preview; rewrote the bottom-right popup with a `remainingMs` state machine that truly pauses on hover and resumes from the remaining time on leave (no full timer reset); added a remaining-seconds countdown badge toggle; changed display duration to 3–20 seconds.
+- **#530 Splash Screen & Dual-Track Startup (PR #534)**: Added a pure JDK AWT borderless centered splash screen (with version label and loading bar, 8-second failsafe auto-close, suppressed under `--minimized`/`--tray`, and non-blocking fallback on creation failure); upgraded startup to dual-track (HKCU `Run` + per-user Task Scheduler `PhantomCheckDesktopLogon`) with dual-track status displayed in Settings.
+- **#532 Proactive Intel v3 (PR #534)**: Changed Token Saver mode from full disablement to degraded continuous operation (1 round per day, high-priority topics only, Google News RSS + local rule-layer judgment, zero AI tokens); added Google News RSS engine (no API key required, `<48h` freshness filter, URL + title SHA-256 deduplication, existing domain quality tiering, search and regional headline feeds); high-confidence memory topics are only suggested as low-confidence candidates via confirmation cards and never auto-enabled; added a Proactive Intel diagnostics panel in Settings (toggle, degraded status, confirmed topic count, last run time, query/result counts, recent errors); mirrored proactive intel pushes to connected desktops (title + ≤60-character excerpt) with desktop "Stop Watching" write-back to mute topics on phone; updated `PRIVACY.md` §6 bilingually.
+- **#533 Cross-End Sync Audit & UI/Copy Polish (PR #534)**: Completed a 16-item cross-end feature sync audit checklist, polished repetitive copy, aligned bilingual string buckets completely, and verified zero new persistent second-level polling.
+
 ## [5.0.0] - 2026-11-25
 
 - **Tag 對照**：[`v4.9.0...v5.0.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v4.9.0...v5.0.0)（`versionCode = 58`、`versionName = "5.0.0"`；桌面端 `desktopVersion = "0.7.0"`）

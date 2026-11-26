@@ -3,7 +3,7 @@
 ; Sole Windows update channel (legacy jpackage MSI retired in #496; PrepareToInstall auto-cleans legacy MSI/Inno).
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.7.0"
+  #define MyAppVersion "0.8.0"
 #endif
 
 #define MyAppName "PhantomCheck Desktop"
