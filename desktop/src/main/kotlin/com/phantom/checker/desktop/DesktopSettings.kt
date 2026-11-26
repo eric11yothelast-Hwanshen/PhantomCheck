@@ -125,6 +125,8 @@ data class DesktopSettings(
     val toastShowTime: Boolean = true,
     val toastBgImagePath: String = "",
     val toastTextColorHex: String = "",
+    val toastBgScrimAlpha: Float = 0.58f, // 0.30..0.90 (#529)
+    val toastShowCountdown: Boolean = false, // #529
     val toastSoundCustomWavPath: String = "",
     val toastSoundVolume: Float = 0.8f, // 0.0..1.0
     val toastMaxPerMinute: Int = 0, // 0 = unlimited, 1..20
@@ -231,7 +233,7 @@ object DesktopSettingsStore {
             bannerEnabled = p.getProperty("bannerEnabled", "true").toBoolean(),
             bannerDurationSec = p.getProperty("bannerDurationSec", "5").toIntOrNull()?.takeIf { it in listOf(0, 3, 5, 8) } ?: 5,
             toastEnabled = p.getProperty("toastEnabled", "true").toBoolean(),
-            toastDurationSec = p.getProperty("toastDurationSec", "5").toIntOrNull()?.takeIf { it in listOf(3, 5, 8) } ?: 5,
+            toastDurationSec = p.getProperty("toastDurationSec", "5").toIntOrNull()?.coerceIn(3, 20) ?: 5,
             floatingAssistantEnabled = p.getProperty("floatingAssistantEnabled", "false").toBoolean(),
             floatingOrbSizeDp = p.getProperty("floatingOrbSizeDp", "36").toIntOrNull()?.takeIf { it in listOf(28, 36, 48) } ?: 36,
             floatingOrbOpacity = p.getProperty("floatingOrbOpacity", "0.72").toFloatOrNull()?.coerceIn(0.35f, 1.0f) ?: 0.72f,
@@ -253,6 +255,8 @@ object DesktopSettingsStore {
             toastShowTime = p.getProperty("toastShowTime", "true").toBoolean(),
             toastBgImagePath = p.getProperty("toastBgImagePath", ""),
             toastTextColorHex = p.getProperty("toastTextColorHex", "").trim(),
+            toastBgScrimAlpha = p.getProperty("toastBgScrimAlpha", "0.58").toFloatOrNull()?.coerceIn(0.30f, 0.90f) ?: 0.58f,
+            toastShowCountdown = p.getProperty("toastShowCountdown", "false").toBoolean(),
             toastSoundCustomWavPath = p.getProperty("toastSoundCustomWavPath", ""),
             toastSoundVolume = p.getProperty("toastSoundVolume", "0.8").toFloatOrNull()?.coerceIn(0f, 1f) ?: 0.8f,
             toastMaxPerMinute = p.getProperty("toastMaxPerMinute", "0").toIntOrNull()?.coerceIn(0, 20) ?: 0,
@@ -371,6 +375,8 @@ object DesktopSettingsStore {
             p.setProperty("toastShowTime", s.toastShowTime.toString())
             p.setProperty("toastBgImagePath", s.toastBgImagePath)
             p.setProperty("toastTextColorHex", s.toastTextColorHex)
+            p.setProperty("toastBgScrimAlpha", "%.2f".format(java.util.Locale.US, s.toastBgScrimAlpha.coerceIn(0.30f, 0.90f)))
+            p.setProperty("toastShowCountdown", s.toastShowCountdown.toString())
             p.setProperty("toastSoundCustomWavPath", s.toastSoundCustomWavPath)
             p.setProperty("toastSoundVolume", "%.2f".format(java.util.Locale.US, s.toastSoundVolume.coerceIn(0f, 1f)))
             p.setProperty("toastMaxPerMinute", s.toastMaxPerMinute.toString())

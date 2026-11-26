@@ -644,4 +644,15 @@ object DesktopStrings {
     val floatingHoverNoIntel get() = t("尚無主動情報或群組報告", "No recent intel or report")
     fun floatingHoverStatsLine(today: Int, unread: Int, scam: Int): String =
         t("今日 $today · 未讀 $unread · 風險 $scam", "Today $today · Unread $unread · Risk $scam")
+
+    // #529 Toast background image UI, scrim, text color, countdown badge, 3..20s slider
+    val toastPickBgImageBtn get() = t("選擇背景圖片", "Choose Background Image")
+    val toastClearBgImageBtn get() = t("清除背景", "Clear Background")
+    val toastBgImageTooLarge get() = t("圖片超過 5 MB 上限，請選擇較小的檔案", "Image exceeds 5 MB limit; please choose a smaller file")
+    val toastBgImageInvalid get() = t("僅支援 PNG / JPG / JPEG / WEBP 格式", "Only PNG / JPG / JPEG / WEBP images are supported")
+    val toastTextColorLabel get() = t("文字顏色（HEX）", "Text Color (HEX)")
+    val toastTextColorHint get() = t("#FFFFFF（留空跟隨主題）", "#FFFFFF (blank = theme default)")
+    val toastScrimLabel get() = t("背景遮罩濃度", "Background Scrim Opacity")
+    val toastShowCountdownLabel get() = t("顯示倒數秒數角標", "Show Countdown Badge")
+    fun toastDurationSliderLabel(sec: Int): String = t("顯示時長：${sec} 秒（3–20 秒）", "Display Duration: ${sec}s (3–20s)")
 }

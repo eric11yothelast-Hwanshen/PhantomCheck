@@ -512,10 +512,16 @@ fun DesktopToastOverlayWindow(
         visible = true
     }
 
-    LaunchedEffect(current.seq, isHovered, settings.toastDurationSec) {
-        val sec = settings.toastDurationSec
-        if (sec <= 0 || isHovered) return@LaunchedEffect
-        delay(sec * 1000L)
+    // #529 Hover pause = resume remainingMs state machine (1s tick, never resets on hover exit; resets only on new seq)
+    val initialDurationMs = settings.toastDurationSec.coerceIn(3, 20) * 1000L
+    var remainingMs by remember(current.seq, initialDurationMs) { mutableLongStateOf(initialDurationMs) }
+    LaunchedEffect(current.seq, isHovered) {
+        if (isHovered) return@LaunchedEffect
+        while (remainingMs > 0L) {
+            val step = minOf(1000L, remainingMs)
+            delay(step)
+            remainingMs = (remainingMs - step).coerceAtLeast(0L)
+        }
         visible = false
         delay(180L)
         DesktopNotificationBus.clearToast()
@@ -534,9 +540,17 @@ fun DesktopToastOverlayWindow(
         val path = settings.toastBgImagePath.trim()
         if (path.isBlank()) null else runCatching {
             val file = java.io.File(path)
-            if (file.exists() && file.isFile) {
+            if (!file.exists() || !file.isFile) {
+                DesktopDiagnostics.warn("ToastBg", "Background image not found, falling back to solid color: $path")
+                null
+            } else if (file.length() > 5L * 1024L * 1024L) {
+                DesktopDiagnostics.warn("ToastBg", "Background image exceeds 5MB, falling back to solid color: $path")
+                null
+            } else {
                 org.jetbrains.skia.Image.makeFromEncoded(file.readBytes()).toComposeImageBitmap()
-            } else null
+            }
+        }.onFailure { err ->
+            DesktopDiagnostics.warn("ToastBg", "Failed decoding toast background image ($path): ${err.javaClass.simpleName}: ${err.message}")
         }.getOrNull()
     }
     val customTextColor = remember(settings.toastTextColorHex, tokens.textPrimary) {
@@ -546,6 +560,7 @@ fun DesktopToastOverlayWindow(
         } else tokens.textPrimary
     }
     val toastBgColor = tokens.popupBg
+    val scrimAlpha = settings.toastBgScrimAlpha.coerceIn(0.30f, 0.90f)
 
     Window(
         onCloseRequest = { DesktopNotificationBus.clearToast() },
@@ -606,7 +621,7 @@ fun DesktopToastOverlayWindow(
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(if (settings.lightTheme) Color.White.copy(alpha = 0.72f) else Color.Black.copy(alpha = 0.58f))
+                                    .background(if (settings.lightTheme) Color.White.copy(alpha = scrimAlpha) else Color.Black.copy(alpha = scrimAlpha))
                             )
                         }
                         Row(
@@ -671,6 +686,23 @@ fun DesktopToastOverlayWindow(
                                     color = customTextColor.copy(alpha = 0.85f),
                                     maxLines = settings.toastMaxLines.coerceIn(1, 4),
                                     overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        if (settings.toastShowCountdown) {
+                            val remSec = ((remainingMs + 999L) / 1000L).coerceAtLeast(0L)
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(end = 8.dp, bottom = 5.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color.Black.copy(alpha = 0.42f))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = "${remSec}s",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = customTextColor.copy(alpha = 0.9f)
                                 )
                             }
                         }
