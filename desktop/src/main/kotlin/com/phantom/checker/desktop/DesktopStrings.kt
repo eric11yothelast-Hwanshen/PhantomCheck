@@ -615,4 +615,17 @@ object DesktopStrings {
     val closeDialogDesc get() = t("關閉對話框", "Close dialog")
     val copyManualPairInfo get() = t("複製手動配對資訊", "Copy Manual Pair Info")
     val manualPairInfoCopied get() = t("已複製手動配對資訊（IP / 埠號 / 配對碼 / 指紋）", "Copied manual pairing info (IP / Port / Code / Fingerprint)")
+
+    // #531 Messages pagination, title fallback, and group-by-app view
+    val unnamedMessage get() = t("未命名訊息", "Unnamed Message")
+    val messagesViewConversation get() = t("對話檢視", "Conversations")
+    val messagesViewByApp get() = t("依 App 分組", "By App")
+    fun syncedMessagesStatus(count: Int, lastSyncTime: String): String =
+        if (lastSyncTime.isBlank()) t("已同步 $count 則", "Synced $count")
+        else t("已同步 $count 則 · 上次同步 $lastSyncTime", "Synced $count · Last sync $lastSyncTime")
+    val loadingMoreMessages get() = t("載入更多歷史訊息中…", "Loading more messages…")
+    val loadMoreFailed get() = t("載入更多失敗（未連線或逾時）", "Failed to load more (disconnected or timed out)")
+    val retryLoadMore get() = t("重試", "Retry")
+    val allMessagesLoaded get() = t("已顯示全部已同步訊息", "All synced messages loaded")
+    fun appGroupConversationsCount(n: Int): String = t("$n 個對話", "$n threads")
 }

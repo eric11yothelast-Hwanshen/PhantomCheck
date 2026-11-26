@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -37,12 +38,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,12 +69,24 @@ import com.phantom.checker.shared.NoteAddReq
 import com.phantom.checker.shared.QuickReplySendReq
 import com.phantom.checker.shared.StarToggleReq
 import com.phantom.checker.shared.TagItemDto
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 private val MSG_DAY_FMT = ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+
+private data class AppGroupSummary(
+    val packageName: String,
+    val appLabel: String,
+    val unreadCount: Int,
+    val latestMessage: MessageSummaryDto,
+    val highestRisk: String,
+    val hasStarred: Boolean,
+    val conversations: List<ConversationSummary>
+)
 
 private fun riskSemanticColor(riskLabel: String, tokens: DesktopThemeTokens): Color = when (riskLabel.lowercase()) {
     "scam" -> tokens.error
@@ -120,6 +135,11 @@ internal fun DesktopMessagesPage(
     onReplyTextChange: (String) -> Unit,
     messagesListState: LazyListState,
     threadListState: LazyListState,
+    isLoadingMore: Boolean = false,
+    hasMoreMessages: Boolean = false,
+    lastSyncedAtMs: Long = 0L,
+    loadMoreError: String? = null,
+    onLoadMoreMessages: () -> Unit = {},
     onRefreshMessages: () -> Unit,
     sendOrNotify: suspend (String, Any) -> Boolean
 ) {
@@ -128,6 +148,7 @@ internal fun DesktopMessagesPage(
     var showInfoPane by remember { mutableStateOf(true) }
     var compactShowDetail by remember(windowClass) { mutableStateOf(false) }
     var quickInfoNote by remember(selectedConvKey) { mutableStateOf("") }
+    var expandedAppPackages by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     val visibleConversations = remember(conversations, msgFilter, msgSearch) {
         val byFilter = when (msgFilter) {
@@ -147,9 +168,52 @@ internal fun DesktopMessagesPage(
         }
     }
 
+    val appGroups = remember(visibleConversations) {
+        visibleConversations
+            .groupBy { it.packageName }
+            .map { (pkg, convList) ->
+                val sortedConvs = convList.sortedByDescending { it.latestMessage.timestamp }
+                val latestConv = sortedConvs.first()
+                val highestRisk = when {
+                    sortedConvs.any { it.highestRisk.equals("scam", ignoreCase = true) } -> "scam"
+                    sortedConvs.any { it.highestRisk.equals("suspicious", ignoreCase = true) } -> "suspicious"
+                    else -> "safe"
+                }
+                AppGroupSummary(
+                    packageName = pkg,
+                    appLabel = latestConv.appLabel,
+                    unreadCount = sortedConvs.sumOf { it.unreadCount },
+                    latestMessage = latestConv.latestMessage,
+                    highestRisk = highestRisk,
+                    hasStarred = sortedConvs.any { it.hasStarred },
+                    conversations = sortedConvs
+                )
+            }
+            .sortedByDescending { it.latestMessage.timestamp }
+    }
+
+    // #531 Scroll-driven pagination (zero polling): load next page when reaching bottom 3 items
+    LaunchedEffect(messagesListState, hasMoreMessages, isLoadingMore, loadMoreError, visibleConversations.size) {
+        if (!hasMoreMessages || isLoadingMore || loadMoreError != null) return@LaunchedEffect
+        snapshotFlow {
+            val info = messagesListState.layoutInfo
+            val total = info.totalItemsCount
+            val lastVisible = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+            total > 0 && lastVisible >= (total - 3).coerceAtLeast(0)
+        }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect {
+                onLoadMoreMessages()
+            }
+    }
+
     val isCompact = windowClass == DesktopWindowClass.COMPACT
     val isLarge = windowClass == DesktopWindowClass.LARGE
     val showButtonLabels = windowClass == DesktopWindowClass.EXPANDED || windowClass == DesktopWindowClass.LARGE
+    val lastSyncTimeText = remember(lastSyncedAtMs, settings.use24HourTime) {
+        if (lastSyncedAtMs > 0L) formatRelativeConvTime(lastSyncedAtMs, settings.use24HourTime) else ""
+    }
 
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         // Two-tier Toolbar
@@ -202,7 +266,7 @@ internal fun DesktopMessagesPage(
             }
         }
 
-        // Tier 2: Action buttons + ⓘ markReadNote toggle + Large Info Pane toggle
+        // Tier 2: Action buttons + View Mode Toggle (#531) + ⓘ markReadNote toggle + Large Info Pane toggle + Sync Status
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -236,6 +300,21 @@ internal fun DesktopMessagesPage(
                     Text(DesktopStrings.refresh)
                 }
             }
+            // #531 View Mode toggle: Conversations (default) vs Group by App
+            FilterChip(
+                selected = settings.desktopMessagesViewMode == DesktopMessagesViewMode.CONVERSATION,
+                onClick = {
+                    DesktopSettingsStore.update { it.copy(desktopMessagesViewMode = DesktopMessagesViewMode.CONVERSATION) }
+                },
+                label = { Text(DesktopStrings.messagesViewConversation, style = MaterialTheme.typography.labelSmall, maxLines = 1) }
+            )
+            FilterChip(
+                selected = settings.desktopMessagesViewMode == DesktopMessagesViewMode.GROUP_BY_APP,
+                onClick = {
+                    DesktopSettingsStore.update { it.copy(desktopMessagesViewMode = DesktopMessagesViewMode.GROUP_BY_APP) }
+                },
+                label = { Text(DesktopStrings.messagesViewByApp, style = MaterialTheme.typography.labelSmall, maxLines = 1) }
+            )
             FilterChip(
                 selected = showMarkReadHint,
                 onClick = { showMarkReadHint = !showMarkReadHint },
@@ -248,6 +327,12 @@ internal fun DesktopMessagesPage(
                     label = { Text(DesktopStrings.infoPaneToggle, style = MaterialTheme.typography.labelSmall) }
                 )
             }
+            Text(
+                text = DesktopStrings.syncedMessagesStatus(messages.size, lastSyncTimeText),
+                style = MaterialTheme.typography.labelSmall,
+                color = tokens.textMuted,
+                maxLines = 1
+            )
         }
 
         AnimatedVisibility(visible = showMarkReadHint) {
@@ -305,6 +390,160 @@ internal fun DesktopMessagesPage(
             }
         }
 
+        val renderConversationRow: @Composable (ConversationSummary, Modifier) -> Unit = { conv, rowMod ->
+            val isSelected = conv.groupKey == selectedConvKey
+            val isBatchChecked = conv.groupKey in selectedBatchKeys
+            val cardBg = if (isSelected || isBatchChecked) tokens.selectedBg else tokens.surface
+            val corner = if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST) {
+                (settings.messageCardCornerDp - 4).coerceAtLeast(8).dp
+            } else {
+                settings.messageCardCornerDp.dp
+            }
+            val avatarColor = DesktopAppLabels.resolveColor(conv.packageName)
+            val riskDotColor = riskSemanticColor(conv.highestRisk, tokens)
+            val relTime = formatRelativeConvTime(conv.latestMessage.timestamp, settings.use24HourTime)
+            Row(
+                modifier = rowMod
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(corner))
+                    .background(cardBg)
+                    .border(
+                        1.dp,
+                        if (isSelected || isBatchChecked) accentColor.copy(alpha = 0.5f) else tokens.border,
+                        RoundedCornerShape(corner)
+                    )
+                    .clickable {
+                        if (batchSelectMode) {
+                            onSelectedBatchKeysChange(
+                                if (isBatchChecked) selectedBatchKeys - conv.groupKey else selectedBatchKeys + conv.groupKey
+                            )
+                        } else {
+                            onSelectConversation(conv.groupKey, conv.latestMessage.id)
+                            if (isCompact) compactShowDetail = true
+                        }
+                    }
+                    .padding(if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST || isCompact) 10.dp else cardPad),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (batchSelectMode) {
+                    Checkbox(
+                        checked = isBatchChecked,
+                        onCheckedChange = { checked ->
+                            onSelectedBatchKeysChange(
+                                if (checked) selectedBatchKeys + conv.groupKey else selectedBatchKeys - conv.groupKey
+                            )
+                        }
+                    )
+                }
+                Box(modifier = Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(avatarColor.copy(alpha = 0.24f))
+                            .border(1.dp, avatarColor.copy(alpha = 0.65f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = DesktopAppLabels.avatarInitial(conv.sender, conv.appLabel),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = avatarColor
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(riskDotColor)
+                            .border(1.5.dp, tokens.surface, CircleShape)
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${if (conv.hasStarred) "★ " else ""}${conv.sender}",
+                                fontWeight = if (conv.unreadCount > 0) FontWeight.Bold else FontWeight.Medium,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = tokens.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            Text(
+                                text = conv.appLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = avatarColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (conv.isGroup) {
+                                Text(
+                                    text = DesktopStrings.groupBadge,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = tokens.accentText,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(accentColor.copy(alpha = 0.14f))
+                                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = relTime,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (conv.highestRisk.equals("scam", ignoreCase = true)) tokens.error else tokens.textMuted
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = conv.latestMessage.preview.take(settings.previewLength),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = tokens.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (conv.unreadCount > 0) {
+                            Spacer(Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(accentColor)
+                                    .padding(horizontal = 7.dp, vertical = 2.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (conv.unreadCount > 99) "99+" else conv.unreadCount.toString(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = tokens.onAccent
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Master List composable block
         val renderConversationList: @Composable (Modifier) -> Unit = { listMod ->
             Box(modifier = listMod) {
@@ -319,155 +558,190 @@ internal fun DesktopMessagesPage(
                             if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST || isCompact) 4.dp else listSpace
                         )
                     ) {
-                        items(visibleConversations, key = { it.groupKey }) { conv ->
-                            val isSelected = conv.groupKey == selectedConvKey
-                            val isBatchChecked = conv.groupKey in selectedBatchKeys
-                            val cardBg = if (isSelected || isBatchChecked) tokens.selectedBg else tokens.surface
-                            val corner = if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST) {
-                                (settings.messageCardCornerDp - 4).coerceAtLeast(8).dp
-                            } else {
-                                settings.messageCardCornerDp.dp
-                            }
-                            val avatarColor = DesktopAppLabels.resolveColor(conv.packageName)
-                            val riskDotColor = riskSemanticColor(conv.highestRisk, tokens)
-                            val relTime = formatRelativeConvTime(conv.latestMessage.timestamp, settings.use24HourTime)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(corner))
-                                    .background(cardBg)
-                                    .border(
-                                        1.dp,
-                                        if (isSelected || isBatchChecked) accentColor.copy(alpha = 0.5f) else tokens.border,
-                                        RoundedCornerShape(corner)
-                                    )
-                                    .clickable {
-                                        if (batchSelectMode) {
-                                            onSelectedBatchKeysChange(
-                                                if (isBatchChecked) selectedBatchKeys - conv.groupKey else selectedBatchKeys + conv.groupKey
-                                            )
-                                        } else {
-                                            onSelectConversation(conv.groupKey, conv.latestMessage.id)
-                                            if (isCompact) compactShowDetail = true
-                                        }
-                                    }
-                                    .padding(if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST || isCompact) 10.dp else cardPad),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                if (batchSelectMode) {
-                                    Checkbox(
-                                        checked = isBatchChecked,
-                                        onCheckedChange = { checked ->
-                                            onSelectedBatchKeysChange(
-                                                if (checked) selectedBatchKeys + conv.groupKey else selectedBatchKeys - conv.groupKey
-                                            )
-                                        }
-                                    )
-                                }
-                                Box(modifier = Modifier.size(38.dp), contentAlignment = Alignment.Center) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(CircleShape)
-                                            .background(avatarColor.copy(alpha = 0.24f))
-                                            .border(1.dp, avatarColor.copy(alpha = 0.65f), CircleShape),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = DesktopAppLabels.avatarInitial(conv.sender, conv.appLabel),
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = avatarColor
-                                        )
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomEnd)
-                                            .size(10.dp)
-                                            .clip(CircleShape)
-                                            .background(riskDotColor)
-                                            .border(1.5.dp, tokens.surface, CircleShape)
-                                    )
-                                }
-
-                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        if (settings.desktopMessagesViewMode == DesktopMessagesViewMode.GROUP_BY_APP) {
+                            items(appGroups, key = { "app::${it.packageName}" }) { group ->
+                                val isExpanded = group.packageName in expandedAppPackages
+                                val appColor = DesktopAppLabels.resolveColor(group.packageName)
+                                val riskDotColor = riskSemanticColor(group.highestRisk, tokens)
+                                val relTime = formatRelativeConvTime(group.latestMessage.timestamp, settings.use24HourTime)
+                                val corner = settings.messageCardCornerDp.dp
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.weight(1f),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = "${if (conv.hasStarred) "★ " else ""}${conv.sender}",
-                                                fontWeight = if (conv.unreadCount > 0) FontWeight.Bold else FontWeight.Medium,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = tokens.textPrimary,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f, fill = false)
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(corner))
+                                            .background(if (isExpanded) tokens.selectedBg.copy(alpha = 0.7f) else tokens.surface)
+                                            .border(
+                                                1.dp,
+                                                if (isExpanded) accentColor.copy(alpha = 0.5f) else tokens.border,
+                                                RoundedCornerShape(corner)
                                             )
-                                            Text(
-                                                text = conv.appLabel,
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = avatarColor,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            if (conv.isGroup) {
-                                                Text(
-                                                    text = DesktopStrings.groupBadge,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = tokens.accentText,
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(6.dp))
-                                                        .background(accentColor.copy(alpha = 0.14f))
-                                                        .padding(horizontal = 5.dp, vertical = 1.dp)
-                                                )
+                                            .clickable {
+                                                expandedAppPackages = if (isExpanded) {
+                                                    expandedAppPackages - group.packageName
+                                                } else {
+                                                    expandedAppPackages + group.packageName
+                                                }
                                             }
-                                        }
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(
-                                            text = relTime,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = if (conv.highestRisk.equals("scam", ignoreCase = true)) tokens.error else tokens.textMuted
-                                        )
-                                    }
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                            .padding(if (isCompact) 10.dp else cardPad),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(
-                                            text = conv.latestMessage.preview.take(settings.previewLength),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = tokens.textSecondary,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        if (conv.unreadCount > 0) {
-                                            Spacer(Modifier.width(8.dp))
+                                        Box(modifier = Modifier.size(40.dp), contentAlignment = Alignment.Center) {
                                             Box(
                                                 modifier = Modifier
+                                                    .size(38.dp)
                                                     .clip(CircleShape)
-                                                    .background(accentColor)
-                                                    .padding(horizontal = 7.dp, vertical = 2.dp),
+                                                    .background(appColor.copy(alpha = 0.26f))
+                                                    .border(1.2.dp, appColor.copy(alpha = 0.7f), CircleShape),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Text(
-                                                    text = if (conv.unreadCount > 99) "99+" else conv.unreadCount.toString(),
-                                                    style = MaterialTheme.typography.labelSmall,
+                                                    text = DesktopAppLabels.avatarInitial(group.appLabel, group.packageName),
+                                                    style = MaterialTheme.typography.titleSmall,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = tokens.onAccent
+                                                    color = appColor
                                                 )
                                             }
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.BottomEnd)
+                                                    .size(10.dp)
+                                                    .clip(CircleShape)
+                                                    .background(riskDotColor)
+                                                    .border(1.5.dp, tokens.surface, CircleShape)
+                                            )
                                         }
+                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.weight(1f),
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = "${if (isExpanded) "▾ " else "▸ "}${group.appLabel}",
+                                                        fontWeight = FontWeight.Bold,
+                                                        style = MaterialTheme.typography.bodyMedium,
+                                                        color = tokens.textPrimary,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f, fill = false)
+                                                    )
+                                                    Text(
+                                                        text = DesktopStrings.appGroupConversationsCount(group.conversations.size),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = tokens.textMuted,
+                                                        maxLines = 1
+                                                    )
+                                                }
+                                                Spacer(Modifier.width(6.dp))
+                                                Text(
+                                                    text = relTime,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (group.highestRisk.equals("scam", ignoreCase = true)) tokens.error else tokens.textMuted
+                                                )
+                                            }
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = group.latestMessage.preview.take(settings.previewLength),
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = tokens.textSecondary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                if (group.unreadCount > 0) {
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(CircleShape)
+                                                            .background(accentColor)
+                                                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            text = if (group.unreadCount > 99) "99+" else group.unreadCount.toString(),
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = tokens.onAccent
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    AnimatedVisibility(visible = isExpanded) {
+                                        Column(
+                                            modifier = Modifier.padding(start = 16.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            group.conversations.forEach { conv ->
+                                                renderConversationRow(conv, Modifier)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            items(visibleConversations, key = { it.groupKey }) { conv ->
+                                renderConversationRow(conv, Modifier)
+                            }
+                        }
+
+                        // #531 Pagination footer (loading / honest error + manual retry / end)
+                        item(key = "messages_pagination_footer") {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                when {
+                                    isLoadingMore -> {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(16.dp),
+                                                strokeWidth = 2.dp,
+                                                color = accentColor
+                                            )
+                                            Text(
+                                                DesktopStrings.loadingMoreMessages,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = tokens.textMuted
+                                            )
+                                        }
+                                    }
+                                    loadMoreError != null -> {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                loadMoreError,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = tokens.error
+                                            )
+                                            TextButton(onClick = onLoadMoreMessages) {
+                                                Text(DesktopStrings.retryLoadMore, style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+                                    }
+                                    !hasMoreMessages && messages.isNotEmpty() -> {
+                                        Text(
+                                            DesktopStrings.allMessagesLoaded,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = tokens.textMuted
+                                        )
                                     }
                                 }
                             }
@@ -525,7 +799,13 @@ internal fun DesktopMessagesPage(
                                     )
                                 }
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(detail.sender, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        resolveMessageTitle(detail.sender, detail.packageName, resolvedApp),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = tokens.textPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                     Text("$resolvedApp · ${timeFmt.format(Date(detail.timestamp))}", style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
                                 }
                             }
@@ -575,7 +855,8 @@ internal fun DesktopMessagesPage(
                                 }
                             ) { Text(if (deepAnalyzingMsgId == detail.id) DesktopStrings.deepAnalyzing else DesktopStrings.deepAnalyze) }
                             TextButton(onClick = {
-                                scope.launch { sendOrNotify(LinkMsgType.NOTE_ADD, NoteAddReq(content = "[${detail.sender}] ${detail.preview}", relatedMessageId = detail.id)) }
+                                val titleForNote = resolveMessageTitle(detail.sender, detail.packageName, resolvedApp)
+                                scope.launch { sendOrNotify(LinkMsgType.NOTE_ADD, NoteAddReq(content = "[$titleForNote] ${detail.preview}", relatedMessageId = detail.id)) }
                             }) { Text(DesktopStrings.addNote) }
                         }
 
@@ -671,12 +952,17 @@ internal fun DesktopMessagesPage(
                                                 .padding(10.dp)
                                         ) {
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                val itemTitle = resolveMessageTitle(item.sender, item.packageName, item.appLabel.ifBlank { resolvedApp })
                                                 Text(
-                                                    text = "${if (item.isStarred) "★ " else ""}${item.sender}",
+                                                    text = "${if (item.isStarred) "★ " else ""}$itemTitle",
                                                     style = MaterialTheme.typography.labelSmall,
                                                     fontWeight = FontWeight.SemiBold,
-                                                    color = tokens.accentText
+                                                    color = tokens.accentText,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false)
                                                 )
+                                                Spacer(Modifier.width(8.dp))
                                                 Text(
                                                     text = "${DesktopStrings.riskLabelText(item.riskLabel)} · ${formatRelativeConvTime(item.timestamp, settings.use24HourTime)}",
                                                     style = MaterialTheme.typography.labelSmall,

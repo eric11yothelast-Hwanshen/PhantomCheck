@@ -109,7 +109,9 @@ private enum class DesktopTab {
     MESSAGES, STATS, TODOS, CHAT, RULES, SETTINGS, REPORTS, TOOLS, HOME
 }
 
-private const val MAX_CACHED_MESSAGES = 240
+private const val MAX_CACHED_MESSAGES = 2000
+private const val MESSAGES_PAGE_SIZE = 60
+private const val MESSAGES_LIST_DEBOUNCE_MS = 1000L
 private const val MAX_CACHED_CHAT_BUBBLES = 120
 private const val FULL_REFRESH_COOLDOWN_MS = 10_000L
 
@@ -130,6 +132,45 @@ internal data class ConversationSummary(
 internal fun conversationGroupKey(m: MessageSummaryDto): String =
     if (m.conversationKey.isNotBlank()) "${m.packageName}::${m.conversationKey}"
     else "${m.packageName}::${m.sender}"
+
+/**
+ * #531 標題三段回退鏈：sender → appLabel →「未命名訊息」（雙語）。
+ */
+internal fun resolveMessageTitle(sender: String, packageName: String, appLabel: String): String {
+    val cleanSender = sender.trim()
+    if (cleanSender.isNotEmpty()) return cleanSender
+    val cleanApp = if (appLabel.isNotBlank() || packageName.isNotBlank()) {
+        DesktopAppLabels.resolveLabel(packageName, appLabel).trim()
+    } else ""
+    if (cleanApp.isNotEmpty()) return cleanApp
+    return DesktopStrings.unnamedMessage
+}
+
+/**
+ * #531 新舊訊息合併：同一 id 保留較新狀態（isRead / isStarred 不得舊蓋新），按 timestamp 降序。
+ */
+internal fun mergeMessagesById(
+    existing: List<MessageSummaryDto>,
+    incoming: List<MessageSummaryDto>,
+    preferIncoming: Boolean
+): List<MessageSummaryDto> {
+    if (existing.isEmpty()) return incoming.distinctBy { it.id }.sortedByDescending { it.timestamp }.take(MAX_CACHED_MESSAGES)
+    if (incoming.isEmpty()) return existing
+    val map = LinkedHashMap<Long, MessageSummaryDto>(existing.size + incoming.size)
+    existing.forEach { map[it.id] = it }
+    incoming.forEach { inc ->
+        val cur = map[inc.id]
+        map[inc.id] = if (cur == null) {
+            inc
+        } else if (preferIncoming) {
+            inc.copy(isRead = inc.isRead || cur.isRead)
+        } else {
+            // Older page load: keep existing fresher isRead / isStarred state
+            inc.copy(isRead = cur.isRead || inc.isRead, isStarred = cur.isStarred)
+        }
+    }
+    return map.values.sortedByDescending { it.timestamp }.take(MAX_CACHED_MESSAGES)
+}
 
 private val CONV_TIME_24_FMT = ThreadLocal.withInitial { SimpleDateFormat("HH:mm", Locale.getDefault()) }
 private val CONV_TIME_12_FMT = ThreadLocal.withInitial { SimpleDateFormat("hh:mm a", Locale.getDefault()) }
@@ -211,6 +252,14 @@ fun DesktopApp(
     var selectedConvKey by remember { mutableStateOf("") }
     var selectedMsgId by remember { mutableLongStateOf(-1L) }
     var latestCursor by remember { mutableLongStateOf(0L) }
+    var isLoadingMore by remember { mutableStateOf(false) }
+    var hasMoreMessages by remember { mutableStateOf(true) }
+    var loadedPageOffset by remember { mutableIntStateOf(0) }
+    var lastSyncedAtMs by remember { mutableLongStateOf(0L) }
+    var loadMoreError by remember { mutableStateOf<String?>(null) }
+    var pendingPagedReqId by remember { mutableStateOf<String?>(null) }
+    var lastMessagesListReqAtMs by remember { mutableLongStateOf(0L) }
+    var loadMoreTimeoutJob by remember { mutableStateOf<Job?>(null) }
     var mirrorToast by remember { mutableStateOf<String?>(null) }
     var replyText by remember { mutableStateOf("") }
     var actionFeedback by remember { mutableStateOf<String?>(null) }
@@ -307,9 +356,59 @@ fun DesktopApp(
     }
 
     fun refreshMessages(useCursor: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (now - lastMessagesListReqAtMs < MESSAGES_LIST_DEBOUNCE_MS) return
+        lastMessagesListReqAtMs = now
         scope.launch {
             val cursor = if (useCursor) latestCursor else 0L
-            sendOrNotify(LinkMsgType.MESSAGES_LIST, MessagesListReq(filter = msgFilter, offset = 0, limit = 40, sinceCursor = cursor))
+            if (!useCursor) {
+                loadedPageOffset = 0
+                hasMoreMessages = true
+                loadMoreError = null
+                pendingPagedReqId = null
+            }
+            sendOrNotify(
+                LinkMsgType.MESSAGES_LIST,
+                MessagesListReq(filter = msgFilter, offset = 0, limit = MESSAGES_PAGE_SIZE, sinceCursor = cursor)
+            )
+        }
+    }
+
+    fun loadMoreMessages() {
+        if (isLoadingMore || !hasMoreMessages) return
+        val now = System.currentTimeMillis()
+        if (now - lastMessagesListReqAtMs < MESSAGES_LIST_DEBOUNCE_MS) return
+        if (uiState.connState != LinkConnState.CONNECTED) {
+            loadMoreError = DesktopStrings.loadMoreFailed
+            return
+        }
+        lastMessagesListReqAtMs = now
+        isLoadingMore = true
+        loadMoreError = null
+        val rid = reqId()
+        pendingPagedReqId = rid
+        val nextOffset = loadedPageOffset.coerceAtLeast(messages.size)
+        scope.launch {
+            val ok = server.sendCommand(
+                LinkMsgType.MESSAGES_LIST,
+                rid,
+                MessagesListReq(filter = msgFilter, offset = nextOffset, limit = MESSAGES_PAGE_SIZE, sinceCursor = 0L)
+            )
+            if (!ok) {
+                isLoadingMore = false
+                pendingPagedReqId = null
+                loadMoreError = DesktopStrings.loadMoreFailed
+                return@launch
+            }
+            loadMoreTimeoutJob?.cancel()
+            loadMoreTimeoutJob = scope.launch {
+                delay(15_000L)
+                if (isLoadingMore && pendingPagedReqId == rid) {
+                    isLoadingMore = false
+                    pendingPagedReqId = null
+                    loadMoreError = DesktopStrings.loadMoreFailed
+                }
+            }
         }
     }
 
@@ -319,7 +418,12 @@ fun DesktopApp(
         val now = System.currentTimeMillis()
         server.sendCommand(LinkMsgType.MESSAGES_SUBSCRIBE, reqId(), emptyMap<String, String>())
         delay(120L)
-        server.sendCommand(LinkMsgType.MESSAGES_LIST, reqId(), MessagesListReq(filter = msgFilter, offset = 0, limit = 40, sinceCursor = latestCursor))
+        lastMessagesListReqAtMs = System.currentTimeMillis()
+        server.sendCommand(
+            LinkMsgType.MESSAGES_LIST,
+            reqId(),
+            MessagesListReq(filter = msgFilter, offset = 0, limit = MESSAGES_PAGE_SIZE, sinceCursor = latestCursor)
+        )
         if (now - lastFullRefreshAtMs < FULL_REFRESH_COOLDOWN_MS && stats.total > 0) {
             return
         }
@@ -406,6 +510,13 @@ fun DesktopApp(
             if (deepAnalyzingMsgId > 0L) {
                 deepAnalyzingMsgId = -1L
             }
+            if (isLoadingMore) {
+                loadMoreTimeoutJob?.cancel()
+                loadMoreTimeoutJob = null
+                isLoadingMore = false
+                pendingPagedReqId = null
+                loadMoreError = DesktopStrings.loadMoreFailed
+            }
         }
     }
 
@@ -440,9 +551,27 @@ fun DesktopApp(
                 LinkMsgType.MESSAGES_LIST_RES -> {
                     val res = runCatching { gson.fromJson(env.payloadJson, MessagesListRes::class.java) }.getOrNull() ?: return@collect
                     if (res.latestCursor > latestCursor) latestCursor = res.latestCursor
+                    val isPagedResponse = pendingPagedReqId != null && env.reqId == pendingPagedReqId
+                    if (isPagedResponse) {
+                        loadMoreTimeoutJob?.cancel()
+                        loadMoreTimeoutJob = null
+                        isLoadingMore = false
+                        pendingPagedReqId = null
+                        loadMoreError = null
+                        loadedPageOffset = (loadedPageOffset.coerceAtLeast(messages.size)) + res.items.size
+                        hasMoreMessages = res.hasMore && res.items.isNotEmpty()
+                    } else if (messages.isEmpty()) {
+                        loadedPageOffset = res.items.size
+                        hasMoreMessages = res.hasMore
+                        loadMoreError = null
+                    }
+                    lastSyncedAtMs = System.currentTimeMillis()
                     val wasEmpty = messages.isEmpty()
-                    messages = (if (wasEmpty) res.items else (res.items + messages).distinctBy { it.id }.sortedByDescending { it.timestamp })
-                        .take(MAX_CACHED_MESSAGES)
+                    messages = mergeMessagesById(
+                        existing = messages,
+                        incoming = res.items,
+                        preferIncoming = !isPagedResponse
+                    )
                     if (selectedConvKey.isBlank() && messages.isNotEmpty()) {
                         val first = messages.first()
                         selectedConvKey = conversationGroupKey(first)
@@ -455,8 +584,12 @@ fun DesktopApp(
                 LinkMsgType.MESSAGE_NEW -> {
                     val push = runCatching { gson.fromJson(env.payloadJson, MessageNewPush::class.java) }.getOrNull() ?: return@collect
                     if (push.latestCursor > latestCursor) latestCursor = push.latestCursor
-                    messages = (push.items + messages).distinctBy { it.id }.sortedByDescending { it.timestamp }
-                        .take(MAX_CACHED_MESSAGES)
+                    lastSyncedAtMs = System.currentTimeMillis()
+                    messages = mergeMessagesById(
+                        existing = messages,
+                        incoming = push.items,
+                        preferIncoming = true
+                    )
                     // #494 Smart auto-scroll left conversation list only if user is at top (not reading history)
                     if (push.items.isNotEmpty() && activeTab == DesktopTab.MESSAGES && messagesListState.firstVisibleItemIndex <= 1) {
                         scope.launch { runCatching { messagesListState.animateScrollToItem(0) } }
@@ -740,7 +873,7 @@ fun DesktopApp(
                     packageName = latest.packageName,
                     conversationKey = latest.conversationKey,
                     appLabel = resolvedApp,
-                    sender = latest.sender.ifBlank { resolvedApp },
+                    sender = resolveMessageTitle(latest.sender, latest.packageName, resolvedApp),
                     latestMessage = latest,
                     unreadCount = unread,
                     hasStarred = hasStarred,
@@ -1302,12 +1435,23 @@ fun DesktopApp(
                                             onReplyTextChange = { replyText = it },
                                             messagesListState = messagesListState,
                                             threadListState = threadListState,
+                                            isLoadingMore = isLoadingMore,
+                                            hasMoreMessages = hasMoreMessages,
+                                            lastSyncedAtMs = lastSyncedAtMs,
+                                            loadMoreError = loadMoreError,
+                                            onLoadMoreMessages = { loadMoreMessages() },
                                             onRefreshMessages = {
                                                 messages = emptyList()
+                                                loadedPageOffset = 0
+                                                hasMoreMessages = true
+                                                isLoadingMore = false
+                                                pendingPagedReqId = null
+                                                loadMoreError = null
+                                                lastMessagesListReqAtMs = System.currentTimeMillis()
                                                 scope.launch {
                                                     sendOrNotify(
                                                         LinkMsgType.MESSAGES_LIST,
-                                                        MessagesListReq(filter = "all", offset = 0, limit = 60, sinceCursor = 0L)
+                                                        MessagesListReq(filter = msgFilter, offset = 0, limit = MESSAGES_PAGE_SIZE, sinceCursor = 0L)
                                                     )
                                                 }
                                             },

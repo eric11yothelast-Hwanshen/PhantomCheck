@@ -38,6 +38,7 @@ object DesktopSettingsCatalog {
         DesktopSettingEntry("page_transition", "CUSTOMIZE", "頁面轉場樣式", "Page Transition Style", "transition slide fade scale 轉場 樣式"),
         DesktopSettingEntry("density_font", "CUSTOMIZE", "介面密度／全域字級／聊天字級", "UI Density / Font Scale / Chat Font Size", "density font scale chat size 密度 字級 聊天"),
         DesktopSettingEntry("card_glass", "CUSTOMIZE", "卡片樣式／圓角／毛玻璃等級", "Card Style / Corner Radius / Glass Level", "card style corner glass blur 卡片 圓角 毛玻璃"),
+        DesktopSettingEntry("messages_view_mode", "CUSTOMIZE", "訊息列表檢視模式（對話／依 App 分組）", "Messages View Mode (Conversations / Group by App)", "messages view mode conversation group app 訊息 檢視 分組"),
         DesktopSettingEntry("background_scrim", "CUSTOMIZE", "背景主題／自訂背景圖／表面不透明度／遮罩", "Background Theme / Custom Image / Opacity / Scrim", "background wallpaper opacity scrim 背景 桌布 透明度 遮罩"),
         DesktopSettingEntry("sidebar_startup", "CUSTOMIZE", "側欄寬度／收合與預設起始頁", "Sidebar Width / Collapse & Default Startup Tab", "sidebar collapse startup tab home 側欄 收合 起始頁 總覽"),
         // ABOUT (2)

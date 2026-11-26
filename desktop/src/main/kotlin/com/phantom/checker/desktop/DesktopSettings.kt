@@ -41,6 +41,12 @@ enum class AnimationMode(val key: String) {
     POWER_SAVER("power_saver")
 }
 
+/** #531 桌面訊息檢視模式（對話檢視／依 App 分組） */
+enum class DesktopMessagesViewMode(val key: String) {
+    CONVERSATION("conversation"),
+    GROUP_BY_APP("groupByApp")
+}
+
 /**
  * #468 / #479 / #488 / #497 桌機端設定資料模型（10 系統設定＋16 既有自訂設定＋#488 轉場與深淺＋#497 通知中心四合一＋視窗位置記憶）。
  */
@@ -129,6 +135,8 @@ data class DesktopSettings(
     val clipboardOnlyWhenFocused: Boolean = true,
     // #520 Global Animation Mode (migrated from animationsEnabled; dual-written for downgrade compatibility)
     val animationMode: AnimationMode = if (animationsEnabled) AnimationMode.BALANCED else AnimationMode.POWER_SAVER,
+    // #531 Desktop messages view mode (conversation | groupByApp)
+    val desktopMessagesViewMode: DesktopMessagesViewMode = DesktopMessagesViewMode.CONVERSATION,
     // Window geometry persistence
     val windowX: Int = Int.MIN_VALUE,
     val windowY: Int = Int.MIN_VALUE,
@@ -256,6 +264,9 @@ object DesktopSettingsStore {
                     if (legacyAnim) AnimationMode.BALANCED else AnimationMode.POWER_SAVER
                 }
             },
+            desktopMessagesViewMode = DesktopMessagesViewMode.entries.firstOrNull {
+                it.key == p.getProperty("desktopMessagesViewMode", DesktopMessagesViewMode.CONVERSATION.key)
+            } ?: DesktopMessagesViewMode.CONVERSATION,
             windowX = p.getProperty("windowX", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowY = p.getProperty("windowY", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowWidth = p.getProperty("windowWidth", "1280").toIntOrNull()?.coerceAtLeast(880) ?: 1280,
@@ -358,6 +369,7 @@ object DesktopSettingsStore {
             p.setProperty("clipboardMaxChars", s.clipboardMaxChars.toString())
             p.setProperty("clipboardOtpGuard", s.clipboardOtpGuard.toString())
             p.setProperty("clipboardOnlyWhenFocused", s.clipboardOnlyWhenFocused.toString())
+            p.setProperty("desktopMessagesViewMode", s.desktopMessagesViewMode.key)
             p.setProperty("windowX", s.windowX.toString())
             p.setProperty("windowY", s.windowY.toString())
             p.setProperty("windowWidth", s.windowWidth.toString())
