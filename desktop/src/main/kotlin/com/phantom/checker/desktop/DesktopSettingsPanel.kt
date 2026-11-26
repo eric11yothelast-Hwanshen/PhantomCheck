@@ -894,6 +894,32 @@ fun DesktopSettingsCenter(
                                         )
                                     }
                                 }
+                                // #528 Floating Orb Hover Action (6 options)
+                                Text(DesktopStrings.floatingHoverActionLabel, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                                androidx.compose.foundation.layout.FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    FloatingHoverAction.entries.forEach { hoverAct ->
+                                        FilterChip(
+                                            selected = settings.floatingHoverAction == hoverAct,
+                                            onClick = { DesktopSettingsStore.update { it.copy(floatingHoverAction = hoverAct) } },
+                                            label = { Text(DesktopStrings.floatingHoverActionName(hoverAct)) }
+                                        )
+                                    }
+                                }
+                                if (settings.floatingHoverAction == FloatingHoverAction.CUSTOM_TEXT) {
+                                    OutlinedTextField(
+                                        value = settings.floatingHoverCustomText,
+                                        onValueChange = { raw ->
+                                            DesktopSettingsStore.update { it.copy(floatingHoverCustomText = raw.take(40)) }
+                                        },
+                                        placeholder = { Text(DesktopStrings.floatingHoverCustomTextHint, style = MaterialTheme.typography.labelSmall) },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
                                 // #515 Fullscreen Auto-Hide Mode
                                 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
                                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

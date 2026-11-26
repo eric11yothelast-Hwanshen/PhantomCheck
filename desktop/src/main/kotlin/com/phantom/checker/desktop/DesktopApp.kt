@@ -572,6 +572,7 @@ fun DesktopApp(
                         incoming = res.items,
                         preferIncoming = !isPagedResponse
                     )
+                    DesktopHoverDataHolder.updateLatestMessage(messages.firstOrNull())
                     if (selectedConvKey.isBlank() && messages.isNotEmpty()) {
                         val first = messages.first()
                         selectedConvKey = conversationGroupKey(first)
@@ -590,6 +591,7 @@ fun DesktopApp(
                         incoming = push.items,
                         preferIncoming = true
                     )
+                    DesktopHoverDataHolder.updateLatestMessage(messages.firstOrNull())
                     // #494 Smart auto-scroll left conversation list only if user is at top (not reading history)
                     if (push.items.isNotEmpty() && activeTab == DesktopTab.MESSAGES && messagesListState.firstVisibleItemIndex <= 1) {
                         scope.launch { runCatching { messagesListState.animateScrollToItem(0) } }
@@ -647,6 +649,7 @@ fun DesktopApp(
                 }
                 LinkMsgType.STATS_SNAPSHOT_RES -> {
                     stats = runCatching { gson.fromJson(env.payloadJson, StatsSnapshotDto::class.java) }.getOrNull() ?: stats
+                    DesktopHoverDataHolder.updateStats(stats)
                 }
                 LinkMsgType.TODOS_LIST_RES -> {
                     val res = runCatching { gson.fromJson(env.payloadJson, TodosListRes::class.java) }.getOrNull() ?: return@collect
@@ -819,6 +822,9 @@ fun DesktopApp(
                 LinkMsgType.GROUP_REPORTS_LIST_RES -> {
                     val res = runCatching { gson.fromJson(env.payloadJson, GroupReportsListRes::class.java) }.getOrNull() ?: return@collect
                     groupReports = res.items
+                    res.items.firstOrNull()?.let { first ->
+                        DesktopHoverDataHolder.updateLatestIntelOrReport("${first.appLabel} · ${first.conversationTitle}: ${first.summaryMarkdown.take(60)}")
+                    }
                 }
                 LinkMsgType.ERROR -> {
                     val err = runCatching { gson.fromJson(env.payloadJson, ErrorPayload::class.java) }.getOrNull() ?: return@collect

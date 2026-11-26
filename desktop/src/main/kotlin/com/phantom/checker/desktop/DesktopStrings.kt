@@ -628,4 +628,20 @@ object DesktopStrings {
     val retryLoadMore get() = t("重試", "Retry")
     val allMessagesLoaded get() = t("已顯示全部已同步訊息", "All synced messages loaded")
     fun appGroupConversationsCount(n: Int): String = t("$n 個對話", "$n threads")
+
+    // #528 Floating orb hover action customization
+    val floatingHoverActionLabel get() = t("懸停顯示內容", "Hover Display Content")
+    fun floatingHoverActionName(action: FloatingHoverAction): String = when (action) {
+        FloatingHoverAction.CONNECTION_BATTERY -> t("連線與電量", "Connection & Battery")
+        FloatingHoverAction.LATEST_MESSAGE -> t("最近一則訊息", "Latest Message")
+        FloatingHoverAction.TODAY_STATS -> t("今日統計", "Today's Stats")
+        FloatingHoverAction.LATEST_INTEL_REPORT -> t("最近情報／報告", "Latest Intel / Report")
+        FloatingHoverAction.CLOCK_DATE -> t("時鐘與日期", "Clock & Date")
+        FloatingHoverAction.CUSTOM_TEXT -> t("自訂文字", "Custom Text")
+    }
+    val floatingHoverCustomTextHint get() = t("輸入懸停顯示文字（上限 40 字）…", "Hover text (max 40 chars)…")
+    val floatingHoverNoMessage get() = t("尚無最近訊息", "No recent message")
+    val floatingHoverNoIntel get() = t("尚無主動情報或群組報告", "No recent intel or report")
+    fun floatingHoverStatsLine(today: Int, unread: Int, scam: Int): String =
+        t("今日 $today · 未讀 $unread · 風險 $scam", "Today $today · Unread $unread · Risk $scam")
 }

@@ -26,7 +26,7 @@ object DesktopSettingsCatalog {
         DesktopSettingEntry("banner_settings", "SYSTEM", "頂部訊息橫幅開關與秒數", "Top Message Banner & Duration", "banner top 橫幅 秒數"),
         DesktopSettingEntry("toast_custom", "SYSTEM", "右下角彈窗尺寸／內容／背景／顏色／音量／頻率", "Corner Toast Size / Content / Sound / Frequency", "toast popup size color sound frequency volume test 彈窗 音量 頻率 測試通知"),
         DesktopSettingEntry("mirror_native_notif", "SYSTEM", "鏡像模式／原生系統通知／通知音效", "Mirror Mode / Native Notification / Sound", "mirror native sound 鏡像 原生 通知音"),
-        DesktopSettingEntry("floating_orb", "SYSTEM", "懸浮助手球（大小／透明度／吸附／半圓選單／全螢幕隱藏）", "Floating Orb (Size / Snap / Radial / Fullscreen)", "orb floating snap radial fullscreen 懸浮球 吸附 半圓 全螢幕"),
+        DesktopSettingEntry("floating_orb", "SYSTEM", "懸浮助手球（大小／透明度／吸附／懸停動作／半圓選單／全螢幕隱藏）", "Floating Orb (Size / Snap / Hover / Radial / Fullscreen)", "orb floating snap hover action radial fullscreen 懸浮球 吸附 懸停 半圓 全螢幕"),
         DesktopSettingEntry("dnd_schedule", "SYSTEM", "勿擾模式與排程時段", "Do Not Disturb & Quiet Hours", "dnd quiet hours 勿擾 靜音 時段"),
         DesktopSettingEntry("backoff_ping", "SYSTEM", "重連退避與 Ping 心跳間隔", "Reconnect Backoff & Ping Interval", "backoff ping interval 重連 間隔 心跳"),
         DesktopSettingEntry("time_preview", "SYSTEM", "24 小時制時間與預覽長度", "24-Hour Time & Preview Length", "time 24h preview length 時間 預覽 長度"),

@@ -19,6 +19,15 @@ enum class MessageCardStyle(val key: String) { CARD("card"), COMPACT_LIST("compa
 enum class MirrorDisplayMode(val key: String) { BANNER("banner"), TOAST("toast"), NATIVE("native"), BOTH("both"), COMBO("combo") }
 enum class FloatingBubbleContent(val key: String) { APP_ONLY("app_only"), SENDER_PREVIEW("sender_preview"), FULL_PREVIEW("full_preview") }
 enum class FloatingClickAction(val key: String) { OPEN_AI("open_ai"), OPEN_MAIN("open_main") }
+/** #528 懸浮球懸停動作 6 選項（預設＝連線與電量，零回退） */
+enum class FloatingHoverAction(val key: String) {
+    CONNECTION_BATTERY("connection_battery"),
+    LATEST_MESSAGE("latest_message"),
+    TODAY_STATS("today_stats"),
+    LATEST_INTEL_REPORT("latest_intel_report"),
+    CLOCK_DATE("clock_date"),
+    CUSTOM_TEXT("custom_text")
+}
 enum class BgThemePreset(val key: String) { MIDNIGHT("midnight"), AURORA("aurora"), OBSIDIAN("obsidian"), DEEP_OCEAN("deep_ocean") }
 enum class GlassBlurLevel(val key: String) { LOW("low"), MEDIUM("medium"), HIGH("high") }
 enum class ChatFontSize(val key: String, val multiplier: Float) { SMALL("small", 0.9f), STANDARD("standard", 1.0f), LARGE("large", 1.18f) }
@@ -137,6 +146,9 @@ data class DesktopSettings(
     val animationMode: AnimationMode = if (animationsEnabled) AnimationMode.BALANCED else AnimationMode.POWER_SAVER,
     // #531 Desktop messages view mode (conversation | groupByApp)
     val desktopMessagesViewMode: DesktopMessagesViewMode = DesktopMessagesViewMode.CONVERSATION,
+    // #528 Floating orb hover action customization
+    val floatingHoverAction: FloatingHoverAction = FloatingHoverAction.CONNECTION_BATTERY,
+    val floatingHoverCustomText: String = "",
     // Window geometry persistence
     val windowX: Int = Int.MIN_VALUE,
     val windowY: Int = Int.MIN_VALUE,
@@ -267,6 +279,10 @@ object DesktopSettingsStore {
             desktopMessagesViewMode = DesktopMessagesViewMode.entries.firstOrNull {
                 it.key == p.getProperty("desktopMessagesViewMode", DesktopMessagesViewMode.CONVERSATION.key)
             } ?: DesktopMessagesViewMode.CONVERSATION,
+            floatingHoverAction = FloatingHoverAction.entries.firstOrNull {
+                it.key == p.getProperty("floatingHoverAction", FloatingHoverAction.CONNECTION_BATTERY.key)
+            } ?: FloatingHoverAction.CONNECTION_BATTERY,
+            floatingHoverCustomText = p.getProperty("floatingHoverCustomText", "").trim().take(40),
             windowX = p.getProperty("windowX", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowY = p.getProperty("windowY", Int.MIN_VALUE.toString()).toIntOrNull() ?: Int.MIN_VALUE,
             windowWidth = p.getProperty("windowWidth", "1280").toIntOrNull()?.coerceAtLeast(880) ?: 1280,
@@ -370,6 +386,8 @@ object DesktopSettingsStore {
             p.setProperty("clipboardOtpGuard", s.clipboardOtpGuard.toString())
             p.setProperty("clipboardOnlyWhenFocused", s.clipboardOnlyWhenFocused.toString())
             p.setProperty("desktopMessagesViewMode", s.desktopMessagesViewMode.key)
+            p.setProperty("floatingHoverAction", s.floatingHoverAction.key)
+            p.setProperty("floatingHoverCustomText", s.floatingHoverCustomText.trim().take(40))
             p.setProperty("windowX", s.windowX.toString())
             p.setProperty("windowY", s.windowY.toString())
             p.setProperty("windowWidth", s.windowWidth.toString())
