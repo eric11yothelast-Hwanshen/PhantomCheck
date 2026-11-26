@@ -36,9 +36,11 @@ import java.awt.SystemTray
 fun main(args: Array<String>) {
     // #495 Single-instance mutex before Compose/server startup to prevent duplicate processes & port drift
     val singleInstance = DesktopSingleInstance.acquireOrNotifyExisting(args) ?: return
+    val startMinimized = args.any { it.equals("--minimized", ignoreCase = true) || it.equals("--tray", ignoreCase = true) }
+    // #530 Instant borderless splash on normal launch (never shown on --minimized / --tray)
+    val splash = DesktopSplashWindow.showIfEligible(startMinimized = startMinimized)
 
     application {
-        val startMinimized = args.any { it.equals("--minimized", ignoreCase = true) || it.equals("--tray", ignoreCase = true) }
         val traySupported = remember { runCatching { SystemTray.isSupported() }.getOrDefault(false) }
 
         val settings by DesktopSettingsStore.state.collectAsState()
@@ -77,6 +79,7 @@ fun main(args: Array<String>) {
         }
 
         fun performFullExit() {
+            splash?.dismiss()
             saveWindowGeometry(windowState)
             server.stop()
             singleInstance.release()
@@ -280,6 +283,7 @@ fun main(args: Array<String>) {
             }
             LaunchedEffect(isWindowVisible, focusRequestTick) {
                 if (isWindowVisible) {
+                    splash?.dismiss()
                     runCatching {
                         windowState.isMinimized = false
                         window.toFront()

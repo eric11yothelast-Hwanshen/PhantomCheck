@@ -568,62 +568,93 @@ fun DesktopSettingsCenter(
                                     }
                                 )
                             }
-                            when (autoStartDiag?.status) {
-                                DesktopSettingsStore.AutoStartStatus.DISABLED_BY_TASK_MANAGER -> {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(DesktopPalette.GlassWarning.copy(alpha = 0.14f))
-                                            .border(1.dp, DesktopPalette.GlassWarning.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
-                                            .padding(12.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                            autoStartDiag?.let { diag ->
+                                if (diag.status != DesktopSettingsStore.AutoStartStatus.NOT_WINDOWS) {
+                                    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+                                    androidx.compose.foundation.layout.FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Text(DesktopStrings.autoStartDisabledByTaskMgrTitle, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = DesktopPalette.GlassWarning)
-                                        Text(DesktopStrings.autoStartDisabledByTaskMgrDesc, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            SpringOutlinedButton(
-                                                onClick = {
-                                                    DesktopSettingsStore.openWindowsStartupSettings()
-                                                        .onFailure { onFeedback(it.message ?: it.javaClass.simpleName) }
-                                                },
-                                                animationsEnabled = settings.animationsEnabled
-                                            ) { Text(DesktopStrings.autoStartOpenTaskMgrBtn) }
-                                            TextButton(onClick = {
-                                                scope.launch {
-                                                    autoStartDiag = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                        DesktopSettingsStore.verifyAndRepairAutoStartOnLaunch()
-                                                    }
-                                                }
-                                            }) { Text(DesktopStrings.autoStartRecheckBtn) }
+                                        listOf(
+                                            DesktopStrings.autoStartTrackRunLabel to diag.runTrackStatus,
+                                            DesktopStrings.autoStartTrackTaskLabel to diag.taskTrackStatus
+                                        ).forEach { (trackName, trackStatus) ->
+                                            val badgeColor = when (trackStatus) {
+                                                DesktopSettingsStore.AutoStartStatus.ENABLED -> tokens.success
+                                                DesktopSettingsStore.AutoStartStatus.DISABLED_BY_TASK_MANAGER,
+                                                DesktopSettingsStore.AutoStartStatus.PATH_MISMATCH -> DesktopPalette.GlassWarning
+                                                DesktopSettingsStore.AutoStartStatus.ERROR -> tokens.error
+                                                else -> tokens.textMuted
+                                            }
+                                            Text(
+                                                text = "$trackName: ${DesktopStrings.autoStartTrackStatusLabel(trackStatus)}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = badgeColor,
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(badgeColor.copy(alpha = 0.14f))
+                                                    .border(1.dp, badgeColor.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            )
                                         }
                                     }
                                 }
-                                DesktopSettingsStore.AutoStartStatus.PATH_MISMATCH -> {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(DesktopPalette.GlassWarning.copy(alpha = 0.14f))
-                                            .padding(10.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(DesktopStrings.autoStartPathMismatchDesc, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.GlassWarning, modifier = Modifier.weight(1f))
+                            }
+                            if (autoStartDiag?.status == DesktopSettingsStore.AutoStartStatus.DISABLED_BY_TASK_MANAGER ||
+                                autoStartDiag?.runTrackStatus == DesktopSettingsStore.AutoStartStatus.DISABLED_BY_TASK_MANAGER
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(DesktopPalette.GlassWarning.copy(alpha = 0.14f))
+                                        .border(1.dp, DesktopPalette.GlassWarning.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                        .padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(DesktopStrings.autoStartDisabledByTaskMgrTitle, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = DesktopPalette.GlassWarning)
+                                    Text(DesktopStrings.autoStartDisabledByTaskMgrDesc, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        SpringOutlinedButton(
+                                            onClick = {
+                                                DesktopSettingsStore.openWindowsStartupSettings()
+                                                    .onFailure { onFeedback(it.message ?: it.javaClass.simpleName) }
+                                            },
+                                            animationsEnabled = settings.animationsEnabled
+                                        ) { Text(DesktopStrings.autoStartOpenTaskMgrBtn) }
                                         TextButton(onClick = {
                                             scope.launch {
-                                                val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                    DesktopSettingsStore.applyWindowsAutoStart(true)
+                                                autoStartDiag = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                    DesktopSettingsStore.verifyAndRepairAutoStartOnLaunch()
                                                 }
-                                                res.onSuccess {
-                                                    autoStartDiag = it
-                                                    onFeedback(DesktopStrings.autoStartVerifiedEnabled)
-                                                }.onFailure { onFeedback(it.message ?: it.javaClass.simpleName) }
                                             }
-                                        }) { Text(DesktopStrings.autoStartRepairBtn) }
+                                        }) { Text(DesktopStrings.autoStartRecheckBtn) }
                                     }
                                 }
-                                else -> Unit
+                            }
+                            if (autoStartDiag?.status == DesktopSettingsStore.AutoStartStatus.PATH_MISMATCH) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(DesktopPalette.GlassWarning.copy(alpha = 0.14f))
+                                        .padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(DesktopStrings.autoStartPathMismatchDesc, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.GlassWarning, modifier = Modifier.weight(1f))
+                                    TextButton(onClick = {
+                                        scope.launch {
+                                            val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                DesktopSettingsStore.applyWindowsAutoStart(true)
+                                            }
+                                            res.onSuccess {
+                                                autoStartDiag = it
+                                                onFeedback(DesktopStrings.autoStartVerifiedEnabled)
+                                            }.onFailure { onFeedback(it.message ?: it.javaClass.simpleName) }
+                                        }
+                                    }) { Text(DesktopStrings.autoStartRepairBtn) }
+                                }
                             }
                             HorizontalDivider(color = tokens.border)
                             Text(DesktopStrings.sysCloseBehaviorTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary)

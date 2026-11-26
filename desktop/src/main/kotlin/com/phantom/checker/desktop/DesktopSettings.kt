@@ -432,59 +432,172 @@ object DesktopSettingsStore {
         val status: AutoStartStatus,
         val registeredCommand: String = "",
         val resolvedExe: String = "",
-        val detail: String = ""
+        val detail: String = "",
+        // #530 Dual-track status (Track 1: HKCU Run; Track 2: Per-user Task Scheduler OnLogon)
+        val runTrackStatus: AutoStartStatus = status,
+        val taskTrackStatus: AutoStartStatus = AutoStartStatus.DISABLED,
+        val taskRegisteredCommand: String = ""
     )
 
     private const val WIN_STARTUP_APPROVED_KEY =
         "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run"
+    const val WIN_SCHED_TASK_NAME = "PhantomCheckDesktopLogon"
 
     fun isWindowsOs(): Boolean = System.getProperty("os.name").orEmpty().lowercase().contains("win")
 
-    /**
-     * #495 查詢目前 HKCU\...\Run 與 StartupApproved\Run 的真實狀態（讀回驗證）。
-     */
-    fun queryWindowsAutoStartStatus(): AutoStartDiagnostic {
-        if (!isWindowsOs()) return AutoStartDiagnostic(AutoStartStatus.NOT_WINDOWS)
-        val resolvedExe = resolveCurrentWindowsExecutable()
+    private fun queryRunTrackStatus(resolvedExe: String): Triple<AutoStartStatus, String, String> {
         val runQuery = runRegCommand(listOf("reg.exe", "query", WIN_RUN_REG_KEY, "/v", WIN_RUN_VALUE_NAME))
         if (runQuery.first != 0) {
-            return AutoStartDiagnostic(AutoStartStatus.DISABLED, resolvedExe = resolvedExe)
+            return Triple(AutoStartStatus.DISABLED, "", "")
         }
         val regValue = parseRegSzValue(runQuery.second, WIN_RUN_VALUE_NAME)
         if (regValue.isBlank()) {
-            return AutoStartDiagnostic(AutoStartStatus.DISABLED, resolvedExe = resolvedExe)
+            return Triple(AutoStartStatus.DISABLED, "", "")
         }
         val registeredExe = extractExePathFromCommand(regValue)
         if (registeredExe.isBlank() || !File(registeredExe).exists()) {
-            return AutoStartDiagnostic(
-                status = AutoStartStatus.PATH_MISMATCH,
-                registeredCommand = regValue,
-                resolvedExe = resolvedExe,
-                detail = registeredExe
-            )
+            return Triple(AutoStartStatus.PATH_MISMATCH, regValue, registeredExe)
         }
         // Check Windows Task Manager StartupApproved\Run binary flag (02/06 = enabled; 03/odd/other = disabled)
         val approvedQuery = runRegCommand(listOf("reg.exe", "query", WIN_STARTUP_APPROVED_KEY, "/v", WIN_RUN_VALUE_NAME))
         if (approvedQuery.first == 0) {
             val hex = parseRegBinaryHex(approvedQuery.second, WIN_RUN_VALUE_NAME)
             if (isStartupApprovedDisabled(hex)) {
-                return AutoStartDiagnostic(
-                    status = AutoStartStatus.DISABLED_BY_TASK_MANAGER,
-                    registeredCommand = regValue,
-                    resolvedExe = resolvedExe,
-                    detail = hex.take(8)
-                )
+                return Triple(AutoStartStatus.DISABLED_BY_TASK_MANAGER, regValue, hex.take(8))
             }
         }
-        return AutoStartDiagnostic(
-            status = AutoStartStatus.ENABLED,
-            registeredCommand = regValue,
-            resolvedExe = resolvedExe
+        return Triple(AutoStartStatus.ENABLED, regValue, "")
+    }
+
+    private fun queryTaskTrackStatus(): Triple<AutoStartStatus, String, String> {
+        val q = runRegCommand(listOf("schtasks.exe", "/query", "/tn", WIN_SCHED_TASK_NAME, "/xml"))
+        if (q.first != 0 || q.second.isBlank()) {
+            return Triple(AutoStartStatus.DISABLED, "", "")
+        }
+        val xml = q.second
+        val cmdMatch = Regex("<Command>(.*?)</Command>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(xml)
+        val rawCmd = cmdMatch?.groupValues?.getOrNull(1)?.trim().orEmpty()
+            .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
+        val exe = extractExePathFromCommand(rawCmd)
+        if (exe.isBlank() || !File(exe).exists()) {
+            return Triple(AutoStartStatus.PATH_MISMATCH, rawCmd, exe)
+        }
+        val disabledMatch = Regex("<Settings>[\\s\\S]*?<Enabled>\\s*false\\s*</Enabled>[\\s\\S]*?</Settings>", RegexOption.IGNORE_CASE)
+        if (disabledMatch.containsMatchIn(xml)) {
+            return Triple(AutoStartStatus.DISABLED, rawCmd, "Task disabled")
+        }
+        return Triple(AutoStartStatus.ENABLED, rawCmd, "")
+    }
+
+    private fun escapeXml(raw: String): String = raw
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&apos;")
+
+    internal fun buildPerUserLogonTaskXml(exePath: String, userId: String): String {
+        val escapedExe = escapeXml(exePath)
+        val userTag = if (userId.isNotBlank()) "      <UserId>${escapeXml(userId)}</UserId>\n" else ""
+        return """<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>PhantomCheck Desktop per-user logon auto-start (--minimized)</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+$userTag    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>4</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>$escapedExe</Command>
+      <Arguments>--minimized</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"""
+    }
+
+    private fun registerScheduledTaskTrack(exePath: String): Pair<Int, String> {
+        val domain = System.getenv("USERDOMAIN").orEmpty().trim()
+        val user = System.getenv("USERNAME").orEmpty().trim().ifBlank { System.getProperty("user.name").orEmpty().trim() }
+        val userId = if (domain.isNotBlank() && user.isNotBlank()) "$domain\\$user" else user
+        val xmlContent = buildPerUserLogonTaskXml(exePath, userId)
+        val tempFile = runCatching {
+            File.createTempFile("phantomcheck_task_", ".xml").apply {
+                writeText(xmlContent, Charsets.UTF_16)
+            }
+        }.getOrNull()
+        if (tempFile != null) {
+            try {
+                val res = runRegCommand(listOf("schtasks.exe", "/create", "/tn", WIN_SCHED_TASK_NAME, "/xml", tempFile.absolutePath, "/f"))
+                if (res.first == 0) return res
+                DesktopDiagnostics.warn("AutoStart", "schtasks XML import failed (exit=${res.first}): ${res.second}; falling back to CLI /sc onlogon /rl LIMITED")
+            } finally {
+                runCatching { tempFile.delete() }
+            }
+        }
+        return runRegCommand(
+            listOf(
+                "schtasks.exe", "/create",
+                "/tn", WIN_SCHED_TASK_NAME,
+                "/tr", "\"$exePath\" --minimized",
+                "/sc", "onlogon",
+                "/rl", "LIMITED",
+                "/f"
+            )
         )
     }
 
     /**
-     * #468 / #495 系統設定 2：Windows 開機自動啟動（寫入後 reg query 讀回驗證 + StartupApproved 偵測 + 錯誤誠實回報）。
+     * #495 / #530 查詢雙軌狀態：軌道一 HKCU\...\Run（含 StartupApproved）＋軌道二 Per-user Task Scheduler OnLogon。
+     */
+    fun queryWindowsAutoStartStatus(): AutoStartDiagnostic {
+        if (!isWindowsOs()) return AutoStartDiagnostic(AutoStartStatus.NOT_WINDOWS, runTrackStatus = AutoStartStatus.NOT_WINDOWS, taskTrackStatus = AutoStartStatus.NOT_WINDOWS)
+        val resolvedExe = resolveCurrentWindowsExecutable()
+        val (runStatus, runCmd, runDetail) = queryRunTrackStatus(resolvedExe)
+        val (taskStatus, taskCmd, taskDetail) = queryTaskTrackStatus()
+
+        val overall = when {
+            runStatus == AutoStartStatus.PATH_MISMATCH || taskStatus == AutoStartStatus.PATH_MISMATCH -> AutoStartStatus.PATH_MISMATCH
+            runStatus == AutoStartStatus.ENABLED || taskStatus == AutoStartStatus.ENABLED -> AutoStartStatus.ENABLED
+            runStatus == AutoStartStatus.DISABLED_BY_TASK_MANAGER -> AutoStartStatus.DISABLED_BY_TASK_MANAGER
+            else -> AutoStartStatus.DISABLED
+        }
+        val combinedDetail = listOf(runDetail, taskDetail).filter { it.isNotBlank() }.joinToString(" | ")
+        return AutoStartDiagnostic(
+            status = overall,
+            registeredCommand = runCmd.ifBlank { taskCmd },
+            resolvedExe = resolvedExe,
+            detail = combinedDetail,
+            runTrackStatus = runStatus,
+            taskTrackStatus = taskStatus,
+            taskRegisteredCommand = taskCmd
+        )
+    }
+
+    /**
+     * #468 / #495 / #530 系統設定 2：Windows 雙軌開機自啟動（啟用齊寫 HKCU Run＋Task Scheduler OnLogon LIMITED；停用齊清；讀回驗證）。
      */
     fun applyWindowsAutoStart(enable: Boolean): Result<AutoStartDiagnostic> = runCatching {
         if (!isWindowsOs()) {
@@ -495,30 +608,38 @@ object DesktopSettingsStore {
             if (exePath.isBlank() || (!File(exePath).exists() && !exePath.endsWith(".exe", ignoreCase = true))) {
                 throw IllegalStateException(DesktopStrings.autoStartExeNotFound(exePath))
             }
-            val cmd = listOf(
+            // Track 1: HKCU Run
+            val runCmd = listOf(
                 "reg.exe", "add", WIN_RUN_REG_KEY,
                 "/v", WIN_RUN_VALUE_NAME,
                 "/t", "REG_SZ",
                 "/d", "\"$exePath\" --minimized",
                 "/f"
             )
-            val (exit, output) = runRegCommand(cmd)
-            if (exit != 0) {
-                DesktopDiagnostics.error("AutoStart", "reg.exe add failed (exit=$exit): $output")
-                throw IllegalStateException(DesktopStrings.autoStartRegFailed(exit, output))
+            val (runExit, runOut) = runRegCommand(runCmd)
+            if (runExit != 0) {
+                DesktopDiagnostics.warn("AutoStart", "Track 1 (HKCU Run) add failed (exit=$runExit): $runOut")
             }
-            // Read-back verification
+            // Track 2: Per-user Task Scheduler OnLogon (LIMITED, no admin/UAC)
+            val (taskExit, taskOut) = registerScheduledTaskTrack(exePath)
+            if (taskExit != 0) {
+                DesktopDiagnostics.warn("AutoStart", "Track 2 (Task Scheduler) create failed (exit=$taskExit): $taskOut")
+            }
+            if (runExit != 0 && taskExit != 0) {
+                DesktopDiagnostics.error("AutoStart", "Both auto-start tracks failed: Run($runExit)=$runOut | Task($taskExit)=$taskOut")
+                throw IllegalStateException(DesktopStrings.autoStartRegFailed(runExit, "$runOut | $taskOut"))
+            }
+            // Read-back verification across both tracks
             val verified = queryWindowsAutoStartStatus()
             when (verified.status) {
                 AutoStartStatus.ENABLED -> {
                     update { it.copy(autoStart = true) }
-                    DesktopDiagnostics.info("AutoStart", "Windows autoStart enabled & verified: ${verified.registeredCommand}")
+                    DesktopDiagnostics.info("AutoStart", "Dual-track autoStart enabled (Run=${verified.runTrackStatus}, Task=${verified.taskTrackStatus})")
                     verified
                 }
                 AutoStartStatus.DISABLED_BY_TASK_MANAGER -> {
-                    // Honest state: do NOT pretend enabled when Task Manager blocks it
                     update { it.copy(autoStart = false) }
-                    DesktopDiagnostics.warn("AutoStart", "HKCU Run written but disabled by Windows Task Manager (StartupApproved=${verified.detail})")
+                    DesktopDiagnostics.warn("AutoStart", "Run disabled by Task Manager and Task track unavailable (${verified.detail})")
                     verified
                 }
                 AutoStartStatus.PATH_MISMATCH -> {
@@ -533,37 +654,46 @@ object DesktopSettingsStore {
                 }
             }
         } else {
-            val (exit, output) = runRegCommand(listOf("reg.exe", "delete", WIN_RUN_REG_KEY, "/v", WIN_RUN_VALUE_NAME, "/f"))
-            // delete returns non-zero when value doesn't exist — verify via read-back
+            val (runExit, runOut) = runRegCommand(listOf("reg.exe", "delete", WIN_RUN_REG_KEY, "/v", WIN_RUN_VALUE_NAME, "/f"))
+            val (taskExit, taskOut) = runRegCommand(listOf("schtasks.exe", "/delete", "/tn", WIN_SCHED_TASK_NAME, "/f"))
             val verified = queryWindowsAutoStartStatus()
-            if (verified.status == AutoStartStatus.ENABLED || verified.status == AutoStartStatus.PATH_MISMATCH) {
-                DesktopDiagnostics.error("AutoStart", "reg.exe delete failed (exit=$exit): $output")
-                throw IllegalStateException(DesktopStrings.autoStartRegFailed(exit, output))
+            if (verified.runTrackStatus == AutoStartStatus.ENABLED ||
+                verified.runTrackStatus == AutoStartStatus.PATH_MISMATCH ||
+                verified.taskTrackStatus == AutoStartStatus.ENABLED ||
+                verified.taskTrackStatus == AutoStartStatus.PATH_MISMATCH
+            ) {
+                DesktopDiagnostics.error("AutoStart", "Disable verification failed: Run($runExit)=$runOut | Task($taskExit)=$taskOut")
+                throw IllegalStateException(DesktopStrings.autoStartRegFailed(runExit, "$runOut | $taskOut"))
             }
             update { it.copy(autoStart = false) }
-            DesktopDiagnostics.info("AutoStart", "Windows autoStart disabled & verified")
-            AutoStartDiagnostic(AutoStartStatus.DISABLED, resolvedExe = exePath)
+            DesktopDiagnostics.info("AutoStart", "Dual-track Windows autoStart disabled & verified (Run & Task cleared)")
+            AutoStartDiagnostic(
+                status = AutoStartStatus.DISABLED,
+                resolvedExe = exePath,
+                runTrackStatus = AutoStartStatus.DISABLED,
+                taskTrackStatus = AutoStartStatus.DISABLED
+            )
         }
     }
 
     /**
-     * #495 啟動時自動校驗與修復：若 Run 指向舊路徑（例如更新換目錄）自動改寫為正確 exe；若被工作管理員停用則同步誠實狀態。
+     * #495 / #530 啟動時自動校驗與修復：任一軌指向舊路徑（更新換目錄）自動雙軌齊修；若雙軌皆失效則同步誠實狀態。
      */
     fun verifyAndRepairAutoStartOnLaunch(): AutoStartDiagnostic {
-        if (!isWindowsOs()) return AutoStartDiagnostic(AutoStartStatus.NOT_WINDOWS)
+        if (!isWindowsOs()) return AutoStartDiagnostic(AutoStartStatus.NOT_WINDOWS, runTrackStatus = AutoStartStatus.NOT_WINDOWS, taskTrackStatus = AutoStartStatus.NOT_WINDOWS)
         val diag = queryWindowsAutoStartStatus()
         val cur = _state.value
         when (diag.status) {
             AutoStartStatus.PATH_MISMATCH -> {
                 if (cur.autoStart) {
-                    DesktopDiagnostics.warn("AutoStart", "Stale Run path detected (${diag.detail}); repairing to ${diag.resolvedExe}")
+                    DesktopDiagnostics.warn("AutoStart", "Stale path detected on auto-start track (${diag.detail}); repairing both tracks to ${diag.resolvedExe}")
                     return applyWindowsAutoStart(true).getOrDefault(diag)
                 }
             }
             AutoStartStatus.DISABLED_BY_TASK_MANAGER -> {
                 if (cur.autoStart) {
                     update { it.copy(autoStart = false) }
-                    DesktopDiagnostics.warn("AutoStart", "Auto-start is disabled in Windows Task Manager; synced UI state to false")
+                    DesktopDiagnostics.warn("AutoStart", "Auto-start is disabled in Windows Task Manager and Task track inactive; synced UI state to false")
                 }
             }
             AutoStartStatus.ENABLED -> {

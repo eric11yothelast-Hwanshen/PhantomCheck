@@ -655,4 +655,16 @@ object DesktopStrings {
     val toastScrimLabel get() = t("背景遮罩濃度", "Background Scrim Opacity")
     val toastShowCountdownLabel get() = t("顯示倒數秒數角標", "Show Countdown Badge")
     fun toastDurationSliderLabel(sec: Int): String = t("顯示時長：${sec} 秒（3–20 秒）", "Display Duration: ${sec}s (3–20s)")
+
+    // #530 Dual-track auto-start status badges
+    val autoStartTrackRunLabel get() = t("HKCU Run", "HKCU Run")
+    val autoStartTrackTaskLabel get() = t("排程器 OnLogon", "Task Scheduler OnLogon")
+    fun autoStartTrackStatusLabel(st: DesktopSettingsStore.AutoStartStatus): String = when (st) {
+        DesktopSettingsStore.AutoStartStatus.ENABLED -> t("已啟用", "Enabled")
+        DesktopSettingsStore.AutoStartStatus.DISABLED -> t("未啟用", "Disabled")
+        DesktopSettingsStore.AutoStartStatus.DISABLED_BY_TASK_MANAGER -> t("工作管理員已停用", "Disabled by Task Mgr")
+        DesktopSettingsStore.AutoStartStatus.PATH_MISMATCH -> t("路徑失效", "Path Mismatch")
+        DesktopSettingsStore.AutoStartStatus.NOT_WINDOWS -> t("非 Windows", "Non-Windows")
+        DesktopSettingsStore.AutoStartStatus.ERROR -> t("失敗", "Error")
+    }
 }

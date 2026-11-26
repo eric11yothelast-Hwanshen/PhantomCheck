@@ -68,6 +68,7 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 
 [UninstallRun]
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""PhantomCheck Desktop"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveFirewallRule"
+Filename: "{sys}\schtasks.exe"; Parameters: "/delete /tn PhantomCheckDesktopLogon /f"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveAutoStartTask"
 
 [Code]
 var
