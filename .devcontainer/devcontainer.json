@@ -1,0 +1,13 @@
+{
+  "name": "PhantomCheck Web",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "postCreateCommand": "npm install -g opencode-ai",
+  "postStartCommand": "nohup opencode web --port 4096 --hostname 0.0.0.0 > /tmp/opencode-web.log 2>&1 &",
+  "forwardPorts": [4096],
+  "portsAttributes": {
+    "4096": {
+      "label": "OpenCode Web",
+      "onAutoForward": "openBrowser"
+    }
+  }
+}
