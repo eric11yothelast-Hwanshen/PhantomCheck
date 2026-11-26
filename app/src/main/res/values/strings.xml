@@ -3112,6 +3112,7 @@
     <string name="group_report_err_no_ai_key">AI API key not configured</string>
     <string name="group_report_err_quota">Daily AI quota reached (will retry next cycle)</string>
     <string name="group_report_err_ai_failed">AI request failed after retries (messages kept for next run)</string>
+    <string name="group_report_manage_settings">Manage Settings</string>
     <!-- #511 Cross-App Multi-Select Batch Delete -->
     <string name="batch_app_multi_select_btn">Multi-select apps</string>
     <string name="batch_app_selected_summary">%1$d app(s) · ~%2$d msgs</string>

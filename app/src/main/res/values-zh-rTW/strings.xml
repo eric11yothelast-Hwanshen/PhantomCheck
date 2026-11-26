@@ -3112,6 +3112,7 @@
     <string name="group_report_err_no_ai_key">尚未設定 AI 金鑰</string>
     <string name="group_report_err_quota">今日 AI 額度已達上限，順延至下個週期</string>
     <string name="group_report_err_ai_failed">AI 請求重試後失敗（訊息已保留，待下次補跑）</string>
+    <string name="group_report_manage_settings">管理設定</string>
     <!-- #511 主訊息頁跨 App 多選批次刪除 -->
     <string name="batch_app_multi_select_btn">多選</string>
     <string name="batch_app_selected_summary">已選 %1$d 個 App · 約 %2$d 則</string>

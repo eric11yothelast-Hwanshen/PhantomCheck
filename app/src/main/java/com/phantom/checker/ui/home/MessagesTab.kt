@@ -217,6 +217,53 @@ import androidx.annotation.StringRes
 private const val PAGE_SIZE = 100
 private const val MAX_BATCH_SELECT = 100
 
+/** #527 Material Outlined Summarize vector (no material-icons-extended dependency required). */
+private val GroupReportSummaryIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "GroupReportSummary",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(fill = SolidColor(Color.White)) {
+            moveTo(15f, 3f)
+            horizontalLineTo(5f)
+            curveTo(3.9f, 3f, 3.01f, 3.9f, 3.01f, 5f)
+            lineTo(3f, 19f)
+            curveTo(3f, 20.1f, 3.89f, 21f, 4.99f, 21f)
+            horizontalLineTo(19f)
+            curveTo(20.1f, 21f, 21f, 20.1f, 21f, 19f)
+            verticalLineTo(9f)
+            lineTo(15f, 3f)
+            close()
+            moveTo(5f, 19f)
+            verticalLineTo(5f)
+            horizontalLineTo(14f)
+            verticalLineTo(10f)
+            horizontalLineTo(19f)
+            verticalLineTo(19f)
+            horizontalLineTo(5f)
+            close()
+            moveTo(8f, 12f)
+            horizontalLineTo(16f)
+            verticalLineTo(14f)
+            horizontalLineTo(8f)
+            close()
+            moveTo(8f, 15.5f)
+            horizontalLineTo(13f)
+            verticalLineTo(17.5f)
+            horizontalLineTo(8f)
+            close()
+            moveTo(8f, 8.5f)
+            horizontalLineTo(11f)
+            verticalLineTo(10.5f)
+            horizontalLineTo(8f)
+            close()
+        }
+    }.build()
+}
+
 internal sealed interface MessageFilter {
     data object All : MessageFilter
     data object Unread : MessageFilter
@@ -610,6 +657,7 @@ internal fun MessagesHomeTab(
         val visibleFilters = PhantomPrefs.getVisibleHomeFilters(ctx)
         var filterChipsCollapsed by remember { mutableStateOf(PhantomPrefs.isHomeFilterChipsCollapsed(ctx)) }
         var showMoreFiltersSheet by remember { mutableStateOf(false) }
+        var showGroupReportsSheet by remember { mutableStateOf(false) }
         val chipShape = RoundedCornerShape(AuroraTokens.CornerChip)
         val hasExtraActiveFilter = activeFilter != MessageFilter.All &&
             activeFilter != MessageFilter.Unread &&
@@ -698,6 +746,88 @@ internal fun MessagesHomeTab(
                         onClick = { showMoreFiltersSheet = true },
                         shape = chipShape,
                         label = { Text(stringResource(R.string.common_more), style = MaterialTheme.typography.labelMedium) }
+                    )
+                }
+            }
+            // #527 Group Reports icon + text entry button (34dp pill height, >=44dp touch target)
+            Box(
+                modifier = Modifier
+                    .heightIn(min = 44.dp)
+                    .pressableScale()
+                    .clickable { showGroupReportsSheet = true },
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    shape = chipShape,
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.heightIn(min = 34.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = GroupReportSummaryIcon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = stringResource(R.string.group_report_title),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        if (showGroupReportsSheet) {
+            val reportDao = remember(ctx) { AppDatabaseHolder.db(ctx.applicationContext).groupReportDao() }
+            val recentReports by reportDao.observeReports(limit = 50).collectAsState(initial = emptyList())
+            val sheetScope = rememberCoroutineScope()
+            ModalBottomSheet(onDismissRequest = { showGroupReportsSheet = false }) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.group_report_viewer_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = {
+                                showGroupReportsSheet = false
+                                ctx.startActivity(
+                                    Intent(ctx, SettingsActivity::class.java)
+                                        .putExtra("highlight_card_key", "ai")
+                                )
+                            }
+                        ) {
+                            Text(stringResource(R.string.group_report_manage_settings))
+                        }
+                    }
+                    GroupReportsViewer(
+                        reports = recentReports,
+                        onDeleteReport = { reportId ->
+                            sheetScope.launch {
+                                withContext(Dispatchers.IO) { reportDao.deleteReportById(reportId) }
+                            }
+                        },
+                        maxListHeight = 460.dp
                     )
                 }
             }

@@ -87,7 +87,6 @@ fun GroupReportSettingsSection(
     var showPickerDialog by remember { mutableStateOf(false) }
     var editingTarget by remember { mutableStateOf<GroupReportTargetEntity?>(null) }
     var showReportsDialog by remember { mutableStateOf(false) }
-    var viewingReport by remember { mutableStateOf<GroupReportEntity?>(null) }
     var showModeDetailInfo by remember { mutableStateOf(false) }
 
     Column(
@@ -320,76 +319,14 @@ fun GroupReportSettingsSection(
             onDismissRequest = { showReportsDialog = false },
             title = { Text(stringResource(R.string.group_report_viewer_title)) },
             text = {
-                if (reports.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.group_report_viewer_empty),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 380.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(reports, key = { it.id }) { report ->
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = phantomSurfaceAlpha(0.5f)),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { viewingReport = report }
-                            ) {
-                                Column(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = "${report.appLabel} · ${report.conversationKey}",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                        IconButton(
-                                            onClick = {
-                                                scope.launch {
-                                                    withContext(Dispatchers.IO) { dao.deleteReportById(report.id) }
-                                                }
-                                            },
-                                            modifier = Modifier.size(28.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Delete,
-                                                contentDescription = stringResource(R.string.common_delete),
-                                                tint = MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-                                    }
-                                    Text(
-                                        text = "${PhantomPrefs.formatMessageTime(appCtx, report.createdAt, includeDate = true)} · ${ctx.getString(R.string.group_report_msg_count, report.messageCount)}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Text(
-                                        text = report.summaryText,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 3,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
+                GroupReportsViewer(
+                    reports = reports,
+                    onDeleteReport = { reportId ->
+                        scope.launch {
+                            withContext(Dispatchers.IO) { dao.deleteReportById(reportId) }
                         }
                     }
-                }
+                )
             },
             confirmButton = {
                 TextButton(onClick = { showReportsDialog = false }) {
@@ -397,6 +334,89 @@ fun GroupReportSettingsSection(
                 }
             }
         )
+    }
+}
+
+/**
+ * #527 共用群組報告清單＋全文檢視 Composable（設定頁與訊息頁共用同一份，不得複製）。
+ */
+@Composable
+fun GroupReportsViewer(
+    reports: List<GroupReportEntity>,
+    onDeleteReport: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+    maxListHeight: androidx.compose.ui.unit.Dp = 380.dp
+) {
+    val ctx = LocalContext.current
+    val appCtx = ctx.applicationContext
+    var viewingReport by remember { mutableStateOf<GroupReportEntity?>(null) }
+
+    if (reports.isEmpty()) {
+        Text(
+            text = stringResource(R.string.group_report_viewer_empty),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = modifier.padding(vertical = 12.dp)
+        )
+    } else {
+        LazyColumn(
+            modifier = modifier
+                .fillMaxWidth()
+                .heightIn(max = maxListHeight),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(reports, key = { it.id }) { report ->
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = phantomSurfaceAlpha(0.5f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewingReport = report }
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "${report.appLabel} · ${report.conversationKey}",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { onDeleteReport(report.id) },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = stringResource(R.string.common_delete),
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = "${PhantomPrefs.formatMessageTime(appCtx, report.createdAt, includeDate = true)} · ${ctx.getString(R.string.group_report_msg_count, report.messageCount)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = report.summaryText,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
     }
 
     viewingReport?.let { report ->
