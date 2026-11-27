@@ -233,10 +233,84 @@ object PhantomColors {
     val ScamAlertContainerDark = Color(0xFF991B1B)
     val ScamAlertOnContainerDark = Color(0xFFFEE2E2)
 
+    // 警告語義色（琥珀黃，區別於詐騙紅色 error，供 R10–R14 風險提示／待確認／權限警示全域共用）
+    val WarningAmber = Color(0xFFB45309)
+    val WarningOnAmber = Color.White
+    val WarningContainerLight = Color(0xFFFEF3C7)
+    val WarningOnContainerLight = Color(0xFF78350F)
+
+    val WarningAmberLight = Color(0xFFFBBF24)
+    val WarningOnAmberDark = Color(0xFF451A03)
+    val WarningContainerDark = Color(0xFF78350F)
+    val WarningOnContainerDark = Color(0xFFFEF3C7)
+
+    val WarningHighContrastLight = Color(0xFF78350F)
+    val WarningHighContrastContainerLight = Color(0xFFFEF3C7)
+    val WarningHighContrastOnContainerLight = Color(0xFF451A03)
+
+    val WarningHighContrastDark = Color(0xFFFDE68A)
+    val WarningHighContrastOnDark = Color(0xFF290F00)
+    val WarningHighContrastContainerDark = Color(0xFF78350F)
+    val WarningHighContrastOnContainerDark = Color.White
+
     val ObsidianBackground = Color(0xFF0E0A18)
     val ObsidianSurface = Color(0xFF161124)
     val ObsidianSurfaceVariant = Color(0xFF241C38)
 }
+
+/**
+ * 全域語義擴充色票（#548）：補齊 Material3 ColorScheme 未內建之 warning 視覺樣式，
+ * 透過 [LocalPhantomColors] 與 `MaterialTheme.colorScheme.warning*` 擴充屬性供全 App（R10–R14）共用。
+ */
+@androidx.compose.runtime.Immutable
+data class PhantomExtendedColors(
+    val warning: Color,
+    val onWarning: Color,
+    val warningContainer: Color,
+    val onWarningContainer: Color,
+)
+
+private val PhantomLightExtendedColors = PhantomExtendedColors(
+    warning = PhantomColors.WarningAmber,
+    onWarning = PhantomColors.WarningOnAmber,
+    warningContainer = PhantomColors.WarningContainerLight,
+    onWarningContainer = PhantomColors.WarningOnContainerLight,
+)
+
+private val PhantomDarkExtendedColors = PhantomExtendedColors(
+    warning = PhantomColors.WarningAmberLight,
+    onWarning = PhantomColors.WarningOnAmberDark,
+    warningContainer = PhantomColors.WarningContainerDark,
+    onWarningContainer = PhantomColors.WarningOnContainerDark,
+)
+
+private val PhantomHighContrastLightExtendedColors = PhantomExtendedColors(
+    warning = PhantomColors.WarningHighContrastLight,
+    onWarning = Color.White,
+    warningContainer = PhantomColors.WarningHighContrastContainerLight,
+    onWarningContainer = PhantomColors.WarningHighContrastOnContainerLight,
+)
+
+private val PhantomHighContrastDarkExtendedColors = PhantomExtendedColors(
+    warning = PhantomColors.WarningHighContrastDark,
+    onWarning = PhantomColors.WarningHighContrastOnDark,
+    warningContainer = PhantomColors.WarningHighContrastContainerDark,
+    onWarningContainer = PhantomColors.WarningHighContrastOnContainerDark,
+)
+
+val LocalPhantomColors = staticCompositionLocalOf { PhantomLightExtendedColors }
+
+val androidx.compose.material3.ColorScheme.warning: Color
+    @Composable get() = LocalPhantomColors.current.warning
+
+val androidx.compose.material3.ColorScheme.onWarning: Color
+    @Composable get() = LocalPhantomColors.current.onWarning
+
+val androidx.compose.material3.ColorScheme.warningContainer: Color
+    @Composable get() = LocalPhantomColors.current.warningContainer
+
+val androidx.compose.material3.ColorScheme.onWarningContainer: Color
+    @Composable get() = LocalPhantomColors.current.onWarningContainer
 
 private val PhantomLightColorScheme = lightColorScheme(
     primary = PhantomColors.DeepPurple,
@@ -325,7 +399,13 @@ private val PhantomDarkColorScheme = darkColorScheme(
     onSurface = Color(0xFFF3EFFB),
     surfaceVariant = PhantomColors.ObsidianSurfaceVariant,
     onSurfaceVariant = Color(0xFFCAC2D9),
-    outline = Color(0xFF938AA6)
+    outline = Color(0xFF938AA6),
+    outlineVariant = Color(0xFF3E3556),
+    surfaceContainerLowest = Color(0xFF0A0712),
+    surfaceContainerLow = Color(0xFF140F21),
+    surfaceContainer = Color(0xFF1B152B),
+    surfaceContainerHigh = Color(0xFF231C36),
+    surfaceContainerHighest = Color(0xFF2D2444)
 )
 
 private val PhantomHighContrastDarkColorScheme = darkColorScheme(
@@ -405,11 +485,22 @@ fun PhantomCheckTheme(
     val colorScheme = when {
         highContrast -> if (useDarkTheme) PhantomHighContrastDarkColorScheme else PhantomHighContrastLightColorScheme
         useDynamic -> if (useDarkTheme) {
-            dynamicDarkColorScheme(context).copy(primary = PhantomColors.SoftViolet)
+            dynamicDarkColorScheme(context).copy(
+                primary = PhantomColors.SoftViolet,
+                onPrimary = PhantomColors.DeepestViolet,
+            )
         } else {
-            dynamicLightColorScheme(context).copy(primary = PhantomColors.DeepPurple)
+            dynamicLightColorScheme(context).copy(
+                primary = PhantomColors.DeepPurple,
+                onPrimary = Color.White,
+            )
         }
         else -> if (useDarkTheme) PhantomDarkColorScheme else PhantomLightColorScheme
+    }
+    val extendedColors = when {
+        highContrast -> if (useDarkTheme) PhantomHighContrastDarkExtendedColors else PhantomHighContrastLightExtendedColors
+        useDarkTheme -> PhantomDarkExtendedColors
+        else -> PhantomLightExtendedColors
     }
     if (!view.isInEditMode) {
         val bgArgb = colorScheme.background.toArgb()
@@ -424,7 +515,10 @@ fun PhantomCheckTheme(
         }
     }
     val fontScale = ThemePreferences.getFontScaleMode(context).scale
-    CompositionLocalProvider(LocalHighContrast provides highContrast) {
+    CompositionLocalProvider(
+        LocalHighContrast provides highContrast,
+        LocalPhantomColors provides extendedColors,
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = scaledTypography(fontScale),

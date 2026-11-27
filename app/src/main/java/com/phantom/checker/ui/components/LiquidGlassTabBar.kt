@@ -5,8 +5,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -49,11 +47,14 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
+
+private const val MAX_INDEX_VELOCITY = 24f
+
+private fun Float.finiteOr(fallback: Float): Float = if (isFinite()) this else fallback
 
 /**
  * 流體水滴玻璃分頁列（S47）：僅替換底部分頁列的「視覺層」——
@@ -83,18 +84,15 @@ fun LiquidGlassTabBar(
         val barWidth = maxWidth
         val scope = rememberCoroutineScope()
         val density = LocalDensity.current
-        val tabWidthPx = if (tabCount > 0) {
-            with(density) { barWidth.toPx() } / tabCount
-        } else {
-            0f
-        }
+        val maxIndexInt = (tabCount - 1).coerceAtLeast(0)
+        val safeSelectedIndex = if (tabCount > 0) selectedTabIndex.coerceIn(0, maxIndexInt) else 0
         // S49 拖曳狀態：拖曳中水滴直接跟隨手指（snapTo 驅動 animatedIndex，不等動畫），
         // 拖曳速度以「每秒索引數」估計（量綱照 S47-fix），放手後 spring 吸附最近分頁並觸發 onSelect（含 fling 投影）。
         // pointerInput 只以 tabCount 為 key 重啟，避免閉包捕捉過時值
-        val currentSelectedTabIndex by rememberUpdatedState(selectedTabIndex)
+        val currentSelectedTabIndex by rememberUpdatedState(safeSelectedIndex)
         val currentOnSelect by rememberUpdatedState(onSelect)
         var isDragging by remember { mutableStateOf(false) }
-        var dragIndex by remember { mutableFloatStateOf(selectedTabIndex.toFloat()) }
+        var dragIndex by remember { mutableFloatStateOf(safeSelectedIndex.toFloat()) }
         var dragVelocityIndex by remember { mutableFloatStateOf(0f) }
         // S51：速度改用 Compose VelocityTracker（uptimeMillis 毫秒 Long，無 Float 精度損失）——
         // 舊法以 System.nanoTime().toFloat() 算時間差，開機奈秒數（約 10^14）轉 Float 後精度只有 8~16ms，
@@ -117,12 +115,16 @@ fun LiquidGlassTabBar(
                 var sheenBrush: Brush? = null
             }
         }
-        val animatedIndex = remember { Animatable(selectedTabIndex.toFloat()) }
+        val animatedIndex = remember { Animatable(safeSelectedIndex.toFloat()) }
         val dropletSpring = remember { PhantomMotion.NavIndicatorSpring }
-        LaunchedEffect(selectedTabIndex) {
-            if (animatedIndex.targetValue != selectedTabIndex.toFloat()) {
+        LaunchedEffect(safeSelectedIndex, tabCount) {
+            if (tabCount <= 0) return@LaunchedEffect
+            val target = safeSelectedIndex.toFloat()
+            if (!animatedIndex.value.isFinite()) {
+                animatedIndex.snapTo(target)
+            } else if (animatedIndex.targetValue != target) {
                 animatedIndex.animateTo(
-                    selectedTabIndex.toFloat(),
+                    target,
                     dropletSpring,
                 )
             }
@@ -133,24 +135,38 @@ fun LiquidGlassTabBar(
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(top = if (compact) 4.dp else 6.dp, bottom = if (compact) 4.dp else 6.dp)
         ) {
-            if (tabCount <= 0) return@Canvas
-            val tabWidthPx = barWidth.toPx() / tabCount
-            val index = if (isDragging) dragIndex else animatedIndex.value
-            val velocity = if (isDragging) dragVelocityIndex else animatedIndex.velocity
-            val centerX = tabWidthPx * (index + 0.5f)
+            if (tabCount <= 0 || size.width <= 0f || size.height <= 0f) return@Canvas
+            val barWidthPx = barWidth.toPx().let { if (it.isFinite() && it > 0f) it else size.width }
+            val canvasTabWidthPx = barWidthPx / tabCount
+            if (!canvasTabWidthPx.isFinite() || canvasTabWidthPx <= 0f) return@Canvas
+            val maxIndexFloat = (tabCount - 1).toFloat()
+            val rawIndex = if (isDragging) dragIndex else animatedIndex.value
+            val index = rawIndex.finiteOr(safeSelectedIndex.toFloat()).coerceIn(0f, maxIndexFloat)
+            val rawVelocity = if (isDragging) dragVelocityIndex else animatedIndex.velocity
+            val velocity = rawVelocity.finiteOr(0f).coerceIn(-MAX_INDEX_VELOCITY, MAX_INDEX_VELOCITY)
+            val centerX = canvasTabWidthPx * (index + 0.5f)
             // N5：5 項指示器寬度＝itemWidth − 16dp、高 32dp（保留水滴液態變形）
             val insetPx = PhantomMotion.NavIndicatorHorizontalInsetDp.toPx()
-            val baseWidth = (tabWidthPx - insetPx).coerceAtLeast(36.dp.toPx())
+            val baseWidth = (canvasTabWidthPx - insetPx).coerceAtLeast(36.dp.toPx())
             val baseHeight = (if (compact) 36.dp else 44.dp).toPx()
             // 液態變形：移動速度越快，水滴沿移動方向拉得越長、高度越扁（Bézier 控制點隨之變形）
-            val stretch = min(0.38f, abs(velocity) / 6f)
+            val stretch = min(0.38f, abs(velocity) / 6f).finiteOr(0f).coerceIn(0f, 0.38f)
             val halfWidth = baseWidth * (1f + stretch) / 2f
             val halfHeight = baseHeight * (1f - stretch * 0.45f) / 2f
             val centerY = size.height / 2f
+            if (!centerX.isFinite() || !centerY.isFinite() ||
+                !halfWidth.isFinite() || !halfHeight.isFinite() ||
+                halfWidth <= 0f || halfHeight <= 0f
+            ) {
+                return@Canvas
+            }
             val left = centerX - halfWidth
             val right = centerX + halfWidth
             val top = centerY - halfHeight
             val bottom = centerY + halfHeight
+            if (!left.isFinite() || !right.isFinite() || !top.isFinite() || !bottom.isFinite()) {
+                return@Canvas
+            }
             dropletPath.rewind()
             dropletPath.moveTo(left, centerY)
             dropletPath.cubicTo(left, top, left + halfWidth * 0.6f, top, centerX, top)
@@ -159,23 +175,25 @@ fun LiquidGlassTabBar(
             dropletPath.cubicTo(left + halfWidth * 0.6f, bottom, left, bottom, left, centerY)
             dropletPath.close()
 
+            val safeEndY = bottom.coerceAtLeast(top + 1f)
+            val safeSheenEndY = (top + halfHeight).coerceAtLeast(top + 1f)
             if (brushCache.dropletBrush == null ||
                 brushCache.lastTop != top ||
-                brushCache.lastBottom != bottom ||
+                brushCache.lastBottom != safeEndY ||
                 brushCache.lastHalfH != halfHeight
             ) {
                 brushCache.lastTop = top
-                brushCache.lastBottom = bottom
+                brushCache.lastBottom = safeEndY
                 brushCache.lastHalfH = halfHeight
                 brushCache.dropletBrush = Brush.verticalGradient(
                     colors = dropletColors,
                     startY = top,
-                    endY = bottom,
+                    endY = safeEndY,
                 )
                 brushCache.sheenBrush = Brush.verticalGradient(
                     colors = sheenColors,
                     startY = top,
-                    endY = top + halfHeight,
+                    endY = safeSheenEndY,
                 )
             }
             drawPath(
@@ -204,21 +222,36 @@ fun LiquidGlassTabBar(
                     if (tabCount <= 0) return@pointerInput
                     detectHorizontalDragGestures(
                         onDragStart = { _ ->
+                            val maxIdx = (tabCount - 1).toFloat()
                             dragIndex = animatedIndex.value
+                                .finiteOr(currentSelectedTabIndex.toFloat())
+                                .coerceIn(0f, maxIdx)
                             isDragging = true
                             dragVelocityIndex = 0f
                             velocityTracker.resetTracking()
                         },
                         onDragEnd = {
+                            val maxIdxInt = tabCount - 1
+                            val fallbackIdx = currentSelectedTabIndex.coerceIn(0, maxIdxInt)
                             val releaseIndex = dragIndex
+                                .finiteOr(fallbackIdx.toFloat())
+                                .coerceIn(0f, maxIdxInt.toFloat())
                             isDragging = false
                             // fling：以放手速度（px/秒 → 每秒索引數）投影目標分頁；慢速直接吸附最近分頁
-                            val indexVelocity = velocityTracker.calculateVelocity().x / tabWidthPx
-                            val projected = releaseIndex + indexVelocity * 0.25f
-                            val target = if (abs(indexVelocity) < 1f) {
-                                releaseIndex.roundToInt()
+                            val effectiveTabWidthPx = size.width.toFloat() / tabCount
+                            val rawVelX = velocityTracker.calculateVelocity().x
+                            val indexVelocity = if (effectiveTabWidthPx.isFinite() && effectiveTabWidthPx > 0f && rawVelX.isFinite()) {
+                                (rawVelX / effectiveTabWidthPx)
+                                    .finiteOr(0f)
+                                    .coerceIn(-MAX_INDEX_VELOCITY, MAX_INDEX_VELOCITY)
                             } else {
-                                projected.roundToInt().coerceIn(0, tabCount - 1)
+                                0f
+                            }
+                            val projected = releaseIndex + indexVelocity * 0.25f
+                            val target = when {
+                                !projected.isFinite() -> fallbackIdx
+                                abs(indexVelocity) < 1f -> releaseIndex.roundToInt().coerceIn(0, maxIdxInt)
+                                else -> projected.roundToInt().coerceIn(0, maxIdxInt)
                             }
                             dragVelocityIndex = 0f
                             scope.launch {
@@ -231,24 +264,43 @@ fun LiquidGlassTabBar(
                             if (target != currentSelectedTabIndex) currentOnSelect(target)
                         },
                         onDragCancel = {
+                            val maxIdxInt = tabCount - 1
+                            val fallbackIdx = currentSelectedTabIndex.coerceIn(0, maxIdxInt)
                             val cancelIndex = dragIndex
+                                .finiteOr(fallbackIdx.toFloat())
+                                .coerceIn(0f, maxIdxInt.toFloat())
                             isDragging = false
                             dragVelocityIndex = 0f
                             scope.launch {
                                 animatedIndex.snapTo(cancelIndex)
                                 animatedIndex.animateTo(
-                                    currentSelectedTabIndex.toFloat(),
+                                    fallbackIdx.toFloat(),
                                     dropletSpring,
                                 )
                             }
                         },
                         onHorizontalDrag = { change, _ ->
                             change.consume()
-                            velocityTracker.addPosition(change.uptimeMillis, change.position)
-                            dragVelocityIndex = velocityTracker.calculateVelocity().x / tabWidthPx
+                            val effectiveTabWidthPx = size.width.toFloat() / tabCount
+                            if (!effectiveTabWidthPx.isFinite() || effectiveTabWidthPx <= 0f) {
+                                return@detectHorizontalDragGestures
+                            }
                             val x = change.position.x
-                            dragIndex = (x / tabWidthPx - 0.5f)
-                                .coerceIn(0f, (tabCount - 1).toFloat())
+                            if (!x.isFinite()) return@detectHorizontalDragGestures
+                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+                            val rawVelX = velocityTracker.calculateVelocity().x
+                            val nextVelocity = if (rawVelX.isFinite()) {
+                                (rawVelX / effectiveTabWidthPx)
+                                    .finiteOr(0f)
+                                    .coerceIn(-MAX_INDEX_VELOCITY, MAX_INDEX_VELOCITY)
+                            } else {
+                                0f
+                            }
+                            dragVelocityIndex = nextVelocity
+                            val nextIndex = x / effectiveTabWidthPx - 0.5f
+                            if (nextIndex.isFinite()) {
+                                dragIndex = nextIndex.coerceIn(0f, (tabCount - 1).toFloat())
+                            }
                         },
                     )
                 }

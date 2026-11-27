@@ -1,7 +1,6 @@
 package com.phantom.checker.ui.components
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
@@ -13,10 +12,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,17 +33,16 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
 import com.phantom.checker.R
-import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 
 /**
  * 流體切換開關（FluidSwitch，#398 Aurora 版）：
@@ -67,41 +68,57 @@ fun FluidSwitch(
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scope = rememberCoroutineScope()
+    val currentChecked by rememberUpdatedState(checked)
+    val currentOnCheckedChange by rememberUpdatedState(onCheckedChange)
 
-    // thumb 位置：spring 物理動畫
-    val thumbOffset: Dp by animateDpAsState(
-        targetValue = if (checked) travel else 0.dp,
-        animationSpec = spring(
+    val thumbSpring = remember {
+        spring<Float>(
             dampingRatio = 0.55f,
             stiffness = 500f,
-        ),
-        label = "thumbOffset",
-    )
+        )
+    }
 
-    // 拖曳進度（0f~1f），放開後以 spring 回彈
-    val dragProgress = remember { Animatable(if (checked) 1f else 0f) }
+    // 單一進度來源（0f~1f）：點擊與拖曳放手皆以 spring 平滑過渡，避免拖曳中斷或回彈瞬跳
+    val progressAnim = remember { Animatable(if (checked) 1f else 0f) }
     var dragging by remember { mutableStateOf(false) }
+    var dragPos by remember { mutableFloatStateOf(if (checked) 1f else 0f) }
+    val checkPath = remember { Path() }
 
-    // 按壓 squish：壓力越大越扁
+    LaunchedEffect(checked, dragging) {
+        if (!dragging) {
+            progressAnim.animateTo(
+                targetValue = if (checked) 1f else 0f,
+                animationSpec = thumbSpring,
+            )
+        }
+    }
+
+    // 按壓 squish：壓力越大越扁（拖曳中也維持微按壓回饋）
+    val isSquished = enabled && (pressed || dragging)
     val thumbWidth by animateDpAsState(
-        targetValue = if (pressed) thumbSize + 4.dp else thumbSize,
+        targetValue = if (isSquished) thumbSize + 4.dp else thumbSize,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = 600f),
         label = "thumbWidth",
     )
     val thumbHeight by animateDpAsState(
-        targetValue = if (pressed) thumbSize - 3.dp else thumbSize,
+        targetValue = if (isSquished) thumbSize - 3.dp else thumbSize,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = 600f),
         label = "thumbHeight",
     )
 
     fun commitDrag(finalChecked: Boolean) {
+        val startPos = if (dragPos.isFinite()) dragPos.coerceIn(0f, 1f) else if (currentChecked) 1f else 0f
+        dragging = false
+        if (finalChecked != currentChecked) {
+            currentOnCheckedChange(finalChecked)
+        }
         scope.launch {
-            dragProgress.animateTo(
-                if (finalChecked) 1f else 0f,
-                spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = 500f),
+            progressAnim.snapTo(startPos)
+            progressAnim.animateTo(
+                targetValue = if (finalChecked) 1f else 0f,
+                animationSpec = thumbSpring,
             )
         }
-        if (finalChecked != checked) onCheckedChange(finalChecked)
     }
 
     val colors = MaterialTheme.colorScheme
@@ -111,9 +128,11 @@ fun FluidSwitch(
     val thumbOff = colors.outline
     val stateAlpha = if (enabled) 1f else 0.4f
 
-    /** 統一進度（0..1）：draw phase 呼叫；拖曳中取手指進度，否則取 spring 位移進度（可能略超出 → 夾住） */
-    fun progressNow(): Float =
-        (if (dragging) dragProgress.value else thumbOffset / travel).coerceIn(0f, 1f)
+    /** 統一進度（0..1）：draw phase 呼叫；拖曳中取同步手指進度，否則取 spring 動畫進度 */
+    fun progressNow(): Float {
+        val raw = if (dragging) dragPos else progressAnim.value
+        return if (raw.isFinite()) raw.coerceIn(0f, 1f) else if (checked) 1f else 0f
+    }
 
     Box(
         modifier = modifier
@@ -136,41 +155,44 @@ fun FluidSwitch(
                 }
             }
             .clickable(
+                enabled = enabled,
                 interactionSource = interactionSource,
                 indication = null,
             ) {
-                if (enabled) onCheckedChange(!checked)
+                if (enabled && !dragging) currentOnCheckedChange(!currentChecked)
             }
             .semantics {
                 role = Role.Switch
                 toggleableState = ToggleableState(checked)
                 stateDescription = if (checked) resCtx.getString(R.string.common_on) else resCtx.getString(R.string.common_close)
             }
-            .pointerInput(checked, enabled) {
+            .pointerInput(enabled) {
                 if (!enabled) return@pointerInput
                 detectHorizontalDragGestures(
                     onDragStart = {
-                        dragging = true
-                        scope.launch {
-                            dragProgress.snapTo(if (checked) 1f else 0f)
+                        val base = if (progressAnim.value.isFinite()) {
+                            progressAnim.value.coerceIn(0f, 1f)
+                        } else if (currentChecked) {
+                            1f
+                        } else {
+                            0f
                         }
+                        dragPos = base
+                        dragging = true
                     },
                     onHorizontalDrag = { change, dragAmount ->
                         change.consume()
-                        scope.launch {
-                            val next = (dragProgress.value + dragAmount / travel.toPx())
-                                .coerceIn(0f, 1f)
-                            dragProgress.snapTo(next)
+                        val travelPx = travel.toPx()
+                        if (travelPx.isFinite() && travelPx > 0f && dragAmount.isFinite()) {
+                            dragPos = (dragPos + dragAmount / travelPx).coerceIn(0f, 1f)
                         }
                     },
                     onDragEnd = {
-                        dragging = false
                         // 拖曳超過閾值（一半）才切換
-                        commitDrag(dragProgress.value > 0.5f)
+                        commitDrag(dragPos > 0.5f)
                     },
                     onDragCancel = {
-                        dragging = false
-                        commitDrag(checked)
+                        commitDrag(currentChecked)
                     },
                 )
             },
@@ -180,9 +202,7 @@ fun FluidSwitch(
             modifier = Modifier
                 .padding(start = 4.dp)
                 .graphicsLayer {
-                    val progress = if (dragging) dragProgress.value
-                    else (thumbOffset / travel).coerceIn(0f, 1f)
-                    translationX = travel.toPx() * progress
+                    translationX = travel.toPx() * progressNow()
                 }
                 .size(thumbSize)
                 .graphicsLayer {
@@ -205,13 +225,12 @@ fun FluidSwitch(
                     if (check > 0f) {
                         val w = size.width
                         val h = size.height
-                        val path = Path().apply {
-                            moveTo(w * 0.29f, h * 0.52f)
-                            lineTo(w * 0.44f, h * 0.67f)
-                            lineTo(w * 0.72f, h * 0.36f)
-                        }
+                        checkPath.rewind()
+                        checkPath.moveTo(w * 0.29f, h * 0.52f)
+                        checkPath.lineTo(w * 0.44f, h * 0.67f)
+                        checkPath.lineTo(w * 0.72f, h * 0.36f)
                         drawPath(
-                            path = path,
+                            path = checkPath,
                             color = trackOn.copy(alpha = check * stateAlpha),
                             style = Stroke(
                                 width = 2.2.dp.toPx(),

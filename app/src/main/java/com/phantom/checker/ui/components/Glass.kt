@@ -60,7 +60,7 @@ fun Modifier.glassSurface(
     outlineColor: Color? = null,
     cornerRadius: Dp = 24.dp,
 ): Modifier {
-    val shape = RoundedCornerShape(cornerRadius)
+    val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
     val highContrast = com.phantom.checker.ui.LocalHighContrast.current
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val borderWidth = if (highContrast) 1.5.dp else 1.dp
@@ -153,9 +153,11 @@ fun Modifier.pressableScale(targetScale: Float = 0.96f, glowShape: Shape? = null
     val scope = rememberCoroutineScope()
     val glowColor = MaterialTheme.colorScheme.primary
     val slop = LocalViewConfiguration.current.touchSlop
+    val safeTargetScale = if (targetScale.isFinite()) targetScale.coerceIn(0.5f, 1.2f) else 0.96f
     this
         .graphicsLayer {
-            val s = 1f - (1f - targetScale) * press.value
+            val p = if (press.value.isFinite()) press.value.coerceIn(0f, 1.2f) else 0f
+            val s = 1f - (1f - safeTargetScale) * p
             scaleX = s
             scaleY = s
         }
@@ -163,7 +165,7 @@ fun Modifier.pressableScale(targetScale: Float = 0.96f, glowShape: Shape? = null
             if (glowShape != null) {
                 Modifier.drawWithContent {
                     drawContent()
-                    val p = press.value.coerceIn(0f, 1f)
+                    val p = if (press.value.isFinite()) press.value.coerceIn(0f, 1f) else 0f
                     if (p > 0f) {
                         val outline = glowShape.createOutline(size, layoutDirection, this)
                         drawOutline(outline, glowColor.copy(alpha = 0.07f * p))

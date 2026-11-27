@@ -377,8 +377,13 @@ fun SettingsSliderRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            val safeValue = if (value.isFinite()) {
+                value.coerceIn(valueRange.start, valueRange.endInclusive)
+            } else {
+                valueRange.start
+            }
             Slider(
-                value = value,
+                value = safeValue,
                 onValueChange = onValueChange,
                 valueRange = valueRange,
                 steps = steps,

@@ -223,41 +223,108 @@ enum class PhoneMotionProfile {
 }
 
 /**
- * #520 反應式讀取系統 ANIMATOR_DURATION_SCALE（透過 ContentObserver）與使用者動畫模式（UiLayoutPrefs.version）。
+ * 全程序單例且引用計數的系統 ANIMATOR_DURATION_SCALE 監聽器（#548）：
+ * 避免 LazyColumn 每個 phantomItem / rememberMotionEnabled() 各自註冊 ContentObserver 與呼叫
+ * Settings.Global.getFloat 造成 Binder IPC 洪流與 observer 洩漏；最後一個訂閱者 onDispose 時反註冊。
+ */
+private object SystemAnimatorScaleObserver {
+    private val lock = Any()
+    private val scaleState = androidx.compose.runtime.mutableFloatStateOf(1f)
+    @Volatile
+    private var initialized = false
+    private var refCount = 0
+    private var registeredObserver: android.database.ContentObserver? = null
+    private var registeredResolver: android.content.ContentResolver? = null
+
+    val currentScale: Float
+        get() = scaleState.floatValue
+
+    private fun readScale(resolver: android.content.ContentResolver): Float =
+        try {
+            Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+        } catch (_: Exception) {
+            1f
+        }
+
+    fun ensureInitialized(context: android.content.Context) {
+        if (initialized) return
+        val resolver = (context.applicationContext ?: context).contentResolver
+        synchronized(lock) {
+            if (!initialized) {
+                scaleState.floatValue = readScale(resolver)
+                initialized = true
+            }
+        }
+    }
+
+    fun acquire(context: android.content.Context) {
+        val resolver = (context.applicationContext ?: context).contentResolver
+        synchronized(lock) {
+            if (refCount == 0) {
+                scaleState.floatValue = readScale(resolver)
+                initialized = true
+                val uri = Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE)
+                if (uri != null) {
+                    val observer = object : android.database.ContentObserver(
+                        android.os.Handler(android.os.Looper.getMainLooper())
+                    ) {
+                        override fun onChange(selfChange: Boolean) {
+                            scaleState.floatValue = readScale(resolver)
+                        }
+                    }
+                    val ok = runCatching {
+                        resolver.registerContentObserver(uri, false, observer)
+                        true
+                    }.getOrDefault(false)
+                    if (ok) {
+                        registeredObserver = observer
+                        registeredResolver = resolver
+                    }
+                }
+            }
+            refCount++
+        }
+    }
+
+    fun release() {
+        synchronized(lock) {
+            if (refCount <= 0) return
+            refCount--
+            if (refCount == 0) {
+                val obs = registeredObserver
+                val res = registeredResolver
+                registeredObserver = null
+                registeredResolver = null
+                if (obs != null && res != null) {
+                    runCatching { res.unregisterContentObserver(obs) }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * #520 反應式讀取系統 ANIMATOR_DURATION_SCALE（透過共用引用計數 ContentObserver）與使用者動畫模式（UiLayoutPrefs.version）。
  */
 @Composable
 fun rememberMotionProfile(): PhoneMotionProfile {
     val ctx = LocalContext.current
+    val appCtx = remember(ctx) { ctx.applicationContext ?: ctx }
     val prefsVersion = com.phantom.checker.ui.UiLayoutPrefs.version
-    val systemScale = remember(ctx) {
-        androidx.compose.runtime.mutableFloatStateOf(
-            try {
-                Settings.Global.getFloat(ctx.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
-            } catch (_: Exception) {
-                1f
-            }
-        )
+    remember(appCtx) {
+        SystemAnimatorScaleObserver.ensureInitialized(appCtx)
+        true
     }
-    androidx.compose.runtime.DisposableEffect(ctx) {
-        val resolver = ctx.contentResolver
-        val uri = Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE)
-        val observer = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) {
-                systemScale.floatValue = try {
-                    Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
-                } catch (_: Exception) {
-                    1f
-                }
-            }
-        }
-        runCatching { resolver.registerContentObserver(uri, false, observer) }
+    androidx.compose.runtime.DisposableEffect(appCtx) {
+        SystemAnimatorScaleObserver.acquire(appCtx)
         onDispose {
-            runCatching { resolver.unregisterContentObserver(observer) }
+            SystemAnimatorScaleObserver.release()
         }
     }
-    val userMode = remember(ctx, prefsVersion) { com.phantom.checker.ui.UiLayoutPrefs.getAnimationMode(ctx) }
+    val scale = SystemAnimatorScaleObserver.currentScale
+    val userMode = remember(appCtx, prefsVersion) { com.phantom.checker.ui.UiLayoutPrefs.getAnimationMode(appCtx) }
     return when {
-        systemScale.floatValue <= 0f -> PhoneMotionProfile.OFF
+        !scale.isFinite() || scale <= 0f -> PhoneMotionProfile.OFF
         userMode == com.phantom.checker.ui.UiLayoutPrefs.ANIM_MODE_POWER_SAVER -> PhoneMotionProfile.POWER_SAVER
         else -> PhoneMotionProfile.BALANCED
     }

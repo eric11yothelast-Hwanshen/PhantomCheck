@@ -1958,6 +1958,7 @@ fun DecisionFeedbackDialog(
     }
     var availableTags by remember { mutableStateOf<List<com.phantom.checker.data.TagEntity>>(emptyList()) }
     var selectedTagId by remember { mutableStateOf<Long?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val loaded = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -1968,7 +1969,7 @@ fun DecisionFeedbackDialog(
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isSubmitting) onDismiss() },
         title = { Text(stringResource(R.string.common_s_c930fe)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1987,11 +1988,15 @@ fun DecisionFeedbackDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
-                            .clickable { selectedType = idx }
+                            .clickable(enabled = !isSubmitting) { selectedType = idx }
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        RadioButton(selected = selectedType == idx, onClick = { selectedType = idx })
+                        RadioButton(
+                            selected = selectedType == idx,
+                            enabled = !isSubmitting,
+                            onClick = { selectedType = idx }
+                        )
                         Spacer(Modifier.width(4.dp))
                         Text(text = label, style = MaterialTheme.typography.bodySmall)
                     }
@@ -2000,10 +2005,14 @@ fun DecisionFeedbackDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { alsoAddMemoNever = !alsoAddMemoNever },
+                            .clickable(enabled = !isSubmitting) { alsoAddMemoNever = !alsoAddMemoNever },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Checkbox(checked = alsoAddMemoNever, onCheckedChange = { alsoAddMemoNever = it })
+                        Checkbox(
+                            checked = alsoAddMemoNever,
+                            enabled = !isSubmitting,
+                            onCheckedChange = { alsoAddMemoNever = it }
+                        )
                         Text(stringResource(R.string.common_s_214f76), style = MaterialTheme.typography.labelSmall)
                     }
                 }
@@ -2011,6 +2020,7 @@ fun DecisionFeedbackDialog(
                     OutlinedTextField(
                         value = keywordInput,
                         onValueChange = { keywordInput = it },
+                        enabled = !isSubmitting,
                         label = { Text(if (selectedType == 1) stringResource(R.string.common_s_083c6a) else stringResource(R.string.common_s_2b854d)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -2025,6 +2035,7 @@ fun DecisionFeedbackDialog(
                         availableTags.take(4).forEach { tag ->
                             FilterChip(
                                 selected = selectedTagId == tag.id,
+                                enabled = !isSubmitting,
                                 onClick = { selectedTagId = tag.id },
                                 label = { Text(tag.name, maxLines = 1) }
                             )
@@ -2035,124 +2046,144 @@ fun DecisionFeedbackDialog(
         },
         confirmButton = {
             Button(
+                enabled = !isSubmitting,
                 onClick = {
+                    if (isSubmitting) return@Button
+                    isSubmitting = true
                     scope.launch {
-                        val (updatedMsg, feedbackText) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            val db = com.phantom.checker.service.AppDatabaseHolder.db(appCtx)
-                            val senderTrim = message.sender.trim()
-                            when (selectedType) {
-                                0 -> {
-                                    val wlRes = com.phantom.checker.data.WhitelistRuleHelper.upsertWhitelist(
-                                        dao = db.aiRuleDao(),
-                                        ruleText = "白名單寄件者：${message.sender}（${message.appLabel}）",
-                                        sender = senderTrim.ifEmpty { null },
-                                        packageName = message.packageName,
-                                        onCacheInvalidate = {
+                        try {
+                            val (updatedMsg, feedbackText) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                val db = com.phantom.checker.service.AppDatabaseHolder.db(appCtx)
+                                val senderTrim = message.sender.trim()
+                                when (selectedType) {
+                                    0 -> {
+                                        val wlRes = com.phantom.checker.data.WhitelistRuleHelper.upsertWhitelist(
+                                            dao = db.aiRuleDao(),
+                                            ruleText = "白名單寄件者：${message.sender}（${message.appLabel}）",
+                                            sender = senderTrim.ifEmpty { null },
+                                            packageName = message.packageName,
+                                            onCacheInvalidate = {
+                                                com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                            }
+                                        )
+                                        if (alsoAddMemoNever && senderTrim.isNotEmpty()) {
+                                            db.memoRuleDao().insert(
+                                                com.phantom.checker.data.MemoRuleEntity(
+                                                    packageName = message.packageName,
+                                                    sender = senderTrim,
+                                                    keyword = null,
+                                                    action = com.phantom.checker.data.MemoRuleEntity.ACTION_NEVER,
+                                                    source = com.phantom.checker.data.MemoRuleEntity.SOURCE_DETAIL
+                                                )
+                                            )
                                             com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                                         }
-                                    )
-                                    if (alsoAddMemoNever && senderTrim.isNotEmpty()) {
+                                        val safeMsg = message.copy(
+                                            riskScore = 10,
+                                            riskLabel = "safe",
+                                            riskReason = "[feedback:false_positive] 使用者回報誤判並加入白名單"
+                                        )
+                                        db.messageDao().update(safeMsg)
+                                        com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "false_positive")
+                                        // #375 誤判回饋寫回發送者信譽與本地良性 URL host 清單（EncryptedSharedPreferences LRU 100）
+                                        com.phantom.checker.util.PhantomPrefs.recordSenderLowRiskMessage(
+                                            ctx = appCtx,
+                                            packageName = message.packageName,
+                                            sender = message.sender,
+                                            bonus = 10
+                                        )
+                                        val extractedUrls = com.phantom.checker.network.IndicatorExtractor.extract(message.content).urls
+                                        extractedUrls.forEach { u ->
+                                            com.phantom.checker.network.IndicatorExtractor.extractHost(u)?.let { host ->
+                                                com.phantom.checker.util.EncryptedByokStore.addBenignUrlHost(appCtx, host)
+                                            }
+                                        }
+                                        safeMsg to resCtx.getString(R.string.common_s_1fbf7a, wlRes.message)
+                                    }
+                                    1 -> {
+                                        val kw = keywordInput.trim().ifEmpty { senderTrim }
+                                        if (kw.isNotEmpty()) {
+                                            db.filterDao().insert(
+                                                com.phantom.checker.data.FilterRule(
+                                                    keyword = kw,
+                                                    isActive = true,
+                                                    action = com.phantom.checker.data.FilterRule.ACTION_SCAM
+                                                )
+                                            )
+                                            com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                        }
+                                        val scamMsg = message.copy(
+                                            riskScore = maxOf(message.riskScore, 90),
+                                            riskLabel = "scam",
+                                            riskReason = "[feedback:false_negative] [rule:$kw] 使用者回報漏判並建立詐騙過濾規則"
+                                        )
+                                        db.messageDao().update(scamMsg)
+                                        com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "false_negative")
+                                        scamMsg to resCtx.getString(R.string.common_s_4c29f8, kw)
+                                    }
+                                    2 -> {
+                                        val kw = keywordInput.trim().takeIf { it.isNotEmpty() }
                                         db.memoRuleDao().insert(
                                             com.phantom.checker.data.MemoRuleEntity(
                                                 packageName = message.packageName,
-                                                sender = senderTrim,
-                                                keyword = null,
+                                                sender = senderTrim.takeIf { it.isNotEmpty() },
+                                                keyword = kw,
                                                 action = com.phantom.checker.data.MemoRuleEntity.ACTION_NEVER,
                                                 source = com.phantom.checker.data.MemoRuleEntity.SOURCE_DETAIL
                                             )
                                         )
                                         com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                        com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "memo_wrong")
+                                        null to resCtx.getString(R.string.common_s_0d1404)
                                     }
-                                    val safeMsg = message.copy(
-                                        riskScore = 10,
-                                        riskLabel = "safe",
-                                        riskReason = "[feedback:false_positive] 使用者回報誤判並加入白名單"
-                                    )
-                                    db.messageDao().update(safeMsg)
-                                    com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "false_positive")
-                                    // #375 誤判回饋寫回發送者信譽與本地良性 URL host 清單（EncryptedSharedPreferences LRU 100）
-                                    com.phantom.checker.util.PhantomPrefs.recordSenderLowRiskMessage(
-                                        ctx = appCtx,
-                                        packageName = message.packageName,
-                                        sender = message.sender,
-                                        bonus = 10
-                                    )
-                                    val extractedUrls = com.phantom.checker.network.IndicatorExtractor.extract(message.content).urls
-                                    extractedUrls.forEach { u ->
-                                        com.phantom.checker.network.IndicatorExtractor.extractHost(u)?.let { host ->
-                                            com.phantom.checker.util.EncryptedByokStore.addBenignUrlHost(appCtx, host)
+                                    else -> {
+                                        val tid = selectedTagId
+                                        if (tid != null) {
+                                            val tName = availableTags.firstOrNull { it.id == tid }?.name.orEmpty()
+                                            db.userTagRuleDao().insert(
+                                                com.phantom.checker.data.UserTagRuleEntity(
+                                                    description = "回饋修正：${senderTrim.ifEmpty { message.appLabel }} → $tName",
+                                                    appPackage = message.packageName,
+                                                    senderPattern = senderTrim.takeIf { it.isNotEmpty() },
+                                                    targetTagId = tid,
+                                                    isEnabled = true,
+                                                    source = "feedback"
+                                                )
+                                            )
+                                            com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                            com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "tag_wrong")
+                                            null to resCtx.getString(R.string.common_s_ef7c47, tName)
+                                        } else {
+                                            null to resCtx.getString(R.string.common_s_690930)
                                         }
-                                    }
-                                    safeMsg to resCtx.getString(R.string.common_s_1fbf7a, wlRes.message)
-                                }
-                                1 -> {
-                                    val kw = keywordInput.trim().ifEmpty { senderTrim }
-                                    if (kw.isNotEmpty()) {
-                                        db.filterDao().insert(
-                                            com.phantom.checker.data.FilterRule(
-                                                keyword = kw,
-                                                isActive = true,
-                                                action = com.phantom.checker.data.FilterRule.ACTION_SCAM
-                                            )
-                                        )
-                                        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
-                                    }
-                                    val scamMsg = message.copy(
-                                        riskScore = maxOf(message.riskScore, 90),
-                                        riskLabel = "scam",
-                                        riskReason = "[feedback:false_negative] [rule:$kw] 使用者回報漏判並建立詐騙過濾規則"
-                                    )
-                                    db.messageDao().update(scamMsg)
-                                    com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "false_negative")
-                                    scamMsg to resCtx.getString(R.string.common_s_4c29f8, kw)
-                                }
-                                2 -> {
-                                    val kw = keywordInput.trim().takeIf { it.isNotEmpty() }
-                                    db.memoRuleDao().insert(
-                                        com.phantom.checker.data.MemoRuleEntity(
-                                            packageName = message.packageName,
-                                            sender = senderTrim.takeIf { it.isNotEmpty() },
-                                            keyword = kw,
-                                            action = com.phantom.checker.data.MemoRuleEntity.ACTION_NEVER,
-                                            source = com.phantom.checker.data.MemoRuleEntity.SOURCE_DETAIL
-                                        )
-                                    )
-                                    com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
-                                    com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "memo_wrong")
-                                    null to resCtx.getString(R.string.common_s_0d1404)
-                                }
-                                else -> {
-                                    val tid = selectedTagId
-                                    if (tid != null) {
-                                        val tName = availableTags.firstOrNull { it.id == tid }?.name.orEmpty()
-                                        db.userTagRuleDao().insert(
-                                            com.phantom.checker.data.UserTagRuleEntity(
-                                                description = "回饋修正：${senderTrim.ifEmpty { message.appLabel }} → $tName",
-                                                appPackage = message.packageName,
-                                                senderPattern = senderTrim.takeIf { it.isNotEmpty() },
-                                                targetTagId = tid,
-                                                isEnabled = true,
-                                                source = "feedback"
-                                            )
-                                        )
-                                        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
-                                        com.phantom.checker.util.PhantomPrefs.recordDecisionFeedback(appCtx, "tag_wrong")
-                                        null to resCtx.getString(R.string.common_s_ef7c47, tName)
-                                    } else {
-                                        null to resCtx.getString(R.string.common_s_690930)
                                     }
                                 }
                             }
+                            onFeedbackApplied(updatedMsg, feedbackText)
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (_: Exception) {
+                            isSubmitting = false
                         }
-                        onFeedbackApplied(updatedMsg, feedbackText)
                     }
                 }
             ) {
-                Text(stringResource(R.string.common_s_210791))
+                if (isSubmitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Text(stringResource(R.string.common_s_210791))
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                enabled = !isSubmitting,
+                onClick = { if (!isSubmitting) onDismiss() }
+            ) {
                 Text(stringResource(R.string.common_cancel))
             }
         }

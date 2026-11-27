@@ -57,6 +57,7 @@ private fun drawableToBitmap(drawable: Drawable, sizePx: Int = 96): Bitmap {
 }
 
 private const val MAX_ICON_CACHE_KB = 4 * 1024 // 4 MB
+private const val MISSING_PKG_TTL_MS = 60_000L
 
 private val unifiedBitmapCache = object : android.util.LruCache<String, Bitmap>(MAX_ICON_CACHE_KB) {
     override fun sizeOf(key: String, value: Bitmap): Int =
@@ -65,13 +66,41 @@ private val unifiedBitmapCache = object : android.util.LruCache<String, Bitmap>(
 
 private val appIconImageCache = object : android.util.LruCache<String, ImageBitmap>(64) {}
 
+private val missingPackageCache = object : android.util.LruCache<String, Long>(128) {}
+
+private fun normalizePackageKey(packageName: String): String =
+    packageName.trim().lowercase(java.util.Locale.ROOT)
+
+/**
+ * 釋放 App 圖示與發送者頭像記憶體快取（#548），供 PhantomApplication.onTrimMemory 呼叫。
+ * 保留 @Keep 避免 R8 縮減反射入口（AppIconHelperKt.trimMemory）。
+ */
+@androidx.annotation.Keep
+fun trimMemory() {
+    synchronized(unifiedBitmapCache) {
+        unifiedBitmapCache.evictAll()
+    }
+    synchronized(appIconImageCache) {
+        appIconImageCache.evictAll()
+    }
+    synchronized(senderAvatarCache) {
+        senderAvatarCache.evictAll()
+    }
+    synchronized(missingPackageCache) {
+        missingPackageCache.evictAll()
+    }
+}
+
 private fun loadCachedIconBitmap(context: Context, packageName: String, sizePx: Int = 96): Bitmap? {
+    val trimmedPkg = packageName.trim()
+    if (trimmedPkg.isEmpty()) return null
+    val normalizedPkg = normalizePackageKey(trimmedPkg)
     val target = sizePx.coerceAtLeast(1)
-    val sizedKey = "$packageName:$target"
+    val sizedKey = "$normalizedPkg:$target"
     synchronized(unifiedBitmapCache) {
         unifiedBitmapCache.get(sizedKey)?.let { if (!it.isRecycled) return it }
         if (target != 96) {
-            unifiedBitmapCache.get("$packageName:96")?.let { base ->
+            unifiedBitmapCache.get("$normalizedPkg:96")?.let { base ->
                 if (!base.isRecycled) {
                     val scaled = Bitmap.createScaledBitmap(base, target, target, true)
                     unifiedBitmapCache.put(sizedKey, scaled)
@@ -80,27 +109,43 @@ private fun loadCachedIconBitmap(context: Context, packageName: String, sizePx: 
             }
         }
     }
+    val now = System.currentTimeMillis()
+    synchronized(missingPackageCache) {
+        val failedAt = missingPackageCache.get(normalizedPkg)
+        if (failedAt != null && now - failedAt < MISSING_PKG_TTL_MS) {
+            return null
+        }
+    }
     return try {
         val appCtx = context.applicationContext ?: context
-        val drawable = appCtx.packageManager.getApplicationIcon(packageName)
+        val drawable = appCtx.packageManager.getApplicationIcon(trimmedPkg)
         val bmp = drawableToBitmap(drawable, target)
         synchronized(unifiedBitmapCache) {
             unifiedBitmapCache.put(sizedKey, bmp)
         }
+        synchronized(missingPackageCache) {
+            missingPackageCache.remove(normalizedPkg)
+        }
         bmp
     } catch (_: Exception) {
+        synchronized(missingPackageCache) {
+            missingPackageCache.put(normalizedPkg, now)
+        }
         null
     }
 }
 
 fun loadAppIconBitmap(context: Context, packageName: String): ImageBitmap? {
+    val trimmedPkg = packageName.trim()
+    if (trimmedPkg.isEmpty()) return null
+    val normalizedPkg = normalizePackageKey(trimmedPkg)
     synchronized(appIconImageCache) {
-        appIconImageCache.get(packageName)?.let { return it }
+        appIconImageCache.get(normalizedPkg)?.let { return it }
     }
-    val bmp = loadCachedIconBitmap(context, packageName, 96) ?: return null
+    val bmp = loadCachedIconBitmap(context, trimmedPkg, 96) ?: return null
     val img = bmp.asImageBitmap()
     synchronized(appIconImageCache) {
-        appIconImageCache.put(packageName, img)
+        appIconImageCache.put(normalizedPkg, img)
     }
     return img
 }
@@ -118,7 +163,11 @@ fun buildRecentAppsStripBitmap(
     iconSizeDp: Int = 24,
     spacingDp: Int = 4
 ): Bitmap? {
-    val pkgs = packageNames.distinct().take(4)
+    val pkgs = packageNames
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinctBy { normalizePackageKey(it) }
+        .take(4)
     if (pkgs.isEmpty()) return null
     val density = context.resources.displayMetrics.density
     val baseCellPx = maxOf((48f * density).roundToInt(), (iconSizeDp * density).roundToInt(), 96)
@@ -170,7 +219,11 @@ fun buildRecentAppsHorizontalStripBitmap(
     context: Context,
     packageNames: List<String>
 ): Bitmap? {
-    val pkgs = packageNames.distinct().take(4)
+    val pkgs = packageNames
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinctBy { normalizePackageKey(it) }
+        .take(4)
     if (pkgs.isEmpty()) return null
     val density = context.resources.displayMetrics.density
     val iconPx = (24f * density).roundToInt().coerceAtLeast(48)
@@ -232,7 +285,8 @@ fun AppIconImage(
     modifier: Modifier = Modifier
 ) {
     val ctx = LocalContext.current
-    val bitmap = remember(packageName) {
+    val normalizedPkg = remember(packageName) { normalizePackageKey(packageName) }
+    val bitmap = remember(normalizedPkg) {
         loadAppIconBitmap(ctx, packageName)
     }
     if (bitmap != null) {
@@ -280,7 +334,7 @@ fun decodeSenderAvatarBitmap(
     bytes: ByteArray?
 ): ImageBitmap? {
     if (bytes == null || bytes.isEmpty()) return null
-    val key = "$packageName|$sender"
+    val key = "${normalizePackageKey(packageName)}|${sender.trim()}"
     synchronized(senderAvatarCache) {
         senderAvatarCache.get(key)?.let { return it }
     }
@@ -305,7 +359,8 @@ fun SenderAvatarImage(
     modifier: Modifier = Modifier
 ) {
     val ctx = LocalContext.current
-    val avatarBitmap = remember(packageName, sender, avatarBytes) {
+    val normalizedPkg = remember(packageName) { normalizePackageKey(packageName) }
+    val avatarBitmap = remember(normalizedPkg, sender, avatarBytes) {
         decodeSenderAvatarBitmap(packageName, sender, avatarBytes)
     }
     if (avatarBitmap != null) {
@@ -319,7 +374,7 @@ fun SenderAvatarImage(
         )
         return
     }
-    val appBitmap = remember(packageName) {
+    val appBitmap = remember(normalizedPkg) {
         loadAppIconBitmap(ctx, packageName)
     }
     if (appBitmap != null) {

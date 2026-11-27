@@ -277,8 +277,9 @@ fun PhantomPredictiveBackContainer(
         try {
             progress.collect { event ->
                 swipeEdge = event.swipeEdge
-                if (motionOn) {
-                    backProgress.snapTo(event.progress.coerceIn(0f, 1f))
+                val rawProgress = event.progress
+                if (motionOn && rawProgress.isFinite()) {
+                    backProgress.snapTo(rawProgress.coerceIn(0f, 1f))
                 }
             }
             if (motionOn) {
@@ -301,7 +302,8 @@ fun PhantomPredictiveBackContainer(
         modifier = modifier
             .fillMaxSize()
             .graphicsLayer {
-                val p = backProgress.value.coerceIn(0f, 1f)
+                val rawP = backProgress.value
+                val p = if (rawP.isFinite()) rawP.coerceIn(0f, 1f) else 0f
                 if (p > 0f) {
                     val s = 1f - PhantomMotion.PredictiveBackMaxScaleDelta * p
                     scaleX = s
@@ -357,8 +359,16 @@ fun PhantomSecondaryTabRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .drawBehind {
+                    if (tabCount <= 0 || size.width <= 0f || size.height <= 0f) return@drawBehind
                     val tabWidth = size.width / tabCount
-                    val left = animatedIndex.value * tabWidth
+                    val rawIdx = animatedIndex.value
+                    val idx = if (rawIdx.isFinite()) {
+                        rawIdx.coerceIn(0f, (tabCount - 1).toFloat())
+                    } else {
+                        safeIndex.toFloat()
+                    }
+                    val left = idx * tabWidth
+                    if (!left.isFinite() || !tabWidth.isFinite()) return@drawBehind
                     drawRoundRect(
                         color = indicatorColor,
                         topLeft = Offset(left, 0f),
