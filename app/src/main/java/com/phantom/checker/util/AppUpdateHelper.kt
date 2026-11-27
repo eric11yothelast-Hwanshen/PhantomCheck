@@ -15,18 +15,20 @@ import androidx.core.content.FileProvider
 import com.phantom.checker.R
 import com.phantom.checker.service.NotifIds
 import com.phantom.checker.ui.SettingsActivity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.security.MessageDigest
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 sealed interface UpdateCheckResult {
@@ -40,7 +42,8 @@ sealed interface UpdateCheckResult {
         val publishedDate: String,
         val apkDownloadUrl: String?,
         val htmlUrl: String,
-        val releaseNotes: String = ""
+        val releaseNotes: String = "",
+        val sha256DownloadUrl: String? = null
     ) : UpdateCheckResult
     data class Error(val message: String) : UpdateCheckResult
 }
@@ -50,6 +53,20 @@ object AppUpdateHelper {
     const val REPO_RELEASES_URL = "https://github.com/eric11yothelast-Hwanshen/PhantomCheck/releases"
     private const val LATEST_RELEASE_API =
         "https://api.github.com/repos/eric11yothelast-Hwanshen/PhantomCheck/releases/latest"
+    private const val REPO_PATH_PREFIX = "/eric11yothelast-Hwanshen/PhantomCheck/"
+    private const val SHA256_PREFS_NAME = "phantom_apk_sha256_cache"
+    private const val KEY_SHA256_URL_PREFIX = "sha256_url_"
+    private const val KEY_SHA256_HEX_PREFIX = "sha256_hex_"
+
+    private val ALLOWED_GITHUB_DOWNLOAD_HOSTS = setOf(
+        "github.com",
+        "objects.githubusercontent.com",
+        "release-assets.githubusercontent.com",
+        "github-releases.githubusercontent.com"
+    )
+    private val SHA256_HEX_REGEX = Regex("""\b([0-9a-fA-F]{64})\b""")
+
+    private val verifiedFileCache = ConcurrentHashMap<String, Boolean>()
 
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -57,6 +74,113 @@ object AppUpdateHelper {
             .readTimeout(10, TimeUnit.SECONDS)
             .callTimeout(10, TimeUnit.SECONDS)
             .build()
+    }
+
+    /** 驗證下載網址必須為 HTTPS 且屬於 GitHub 官方發佈網域（github.com 並限本倉庫路徑）。 */
+    internal fun isAllowedGitHubDownloadUrl(rawUrl: String?): Boolean {
+        if (rawUrl.isNullOrBlank()) return false
+        val uri = runCatching { Uri.parse(rawUrl.trim()) }.getOrNull() ?: return false
+        if (!uri.scheme.equals("https", ignoreCase = true)) return false
+        val host = uri.host?.lowercase(Locale.ROOT) ?: return false
+        if (host !in ALLOWED_GITHUB_DOWNLOAD_HOSTS) return false
+        if (host == "github.com") {
+            val path = uri.path.orEmpty()
+            if (!path.startsWith(REPO_PATH_PREFIX, ignoreCase = true)) return false
+        }
+        return true
+    }
+
+    internal fun parseSha256Hex(rawContent: String): String? =
+        SHA256_HEX_REGEX.find(rawContent)?.groupValues?.getOrNull(1)?.lowercase(Locale.ROOT)
+
+    private fun computeFileSha256Hex(file: File): String? {
+        return try {
+            val md = MessageDigest.getInstance("SHA-256")
+            val buf = ByteArray(8192)
+            FileInputStream(file).use { fis ->
+                while (true) {
+                    val read = fis.read(buf)
+                    if (read <= 0) break
+                    md.update(buf, 0, read)
+                }
+            }
+            md.digest().joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun sha256Prefs(ctx: Context) =
+        ctx.applicationContext.getSharedPreferences(SHA256_PREFS_NAME, Context.MODE_PRIVATE)
+
+    private fun persistSha256Url(ctx: Context, cleanVersion: String, sha256Url: String?) {
+        val prefs = sha256Prefs(ctx)
+        if (sha256Url != null && isAllowedGitHubDownloadUrl(sha256Url)) {
+            prefs.edit().putString("$KEY_SHA256_URL_PREFIX$cleanVersion", sha256Url).apply()
+        } else {
+            prefs.edit().remove("$KEY_SHA256_URL_PREFIX$cleanVersion").apply()
+        }
+    }
+
+    private fun fetchExpectedSha256Hex(ctx: Context, cleanVersion: String): String? {
+        val prefs = sha256Prefs(ctx)
+        val cachedHex = prefs.getString("$KEY_SHA256_HEX_PREFIX$cleanVersion", null)
+        if (!cachedHex.isNullOrBlank() && cachedHex.length == 64) {
+            return cachedHex.lowercase(Locale.ROOT)
+        }
+        val sha256Url = prefs.getString("$KEY_SHA256_URL_PREFIX$cleanVersion", null)
+        if (sha256Url.isNullOrBlank() || !isAllowedGitHubDownloadUrl(sha256Url)) {
+            return null
+        }
+        val request = Request.Builder()
+            .url(sha256Url)
+            .header("User-Agent", "PhantomCheck-Android")
+            .get()
+            .build()
+        return try {
+            client.newCall(request).execute().use { resp ->
+                if (!resp.isSuccessful) return null
+                val body = resp.body?.string().orEmpty()
+                val hex = parseSha256Hex(body) ?: return null
+                prefs.edit().putString("$KEY_SHA256_HEX_PREFIX$cleanVersion", hex).apply()
+                hex
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 校驗已下載 APK 的 SHA-256：
+     * - 若本次 Release 附有 `.sha256` 資產，強制比對並於不符時拒絕安裝。
+     * - 若為尚未附 `.sha256` 的舊版 Release（無 sha256Url），誠實放行以維持相容。
+     */
+    internal suspend fun verifyDownloadedApkIntegrity(
+        ctx: Context,
+        cleanVersion: String,
+        apkFile: File
+    ): Boolean = withContext(Dispatchers.IO) {
+        val cacheKey = "${apkFile.absolutePath}:${apkFile.length()}:${apkFile.lastModified()}"
+        if (verifiedFileCache[cacheKey] == true) return@withContext true
+
+        val prefs = sha256Prefs(ctx)
+        val hasSha256Asset = !prefs.getString("$KEY_SHA256_URL_PREFIX$cleanVersion", null).isNullOrBlank() ||
+            !prefs.getString("$KEY_SHA256_HEX_PREFIX$cleanVersion", null).isNullOrBlank()
+        if (!hasSha256Asset) {
+            return@withContext true
+        }
+        val expectedHex = fetchExpectedSha256Hex(ctx, cleanVersion) ?: return@withContext false
+        val actualHex = computeFileSha256Hex(apkFile) ?: return@withContext false
+        val matched = MessageDigest.isEqual(
+            expectedHex.toByteArray(Charsets.US_ASCII),
+            actualHex.toByteArray(Charsets.US_ASCII)
+        )
+        if (matched) {
+            verifiedFileCache[cacheKey] = true
+        }
+        matched
     }
 
     fun getRuntimeVersionName(ctx: Context): String {
@@ -100,7 +224,8 @@ object AppUpdateHelper {
                 }
                 val publishedRaw = json.optString("published_at", "").trim()
                 val publishedDate = if (publishedRaw.length >= 10) publishedRaw.take(10) else com.phantom.checker.PhantomApplication.str(R.string.update_s_be1965)
-                val htmlUrl = json.optString("html_url", REPO_RELEASES_URL).ifBlank { REPO_RELEASES_URL }
+                val rawHtmlUrl = json.optString("html_url", REPO_RELEASES_URL).ifBlank { REPO_RELEASES_URL }
+                val htmlUrl = if (isAllowedGitHubDownloadUrl(rawHtmlUrl)) rawHtmlUrl else REPO_RELEASES_URL
                 val releaseNotes = json.optString("body", "").trim()
 
                 if (compareSemVer(cleanRemote, localVersion) <= 0) {
@@ -112,29 +237,54 @@ object AppUpdateHelper {
                 }
 
                 val assets = json.optJSONArray("assets")
+                var releaseApkName: String? = null
                 var releaseApkUrl: String? = null
+                var exactSha256Url: String? = null
+                var fallbackSha256Url: String? = null
                 if (assets != null) {
                     for (i in 0 until assets.length()) {
                         val asset = assets.optJSONObject(i) ?: continue
-                        val name = asset.optString("name", "")
-                        val url = asset.optString("browser_download_url", "").takeIf { it.isNotBlank() } ?: continue
+                        val name = asset.optString("name", "").trim()
+                        val url = asset.optString("browser_download_url", "").trim()
+                            .takeIf { isAllowedGitHubDownloadUrl(it) } ?: continue
                         if (name.endsWith(".apk", ignoreCase = true) &&
                             !name.contains("debug", ignoreCase = true) &&
                             releaseApkUrl == null
                         ) {
+                            releaseApkName = name
                             releaseApkUrl = url
                         }
                     }
+                    for (i in 0 until assets.length()) {
+                        val asset = assets.optJSONObject(i) ?: continue
+                        val name = asset.optString("name", "").trim()
+                        val url = asset.optString("browser_download_url", "").trim()
+                            .takeIf { isAllowedGitHubDownloadUrl(it) } ?: continue
+                        if (releaseApkName != null && name.equals("$releaseApkName.sha256", ignoreCase = true)) {
+                            exactSha256Url = url
+                            break
+                        }
+                        if (name.endsWith(".sha256", ignoreCase = true) &&
+                            !name.contains("debug", ignoreCase = true) &&
+                            fallbackSha256Url == null
+                        ) {
+                            fallbackSha256Url = url
+                        }
+                    }
                 }
-                val apkUrl = releaseApkUrl
+                val sha256Url = exactSha256Url ?: fallbackSha256Url
+                persistSha256Url(ctx, cleanRemote, sha256Url)
                 UpdateCheckResult.UpdateAvailable(
                     latestVersion = cleanRemote,
                     publishedDate = publishedDate,
-                    apkDownloadUrl = apkUrl,
+                    apkDownloadUrl = releaseApkUrl,
                     htmlUrl = htmlUrl,
-                    releaseNotes = releaseNotes
+                    releaseNotes = releaseNotes,
+                    sha256DownloadUrl = sha256Url
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: SocketTimeoutException) {
             UpdateCheckResult.Error(com.phantom.checker.PhantomApplication.str(R.string.update_s_650ea3))
         } catch (_: UnknownHostException) {
@@ -210,21 +360,21 @@ object AppUpdateHelper {
     }
 
     /**
-     * #408 查詢目前目標版本的下載狀態（全程可於 Dispatchers.IO 呼叫）：
+     * #408 查詢目前目標版本的下載狀態（固定切換至 Dispatchers.IO）：
      * - 自動清理與 targetVersion 不符或損毀（length == 0）的舊檔
-     * - 若 DownloadManager 記錄為 STATUS_SUCCESSFUL 且檔案有效 → ReadyToInstall
-     * - 若無進行中 downloadId 但本地已存在完整目標版本 APK → ReadyToInstall（全域唯一，不再重下）
-     * - 若 STATUS_FAILED → 解析 COLUMN_REASON 為繁體中文原因並回傳 Failed
+     * - 若 DownloadManager 記錄為 STATUS_SUCCESSFUL 且檔案通過 SHA-256 校驗 → ReadyToInstall
+     * - 若無進行中 downloadId 但本地已存在完整且通過校驗的目標版本 APK → ReadyToInstall
+     * - 若 STATUS_FAILED 或校驗失敗 → 回傳 Failed
      */
-    fun inspectApkDownloadState(ctx: Context, targetVersion: String): ApkDownloadState {
+    suspend fun inspectApkDownloadState(ctx: Context, targetVersion: String): ApkDownloadState = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
         val cleanVer = normalizeVersion(targetVersion)
-        if (cleanVer.isBlank()) return ApkDownloadState.Idle
+        if (cleanVer.isBlank()) return@withContext ApkDownloadState.Idle
 
         val localRuntimeVer = normalizeVersion(getRuntimeVersionName(appCtx))
         if (compareSemVer(cleanVer, localRuntimeVer) <= 0) {
             cleanupStaleApkDownloads(appCtx, keepVersion = null)
-            return ApkDownloadState.Idle
+            return@withContext ApkDownloadState.Idle
         }
 
         // 先清掉其他舊版本的 APK 與過期下載記錄
@@ -233,7 +383,7 @@ object AppUpdateHelper {
             cleanupStaleApkDownloads(appCtx, keepVersion = cleanVer)
         }
 
-        val targetFile = getApkFileForVersion(appCtx, cleanVer) ?: return ApkDownloadState.Idle
+        val targetFile = getApkFileForVersion(appCtx, cleanVer) ?: return@withContext ApkDownloadState.Idle
         val dm = appCtx.getSystemService(DownloadManager::class.java)
         val downloadId = PhantomPrefs.getActiveApkDownloadId(appCtx)
 
@@ -256,7 +406,7 @@ object AppUpdateHelper {
                             DownloadManager.STATUS_RUNNING,
                             DownloadManager.STATUS_PAUSED -> {
                                 val pct = if (total > 0L) ((soFar * 100L) / total).toInt().coerceIn(0, 99) else null
-                                return ApkDownloadState.Downloading(
+                                return@withContext ApkDownloadState.Downloading(
                                     downloadId = downloadId,
                                     version = cleanVer,
                                     file = targetFile,
@@ -265,7 +415,15 @@ object AppUpdateHelper {
                             }
                             DownloadManager.STATUS_SUCCESSFUL -> {
                                 if (targetFile.exists() && targetFile.length() > 0L) {
-                                    return ApkDownloadState.ReadyToInstall(
+                                    if (!verifyDownloadedApkIntegrity(appCtx, cleanVer, targetFile)) {
+                                        runCatching { targetFile.delete() }
+                                        PhantomPrefs.clearActiveApkDownload(appCtx)
+                                        return@withContext ApkDownloadState.Failed(
+                                            version = cleanVer,
+                                            reasonText = com.phantom.checker.PhantomApplication.str(R.string.update_s_93dea7)
+                                        )
+                                    }
+                                    return@withContext ApkDownloadState.ReadyToInstall(
                                         downloadId = downloadId,
                                         version = cleanVer,
                                         file = targetFile
@@ -273,7 +431,7 @@ object AppUpdateHelper {
                                 } else {
                                     runCatching { targetFile.delete() }
                                     PhantomPrefs.clearActiveApkDownload(appCtx)
-                                    return ApkDownloadState.Failed(
+                                    return@withContext ApkDownloadState.Failed(
                                         version = cleanVer,
                                         reasonText = com.phantom.checker.PhantomApplication.str(R.string.update_s_93dea7)
                                     )
@@ -282,7 +440,7 @@ object AppUpdateHelper {
                             DownloadManager.STATUS_FAILED -> {
                                 runCatching { targetFile.delete() }
                                 PhantomPrefs.clearActiveApkDownload(appCtx)
-                                return ApkDownloadState.Failed(
+                                return@withContext ApkDownloadState.Failed(
                                     version = cleanVer,
                                     reasonText = formatDownloadFailureReason(reason)
                                 )
@@ -293,14 +451,24 @@ object AppUpdateHelper {
                         PhantomPrefs.clearActiveApkDownload(appCtx)
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
             }
         }
 
-        // 若無進行中的 downloadId，檢查是否已有完整且非空的同版本 APK 檔案
+        // 若無進行中的 downloadId，檢查是否已有完整且通過校驗的同版本 APK 檔案
         if (targetFile.exists()) {
             if (targetFile.length() > 0L) {
-                return ApkDownloadState.ReadyToInstall(
+                if (!verifyDownloadedApkIntegrity(appCtx, cleanVer, targetFile)) {
+                    runCatching { targetFile.delete() }
+                    PhantomPrefs.clearActiveApkDownload(appCtx)
+                    return@withContext ApkDownloadState.Failed(
+                        version = cleanVer,
+                        reasonText = com.phantom.checker.PhantomApplication.str(R.string.update_s_93dea7)
+                    )
+                }
+                return@withContext ApkDownloadState.ReadyToInstall(
                     downloadId = downloadId.coerceAtLeast(0L),
                     version = cleanVer,
                     file = targetFile
@@ -309,7 +477,7 @@ object AppUpdateHelper {
                 runCatching { targetFile.delete() }
             }
         }
-        return ApkDownloadState.Idle
+        ApkDownloadState.Idle
     }
 
     fun formatDownloadFailureReason(reason: Int): String = when (reason) {
@@ -326,17 +494,29 @@ object AppUpdateHelper {
 
     /**
      * #408 全域唯一排入 APK 下載：
+     * - 嚴格驗證下載網址為 GitHub 官方網域，非白名單直接拒絕
      * - 若同版本已在下載中，直接沿用既有 downloadId 不重複建立
      * - 若已有舊下載或舊檔，先清理再排入新下載並持久化至 PhantomPrefs
      */
-    fun enqueueApkDownload(ctx: Context, version: String, downloadUrl: String): Pair<Long, File>? {
+    suspend fun enqueueApkDownload(
+        ctx: Context,
+        version: String,
+        downloadUrl: String,
+        sha256DownloadUrl: String? = null
+    ): Pair<Long, File>? = withContext(Dispatchers.IO) {
+        if (!isAllowedGitHubDownloadUrl(downloadUrl)) {
+            return@withContext null
+        }
         val appCtx = ctx.applicationContext
         val cleanVer = normalizeVersion(version)
+        if (!sha256DownloadUrl.isNullOrBlank() && isAllowedGitHubDownloadUrl(sha256DownloadUrl)) {
+            persistSha256Url(appCtx, cleanVer, sha256DownloadUrl)
+        }
         val currentState = inspectApkDownloadState(appCtx, cleanVer)
         if (currentState is ApkDownloadState.Downloading) {
-            return currentState.downloadId to currentState.file
+            return@withContext currentState.downloadId to currentState.file
         }
-        val dm = appCtx.getSystemService(DownloadManager::class.java) ?: return null
+        val dm = appCtx.getSystemService(DownloadManager::class.java) ?: return@withContext null
         val prevId = PhantomPrefs.getActiveApkDownloadId(appCtx)
         if (prevId > 0L) {
             runCatching { dm.remove(prevId) }
@@ -344,13 +524,13 @@ object AppUpdateHelper {
         cleanupStaleApkDownloads(appCtx, keepVersion = null)
 
         val fileName = "app-release-$cleanVer.apk"
-        val dir = appCtx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return null
+        val dir = appCtx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return@withContext null
         if (!dir.exists()) dir.mkdirs()
         val destFile = File(dir, fileName)
         if (destFile.exists()) {
             runCatching { destFile.delete() }
         }
-        return try {
+        try {
             val req = DownloadManager.Request(Uri.parse(downloadUrl))
                 .setTitle("PhantomCheck v$cleanVer")
                 .setDescription(com.phantom.checker.PhantomApplication.str(R.string.update_s_a76912))
@@ -360,6 +540,8 @@ object AppUpdateHelper {
             val id = dm.enqueue(req)
             PhantomPrefs.saveActiveApkDownload(appCtx, id, cleanVer, fileName)
             id to destFile
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             null
         }

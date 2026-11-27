@@ -5,18 +5,21 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.aggregate.AggregateMetric
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
-import androidx.health.connect.client.request.AggregateRequest
+import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.time.TimeRangeFilter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.Period
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -24,7 +27,7 @@ import java.util.Locale
 /**
  * #381 / #419 Health Connect 生理數據整合橋接層（androidx.health.connect:connect-client:1.1.0）：
  * 1. 增強不依賴：未安裝 HC（含無 GMS 機型）或未授權時誠實降級，絕不 crash（getOrCreate 必 catch IllegalStateException）。
- * 2. 原始生理數值永不出本機：僅於本機 aggregate 聚合，採 per-type 權限查詢，已授 3 權限的既有用戶不回退。
+ * 2. 原始生理數值永不出本機：僅於本機 aggregateGroupByPeriod 一次聚合（單次對話 IPC ≤ 5），採 per-type 權限查詢，已授 3 權限的既有用戶不回退。
  * 3. 無 API key 時讀取與 Stats 趨勢／明細照常運作。
  */
 object HealthConnectBridge {
@@ -95,7 +98,9 @@ object HealthConnectBridge {
                 HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> SdkAvailability.PROVIDER_UPDATE_REQUIRED
                 else -> SdkAvailability.UNAVAILABLE
             }
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
+            SdkAvailability.UNAVAILABLE
+        } catch (_: LinkageError) {
             SdkAvailability.UNAVAILABLE
         }
     }
@@ -107,7 +112,9 @@ object HealthConnectBridge {
             HealthConnectClient.getOrCreate(ctx.applicationContext)
         } catch (_: IllegalStateException) {
             null
-        } catch (_: Throwable) {
+        } catch (_: Exception) {
+            null
+        } catch (_: LinkageError) {
             null
         }
     }
@@ -124,7 +131,9 @@ object HealthConnectBridge {
                 distance = PERM_READ_DISTANCE in granted,
                 calories = PERM_READ_TOTAL_CALORIES in granted
             )
-        } catch (_: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
             HealthPermissionStatus()
         }
     }
@@ -154,96 +163,114 @@ object HealthConnectBridge {
     }
 
     /** 本機聚合近 7 日健康數據（per-type 查詢：僅查詢已授權型別，未授權型別維持 0） */
-    suspend fun readLast7DaysTrend(ctx: Context): List<DailyHealthPoint> = readRecentDaysTrend(ctx, days = 7)
+    suspend fun readLast7DaysTrend(
+        ctx: Context,
+        precheckedPerm: HealthPermissionStatus? = null
+    ): List<DailyHealthPoint> = readRecentDaysTrend(ctx, days = 7, precheckedPerm = precheckedPerm)
 
-    /** 本機聚合近 N 日健康數據（per-type 查詢，支援 1..30 日） */
-    suspend fun readRecentDaysTrend(ctx: Context, days: Int = 7): List<DailyHealthPoint> = withContext(Dispatchers.IO) {
+    /**
+     * 本機聚合近 N 日健康數據（支援 1..30 日）：
+     * 以 aggregateGroupByPeriod(Period.ofDays(1)) 一次聚合全部已授權指標（日間 4 指標 1 次 IPC + 跨午夜睡眠 1 次 IPC），
+     * 連同權限查詢整次對話總 IPC ≤ 3（遠低於舊版 30 天 150 次 IPC）。
+     */
+    suspend fun readRecentDaysTrend(
+        ctx: Context,
+        days: Int = 7,
+        precheckedPerm: HealthPermissionStatus? = null
+    ): List<DailyHealthPoint> = withContext(Dispatchers.IO) {
         val client = getClientSafely(ctx) ?: return@withContext emptyList()
-        val perm = getPermissionStatus(ctx)
+        val perm = precheckedPerm ?: getPermissionStatus(ctx)
         if (!perm.anyGranted) return@withContext emptyList()
+
         val clampedDays = days.coerceIn(1, 30)
         val zone = ZoneId.systemDefault()
         val today = LocalDate.now(zone)
+        val firstDay = today.minusDays((clampedDays - 1).toLong())
         val labelFmt = DateTimeFormatter.ofPattern("MM/dd", Locale.US)
-        val out = mutableListOf<DailyHealthPoint>()
 
+        val stepsByDate = HashMap<LocalDate, Long>()
+        val hrByDate = HashMap<LocalDate, Long>()
+        val distByDate = HashMap<LocalDate, Double>()
+        val calByDate = HashMap<LocalDate, Double>()
+        val sleepByDate = HashMap<LocalDate, Float>()
+
+        // 1. 一次 aggregateGroupByPeriod(Period.ofDays(1)) 聚合步數／心率／距離／熱量（1 次 IPC）
+        val dailyMetrics = buildSet<AggregateMetric<*>> {
+            if (perm.steps) add(StepsRecord.COUNT_TOTAL)
+            if (perm.heartRate) add(HeartRateRecord.BPM_AVG)
+            if (perm.distance) add(DistanceRecord.DISTANCE_TOTAL)
+            if (perm.calories) add(TotalCaloriesBurnedRecord.ENERGY_TOTAL)
+        }
+        if (dailyMetrics.isNotEmpty()) {
+            try {
+                val dailyBuckets = client.aggregateGroupByPeriod(
+                    AggregateGroupByPeriodRequest(
+                        metrics = dailyMetrics,
+                        timeRangeFilter = TimeRangeFilter.between(
+                            firstDay.atStartOfDay(),
+                            today.plusDays(1).atStartOfDay()
+                        ),
+                        timeRangeSlicer = Period.ofDays(1)
+                    )
+                )
+                for (bucket in dailyBuckets) {
+                    val bucketDate = bucket.startTime.toLocalDate()
+                    if (perm.steps) {
+                        bucket.result[StepsRecord.COUNT_TOTAL]?.let { stepsByDate[bucketDate] = it }
+                    }
+                    if (perm.heartRate) {
+                        bucket.result[HeartRateRecord.BPM_AVG]?.let { hrByDate[bucketDate] = it }
+                    }
+                    if (perm.distance) {
+                        bucket.result[DistanceRecord.DISTANCE_TOTAL]?.inMeters?.let { distByDate[bucketDate] = it }
+                    }
+                    if (perm.calories) {
+                        bucket.result[TotalCaloriesBurnedRecord.ENERGY_TOTAL]?.inKilocalories?.let { calByDate[bucketDate] = it }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+
+        // 2. 一次 aggregateGroupByPeriod(Period.ofDays(1)) 聚合跨午夜睡眠（前晚 18:00 至當日 18:00，1 次 IPC）
+        if (perm.sleep) {
+            try {
+                val sleepBuckets = client.aggregateGroupByPeriod(
+                    AggregateGroupByPeriodRequest(
+                        metrics = setOf(SleepSessionRecord.SLEEP_DURATION_TOTAL),
+                        timeRangeFilter = TimeRangeFilter.between(
+                            firstDay.minusDays(1).atTime(LocalTime.of(18, 0)),
+                            today.atTime(LocalTime.of(18, 0))
+                        ),
+                        timeRangeSlicer = Period.ofDays(1)
+                    )
+                )
+                for (bucket in sleepBuckets) {
+                    val bucketDate = bucket.endTime.toLocalDate()
+                    val dur = bucket.result[SleepSessionRecord.SLEEP_DURATION_TOTAL]
+                    if (dur != null) {
+                        sleepByDate[bucketDate] = dur.toMinutes() / 60f
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+
+        val out = ArrayList<DailyHealthPoint>(clampedDays)
         for (offset in (clampedDays - 1).toLong() downTo 0L) {
             val day = today.minusDays(offset)
-            val start = day.atStartOfDay(zone).toInstant()
-            val end = day.plusDays(1).atStartOfDay(zone).toInstant()
-            // 睡眠窗口取前晚 18:00 至當日 12:00 以正確涵蓋跨午夜睡眠
-            val sleepStart = day.minusDays(1).atTime(LocalTime.of(18, 0)).atZone(zone).toInstant()
-            val sleepEnd = day.atTime(LocalTime.of(12, 0)).atZone(zone).toInstant()
-
-            val sleepHours = if (perm.sleep) {
-                runCatching {
-                    val res = client.aggregate(
-                        AggregateRequest(
-                            metrics = setOf(SleepSessionRecord.SLEEP_DURATION_TOTAL),
-                            timeRangeFilter = TimeRangeFilter.between(sleepStart, sleepEnd)
-                        )
-                    )
-                    val dur = res[SleepSessionRecord.SLEEP_DURATION_TOTAL]
-                    if (dur != null) (dur.toMinutes() / 60f) else 0f
-                }.getOrDefault(0f)
-            } else 0f
-
-            val steps = if (perm.steps) {
-                runCatching {
-                    val res = client.aggregate(
-                        AggregateRequest(
-                            metrics = setOf(StepsRecord.COUNT_TOTAL),
-                            timeRangeFilter = TimeRangeFilter.between(start, end)
-                        )
-                    )
-                    res[StepsRecord.COUNT_TOTAL] ?: 0L
-                }.getOrDefault(0L)
-            } else 0L
-
-            val avgHr = if (perm.heartRate) {
-                runCatching {
-                    val res = client.aggregate(
-                        AggregateRequest(
-                            metrics = setOf(HeartRateRecord.BPM_AVG),
-                            timeRangeFilter = TimeRangeFilter.between(start, end)
-                        )
-                    )
-                    res[HeartRateRecord.BPM_AVG] ?: 0L
-                }.getOrDefault(0L)
-            } else 0L
-
-            val distanceMeters = if (perm.distance) {
-                runCatching {
-                    val res = client.aggregate(
-                        AggregateRequest(
-                            metrics = setOf(DistanceRecord.DISTANCE_TOTAL),
-                            timeRangeFilter = TimeRangeFilter.between(start, end)
-                        )
-                    )
-                    res[DistanceRecord.DISTANCE_TOTAL]?.inMeters ?: 0.0
-                }.getOrDefault(0.0)
-            } else 0.0
-
-            val caloriesKcal = if (perm.calories) {
-                runCatching {
-                    val res = client.aggregate(
-                        AggregateRequest(
-                            metrics = setOf(TotalCaloriesBurnedRecord.ENERGY_TOTAL),
-                            timeRangeFilter = TimeRangeFilter.between(start, end)
-                        )
-                    )
-                    res[TotalCaloriesBurnedRecord.ENERGY_TOTAL]?.inKilocalories ?: 0.0
-                }.getOrDefault(0.0)
-            } else 0.0
-
             out.add(
                 DailyHealthPoint(
                     dayLabel = day.format(labelFmt),
-                    sleepHours = sleepHours,
-                    steps = steps,
-                    avgHeartRateBpm = avgHr,
-                    distanceMeters = distanceMeters,
-                    caloriesKcal = caloriesKcal
+                    sleepHours = sleepByDate[day] ?: 0f,
+                    steps = stepsByDate[day] ?: 0L,
+                    avgHeartRateBpm = hrByDate[day] ?: 0L,
+                    distanceMeters = distByDate[day] ?: 0.0,
+                    caloriesKcal = calByDate[day] ?: 0.0
                 )
             )
         }
@@ -274,7 +301,7 @@ object HealthConnectBridge {
         if (!perm.anyGranted) {
             return@withContext "❤️ 查不到健康數據：尚未授權任何 Health Connect 讀取權限，請前往「權限中心」開啟 Health Connect 授權。"
         }
-        val trend = readRecentDaysTrend(ctx, clampedDays)
+        val trend = readRecentDaysTrend(ctx, clampedDays, precheckedPerm = perm)
         val hasAnyData = trend.any {
             it.sleepHours > 0f || it.steps > 0L || it.avgHeartRateBpm > 0L || it.distanceMeters > 0.0 || it.caloriesKcal > 0.0
         }
@@ -309,20 +336,24 @@ object HealthConnectBridge {
         }.trim()
     }
 
-    /** 晨間簡報用本機聚合快照（前一晚睡眠＋昨日步數與心率＋7 日基準心率） */
-    suspend fun readMorningSnapshot(ctx: Context): MorningHealthSnapshot? = withContext(Dispatchers.IO) {
-        val trend = readLast7DaysTrend(ctx)
-        if (trend.isEmpty()) return@withContext null
-        val todayPoint = trend.lastOrNull() ?: return@withContext null
+    /** 由已取得的近 7 日趨勢直接計算晨間簡報快照（零額外 IPC） */
+    fun computeMorningSnapshotFromTrend(trend: List<DailyHealthPoint>): MorningHealthSnapshot? {
+        if (trend.isEmpty()) return null
+        val todayPoint = trend.lastOrNull() ?: return null
         val yesterdayPoint = trend.getOrNull(trend.size - 2) ?: todayPoint
         val hrSamples = trend.mapNotNull { it.avgHeartRateBpm.takeIf { bpm -> bpm > 0L } }
         val baselineHr = if (hrSamples.size >= 3) hrSamples.average().toLong() else 0L
-        MorningHealthSnapshot(
+        return MorningHealthSnapshot(
             lastNightSleepHours = todayPoint.sleepHours,
             yesterdaySteps = yesterdayPoint.steps,
             yesterdayAvgHeartRate = yesterdayPoint.avgHeartRateBpm,
             baseline7dAvgHeartRate = baselineHr
         )
+    }
+
+    /** 晨間簡報用本機聚合快照（前一晚睡眠＋昨日步數與心率＋7 日基準心率） */
+    suspend fun readMorningSnapshot(ctx: Context): MorningHealthSnapshot? = withContext(Dispatchers.IO) {
+        computeMorningSnapshotFromTrend(readLast7DaysTrend(ctx))
     }
 
     /**

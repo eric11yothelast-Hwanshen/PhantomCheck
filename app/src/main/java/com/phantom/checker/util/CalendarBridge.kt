@@ -11,6 +11,7 @@ import android.provider.CalendarContract
 import android.util.LruCache
 import androidx.core.content.ContextCompat
 import com.phantom.checker.data.MessageEntity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -143,6 +144,8 @@ object CalendarBridge {
                     )
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: SecurityException) {
             return@withContext emptyList()
         } catch (_: Exception) {
@@ -219,6 +222,8 @@ object CalendarBridge {
                     )
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: SecurityException) {
             return@withContext emptyList()
         } catch (_: Exception) {
@@ -558,6 +563,8 @@ object CalendarBridge {
             } else {
                 Result.failure(IllegalStateException("日曆寫入失敗，系統未回傳事件 URI"))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: SecurityException) {
             Result.failure(e)
         } catch (e: Exception) {
@@ -677,11 +684,12 @@ object CalendarBridge {
 
     fun formatConflictSummary(conflicts: List<CalendarEventInstance>): String {
         val fmt = SimpleDateFormat("MM/dd HH:mm", Locale.US)
+        val endFmt = SimpleDateFormat("HH:mm", Locale.US)
         return conflicts.take(3).joinToString("；") { ev ->
             if (ev.allDay) {
                 "${ev.title}（全天）"
             } else {
-                "${ev.title} ${fmt.format(Date(ev.beginMs))}–${SimpleDateFormat("HH:mm", Locale.US).format(Date(ev.endMs))}"
+                "${ev.title} ${fmt.format(Date(ev.beginMs))}–${endFmt.format(Date(ev.endMs))}"
             }
         }
     }

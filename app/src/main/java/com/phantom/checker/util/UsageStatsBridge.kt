@@ -196,24 +196,37 @@ object UsageStatsBridge {
                     }
                 }
             }
+            // 結束時補算仍在前景中（尚未收到 PAUSED）之 App 的區間時長
+            for ((pkg, began) in activeStartByPkg) {
+                if (nowMs > began) {
+                    val delta = (nowMs - began).coerceAtMost(4L * 60L * 60L * 1000L)
+                    foregroundMap[pkg] = (foregroundMap[pkg] ?: 0L) + delta
+                }
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (_: Exception) {
         }
 
-        // 2. 若 UsageEvents 前景時間不足，以 queryUsageStats 補齊（取較大者以避免漏計）
+        // 2. 多日 INTERVAL_DAILY bucket 先依 packageName 加總，再與 UsageEvents 取較大者避免漏計
         try {
             val stats = usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startMs, nowMs)
+            val dailyBucketTotals = mutableMapOf<String, Long>()
             stats?.forEach { st ->
                 val pkg = st.packageName ?: return@forEach
                 val fg = st.totalTimeInForeground
                 if (fg > 0L) {
-                    val cur = foregroundMap[pkg] ?: 0L
-                    if (fg > cur && safeDays > 1) {
-                        foregroundMap[pkg] = fg
-                    } else if (cur == 0L) {
-                        foregroundMap[pkg] = fg
-                    }
+                    dailyBucketTotals[pkg] = (dailyBucketTotals[pkg] ?: 0L) + fg
                 }
             }
+            for ((pkg, totalBucketFg) in dailyBucketTotals) {
+                val cur = foregroundMap[pkg] ?: 0L
+                if (totalBucketFg > cur) {
+                    foregroundMap[pkg] = totalBucketFg
+                }
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (_: Exception) {
         }
 
@@ -222,30 +235,39 @@ object UsageStatsBridge {
             pkg != "android" && pkg != "com.android.systemui"
         }
 
-        val entries = allPkgs.mapNotNull { pkg ->
+        data class RawUsageEntry(
+            val packageName: String,
+            val foregroundMs: Long,
+            val launchCount: Int
+        )
+
+        val rawEntries = allPkgs.mapNotNull { pkg ->
             val fg = foregroundMap[pkg] ?: 0L
             val launches = launchMap[pkg] ?: 0
             if (fg <= 0L && launches <= 0) return@mapNotNull null
-            val label = try {
-                val ai = pm.getApplicationInfo(pkg, 0)
-                pm.getApplicationLabel(ai).toString().ifBlank { pkg }
-            } catch (_: Exception) {
-                pkg
-            }
-            AppUsageEntry(
-                packageName = pkg,
-                appLabel = label,
-                foregroundMs = fg,
-                launchCount = launches
-            )
+            RawUsageEntry(packageName = pkg, foregroundMs = fg, launchCount = launches)
         }.sortedWith(
-            compareByDescending<AppUsageEntry> { it.foregroundMs }
+            compareByDescending<RawUsageEntry> { it.foregroundMs }
                 .thenByDescending { it.launchCount }
         )
 
-        val totalFg = entries.sumOf { it.foregroundMs }
-        val totalLaunches = entries.sumOf { it.launchCount }
-        val topEntries = entries.take(safeTop)
+        val totalFg = rawEntries.sumOf { it.foregroundMs }
+        val totalLaunches = rawEntries.sumOf { it.launchCount }
+        // 先排序截斷至 safeTop 再查詢 PackageManager 解析 appLabel，避免多餘 Binder IPC
+        val topEntries = rawEntries.take(safeTop).map { raw ->
+            val label = try {
+                val ai = pm.getApplicationInfo(raw.packageName, 0)
+                pm.getApplicationLabel(ai).toString().ifBlank { raw.packageName }
+            } catch (_: Exception) {
+                raw.packageName
+            }
+            AppUsageEntry(
+                packageName = raw.packageName,
+                appLabel = label,
+                foregroundMs = raw.foregroundMs,
+                launchCount = raw.launchCount
+            )
+        }
 
         val table = buildString {
             appendLine("**App 使用情況（真實系統數據）**")

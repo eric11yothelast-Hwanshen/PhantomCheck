@@ -4,10 +4,10 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.util.Calendar
 import java.util.Locale
 
 /**
@@ -131,8 +131,8 @@ object LocalDataConnector {
         if (!perm.anyGranted) {
             return "Health Connect（睡眠／步數／心率／距離／熱量）讀取權限尚未授權，無法查詢真實生理與健康數據。請誠實告知使用者「尚未授權 Health Connect，無法查詢」，並建議前往「權限中心」開啟 Health Connect 授權，嚴禁估算或編造任何數值。"
         }
-        val trend = HealthConnectBridge.readLast7DaysTrend(ctx)
-        val snapshot = HealthConnectBridge.readMorningSnapshot(ctx)
+        val trend = HealthConnectBridge.readLast7DaysTrend(ctx, precheckedPerm = perm)
+        val snapshot = HealthConnectBridge.computeMorningSnapshotFromTrend(trend)
         val hasSleep = trend.any { it.sleepHours > 0f }
         val hasSteps = trend.any { it.steps > 0L }
         val hasHr = trend.any { it.avgHeartRateBpm > 0L }
@@ -181,19 +181,27 @@ object LocalDataConnector {
             lowerQuery.contains("下週") || lowerQuery.contains("兩週") -> 14
             else -> 7
         }
-        val startCal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
+        val lastDate = today.plusDays((days - 1).toLong())
+        val windowStartMs = today.atStartOfDay(zone).toInstant().toEpochMilli()
+        val windowEndMs = lastDate.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        // 寬查 minusDays(1)..plusDays(2) 以涵蓋 UTC 午夜全天事件與跨 DST 邊界，再精確過濾目標視窗
+        val queryBeginMs = today.minusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val queryEndMs = lastDate.plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli()
+        val events = CalendarBridge.queryInstances(ctx, queryBeginMs, queryEndMs).filter { inst ->
+            if (inst.allDay) {
+                val evStartUtc = Instant.ofEpochMilli(inst.beginMs).atZone(ZoneOffset.UTC).toLocalDate()
+                val evEndUtcRaw = Instant.ofEpochMilli(inst.endMs).atZone(ZoneOffset.UTC).toLocalDate()
+                val evEndUtc = if (evEndUtcRaw.isAfter(evStartUtc)) evEndUtcRaw else evStartUtc.plusDays(1)
+                !lastDate.isBefore(evStartUtc) && !today.isAfter(evEndUtc.minusDays(1))
+            } else {
+                inst.beginMs < windowEndMs && inst.endMs > windowStartMs
+            }
         }
-        val beginMs = startCal.timeInMillis
-        val endMs = beginMs + days.toLong() * 24L * 60L * 60L * 1000L
-        val events = CalendarBridge.queryInstances(ctx, beginMs, endMs)
         if (events.isEmpty()) {
             return "本機日曆未來 $days 天查無行程（已直接查詢勾選的本機日曆，結果為空；只能回答「查不到本機日曆中相關資料」並引導至權限中心勾選日曆，嚴禁編造任何行程）。"
         }
-        val zone = ZoneId.systemDefault()
         val dtFmt = DateTimeFormatter.ofPattern("MM/dd (E) HH:mm", Locale.TAIWAN)
         val timeFmt = DateTimeFormatter.ofPattern("HH:mm", Locale.US)
         val dayFmt = DateTimeFormatter.ofPattern("MM/dd (E)", Locale.TAIWAN)

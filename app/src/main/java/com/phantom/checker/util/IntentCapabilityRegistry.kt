@@ -3,7 +3,6 @@ package com.phantom.checker.util
 import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import androidx.core.app.NotificationManagerCompat
 import com.phantom.checker.ui.PermissionHubActivity
 
@@ -146,12 +145,14 @@ object IntentCapabilityRegistry {
         hasSelectedWritableCalendar: Boolean
     ): String? = when (path) {
         ExecutionPath.REMINDER_EXACT_ALARM -> {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val am = ctx.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
-                if (am != null && !am.canScheduleExactAlarms()) {
-                    "未授予精確鬧鐘權限（SCHEDULE_EXACT_ALARM）"
-                } else null
-            } else null
+            // 對齊 ReminderScheduler 實際排程策略（AlarmManager.setAndAllowWhileIdle，不依賴 SCHEDULE_EXACT_ALARM，
+            // 但需具備 AlarmManager 服務與系統通知權限以便到期顯示提醒）
+            val am = ctx.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            when {
+                am == null -> "系統不支援鬧鐘排程服務（AlarmManager）"
+                !NotificationManagerCompat.from(ctx).areNotificationsEnabled() -> "系統通知權限已關閉"
+                else -> null
+            }
         }
         ExecutionPath.REMINDER_SYSTEM_NOTIF -> {
             if (!NotificationManagerCompat.from(ctx).areNotificationsEnabled()) {

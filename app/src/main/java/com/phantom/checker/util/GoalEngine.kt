@@ -1,14 +1,20 @@
 package com.phantom.checker.util
 
 import android.content.Context
+import androidx.room.withTransaction
+import com.phantom.checker.data.AppDatabase
 import com.phantom.checker.data.GoalEntity
 import com.phantom.checker.data.GoalProgressEntity
 import com.phantom.checker.data.TodoEntity
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.ProactiveEngine
 import com.phantom.checker.service.ReminderScheduler
+import com.phantom.checker.widget.GoalProgressWidgetProvider
+import com.phantom.checker.widget.ReminderWidgetProvider
+import com.phantom.checker.widget.TodoTodayWidgetProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.LocalDate
@@ -26,6 +32,9 @@ import java.time.format.DateTimeFormatter
 object GoalEngine {
 
     private val GOAL_TAG_REGEX = Regex("""^\[目標#(\d+)]\s*""")
+    private val TITLE_PREFIX_REGEX = Regex("""^(?:我)?(?:想要|想|決定|打算|準備|希望能|希望)?(?:養成|建立|開始)?""")
+    private val TITLE_SUFFIX_REGEX = Regex("""(?:的習慣|這個目標|目標|習慣)$""")
+    private val MILESTONE_DIGITS_REGEX = Regex("""\d+""")
 
     private val CADENCE_PATTERNS: List<Pair<Regex, Int>> = listOf(
         Regex("(?:每天|每日|天天|一天一次)") to 1,
@@ -47,7 +56,9 @@ object GoalEngine {
 
     private const val GOAL_ENGINE_PREFS = "phantom_goal_engine"
     private const val KEY_SEEN_MISSED_KEYS = "seen_missed_goal_keys"
+    private const val KEY_SEEN_MISSED_KEYS_ORDERED = "seen_missed_goal_keys_ordered"
     private const val MAX_SEEN_MISSED_KEYS = 200
+    private val seenKeysLock = Any()
     private val DEFAULT_MILESTONES = listOf(3, 7, 14, 30)
 
     data class GoalDisplayItem(
@@ -106,8 +117,8 @@ object GoalEngine {
         if (score < 60) return null
 
         val title = clean
-            .replace(Regex("""^(?:我)?(?:想要|想|決定|打算|準備|希望能|希望)?(?:養成|建立|開始)?"""), "")
-            .replace(Regex("""(?:的習慣|這個目標|目標|習慣)$"""), "")
+            .replace(TITLE_PREFIX_REGEX, "")
+            .replace(TITLE_SUFFIX_REGEX, "")
             .trim()
             .ifBlank { clean }
             .take(36)
@@ -120,6 +131,12 @@ object GoalEngine {
         )
     }
 
+    private suspend fun refreshGoalWidgets(appCtx: Context) {
+        runCatching { GoalProgressWidgetProvider.refreshNow(appCtx) }
+        runCatching { TodoTodayWidgetProvider.refreshNow(appCtx) }
+        runCatching { ReminderWidgetProvider.updateAllIfChanged(appCtx) }
+    }
+
     /** 僅在使用者於確認卡點擊「同意建立」或手動建立按鈕時呼叫；絕不自動執行 */
     suspend fun createGoalAndScheduleNextTodo(
         ctx: Context,
@@ -129,7 +146,8 @@ object GoalEngine {
     ): GoalEntity = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
         val db = AppDatabaseHolder.db(appCtx)
-        val today = LocalDate.now()
+        val zone = ZoneId.systemDefault()
+        val today = LocalDate.now(zone)
         val safeCadence = when {
             cadenceDays <= 1 -> 1
             cadenceDays <= 7 -> 7
@@ -146,10 +164,26 @@ object GoalEngine {
             missedPushStreak = 0,
             createdAt = System.currentTimeMillis()
         )
-        val goalId = db.goalDao().insertGoal(entity)
-        val saved = entity.copy(id = goalId)
-        spawnNextChildTodo(appCtx, saved, baseDate = today)
+        val nextDate = today.plusDays(safeCadence.toLong().coerceAtLeast(1L))
+        val dueMs = nextDate.atTime(LocalTime.of(20, 0)).atZone(zone).toInstant().toEpochMilli()
+
+        val (saved, childTodoId) = db.withTransaction {
+            val goalId = db.goalDao().insertGoal(entity)
+            val savedGoal = entity.copy(id = goalId)
+            val childTitle = "[目標#${savedGoal.id}] ${savedGoal.title}"
+            val todoId = db.todoDao().insert(
+                TodoEntity(
+                    title = childTitle,
+                    dueAt = dueMs,
+                    isDone = false,
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+            savedGoal to todoId
+        }
+        ReminderScheduler.scheduleTodo(appCtx, childTodoId, dueMs)
         PhantomSettingsBus.notifyChanged()
+        refreshGoalWidgets(appCtx)
         saved
     }
 
@@ -209,61 +243,111 @@ object GoalEngine {
         val goalId = match.groupValues.getOrNull(1)?.toLongOrNull() ?: return@withContext false
         val appCtx = ctx.applicationContext
         val db = AppDatabaseHolder.db(appCtx)
-        val goal = db.goalDao().byId(goalId) ?: return@withContext false
-        if (goal.status != GoalEntity.STATUS_ACTIVE) return@withContext false
+        val zone = ZoneId.systemDefault()
 
-        if (db.goalDao().progressForGoal(goalId).any { it.todoId == todo.id }) {
-            return@withContext false
-        }
+        var scheduledChild: Pair<Long, Long>? = null
+        val updated = db.withTransaction {
+            val goal = db.goalDao().byId(goalId) ?: return@withTransaction false
+            if (goal.status != GoalEntity.STATUS_ACTIVE) return@withTransaction false
 
-        val inserted = db.goalDao().insertProgress(
-            GoalProgressEntity(
-                goalId = goalId,
-                todoId = todo.id,
-                completedAt = todo.completedAt ?: System.currentTimeMillis()
+            if (db.goalDao().progressForGoal(goalId).any { it.todoId == todo.id }) {
+                return@withTransaction false
+            }
+
+            val inserted = db.goalDao().insertProgress(
+                GoalProgressEntity(
+                    goalId = goalId,
+                    todoId = todo.id,
+                    completedAt = todo.completedAt ?: System.currentTimeMillis()
+                )
             )
-        )
-        if (inserted <= 0L) return@withContext false
+            if (inserted <= 0L) return@withTransaction false
 
-        // 有互動即歸零連續忽略計數（絕不自動升頻）
-        if (goal.missedPushStreak != 0) {
-            db.goalDao().updateGoal(goal.copy(missedPushStreak = 0))
+            val progressCount = db.goalDao().progressForGoal(goalId).size
+            if (progressCount >= goal.targetCount) {
+                db.goalDao().updateGoal(goal.copy(status = GoalEntity.STATUS_COMPLETED, missedPushStreak = 0))
+            } else {
+                // 有互動即歸零連續忽略計數（絕不自動升頻）
+                if (goal.missedPushStreak != 0) {
+                    db.goalDao().updateGoal(goal.copy(missedPushStreak = 0))
+                }
+                val nextDate = computeAnchoredNextDueDate(
+                    prevDueAtMs = todo.dueAt,
+                    cadenceDays = goal.cadenceDays,
+                    today = LocalDate.now(zone),
+                    zone = zone
+                )
+                val nextDueMs = nextDate.atTime(LocalTime.of(20, 0)).atZone(zone).toInstant().toEpochMilli()
+                val childTitle = "[目標#${goal.id}] ${goal.title}"
+                val nextTodoId = db.todoDao().insert(
+                    TodoEntity(
+                        title = childTitle,
+                        dueAt = nextDueMs,
+                        isDone = false,
+                        createdAt = System.currentTimeMillis()
+                    )
+                )
+                scheduledChild = nextTodoId to nextDueMs
+            }
+            true
         }
-        val progressCount = db.goalDao().progressForGoal(goalId).size
-        if (progressCount >= goal.targetCount) {
-            db.goalDao().updateGoal(goal.copy(status = GoalEntity.STATUS_COMPLETED, missedPushStreak = 0))
-        } else {
-            val zone = ZoneId.systemDefault()
-            val nextDate = computeAnchoredNextDueDate(
-                prevDueAtMs = todo.dueAt,
-                cadenceDays = goal.cadenceDays,
-                today = LocalDate.now(zone),
-                zone = zone
-            )
-            spawnNextChildTodoForDate(appCtx, goal, nextDate)
+        if (!updated) return@withContext false
+
+        scheduledChild?.let { (todoId, dueMs) ->
+            ReminderScheduler.scheduleTodo(appCtx, todoId, dueMs)
         }
         PhantomSettingsBus.notifyChanged()
+        refreshGoalWidgets(appCtx)
         true
+    }
+
+    private fun readOrderedSeenKeysLocked(prefs: android.content.SharedPreferences): MutableList<String> {
+        val rawJson = prefs.getString(KEY_SEEN_MISSED_KEYS_ORDERED, null)
+        if (!rawJson.isNullOrBlank()) {
+            val parsed = runCatching {
+                val arr = JSONArray(rawJson)
+                val list = ArrayList<String>(arr.length())
+                for (i in 0 until arr.length()) {
+                    val item = arr.optString(i, "")
+                    if (item.isNotEmpty()) list.add(item)
+                }
+                list
+            }.getOrNull()
+            if (parsed != null) return parsed
+        }
+        // 一次性相容舊版無序 StringSet
+        val legacy = prefs.getStringSet(KEY_SEEN_MISSED_KEYS, emptySet()).orEmpty()
+        return ArrayList(legacy)
     }
 
     private fun isMissedKeySeen(ctx: Context, key: String): Boolean {
         val prefs = ctx.applicationContext.getSharedPreferences(GOAL_ENGINE_PREFS, Context.MODE_PRIVATE)
-        val raw = prefs.getStringSet(KEY_SEEN_MISSED_KEYS, emptySet()).orEmpty()
-        return key in raw
+        synchronized(seenKeysLock) {
+            return key in readOrderedSeenKeysLocked(prefs)
+        }
     }
 
     private fun markMissedKeySeen(ctx: Context, key: String) {
         val prefs = ctx.applicationContext.getSharedPreferences(GOAL_ENGINE_PREFS, Context.MODE_PRIVATE)
-        val existing = prefs.getStringSet(KEY_SEEN_MISSED_KEYS, emptySet()).orEmpty().toMutableList()
-        if (key !in existing) {
-            existing.add(key)
+        synchronized(seenKeysLock) {
+            val ordered = readOrderedSeenKeysLocked(prefs)
+            if (key !in ordered) {
+                ordered.add(key)
+            }
+            val trimmed = if (ordered.size > MAX_SEEN_MISSED_KEYS) {
+                ordered.subList(ordered.size - MAX_SEEN_MISSED_KEYS, ordered.size)
+            } else {
+                ordered
+            }
+            val arr = JSONArray()
+            for (item in trimmed) {
+                arr.put(item)
+            }
+            prefs.edit()
+                .putString(KEY_SEEN_MISSED_KEYS_ORDERED, arr.toString())
+                .remove(KEY_SEEN_MISSED_KEYS)
+                .apply()
         }
-        val trimmed = if (existing.size > MAX_SEEN_MISSED_KEYS) {
-            existing.takeLast(MAX_SEEN_MISSED_KEYS).toSet()
-        } else {
-            existing.toSet()
-        }
-        prefs.edit().putStringSet(KEY_SEEN_MISSED_KEYS, trimmed).apply()
     }
 
     /**
@@ -278,6 +362,7 @@ object GoalEngine {
         val pendingTodos = runCatching { db.todoDao().pendingTodos() }.getOrDefault(emptyList())
         val overdueThresholdMs = nowMs - 12L * 60L * 60L * 1000L
         val dayKey = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+        var anyGoalMutated = false
 
         for (todo in pendingTodos) {
             if (todo.dueAt > overdueThresholdMs) continue
@@ -298,7 +383,10 @@ object GoalEngine {
             if (nextStreak >= 3) {
                 val lowerCadence = nextLowerCadence(goal.cadenceDays)
                 if (lowerCadence != null) {
-                    db.goalDao().updateGoal(goal.copy(cadenceDays = lowerCadence, missedPushStreak = 0))
+                    db.withTransaction {
+                        db.goalDao().updateGoal(goal.copy(cadenceDays = lowerCadence, missedPushStreak = 0))
+                    }
+                    anyGoalMutated = true
                     ProactiveEngine.deliverProactiveAlert(
                         ctx = appCtx,
                         title = "長程目標頻率自動調降",
@@ -307,16 +395,26 @@ object GoalEngine {
                         milestoneKeys = listOf("goal_downscale:${goal.id}:$dayKey")
                     )
                 } else {
-                    db.goalDao().updateGoal(goal.copy(missedPushStreak = 0))
+                    db.withTransaction {
+                        db.goalDao().updateGoal(goal.copy(missedPushStreak = 0))
+                    }
+                    anyGoalMutated = true
                 }
             } else {
-                db.goalDao().updateGoal(goal.copy(missedPushStreak = nextStreak))
+                db.withTransaction {
+                    db.goalDao().updateGoal(goal.copy(missedPushStreak = nextStreak))
+                }
+                anyGoalMutated = true
             }
+        }
+        if (anyGoalMutated) {
+            PhantomSettingsBus.notifyChanged()
+            refreshGoalWidgets(appCtx)
         }
     }
 
     internal fun parseMilestones(milestoneJson: String): List<Int> {
-        val parsed = Regex("""\d+""")
+        val parsed = MILESTONE_DIGITS_REGEX
             .findAll(milestoneJson)
             .mapNotNull { it.value.toIntOrNull() }
             .filter { it > 0 }
@@ -344,9 +442,30 @@ object GoalEngine {
         return nextCount to startDate.plusDays(offsetDays)
     }
 
+    /** 單次查詢載入所有 goal_progress 並依 goalId 分組（消除 loadGoalDisplayItems 之 N+1 查詢）。 */
+    private fun loadAllProgressGroupedByGoalId(db: AppDatabase): Map<Long, List<GoalProgressEntity>> {
+        val grouped = HashMap<Long, MutableList<GoalProgressEntity>>()
+        db.openHelper.readableDatabase.query(
+            "SELECT id, goalId, todoId, completedAt FROM goal_progress ORDER BY completedAt DESC"
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val item = GoalProgressEntity(
+                    id = cursor.getLong(0),
+                    goalId = cursor.getLong(1),
+                    todoId = cursor.getLong(2),
+                    completedAt = cursor.getLong(3)
+                )
+                grouped.getOrPut(item.goalId) { ArrayList() }.add(item)
+            }
+        }
+        return grouped
+    }
+
     suspend fun loadGoalDisplayItems(ctx: Context): List<GoalDisplayItem> = withContext(Dispatchers.IO) {
         val db = AppDatabaseHolder.db(ctx.applicationContext)
         val goals = runCatching { db.goalDao().allGoals() }.getOrDefault(emptyList())
+        if (goals.isEmpty()) return@withContext emptyList()
+        val progressByGoalId = runCatching { loadAllProgressGroupedByGoalId(db) }.getOrDefault(emptyMap())
         val pendingTodos = runCatching { db.todoDao().pendingTodos() }.getOrDefault(emptyList())
         val pendingDueByGoalId = HashMap<Long, Long>()
         for (todo in pendingTodos) {
@@ -360,7 +479,7 @@ object GoalEngine {
         val zone = ZoneId.systemDefault()
         val fmt = DateTimeFormatter.ofPattern("MM/dd")
         goals.map { g ->
-            val progress = runCatching { db.goalDao().progressForGoal(g.id) }.getOrDefault(emptyList())
+            val progress = progressByGoalId[g.id].orEmpty()
             val distinctDates = progress
                 .map { Instant.ofEpochMilli(it.completedAt).atZone(zone).toLocalDate() }
                 .distinct()

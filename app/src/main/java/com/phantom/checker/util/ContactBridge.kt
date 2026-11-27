@@ -8,16 +8,20 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.ContactsContract
 import androidx.core.content.ContextCompat
+import androidx.room.withTransaction
 import com.phantom.checker.data.AiRuleEntity
 import com.phantom.checker.data.AppDatabase
 import com.phantom.checker.data.MemoryEngine
 import com.phantom.checker.data.MemoryEntity
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.NotificationCollectorService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -33,6 +37,7 @@ object ContactBridge {
     private const val VIP_SYNC_THROTTLE_MS = 10L * 60L * 1000L // ≥10 分鐘節流
     private val observerRegistered = AtomicBoolean(false)
     private val observerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val vipSyncMutex = Mutex()
 
     data class ContactRecord(
         val contactId: Long,
@@ -54,7 +59,8 @@ object ContactBridge {
         val displayName: String,
         val subject: String,
         val summary: String,
-        val isUpdate: Boolean
+        val isUpdate: Boolean,
+        val contactId: Long = 0L
     )
 
     data class VipSyncResult(
@@ -99,6 +105,8 @@ object ContactBridge {
                     }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: SecurityException) {
             return@withContext emptyList()
         } catch (_: Exception) {
@@ -193,6 +201,8 @@ object ContactBridge {
                     }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: SecurityException) {
             return@withContext emptyList()
         } catch (_: Exception) {
@@ -224,11 +234,11 @@ object ContactBridge {
         val contacts = queryContacts(ctx)
         if (contacts.isEmpty()) return@withContext emptyList()
         val groupNameById = queryGroups(ctx).associate { it.groupId to it.title }
-        val existingContactsMemories = db.memoryDao().all().filter {
-            it.category == MemoryEntity.CATEGORY_PERSON &&
-                it.status == MemoryEntity.STATUS_ACTIVE &&
-                (it.sourceType == MemoryEntity.SOURCE_CONTACTS || it.sourceRef?.startsWith("通訊錄匯入") == true)
-        }
+        val existingContactsMemories = db.memoryDao()
+            .findByCategoryAndStatus(MemoryEntity.CATEGORY_PERSON, MemoryEntity.STATUS_ACTIVE)
+            .filter {
+                it.sourceType == MemoryEntity.SOURCE_CONTACTS || it.sourceRef?.startsWith("通訊錄匯入") == true
+            }
         val existingByNormSubject = existingContactsMemories.associateBy {
             MemoryEngine.normalizeSubjectKey(it.subject)
         }
@@ -255,7 +265,8 @@ object ContactBridge {
                     displayName = c.displayName,
                     subject = c.displayName,
                     summary = summary,
-                    isUpdate = existing != null
+                    isUpdate = existing != null,
+                    contactId = c.contactId
                 )
             )
         }
@@ -292,6 +303,7 @@ object ContactBridge {
     /**
      * VIP 信任圈連動白名單（AiRuleEntity kind=whitelist，ruleText 前綴 [contacts_vip]）：
      * 僅增刪 contacts_vip 來源規則，不動使用者手動規則；自動觸發節流 ≥10 分鐘。
+     * 以 Mutex 序列化並以 db.withTransaction 確保增刪原子性。
      */
     suspend fun syncVipTrustCircle(
         ctx: Context,
@@ -300,79 +312,89 @@ object ContactBridge {
         groupId: Long? = PhantomPrefs.getContactsVipGroupId(ctx),
         force: Boolean = false
     ): VipSyncResult = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
-        if (!force && (now - PhantomPrefs.getContactsVipLastSyncAt(ctx)) < VIP_SYNC_THROTTLE_MS) {
-            val currentCount = db.aiRuleDao().all().count {
-                it.kind == AiRuleEntity.KIND_WHITELIST &&
-                    it.ruleText.startsWith(AiRuleEntity.CONTACTS_VIP_RULE_PREFIX)
+        vipSyncMutex.withLock {
+            val now = System.currentTimeMillis()
+            if (!force && (now - PhantomPrefs.getContactsVipLastSyncAt(ctx)) < VIP_SYNC_THROTTLE_MS) {
+                val currentCount = db.aiRuleDao().all().count {
+                    it.kind == AiRuleEntity.KIND_WHITELIST &&
+                        it.ruleText.startsWith(AiRuleEntity.CONTACTS_VIP_RULE_PREFIX)
+                }
+                return@withLock VipSyncResult(added = 0, removed = 0, totalVip = currentCount, throttled = true)
             }
-            return@withContext VipSyncResult(added = 0, removed = 0, totalVip = currentCount, throttled = true)
-        }
-        if (mode == PhantomPrefs.CONTACTS_VIP_MODE_OFF || !hasReadContactsPermission(ctx)) {
-            return@withContext VipSyncResult(added = 0, removed = 0, totalVip = 0)
-        }
-
-        val contacts = queryContacts(ctx)
-        val vipNames = contacts.filter { c ->
-            when (mode) {
-                PhantomPrefs.CONTACTS_VIP_MODE_STARRED -> c.starred
-                PhantomPrefs.CONTACTS_VIP_MODE_GROUP -> groupId != null && groupId in c.groupIds
-                else -> false
+            if (mode == PhantomPrefs.CONTACTS_VIP_MODE_OFF || !hasReadContactsPermission(ctx)) {
+                return@withLock VipSyncResult(added = 0, removed = 0, totalVip = 0)
             }
-        }.map { it.displayName.trim() }.filter { it.isNotEmpty() }.distinct()
-        val vipSetLower = vipNames.map { it.lowercase(Locale.ROOT) }.toSet()
 
-        val allRules = db.aiRuleDao().all()
-        val existingVipRules = allRules.filter {
-            it.kind == AiRuleEntity.KIND_WHITELIST &&
-                it.ruleText.startsWith(AiRuleEntity.CONTACTS_VIP_RULE_PREFIX)
-        }
-        val existingSendersLower = existingVipRules.mapNotNull { it.sender?.trim()?.lowercase(Locale.ROOT) }.toSet()
+            // ContentResolver IPC 執行於交易之外，避免長時間鎖住 SQLite
+            val contacts = queryContacts(ctx)
+            val vipNames = contacts.filter { c ->
+                when (mode) {
+                    PhantomPrefs.CONTACTS_VIP_MODE_STARRED -> c.starred
+                    PhantomPrefs.CONTACTS_VIP_MODE_GROUP -> groupId != null && groupId in c.groupIds
+                    else -> false
+                }
+            }.map { it.displayName.trim() }.filter { it.isNotEmpty() }.distinct()
+            val vipSetLower = vipNames.map { it.lowercase(Locale.ROOT) }.toSet()
 
-        var added = 0
-        var removed = 0
-        for (rule in existingVipRules) {
-            val s = rule.sender?.trim()?.lowercase(Locale.ROOT).orEmpty()
-            if (s.isEmpty() || s !in vipSetLower) {
-                db.aiRuleDao().deleteById(rule.id)
-                removed++
-            }
-        }
-        for (name in vipNames) {
-            if (name.lowercase(Locale.ROOT) !in existingSendersLower) {
-                val res = com.phantom.checker.data.WhitelistRuleHelper.upsertWhitelist(
-                    dao = db.aiRuleDao(),
-                    ruleText = "${AiRuleEntity.CONTACTS_VIP_RULE_PREFIX}通訊錄 VIP 信任圈：$name",
-                    sender = name,
-                    packageName = null
-                )
-                if (res.status == com.phantom.checker.data.WhitelistRuleHelper.Status.INSERTED ||
-                    res.status == com.phantom.checker.data.WhitelistRuleHelper.Status.REACTIVATED
-                ) {
-                    added++
+            var added = 0
+            var removed = 0
+            db.withTransaction {
+                val allRules = db.aiRuleDao().all()
+                val existingVipRules = allRules.filter {
+                    it.kind == AiRuleEntity.KIND_WHITELIST &&
+                        it.ruleText.startsWith(AiRuleEntity.CONTACTS_VIP_RULE_PREFIX)
+                }
+                val existingSendersLower = existingVipRules.mapNotNull { it.sender?.trim()?.lowercase(Locale.ROOT) }.toSet()
+
+                for (rule in existingVipRules) {
+                    val s = rule.sender?.trim()?.lowercase(Locale.ROOT).orEmpty()
+                    if (s.isEmpty() || s !in vipSetLower) {
+                        db.aiRuleDao().deleteById(rule.id)
+                        removed++
+                    }
+                }
+                for (name in vipNames) {
+                    if (name.lowercase(Locale.ROOT) !in existingSendersLower) {
+                        val res = com.phantom.checker.data.WhitelistRuleHelper.upsertWhitelist(
+                            dao = db.aiRuleDao(),
+                            ruleText = "${AiRuleEntity.CONTACTS_VIP_RULE_PREFIX}通訊錄 VIP 信任圈：$name",
+                            sender = name,
+                            packageName = null
+                        )
+                        if (res.status == com.phantom.checker.data.WhitelistRuleHelper.Status.INSERTED ||
+                            res.status == com.phantom.checker.data.WhitelistRuleHelper.Status.REACTIVATED
+                        ) {
+                            added++
+                        }
+                    }
                 }
             }
+            PhantomPrefs.setContactsVipLastSyncAt(ctx, now)
+            if (added > 0 || removed > 0) {
+                NotificationCollectorService.invalidateRuleCaches()
+                ContactContext.invalidateCache()
+            }
+            VipSyncResult(added = added, removed = removed, totalVip = vipNames.size)
         }
-        PhantomPrefs.setContactsVipLastSyncAt(ctx, now)
-        if (added > 0 || removed > 0) {
-            NotificationCollectorService.invalidateRuleCaches()
-            ContactContext.invalidateCache()
-        }
-        VipSyncResult(added = added, removed = removed, totalVip = vipNames.size)
     }
 
     /** 整批撤銷 contacts_vip 來源白名單（不動使用者手動規則） */
     suspend fun revokeVipTrustCircle(db: AppDatabase): Int = withContext(Dispatchers.IO) {
-        val existingVipRules = db.aiRuleDao().all().filter {
-            it.kind == AiRuleEntity.KIND_WHITELIST &&
-                it.ruleText.startsWith(AiRuleEntity.CONTACTS_VIP_RULE_PREFIX)
+        vipSyncMutex.withLock {
+            val removedCount = db.withTransaction {
+                val existingVipRules = db.aiRuleDao().all().filter {
+                    it.kind == AiRuleEntity.KIND_WHITELIST &&
+                        it.ruleText.startsWith(AiRuleEntity.CONTACTS_VIP_RULE_PREFIX)
+                }
+                existingVipRules.forEach { db.aiRuleDao().deleteById(it.id) }
+                existingVipRules.size
+            }
+            if (removedCount > 0) {
+                NotificationCollectorService.invalidateRuleCaches()
+                ContactContext.invalidateCache()
+            }
+            removedCount
         }
-        existingVipRules.forEach { db.aiRuleDao().deleteById(it.id) }
-        if (existingVipRules.isNotEmpty()) {
-            NotificationCollectorService.invalidateRuleCaches()
-            ContactContext.invalidateCache()
-        }
-        existingVipRules.size
     }
 
     /** 本機比對寄件者暱稱是否疑似某通訊錄聯絡人（零 AI 外送，供聊天確認卡綁定） */

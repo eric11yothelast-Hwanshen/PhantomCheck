@@ -7,6 +7,7 @@ import android.provider.ContactsContract
 import android.util.LruCache
 import androidx.core.content.ContextCompat
 import com.phantom.checker.data.MemoryEntity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
@@ -25,14 +26,26 @@ object ContactContext {
 
     private const val CACHE_KEY = "contacts_display_names"
     private const val CACHE_TTL_MS = 30L * 60L * 1000L // 30 分鐘 TTL，禁止逐訊息全量重讀
+    private const val ALIAS_CACHE_TTL_MS = 5L * 60L * 1000L // 5 分鐘 contactAlias TTL 快取
+    private const val MAX_BODY_SCAN_CHARS = 500
+    private const val MAX_SEARCHABLE_NAME_LEN = 32
 
     private data class CachedContacts(
         val normalizedNames: Set<String>,
+        val bodySearchNames: List<String>,
         val loadedAtMs: Long,
         val permissionGranted: Boolean
     )
 
+    private data class CachedAliases(
+        val byNormAlias: Map<String, Set<String?>>,
+        val loadedAtMs: Long
+    )
+
     private val contactsCache = LruCache<String, CachedContacts>(1)
+    private val aliasCacheLock = Any()
+    @Volatile
+    private var cachedAliases: CachedAliases? = null
     private val cacheGeneration = AtomicLong(1L)
 
     private val NON_ALNUM_CJK_REGEX = Regex("""[\p{P}\p{S}\s]+""")
@@ -87,17 +100,58 @@ object ContactContext {
         synchronized(contactsCache) {
             contactsCache.evictAll()
         }
+        synchronized(aliasCacheLock) {
+            cachedAliases = null
+        }
         cacheGeneration.incrementAndGet()
     }
 
     private fun normalizeName(raw: String): String =
         raw.trim().lowercase(Locale.ROOT).replace(NON_ALNUM_CJK_REGEX, "")
 
-    /**
-     * 於 Dispatchers.IO 讀取本機通訊錄 displayName Set（含 30 分鐘 LruCache 快取）。
-     * 權限未授予或發生任何例外皆回傳 emptySet()，絕不崩潰。
-     */
-    suspend fun getNormalizedContactNames(ctx: Context, nowMs: Long = System.currentTimeMillis()): Pair<Set<String>, Boolean> {
+    /** 判斷名稱是否適合用於高頻內文子字串比對（純 ASCII 需 ≥3 字元避免雜訊誤判，CJK 需 ≥2 字元，上限 32 字元） */
+    private fun isEligibleForBodyMatch(normName: String): Boolean {
+        val len = normName.length
+        if (len < 2 || len > MAX_SEARCHABLE_NAME_LEN) return false
+        val isPureAscii = normName.all { it.code < 128 }
+        return !isPureAscii || len >= 3
+    }
+
+    private suspend fun getCachedAliasMap(
+        ctx: Context,
+        nowMs: Long = System.currentTimeMillis()
+    ): Map<String, Set<String?>> {
+        val snapshot = cachedAliases
+        if (snapshot != null && (nowMs - snapshot.loadedAtMs) < ALIAS_CACHE_TTL_MS) {
+            return snapshot.byNormAlias
+        }
+        return withContext(Dispatchers.IO) {
+            try {
+                val aliases = com.phantom.checker.service.AppDatabaseHolder.db(ctx).contactAliasDao().all()
+                val map = HashMap<String, MutableSet<String?>>(aliases.size)
+                for (entry in aliases) {
+                    val norm = normalizeName(entry.alias)
+                    if (norm.length < 2) continue
+                    val pkg = entry.packageName?.trim()?.takeIf { it.isNotEmpty() }?.lowercase(Locale.ROOT)
+                    map.getOrPut(norm) { HashSet() }.add(pkg)
+                }
+                val entry = CachedAliases(byNormAlias = map, loadedAtMs = nowMs)
+                synchronized(aliasCacheLock) {
+                    cachedAliases = entry
+                }
+                map
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                emptyMap()
+            }
+        }
+    }
+
+    private suspend fun getCachedContactsEntry(
+        ctx: Context,
+        nowMs: Long = System.currentTimeMillis()
+    ): CachedContacts {
         val granted = hasContactsPermission(ctx)
         synchronized(contactsCache) {
             val cached = contactsCache.get(CACHE_KEY)
@@ -105,16 +159,17 @@ object ContactContext {
                 cached.permissionGranted == granted &&
                 (nowMs - cached.loadedAtMs) < CACHE_TTL_MS
             ) {
-                return cached.normalizedNames to cached.permissionGranted
+                return cached
             }
         }
         if (!granted) {
-            val empty = CachedContacts(emptySet(), nowMs, permissionGranted = false)
+            val empty = CachedContacts(emptySet(), emptyList(), nowMs, permissionGranted = false)
             synchronized(contactsCache) { contactsCache.put(CACHE_KEY, empty) }
-            return emptySet<String>() to false
+            return empty
         }
         return withContext(Dispatchers.IO) {
             val names = LinkedHashSet<String>()
+            val bodyNames = ArrayList<String>()
             try {
                 val projection = arrayOf(ContactsContract.Contacts.DISPLAY_NAME_PRIMARY)
                 ctx.contentResolver.query(
@@ -129,23 +184,36 @@ object ContactContext {
                         while (cursor.moveToNext()) {
                             val raw = cursor.getString(idx) ?: continue
                             val norm = normalizeName(raw)
-                            if (norm.length >= 2) {
-                                names.add(norm)
+                            if (norm.length >= 2 && names.add(norm)) {
+                                if (isEligibleForBodyMatch(norm)) {
+                                    bodyNames.add(norm)
+                                }
                             }
                         }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: SecurityException) {
                 // 權限在執行期間遭撤銷：降級純記憶比對
             } catch (_: Exception) {
                 // 裝置通訊錄異常：安全降級
             }
-            val entry = CachedContacts(names, nowMs, permissionGranted = true)
+            val entry = CachedContacts(names, bodyNames, nowMs, permissionGranted = true)
             synchronized(contactsCache) {
                 contactsCache.put(CACHE_KEY, entry)
             }
-            names to true
+            entry
         }
+    }
+
+    /**
+     * 於 Dispatchers.IO 讀取本機通訊錄 displayName Set（含 30 分鐘 LruCache 快取）。
+     * 權限未授予或發生任何例外皆回傳 emptySet()，絕不崩潰。
+     */
+    suspend fun getNormalizedContactNames(ctx: Context, nowMs: Long = System.currentTimeMillis()): Pair<Set<String>, Boolean> {
+        val entry = getCachedContactsEntry(ctx, nowMs)
+        return entry.normalizedNames to entry.permissionGranted
     }
 
     /**
@@ -168,7 +236,9 @@ object ContactContext {
                 it.status == MemoryEntity.STATUS_ACTIVE &&
                 it.category == MemoryEntity.CATEGORY_PERSON
         }
-        val (contactNames, contactsGranted) = getNormalizedContactNames(ctx)
+        val contactsEntry = getCachedContactsEntry(ctx)
+        val contactNames = contactsEntry.normalizedNames
+        val contactsGranted = contactsEntry.permissionGranted
 
         val normSender = normalizeName(sender)
         val normContent = normalizeName(content)
@@ -176,18 +246,11 @@ object ContactContext {
         val lowerPkg = packageName.lowercase(Locale.ROOT)
         val lowerApp = appLabel.lowercase(Locale.ROOT)
 
-        val senderInContacts = normSender.length >= 2 && contactNames.any { it == normSender }
-        val senderMatchedAlias = if (normSender.length >= 2) {
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    val aliases = com.phantom.checker.service.AppDatabaseHolder.db(ctx).contactAliasDao().all()
-                    aliases.any { entry ->
-                        val pkgMatch = entry.packageName.isNullOrBlank() ||
-                            entry.packageName.equals(packageName, ignoreCase = true)
-                        pkgMatch && normalizeName(entry.alias) == normSender
-                    }
-                }
-            }.getOrDefault(false)
+        val senderInContacts = normSender.length >= 2 && normSender in contactNames
+        val senderMatchedAlias = if (!senderInContacts && normSender.length >= 2) {
+            val aliasMap = getCachedAliasMap(ctx)
+            val pkgs = aliasMap[normSender]
+            pkgs != null && (null in pkgs || lowerPkg in pkgs)
         } else {
             false
         }
@@ -204,14 +267,22 @@ object ContactContext {
         val hasUrgencyKeyword = URGENCY_SCAM_KEYWORDS.any { lowerContent.contains(it) }
         val hasImpersonationPhrase = IMPERSONATION_SELF_REF_KEYWORDS.any { lowerContent.contains(it) }
 
-        // 檢查訊息內文是否提及已知聯絡人或 person 記憶中的人物稱呼（僅記錄「是否命中」，絕不輸出原始姓名）
+        // 檢查訊息內文是否提及已知聯絡人或 person 記憶中的人物稱呼（長度過濾＋上限截斷，絕不輸出原始姓名）
         val mentionsKnownPersonInBody = if (!isKnownSender && normContent.length >= 4) {
+            val bodyForScan = if (normContent.length > MAX_BODY_SCAN_CHARS) {
+                normContent.substring(0, MAX_BODY_SCAN_CHARS)
+            } else {
+                normContent
+            }
+            val bodyLen = bodyForScan.length
             val hitMemoryPerson = safePersonMemories.any { mem ->
                 val subj = normalizeName(mem.subject)
-                subj.length >= 2 && normContent.contains(subj)
+                subj.length <= bodyLen && isEligibleForBodyMatch(subj) && bodyForScan.contains(subj)
             }
-            val hitContact = if (!hitMemoryPerson && contactNames.isNotEmpty()) {
-                contactNames.any { name -> name.length >= 2 && normContent.contains(name) }
+            val hitContact = if (!hitMemoryPerson && contactsEntry.bodySearchNames.isNotEmpty()) {
+                contactsEntry.bodySearchNames.any { name ->
+                    name.length <= bodyLen && bodyForScan.contains(name)
+                }
             } else {
                 false
             }

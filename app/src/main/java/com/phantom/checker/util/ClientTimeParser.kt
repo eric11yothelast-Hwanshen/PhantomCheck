@@ -25,27 +25,36 @@ sealed class NaturalTimeParseResult {
  */
 object ClientTimeParser {
 
-    private val STRUCTURED_PATTERNS = listOf(
+    private val STRUCTURED_FORMATTERS = listOf(
         "yyyy-MM-dd HH:mm",
         "yyyy-MM-dd'T'HH:mm",
         "yyyy-MM-dd HH:mm:ss",
         "yyyy-MM-dd'T'HH:mm:ss",
         "yyyy/MM/dd HH:mm",
         "yyyy/MM/dd HH:mm:ss"
-    )
+    ).map { DateTimeFormatter.ofPattern(it) }
+
+    private val HALF_HOUR_LATER_REGEX = Regex("""半(?:個)?小時(?:以)?後""")
+    private val HOURS_LATER_REGEX = Regex("""(\d+(?:\.\d+)?)\s*(?:個)?小時(?:以)?後""")
+    private val MINUTES_LATER_REGEX = Regex("""(\d+)\s*分鐘(?:以)?後""")
+    private val DAYS_LATER_REGEX = Regex("""(\d+)\s*天(?:以)?後""")
+    private val YMD_DATE_REGEX = Regex("""(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})""")
+    private val MD_DATE_REGEX = Regex("""(\d{1,2})[月/\-](\d{1,2})日?""")
+    private val DOW_DATE_REGEX = Regex("""(下)?(?:這|本)?(?:星期|禮拜|週)([一二三四五六日天])""")
+    private val COLON_TIME_REGEX = Regex("""(\d{1,2})\s*[:：]\s*(\d{2})""")
+    private val CN_TIME_REGEX = Regex("""(\d{1,2})\s*[點時]\s*(半|(\d{1,2})\s*分?)?""")
 
     /**
      * 僅解析結構化時間字串（如 AI 輸出的 `yyyy-MM-dd HH:mm`），不猜測自然語言；
      * 解析失敗或空白回傳 null。
      */
-    fun parseStructuredDueAt(rawTime: String?): Long? {
+    fun parseStructuredDueAt(rawTime: String?, zone: ZoneId = ZoneId.systemDefault()): Long? {
         if (rawTime.isNullOrBlank()) return null
         val trimmed = rawTime.trim()
-        val zone = ZoneId.systemDefault()
         runCatching { ZonedDateTime.parse(trimmed).toInstant().toEpochMilli() }.getOrNull()?.let { return it }
         runCatching { OffsetDateTime.parse(trimmed).toInstant().toEpochMilli() }.getOrNull()?.let { return it }
-        for (pat in STRUCTURED_PATTERNS) {
-            val ldt = runCatching { LocalDateTime.parse(trimmed, DateTimeFormatter.ofPattern(pat)) }.getOrNull()
+        for (formatter in STRUCTURED_FORMATTERS) {
+            val ldt = runCatching { LocalDateTime.parse(trimmed, formatter) }.getOrNull()
             if (ldt != null) {
                 return ldt.atZone(zone).toInstant().toEpochMilli()
             }
@@ -56,79 +65,79 @@ object ClientTimeParser {
     fun parseNaturalReminderTime(
         rawTime: String?,
         rawQuery: String,
-        nowMs: Long = System.currentTimeMillis()
+        nowMs: Long = System.currentTimeMillis(),
+        zone: ZoneId = ZoneId.systemDefault()
     ): NaturalTimeParseResult {
-        val zone = ZoneId.systemDefault()
         val nowZdt = Instant.ofEpochMilli(nowMs).atZone(zone)
-        val nowLdt = nowZdt.toLocalDateTime()
 
         // 1. 優先嘗試結構化 ISO-8601 / yyyy-MM-dd HH:mm（AI 輸出）
-        parseStructuredDueAt(rawTime)?.let { ms ->
+        parseStructuredDueAt(rawTime, zone)?.let { ms ->
             return if (ms > nowMs) NaturalTimeParseResult.Success(ms) else NaturalTimeParseResult.PastTime(ms)
         }
 
         // 2. 用戶端確定性自然語言時間解析（先看 rawTime，若無再看 rawQuery）
         val candidates = listOfNotNull(rawTime?.takeIf { it.isNotBlank() }, rawQuery.takeIf { it.isNotBlank() })
         for (text in candidates) {
-            parseNaturalTextWithZone(text, nowLdt, nowMs, zone)?.let { return it }
+            parseNaturalTextWithZone(text, nowZdt, nowMs, zone)?.let { return it }
         }
         return NaturalTimeParseResult.Unparseable
     }
 
     private fun parseNaturalTextWithZone(
         text: String,
-        nowLdt: LocalDateTime,
+        nowZdt: ZonedDateTime,
         nowMs: Long,
         zone: ZoneId
     ): NaturalTimeParseResult? {
         val s = text.trim()
         if (s.isEmpty()) return null
 
-        // 2a. 相對時長：半小時後、X 小時後、X 分鐘後、X 天後
-        if (Regex("""半(?:個)?小時(?:以)?後""").containsMatchIn(s)) {
-            val target = nowLdt.plusMinutes(30).withSecond(0).withNano(0)
-            return NaturalTimeParseResult.Success(target.atZone(zone).toInstant().toEpochMilli())
+        // 2a. 相對時長（以 Instant/ZonedDateTime 累加，跨 DST 切換仍精確）
+        if (HALF_HOUR_LATER_REGEX.containsMatchIn(s)) {
+            val target = nowZdt.plusMinutes(30).withSecond(0).withNano(0)
+            return NaturalTimeParseResult.Success(target.toInstant().toEpochMilli())
         }
-        Regex("""(\d+(?:\.\d+)?)\s*(?:個)?小時(?:以)?後""").find(s)?.let { m ->
+        HOURS_LATER_REGEX.find(s)?.let { m ->
             val hours = m.groupValues[1].toDoubleOrNull()
             if (hours != null && hours > 0) {
                 val mins = (hours * 60.0).roundToInt().coerceAtLeast(1)
-                val target = nowLdt.plusMinutes(mins.toLong()).withSecond(0).withNano(0)
-                return NaturalTimeParseResult.Success(target.atZone(zone).toInstant().toEpochMilli())
+                val target = nowZdt.plusMinutes(mins.toLong()).withSecond(0).withNano(0)
+                return NaturalTimeParseResult.Success(target.toInstant().toEpochMilli())
             }
         }
-        Regex("""(\d+)\s*分鐘(?:以)?後""").find(s)?.let { m ->
+        MINUTES_LATER_REGEX.find(s)?.let { m ->
             val mins = m.groupValues[1].toLongOrNull()
             if (mins != null && mins > 0L) {
-                val target = nowLdt.plusMinutes(mins).withSecond(0).withNano(0)
-                return NaturalTimeParseResult.Success(target.atZone(zone).toInstant().toEpochMilli())
-            }
-        }
-        Regex("""(\d+)\s*天(?:以)?後""").find(s)?.let { m ->
-            val days = m.groupValues[1].toLongOrNull()
-            if (days != null && days > 0L) {
-                val targetDate = nowLdt.toLocalDate().plusDays(days)
-                val target = LocalDateTime.of(targetDate, LocalTime.of(9, 0))
-                return NaturalTimeParseResult.Success(target.atZone(zone).toInstant().toEpochMilli())
+                val target = nowZdt.plusMinutes(mins).withSecond(0).withNano(0)
+                return NaturalTimeParseResult.Success(target.toInstant().toEpochMilli())
             }
         }
 
-        // 2b. 日期解析
-        val today = nowLdt.toLocalDate()
+        // 2b. 日期解析（含「X 天後」，保留時間部分往下繼續解析）
+        val today = nowZdt.toLocalDate()
         var parsedDate: LocalDate? = null
         var hasExplicitDate = false
 
-        Regex("""(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})""").find(s)?.let { m ->
-            val y = m.groupValues[1].toIntOrNull()
-            val mo = m.groupValues[2].toIntOrNull()
-            val d = m.groupValues[3].toIntOrNull()
-            if (y != null && mo != null && d != null) {
-                parsedDate = runCatching { LocalDate.of(y, mo, d) }.getOrNull()
-                if (parsedDate != null) hasExplicitDate = true
+        DAYS_LATER_REGEX.find(s)?.let { m ->
+            val days = m.groupValues[1].toLongOrNull()
+            if (days != null && days > 0L) {
+                parsedDate = today.plusDays(days)
+                hasExplicitDate = true
             }
         }
         if (parsedDate == null) {
-            Regex("""(\d{1,2})[月/\-](\d{1,2})日?""").find(s)?.let { m ->
+            YMD_DATE_REGEX.find(s)?.let { m ->
+                val y = m.groupValues[1].toIntOrNull()
+                val mo = m.groupValues[2].toIntOrNull()
+                val d = m.groupValues[3].toIntOrNull()
+                if (y != null && mo != null && d != null) {
+                    parsedDate = runCatching { LocalDate.of(y, mo, d) }.getOrNull()
+                    if (parsedDate != null) hasExplicitDate = true
+                }
+            }
+        }
+        if (parsedDate == null) {
+            MD_DATE_REGEX.find(s)?.let { m ->
                 val mo = m.groupValues[1].toIntOrNull()
                 val d = m.groupValues[2].toIntOrNull()
                 if (mo != null && d != null) {
@@ -156,7 +165,7 @@ object ClientTimeParser {
             }
         }
         if (parsedDate == null) {
-            val dowMatch = Regex("""(下)?(?:這|本)?(?:星期|禮拜|週)([一二三四五六日天])""").find(s)
+            val dowMatch = DOW_DATE_REGEX.find(s)
             if (dowMatch != null) {
                 val isNextWeek = dowMatch.groupValues[1] == "下"
                 val dow = when (dowMatch.groupValues[2]) {
@@ -183,7 +192,7 @@ object ClientTimeParser {
         var minute = 0
         var hasExplicitTime = false
 
-        val colonMatch = Regex("""(\d{1,2})\s*[:：]\s*(\d{2})""").find(s)
+        val colonMatch = COLON_TIME_REGEX.find(s)
         if (colonMatch != null) {
             val h = colonMatch.groupValues[1].toIntOrNull()
             val min = colonMatch.groupValues[2].toIntOrNull()
@@ -194,7 +203,7 @@ object ClientTimeParser {
             }
         }
         if (!hasExplicitTime) {
-            val cnTimeMatch = Regex("""(\d{1,2})\s*[點時]\s*(半|(\d{1,2})\s*分?)?""").find(s)
+            val cnTimeMatch = CN_TIME_REGEX.find(s)
             if (cnTimeMatch != null) {
                 val h = cnTimeMatch.groupValues[1].toIntOrNull()
                 val tail = cnTimeMatch.groupValues[2]
@@ -219,14 +228,19 @@ object ClientTimeParser {
         val isDawn = s.contains("凌晨") || s.contains("半夜")
         val hasPeriodWord = isMorning || isNoon || isAfternoon || isEvening || isNight || isDawn
 
+        var rollToNextDay = false
         if (hasExplicitTime && hour != null) {
             val h = hour!!
-            hour = when {
-                isDawn && h == 12 -> 0
-                isNoon && h in 1..6 -> h + 12
-                (isAfternoon || isEvening || isNight) && h in 1..11 -> h + 12
-                isMorning && h == 12 -> 0
-                else -> h
+            when {
+                isNight && h == 12 -> {
+                    hour = 0
+                    rollToNextDay = true
+                }
+                isDawn && h == 12 -> hour = 0
+                isNoon && h in 1..6 -> hour = h + 12
+                (isAfternoon || isEvening || isNight) && h in 1..11 -> hour = h + 12
+                isMorning && h == 12 -> hour = 0
+                else -> hour = h
             }
         } else if (hasPeriodWord) {
             hour = when {
@@ -246,13 +260,14 @@ object ClientTimeParser {
             return null
         }
 
-        val finalDate = parsedDate ?: today
+        val baseDate = parsedDate ?: today
+        val finalDate = if (rollToNextDay) baseDate.plusDays(1) else baseDate
         val finalTime = if (hasExplicitTime && hour != null) LocalTime.of(hour!!, minute) else LocalTime.of(9, 0)
         var targetLdt = LocalDateTime.of(finalDate, finalTime)
         var targetMs = targetLdt.atZone(zone).toInstant().toEpochMilli()
 
         // 只給時間沒給日期：若今天該時間已過，則順延至明天
-        if (!hasExplicitDate && targetMs <= nowMs) {
+        if (!hasExplicitDate && !rollToNextDay && targetMs <= nowMs) {
             targetLdt = targetLdt.plusDays(1)
             targetMs = targetLdt.atZone(zone).toInstant().toEpochMilli()
         }
