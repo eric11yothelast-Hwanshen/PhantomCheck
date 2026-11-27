@@ -818,8 +818,7 @@ private fun SenderThreadCard(
                         )
                         if (!isMultiSelectMode) {
                             IconButton(
-                                onClick = onOpenActions,
-                                modifier = Modifier.size(28.dp)
+                                onClick = onOpenActions
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,

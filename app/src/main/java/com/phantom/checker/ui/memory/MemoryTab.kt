@@ -896,7 +896,7 @@ internal fun MemoryTab(
                 }
                 Box(
                     modifier = Modifier
-                        .size(34.dp)
+                        .size(48.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.5f)), CircleShape)
                         .clickable {
@@ -2231,8 +2231,7 @@ private fun MemoryItemCard(
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
-                                onClick = onEdit,
-                                modifier = Modifier.size(36.dp)
+                                onClick = onEdit
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Edit,
@@ -2241,8 +2240,7 @@ private fun MemoryItemCard(
                                 )
                             }
                             IconButton(
-                                onClick = onDelete,
-                                modifier = Modifier.size(36.dp)
+                                onClick = onDelete
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,

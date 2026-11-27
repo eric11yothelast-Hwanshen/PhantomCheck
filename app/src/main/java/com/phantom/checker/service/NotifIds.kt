@@ -31,6 +31,11 @@ object NotifIds {
     const val HEALTH_PROACTIVE = 1014
     const val TASK_TEMPLATE_BASE = 1050
 
+    // 1150..1159：跨端桌面連線（DesktopLinkClient：尋找手機／送通知／開網址）
+    const val DESKTOP_FIND_PHONE = 1151
+    const val DESKTOP_SEND_PHONE = 1152
+    const val DESKTOP_OPEN_URL = 1153
+
     private const val CALENDAR_INSIGHT_BASE = 1020
     private const val CALENDAR_INSIGHT_SPAN = 25
 

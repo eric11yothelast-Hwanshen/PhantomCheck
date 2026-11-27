@@ -14,6 +14,9 @@ private val SETTINGS_SEPARATOR_REGEX = Regex("[\\s,，、/／|｜]+")
 private val QUERY_SEPARATOR_REGEX = Regex("[\\s,，、/／|｜？?！!。]+")
 private val KEY_SEPARATOR_REGEX = Regex("[\\s_\\-/、,，]+")
 
+private val NUMERIC_ADJUST_REGEX = Regex("(?:調成|調到|調整為|調整成|改成|改為|改到|設為|設成|設到|設定為|限制為|上限為?)\\s*(\\d+)")
+private val DIGITS_REGEX = Regex("\\d+")
+
 
 data class SettingSearchItem(
     val id: String,
@@ -887,9 +890,9 @@ object SettingsCatalog {
         if (text.isEmpty()) return null
         val lower = text.lowercase()
 
-        val adjustNumMatch = Regex("(?:調成|調到|調整為|調整成|改成|改為|改到|設為|設成|設到|設定為|限制為|上限為?)\\s*(\\d+)")
+        val adjustNumMatch = NUMERIC_ADJUST_REGEX
             .find(lower)
-        val allNumbers = Regex("\\d+").findAll(text).mapNotNull { it.value.toIntOrNull() }.toList()
+        val allNumbers = DIGITS_REGEX.findAll(text).mapNotNull { it.value.toIntOrNull() }.toList()
         val targetValue = adjustNumMatch?.groupValues?.getOrNull(1)?.toIntOrNull()
             ?: allNumbers.lastOrNull()
             ?: return null

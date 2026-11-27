@@ -49,6 +49,8 @@ import java.util.concurrent.atomic.AtomicLong
 import javax.crypto.AEADBadTagException
 import kotlin.math.ceil
 
+private val ALLOWED_ID_TOKEN_REGEX = Regex("[a-z][a-z0-9_]{3,50}")
+
 data class ChatMessage(val role: String, val content: String)
 
 data class ResponseFormat(val type: String = "json_object")
@@ -2900,8 +2902,7 @@ object AiClient {
 
         // 最後一層防線：若模型被截斷導致括號未閉合，直接掃描回應中出現的合法 allowedIds token
         val wordHits = LinkedHashSet<String>()
-        val tokenRegex = Regex("[a-z][a-z0-9_]{3,50}")
-        tokenRegex.findAll(stripped).forEach { m ->
+        ALLOWED_ID_TOKEN_REGEX.findAll(stripped).forEach { m ->
             val candidate = m.value
             if (candidate in allowedIds) {
                 wordHits.add(candidate)

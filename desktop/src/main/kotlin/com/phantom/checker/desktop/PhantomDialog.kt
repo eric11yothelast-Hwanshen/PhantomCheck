@@ -136,7 +136,7 @@ fun PhantomDialog(
                     if (dismissible) {
                         Box(
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(48.dp)
                                 .clip(CircleShape)
                                 .clickable { onDismissRequest() },
                             contentAlignment = Alignment.Center

@@ -1181,7 +1181,6 @@ private fun parseSingleActionJson(
     crossAppOut: MutableList<com.phantom.checker.util.CrossAppActionProposal>,
     errorsOut: MutableList<String>
 ): Boolean {
-    // TODO(R17): extract hardcoded zh-TW error messages below into strings.xml
     val obj = try {
         val parsed = JsonParser.parseString(jsonStr)
         if (!parsed.isJsonObject) return false
@@ -1636,7 +1635,6 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
         if (!body.contains("\"action\"", ignoreCase = true)) return@forEach
         val objs = splitBalancedJsonObjects(body)
         if (objs.isEmpty()) {
-            // TODO(R17): extract hardcoded zh-TW error string
             errors.add(PhantomApplication.str(R.string.chat_action_err_format_unparsable))
         } else {
             var anyHandled = false

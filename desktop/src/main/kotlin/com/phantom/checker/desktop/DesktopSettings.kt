@@ -12,6 +12,9 @@ import java.net.URL
 import java.util.Calendar
 import java.util.Properties
 
+private val SCHTASK_COMMAND_REGEX = Regex("<Command>(.*?)</Command>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+private val SCHTASK_DISABLED_REGEX = Regex("<Settings>[\\s\\S]*?<Enabled>\\s*false\\s*</Enabled>[\\s\\S]*?</Settings>", RegexOption.IGNORE_CASE)
+
 enum class CloseBehavior { MINIMIZE_TO_TRAY, EXIT_APP }
 enum class AccentPreset(val key: String) { PURPLE("purple"), BLUE("blue"), GREEN("green"), ORANGE("orange"), PINK("pink"), CYAN("cyan") }
 enum class UiDensity(val key: String) { COMPACT("compact"), STANDARD("standard"), COMFORTABLE("comfortable") }
@@ -478,14 +481,14 @@ object DesktopSettingsStore {
             return Triple(AutoStartStatus.DISABLED, "", "")
         }
         val xml = q.second
-        val cmdMatch = Regex("<Command>(.*?)</Command>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(xml)
+        val cmdMatch = SCHTASK_COMMAND_REGEX.find(xml)
         val rawCmd = cmdMatch?.groupValues?.getOrNull(1)?.trim().orEmpty()
             .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
         val exe = extractExePathFromCommand(rawCmd)
         if (exe.isBlank() || !File(exe).exists()) {
             return Triple(AutoStartStatus.PATH_MISMATCH, rawCmd, exe)
         }
-        val disabledMatch = Regex("<Settings>[\\s\\S]*?<Enabled>\\s*false\\s*</Enabled>[\\s\\S]*?</Settings>", RegexOption.IGNORE_CASE)
+        val disabledMatch = SCHTASK_DISABLED_REGEX
         if (disabledMatch.containsMatchIn(xml)) {
             return Triple(AutoStartStatus.DISABLED, rawCmd, "Task disabled")
         }
