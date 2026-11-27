@@ -3,6 +3,40 @@
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses Semantic Versioning.
 
+## [5.2.0] - 2026-11-27
+
+- **Tag 比較**：[`v5.1.0...v5.2.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.1.0...v5.2.0)（`versionCode = 60`、`versionName = "5.2.0"`；桌面端 `desktopVersion = "0.8.0"`）
+- **發佈資產**：簽章 `app-release.apk`、`app-debug.apk`、`PhantomCheckDesktop-0.8.0-setup.exe`，並附 `.sha256` 校驗檔。
+
+### 健檢修復完成（R1–R17，20 個 PR）
+- 239 項健檢缺失全數處理：P0 44／P1 143／P2 52。
+- 分輪成果：R1 共用資料層與 DAO 擴充、R2 util 與系統橋接、R3 通知風險管線、R4 排程與背景 Worker、R5 主動情報與 Shizuku、R6 跨端連線、R7 小工具刷新、R8 CI/CD 供應鏈、R9 動效與共用元件、R10 主畫面訊息流程、R11 聊天核心、R12 設定主體、R13 管理頁群、R14 分頁 UI、R15 Desktop 核心、R16 Desktop UI、R17 全域收尾。
+
+### 安全
+- `DesktopLinkClient` 指紋比對改常數時間、TLS 強制完整 SHA-256。
+- `opencode.yml` 加 `author_association` 白名單，workflow 依賴 pin 到完整 commit SHA。
+- `DesktopUpdater` 改 Fail-Closed，缺 `.sha256` 即拒絕安裝；release 產出 `.sha256` 資產。
+- `allowBackup=false` 搭配 `dataExtractionRules`；無簽章的 release 建置直接失敗。
+
+### 效能
+- DAO 區間聚合與 COUNT SQL 取代全表載入；SQLite >999 變數一律 `chunked(500)`；多處 OOM 與主執行緒 I/O 修正。
+
+### 可靠性
+- 前景服務遵守 10 秒 `startForeground` 規則；Worker `CancellationException` 獨立重拋。
+- 精確鬧鐘改 `canScheduleExactAlarms()` 檢查＋非精確 fallback；中國廠牌 ROM 防禦組合。
+
+### 多語系與清理
+- 86 則使用者可見字串進 `values`／`values-zh-rTW`；641 個未使用 imports 清除；17 處 Regex 常數化＋動態樣式快取；正則驗證錯誤訊息多語化。
+
+### English
+- **Tag Compare**: [`v5.1.0...v5.2.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.1.0...v5.2.0) (`versionCode = 60`, `versionName = "5.2.0"`; Desktop `desktopVersion = "0.8.0"`)
+- **Release Assets**: signed `app-release.apk`, `app-debug.apk`, `PhantomCheckDesktop-0.8.0-setup.exe`, plus `.sha256` checksums.
+- **Audit remediation complete (R1–R17, 20 PRs)**: all 239 findings addressed — P0 44 / P1 143 / P2 52.
+- **Security**: constant-time fingerprint compare and full SHA-256 TLS pinning, `author_association` gate in `opencode.yml`, SHA-pinned actions, Fail-Closed updater with `.sha256`, `allowBackup=false` + `dataExtractionRules`, unsigned release builds fail fast.
+- **Performance**: DAO range/aggregate queries replace full-table loads, `chunked(500)` bulk deletes, OOM and main-thread I/O fixes.
+- **Reliability**: 10-second foreground-service rule, `CancellationException` rethrow, exact-alarm permission check with inexact fallback, OEM ROM defenses.
+- **i18n & cleanup**: 86 strings into `values` / `values-zh-rTW`, 641 unused imports removed, 17 regex constants plus a cached dynamic pattern, localized regex validation errors.
+
 ## [5.1.0] - 2026-11-26
 
 - **Tag 對照**：[`v5.0.0...v5.1.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.0.0...v5.1.0)（`versionCode = 59`、`versionName = "5.1.0"`；桌面端 `desktopVersion = "0.8.0"`）
