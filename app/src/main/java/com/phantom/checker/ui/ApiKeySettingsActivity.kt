@@ -4,6 +4,7 @@ import com.phantom.checker.ui.components.phantomItem
 import com.phantom.checker.ui.components.phantomEnter
 import androidx.compose.foundation.lazy.itemsIndexed
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.animateContentSize
@@ -25,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -63,8 +65,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.phantom.checker.network.AiClient
@@ -80,12 +82,23 @@ import java.util.UUID
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
 
+private fun isValidHttpsBaseUrl(rawUrl: String): Boolean {
+    val trimmed = rawUrl.trim()
+    if (!trimmed.startsWith("https://", ignoreCase = true)) return false
+    val uri = runCatching { android.net.Uri.parse(trimmed) }.getOrNull() ?: return false
+    return uri.scheme.equals("https", ignoreCase = true) && !uri.host.isNullOrBlank()
+}
+
 class ApiKeySettingsActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(com.phantom.checker.util.AppLocaleHelper.wrapContext(newBase))
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
         AiClient.init(applicationContext)
         setContent {
             PhantomCheckTheme {
@@ -435,10 +448,15 @@ private fun ProviderProfileCard(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        val isHttpsEndpoint = isValidHttpsBaseUrl(profile.baseUrl)
         Text(
             text = fullEndpoint,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (isHttpsEndpoint) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.warning
+            },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
@@ -512,16 +530,23 @@ private fun ProviderEditorDialog(
     var baseUrl by remember { mutableStateOf(initial?.baseUrl ?: "") }
     var apiPath by remember { mutableStateOf(initial?.resolvedApiPath() ?: AiProviderProfile.DEFAULT_API_PATH) }
     var model by remember { mutableStateOf(initial?.model ?: "") }
-    var apiKey by remember { mutableStateOf(initial?.apiKey ?: "") }
-    var showKey by remember { mutableStateOf(false) }
+    // 不回填既有明碼 API Key，編輯時留空代表沿用既有加密金鑰，杜絕明碼洩漏
+    var apiKey by remember { mutableStateOf("") }
     var selectedPreset by remember { mutableStateOf<AiProviderPreset?>(null) }
     var showAltModels by remember { mutableStateOf(false) }
 
+    val existingKeyTail = remember(initial?.apiKey) {
+        AiClient.getMaskedKeyTail(initial?.apiKey)
+    }
+    val hasExistingKey = !initial?.apiKey.isNullOrBlank()
+    val isHttpsBaseUrlValid = isValidHttpsBaseUrl(baseUrl)
+    val showBaseUrlError = baseUrl.isNotBlank() && !isHttpsBaseUrlValid
+
     val canSave = name.isNotBlank() &&
-        baseUrl.trim().startsWith("http") &&
+        isHttpsBaseUrlValid &&
         apiPath.isNotBlank() &&
         model.isNotBlank() &&
-        apiKey.isNotBlank()
+        (apiKey.isNotBlank() || hasExistingKey)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -596,8 +621,18 @@ private fun ProviderEditorDialog(
                     onValueChange = { baseUrl = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    label = { Text("Base URL") },
-                    placeholder = { Text("https://api.mistral.ai/") }
+                    isError = showBaseUrlError,
+                    label = { Text("Base URL (HTTPS)") },
+                    placeholder = { Text("https://api.mistral.ai/") },
+                    supportingText = if (showBaseUrlError) {
+                        {
+                            Text(
+                                text = "HTTPS (https://...)",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    } else null
                 )
                 OutlinedTextField(
                     value = apiPath,
@@ -620,24 +655,24 @@ private fun ProviderEditorDialog(
                     onValueChange = { apiKey = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    label = { Text("API Key") },
-                    placeholder = { Text(stringResource(R.string.api_key_s_da07b7)) },
-                    visualTransformation = if (showKey) {
-                        VisualTransformation.None
-                    } else {
-                        PasswordVisualTransformation()
+                    label = { Text(stringResource(R.string.assistant_hub_s_8b7c08)) },
+                    placeholder = {
+                        Text(existingKeyTail ?: stringResource(R.string.api_key_s_da07b7))
                     },
-                    trailingIcon = {
-                        TextButton(onClick = { showKey = !showKey }) {
-                            Text(if (showKey) stringResource(R.string.api_key_s_6993c6) else stringResource(R.string.api_key_s_156719))
-                        }
-                    }
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        autoCorrectEnabled = false
+                    )
                 )
             }
         },
         confirmButton = {
             Button(
                 onClick = {
+                    if (!isValidHttpsBaseUrl(baseUrl)) return@Button
+                    val resolvedApiKey = apiKey.trim().ifEmpty { initial?.apiKey?.trim().orEmpty() }
+                    if (resolvedApiKey.isEmpty()) return@Button
                     val normalizedUrl = baseUrl.trim().let {
                         if (it.endsWith("/")) it else "$it/"
                     }
@@ -647,7 +682,7 @@ private fun ProviderEditorDialog(
                             name = name.trim(),
                             baseUrl = normalizedUrl,
                             model = model.trim(),
-                            apiKey = apiKey.trim(),
+                            apiKey = resolvedApiKey,
                             apiPath = apiPath.trim().ifEmpty { AiProviderProfile.DEFAULT_API_PATH }
                         )
                     )

@@ -62,6 +62,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.room.withTransaction
 import com.phantom.checker.data.AiRuleEntity
 import com.phantom.checker.data.WhitelistRuleHelper
 import com.phantom.checker.service.AppDatabaseHolder
@@ -383,6 +384,7 @@ private fun FiltersTagManagementSection(
                                     AppDatabaseHolder.db(appCtx).tagDao().insert(
                                         com.phantom.checker.data.TagEntity(name = name, colorHex = hex)
                                     )
+                                    NotificationCollectorService.invalidateRuleCaches()
                                 }
                                 reloadTags()
                                 onShowMessage(resCtx.getString(R.string.filters_tag_added, name))
@@ -440,6 +442,7 @@ private fun FiltersTagManagementSection(
                         scope.launch {
                             withContext(Dispatchers.IO) {
                                 AppDatabaseHolder.db(appCtx).tagDao().update(target.copy(name = trimmed))
+                                NotificationCollectorService.invalidateRuleCaches()
                             }
                             renameTarget = null
                             reloadTags()
@@ -462,9 +465,9 @@ private fun FiltersTagManagementSection(
                 TextButton(onClick = {
                     scope.launch {
                         withContext(Dispatchers.IO) {
-                            val dao = AppDatabaseHolder.db(appCtx).tagDao()
-                            dao.deleteCrossRefsByTag(target.id)
-                            dao.deleteById(target.id)
+                            // R1 (#545) 共用交易：同交易刪除標籤、關聯與規則孤兒並清理規則快取
+                            AppDatabaseHolder.db(appCtx).tagDao().deleteTagWithOrphans(target.id)
+                            NotificationCollectorService.invalidateRuleCaches()
                         }
                         deleteTarget = null
                         reloadTags()
@@ -506,8 +509,7 @@ private fun WhitelistManagementSection(
             isLoading = true
             try {
                 val loaded = withContext(Dispatchers.IO) {
-                    AppDatabaseHolder.db(appCtx).aiRuleDao().all()
-                        .filter { it.kind == AiRuleEntity.KIND_WHITELIST }
+                    AppDatabaseHolder.db(appCtx).aiRuleDao().allWhitelist()
                 }
                 rules = loaded
             } catch (e: Exception) {
@@ -642,19 +644,26 @@ private fun WhitelistManagementSection(
                                 scope.launch {
                                     try {
                                         val upsertRes = withContext(Dispatchers.IO) {
-                                            val dao = AppDatabaseHolder.db(appCtx).aiRuleDao()
+                                            val db = AppDatabaseHolder.db(appCtx)
                                             val ruleText = if (addModeSender) {
                                                 "白名單寄件者：$trimmedTarget"
                                             } else {
                                                 trimmedTarget
                                             }
-                                            WhitelistRuleHelper.upsertWhitelist(
-                                                dao = dao,
-                                                ruleText = ruleText,
-                                                sender = if (addModeSender) trimmedTarget else null,
-                                                packageName = resolvedPkg,
-                                                onCacheInvalidate = { NotificationCollectorService.invalidateRuleCaches() }
-                                            )
+                                            val res = db.withTransaction {
+                                                WhitelistRuleHelper.upsertWhitelist(
+                                                    dao = db.aiRuleDao(),
+                                                    ruleText = ruleText,
+                                                    sender = if (addModeSender) trimmedTarget else null,
+                                                    packageName = resolvedPkg
+                                                )
+                                            }
+                                            if (res.status == WhitelistRuleHelper.Status.INSERTED ||
+                                                res.status == WhitelistRuleHelper.Status.REACTIVATED
+                                            ) {
+                                                NotificationCollectorService.invalidateRuleCaches()
+                                            }
+                                            res
                                         }
                                         if (upsertRes.isSuccess) {
                                             inputTarget = ""
@@ -859,11 +868,14 @@ private fun WhitelistManagementSection(
                         scope.launch {
                             try {
                                 val deletedOk = withContext(Dispatchers.IO) {
-                                    val dao = AppDatabaseHolder.db(appCtx).aiRuleDao()
-                                    dao.deleteById(toDelete.id)
-                                    val stillExists = dao.byId(toDelete.id) != null
+                                    val db = AppDatabaseHolder.db(appCtx)
+                                    val ok = db.withTransaction {
+                                        val dao = db.aiRuleDao()
+                                        dao.deleteById(toDelete.id)
+                                        dao.byId(toDelete.id) == null
+                                    }
                                     NotificationCollectorService.invalidateRuleCaches()
-                                    !stillExists
+                                    ok
                                 }
                                 if (deletedOk) {
                                     rules = rules.filterNot { it.id == toDelete.id }

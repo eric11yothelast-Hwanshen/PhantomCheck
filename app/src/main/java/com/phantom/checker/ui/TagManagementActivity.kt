@@ -25,8 +25,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -97,6 +99,13 @@ private data class InstalledAppChoice(
     val label: String
 )
 
+private data class TagManagementSnapshot(
+    val tags: List<TagEntity>,
+    val appCatRules: List<AppCategoryRuleEntity>,
+    val aiRules: List<AiRuleEntity>,
+    val userTagRules: List<UserTagRuleEntity>
+)
+
 class TagManagementActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(com.phantom.checker.util.AppLocaleHelper.wrapContext(newBase))
@@ -136,16 +145,24 @@ fun TagManagementScreen(onBack: () -> Unit) {
     var deleteAiRuleCandidate by remember { mutableStateOf<AiRuleEntity?>(null) }
 
     var showTestTagRulesDialog by remember { mutableStateOf(false) }
+    var showUserTagRuleEditor by remember { mutableStateOf(false) }
+    var editingUserTagRule by remember { mutableStateOf<UserTagRuleEntity?>(null) }
     var deleteUserTagRuleCandidate by remember { mutableStateOf<UserTagRuleEntity?>(null) }
 
     suspend fun reloadAll() {
-        withContext(Dispatchers.IO) {
+        val snapshot = withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
-            tags = db.tagDao().all()
-            appCatRules = db.appCategoryRuleDao().all()
-            aiRules = db.aiRuleDao().all()
-            userTagRules = db.userTagRuleDao().all()
+            TagManagementSnapshot(
+                tags = db.tagDao().all(),
+                appCatRules = db.appCategoryRuleDao().all(),
+                aiRules = db.aiRuleDao().all(),
+                userTagRules = db.userTagRuleDao().all()
+            )
         }
+        tags = snapshot.tags
+        appCatRules = snapshot.appCatRules
+        aiRules = snapshot.aiRules
+        userTagRules = snapshot.userTagRules
     }
 
     LaunchedEffect(Unit) {
@@ -162,12 +179,12 @@ fun TagManagementScreen(onBack: () -> Unit) {
                 editingTag = null
             },
             onSave = { name, colorHex, aiHint, isAiManaged, isAppCategory ->
+                val existing = editingTag
                 scope.launch {
                     withContext(Dispatchers.IO) {
                         val dao = AppDatabaseHolder.db(appCtx).tagDao()
-                        val existing = editingTag
                         if (existing == null) {
-                            val nextOrder = (tags.maxOfOrNull { it.sortOrder } ?: -1) + 1
+                            val nextOrder = (dao.all().maxOfOrNull { it.sortOrder } ?: -1) + 1
                             dao.insert(
                                 TagEntity(
                                     name = name,
@@ -189,6 +206,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                 )
                             )
                         }
+                        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                     }
                     showEditor = false
                     editingTag = null
@@ -208,12 +226,8 @@ fun TagManagementScreen(onBack: () -> Unit) {
                     onClick = {
                         scope.launch {
                             withContext(Dispatchers.IO) {
-                                val db = AppDatabaseHolder.db(appCtx)
-                                db.withTransaction {
-                                    db.tagDao().deleteCrossRefsByTag(target.id)
-                                    db.appCategoryRuleDao().deleteByTagId(target.id)
-                                    db.tagDao().deleteById(target.id)
-                                }
+                                // R1 (#545) 共用交易：同交易刪除標籤、關聯與 user_tag_rules / app_category_rules / ai_rules 孤兒
+                                AppDatabaseHolder.db(appCtx).tagDao().deleteTagWithOrphans(target.id)
                                 com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                             }
                             deleteCandidate = null
@@ -241,15 +255,18 @@ fun TagManagementScreen(onBack: () -> Unit) {
             onSave = { pkg, tagId ->
                 scope.launch {
                     withContext(Dispatchers.IO) {
-                        val dao = AppDatabaseHolder.db(appCtx).appCategoryRuleDao()
-                        dao.deleteByPackage(pkg)
-                        dao.insert(
-                            AppCategoryRuleEntity(
-                                packageName = pkg,
-                                tagId = tagId,
-                                isEnabled = true
+                        val db = AppDatabaseHolder.db(appCtx)
+                        db.withTransaction {
+                            val dao = db.appCategoryRuleDao()
+                            dao.deleteByPackage(pkg)
+                            dao.insert(
+                                AppCategoryRuleEntity(
+                                    packageName = pkg,
+                                    tagId = tagId,
+                                    isEnabled = true
+                                )
                             )
-                        )
+                        }
                         com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                     }
                     showAddAppCatDialog = false
@@ -387,6 +404,33 @@ fun TagManagementScreen(onBack: () -> Unit) {
         )
     }
 
+    if (showUserTagRuleEditor) {
+        UserTagRuleEditorDialog(
+            initial = editingUserTagRule,
+            tags = tags,
+            onDismiss = {
+                showUserTagRuleEditor = false
+                editingUserTagRule = null
+            },
+            onSave = { rule ->
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        val dao = AppDatabaseHolder.db(appCtx).userTagRuleDao()
+                        if (rule.id == 0L) {
+                            dao.insert(rule)
+                        } else {
+                            dao.update(rule)
+                        }
+                        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                    }
+                    showUserTagRuleEditor = false
+                    editingUserTagRule = null
+                    reloadAll()
+                }
+            }
+        )
+    }
+
     com.phantom.checker.ui.components.PhantomPageScaffold(
         title = stringResource(R.string.tag_mgmt_s_d5cbb6),
         onBack = onBack,
@@ -519,12 +563,15 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                     IconButton(
                                         enabled = idx > 0,
                                         onClick = {
+                                            val prev = tags.getOrNull(idx - 1) ?: return@IconButton
                                             scope.launch {
                                                 withContext(Dispatchers.IO) {
-                                                    val prev = tags[idx - 1]
-                                                    val dao = AppDatabaseHolder.db(appCtx).tagDao()
-                                                    dao.update(tag.copy(sortOrder = prev.sortOrder))
-                                                    dao.update(prev.copy(sortOrder = tag.sortOrder))
+                                                    val db = AppDatabaseHolder.db(appCtx)
+                                                    db.withTransaction {
+                                                        val dao = db.tagDao()
+                                                        dao.update(tag.copy(sortOrder = prev.sortOrder))
+                                                        dao.update(prev.copy(sortOrder = tag.sortOrder))
+                                                    }
                                                 }
                                                 reloadAll()
                                             }
@@ -535,12 +582,15 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                     IconButton(
                                         enabled = idx < tags.lastIndex,
                                         onClick = {
+                                            val next = tags.getOrNull(idx + 1) ?: return@IconButton
                                             scope.launch {
                                                 withContext(Dispatchers.IO) {
-                                                    val next = tags[idx + 1]
-                                                    val dao = AppDatabaseHolder.db(appCtx).tagDao()
-                                                    dao.update(tag.copy(sortOrder = next.sortOrder))
-                                                    dao.update(next.copy(sortOrder = tag.sortOrder))
+                                                    val db = AppDatabaseHolder.db(appCtx)
+                                                    db.withTransaction {
+                                                        val dao = db.tagDao()
+                                                        dao.update(tag.copy(sortOrder = next.sortOrder))
+                                                        dao.update(next.copy(sortOrder = tag.sortOrder))
+                                                    }
                                                 }
                                                 reloadAll()
                                             }
@@ -667,6 +717,7 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                                 withContext(Dispatchers.IO) {
                                                     AppDatabaseHolder.db(appCtx).appCategoryRuleDao()
                                                         .update(rule.copy(isEnabled = enabled))
+                                                    com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
                                                 }
                                                 reloadAll()
                                             }
@@ -713,16 +764,16 @@ fun TagManagementScreen(onBack: () -> Unit) {
 
                 if (aiRules.count { it.isEnabled } > 20) {
                     item {
-                        PhantomGlassCard(
-                            glassState = glassState,
+                        Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            cornerRadius = 16.dp,
-                            contentPadding = 12.dp
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.warningContainer
                         ) {
                             Text(
                                 text = stringResource(R.string.tag_mgmt_s_1e07ca),
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
+                                color = MaterialTheme.colorScheme.onWarningContainer,
+                                modifier = Modifier.padding(12.dp)
                             )
                         }
                     }
@@ -840,8 +891,19 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        OutlinedButton(onClick = { showTestTagRulesDialog = true }) {
-                            Text(stringResource(R.string.tag_mgmt_s_9a0c6d))
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    editingUserTagRule = null
+                                    showUserTagRuleEditor = true
+                                },
+                                enabled = tags.isNotEmpty()
+                            ) {
+                                Text(stringResource(R.string.tag_mgmt_s_606c09))
+                            }
+                            OutlinedButton(onClick = { showTestTagRulesDialog = true }) {
+                                Text(stringResource(R.string.tag_mgmt_s_9a0c6d))
+                            }
                         }
                     }
                 }
@@ -866,6 +928,11 @@ fun TagManagementScreen(onBack: () -> Unit) {
                         val targetTag = tagById[rule.targetTagId]
                         val sourceLabel = if (rule.source == "chat") stringResource(R.string.tag_mgmt_s_033df7) else stringResource(R.string.tag_mgmt_s_816d67)
                         val condSummary = TagRuleEngine.formatRuleConditions(rule)
+                        val regexErr = remember(rule.contentRegex) {
+                            rule.contentRegex?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                                TagRuleEngine.validateRegexPattern(it)
+                            }
+                        }
                         PhantomGlassCard(
                             glassState = glassState,
                             modifier = Modifier.fillMaxWidth(),
@@ -914,6 +981,13 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    if (regexErr != null) {
+                                        Text(
+                                            text = "⚠ Regex: $regexErr",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.warning
+                                        )
+                                    }
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     FluidSwitch(
@@ -929,6 +1003,15 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                             }
                                         }
                                     )
+                                    IconButton(onClick = {
+                                        editingUserTagRule = rule
+                                        showUserTagRuleEditor = true
+                                    }) {
+                                        Icon(
+                                            Icons.Default.Edit,
+                                            contentDescription = stringResource(R.string.common_edit)
+                                        )
+                                    }
                                     IconButton(onClick = { deleteUserTagRuleCandidate = rule }) {
                                         Icon(
                                             Icons.Default.Delete,
@@ -1345,6 +1428,166 @@ private fun TestUserTagRulesDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.common_close))
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun UserTagRuleEditorDialog(
+    initial: UserTagRuleEntity?,
+    tags: List<TagEntity>,
+    onDismiss: () -> Unit,
+    onSave: (UserTagRuleEntity) -> Unit
+) {
+    var description by remember(initial) { mutableStateOf(initial?.description ?: "") }
+    var targetTagId by remember(initial, tags) {
+        mutableStateOf(initial?.targetTagId ?: tags.firstOrNull()?.id)
+    }
+    var appLabel by remember(initial) { mutableStateOf(initial?.appLabel ?: "") }
+    var appPackage by remember(initial) { mutableStateOf(initial?.appPackage ?: "") }
+    var senderPattern by remember(initial) { mutableStateOf(initial?.senderPattern ?: "") }
+    var contentKeyword by remember(initial) { mutableStateOf(initial?.contentKeyword ?: "") }
+    var contentRegex by remember(initial) { mutableStateOf(initial?.contentRegex ?: "") }
+
+    val trimmedRegex = contentRegex.trim()
+    val regexValidationError = remember(trimmedRegex) {
+        if (trimmedRegex.isEmpty()) null else TagRuleEngine.validateRegexPattern(trimmedRegex)
+    }
+    val hasAnyCondition = appLabel.isNotBlank() ||
+        appPackage.isNotBlank() ||
+        senderPattern.isNotBlank() ||
+        contentKeyword.isNotBlank() ||
+        trimmedRegex.isNotEmpty() ||
+        !initial?.semanticCategory.isNullOrBlank()
+
+    val canSave = description.isNotBlank() &&
+        targetTagId != null &&
+        hasAnyCondition &&
+        regexValidationError == null
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                if (initial == null) {
+                    stringResource(R.string.tag_mgmt_s_606c09)
+                } else {
+                    stringResource(R.string.common_edit)
+                }
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text(stringResource(R.string.tag_mgmt_s_b76d64)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (tags.isNotEmpty()) {
+                    Text(stringResource(R.string.tag_mgmt_s_b62d5d), style = MaterialTheme.typography.labelMedium)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        tags.forEach { tag ->
+                            FilterChip(
+                                selected = targetTagId == tag.id,
+                                onClick = { targetTagId = tag.id },
+                                label = { Text(tag.name) }
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = appLabel,
+                    onValueChange = { appLabel = it },
+                    label = { Text(stringResource(R.string.tag_mgmt_s_b120d8)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = appPackage,
+                    onValueChange = { appPackage = it },
+                    label = { Text(stringResource(R.string.tag_mgmt_s_b9ab43)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = senderPattern,
+                    onValueChange = { senderPattern = it },
+                    label = { Text(stringResource(R.string.tag_mgmt_s_f12817)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = contentKeyword,
+                    onValueChange = { contentKeyword = it },
+                    label = { Text(stringResource(R.string.tag_mgmt_s_e47aa1)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = contentRegex,
+                    onValueChange = { contentRegex = it },
+                    label = { Text(stringResource(R.string.chat_s_3af783, "Regex")) },
+                    singleLine = true,
+                    isError = regexValidationError != null,
+                    supportingText = if (regexValidationError != null) {
+                        {
+                            Text(
+                                text = "⚠ Regex: $regexValidationError",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    } else null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val tid = targetTagId ?: return@Button
+                    val safeRegex = trimmedRegex.takeIf { it.isNotEmpty() }
+                    if (safeRegex != null && TagRuleEngine.validateRegexPattern(safeRegex) != null) {
+                        return@Button
+                    }
+                    onSave(
+                        UserTagRuleEntity(
+                            id = initial?.id ?: 0L,
+                            description = description.trim(),
+                            appPackage = appPackage.trim().takeIf { it.isNotEmpty() },
+                            appLabel = appLabel.trim().takeIf { it.isNotEmpty() },
+                            senderPattern = senderPattern.trim().takeIf { it.isNotEmpty() },
+                            contentKeyword = contentKeyword.trim().takeIf { it.isNotEmpty() },
+                            contentRegex = safeRegex,
+                            semanticCategory = initial?.semanticCategory,
+                            targetTagId = tid,
+                            isEnabled = initial?.isEnabled ?: true,
+                            priority = initial?.priority ?: 100,
+                            source = initial?.source ?: "manual",
+                            createdAt = initial?.createdAt ?: System.currentTimeMillis()
+                        )
+                    )
+                },
+                enabled = canSave
+            ) {
+                Text(stringResource(R.string.common_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_cancel))
             }
         }
     )

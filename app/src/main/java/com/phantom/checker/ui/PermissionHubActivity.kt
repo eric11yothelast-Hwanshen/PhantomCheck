@@ -45,9 +45,11 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,15 +64,20 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.phantom.checker.util.CalendarBridge
 import com.phantom.checker.util.ContactBridge
+import com.phantom.checker.util.HealthConnectBridge
 import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
 
 /**
  * #340 權限授予中心（集中管理全部權限，Shizuku 除外）：
- * - 每項顯示即時狀態（onResume 全量重查）、一句用途說明、直達系統設定頁／權限對話框之快捷按鈕。
+ * - 每項顯示即時狀態（onResume 背景全量重查）、一句用途說明、直達系統設定頁／權限對話框之快捷按鈕。
  * - 所有系統設定頁 ACTION 皆包 try-catch＋App 詳情頁兜底＋toast，確保小米／三星／OPPO／vivo 不閃退。
  * - Android 13+ 側載「受限制的設定」沿用 #288 restrictedSettingsOemNote() 廠牌引導文案。
  */
@@ -88,6 +95,20 @@ class PermissionHubActivity : ComponentActivity() {
         }
     }
 }
+
+private data class PermissionHubSnapshot(
+    val postNotifGranted: Boolean = true,
+    val notifListenerGranted: Boolean = false,
+    val smsGranted: Boolean = false,
+    val contactsGranted: Boolean = false,
+    val calendarReadGranted: Boolean = false,
+    val calendarWriteGranted: Boolean = false,
+    val exactAlarmGranted: Boolean = true,
+    val batteryIgnored: Boolean = false,
+    val usageGranted: Boolean = false,
+    val hcAvailability: HealthConnectBridge.SdkAvailability = HealthConnectBridge.SdkAvailability.UNAVAILABLE,
+    val hcPermStatus: HealthConnectBridge.HealthPermissionStatus = HealthConnectBridge.HealthPermissionStatus()
+)
 
 private fun launchIntentWithAppDetailsFallback(ctx: Context, intent: Intent) {
     try {
@@ -129,59 +150,103 @@ private fun checkBatteryUnrestricted(ctx: Context): Boolean {
     }
 }
 
+private fun checkPostNotifGranted(ctx: Context): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    } else true
+
+private fun checkSmsGranted(ctx: Context): Boolean =
+    ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED &&
+        ContextCompat.checkSelfPermission(ctx, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+
+private suspend fun queryPermissionHubSnapshot(appCtx: Context): PermissionHubSnapshot =
+    withContext(Dispatchers.IO) {
+        val hcAvailability = HealthConnectBridge.checkAvailability(appCtx)
+        val hcPermStatus = if (hcAvailability == HealthConnectBridge.SdkAvailability.AVAILABLE) {
+            HealthConnectBridge.getPermissionStatus(appCtx)
+        } else {
+            HealthConnectBridge.HealthPermissionStatus()
+        }
+        PermissionHubSnapshot(
+            postNotifGranted = checkPostNotifGranted(appCtx),
+            notifListenerGranted = NotificationManagerCompat.getEnabledListenerPackages(appCtx).contains(appCtx.packageName),
+            smsGranted = checkSmsGranted(appCtx),
+            contactsGranted = ContactBridge.hasReadContactsPermission(appCtx),
+            calendarReadGranted = CalendarBridge.hasReadPermission(appCtx),
+            calendarWriteGranted = CalendarBridge.hasWritePermission(appCtx),
+            exactAlarmGranted = checkExactAlarmGranted(appCtx),
+            batteryIgnored = checkBatteryUnrestricted(appCtx),
+            usageGranted = checkUsageAccessGranted(appCtx),
+            hcAvailability = hcAvailability,
+            hcPermStatus = hcPermStatus
+        )
+    }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun PermissionHubScreen(onBack: () -> Unit) {
     val resCtx = LocalContext.current
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
+    val scope = rememberCoroutineScope()
     val glassState = remember { HazeState() }
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    fun isPostNotifGranted(): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            ContextCompat.checkSelfPermission(appCtx, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-        } else true
+    var snapshot by remember { mutableStateOf(PermissionHubSnapshot()) }
+    var refreshJob by remember { mutableStateOf<Job?>(null) }
 
-    fun isSmsGranted(): Boolean =
-        ContextCompat.checkSelfPermission(appCtx, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED &&
-            ContextCompat.checkSelfPermission(appCtx, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
-
-    var postNotifGranted by remember { mutableStateOf(isPostNotifGranted()) }
-    var notifListenerGranted by remember {
-        mutableStateOf(NotificationManagerCompat.getEnabledListenerPackages(appCtx).contains(appCtx.packageName))
+    fun refreshAllAsync() {
+        refreshJob?.cancel()
+        refreshJob = scope.launch {
+            snapshot = queryPermissionHubSnapshot(appCtx)
+        }
     }
-    var smsGranted by remember { mutableStateOf(isSmsGranted()) }
-    var contactsGranted by remember { mutableStateOf(ContactBridge.hasReadContactsPermission(appCtx)) }
-    var calendarReadGranted by remember { mutableStateOf(CalendarBridge.hasReadPermission(appCtx)) }
-    var calendarWriteGranted by remember { mutableStateOf(CalendarBridge.hasWritePermission(appCtx)) }
-    var exactAlarmGranted by remember { mutableStateOf(checkExactAlarmGranted(appCtx)) }
-    var batteryIgnored by remember { mutableStateOf(checkBatteryUnrestricted(appCtx)) }
-    var usageGranted by remember { mutableStateOf(checkUsageAccessGranted(appCtx)) }
 
-    fun refreshAll() {
-        postNotifGranted = isPostNotifGranted()
-        notifListenerGranted = NotificationManagerCompat.getEnabledListenerPackages(appCtx).contains(appCtx.packageName)
-        smsGranted = isSmsGranted()
-        contactsGranted = ContactBridge.hasReadContactsPermission(appCtx)
-        calendarReadGranted = CalendarBridge.hasReadPermission(appCtx)
-        calendarWriteGranted = CalendarBridge.hasWritePermission(appCtx)
-        exactAlarmGranted = checkExactAlarmGranted(appCtx)
-        batteryIgnored = checkBatteryUnrestricted(appCtx)
-        usageGranted = checkUsageAccessGranted(appCtx)
+    LaunchedEffect(Unit) {
+        refreshAllAsync()
     }
 
     DisposableEffect(lifecycleOwner) {
         val obs = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) refreshAll()
+            if (event == Lifecycle.Event.ON_RESUME) refreshAllAsync()
         }
         lifecycleOwner.lifecycle.addObserver(obs)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(obs)
+            refreshJob?.cancel()
+        }
     }
 
     val runtimePermLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { refreshAll() }
+    ) { refreshAllAsync() }
+
+    val hcPermLauncher = rememberLauncherForActivityResult(
+        androidx.health.connect.client.PermissionController.createRequestPermissionResultContract()
+    ) { grantedSet ->
+        snapshot = snapshot.copy(
+            hcPermStatus = HealthConnectBridge.HealthPermissionStatus(
+                sleep = HealthConnectBridge.PERM_READ_SLEEP in grantedSet,
+                steps = HealthConnectBridge.PERM_READ_STEPS in grantedSet,
+                heartRate = HealthConnectBridge.PERM_READ_HEART_RATE in grantedSet,
+                distance = HealthConnectBridge.PERM_READ_DISTANCE in grantedSet,
+                calories = HealthConnectBridge.PERM_READ_TOTAL_CALORIES in grantedSet
+            )
+        )
+        refreshAllAsync()
+    }
+
+    val postNotifGranted = snapshot.postNotifGranted
+    val notifListenerGranted = snapshot.notifListenerGranted
+    val smsGranted = snapshot.smsGranted
+    val contactsGranted = snapshot.contactsGranted
+    val calendarReadGranted = snapshot.calendarReadGranted
+    val calendarWriteGranted = snapshot.calendarWriteGranted
+    val exactAlarmGranted = snapshot.exactAlarmGranted
+    val batteryIgnored = snapshot.batteryIgnored
+    val usageGranted = snapshot.usageGranted
+    val hcAvailability = snapshot.hcAvailability
+    val hcPermStatus = snapshot.hcPermStatus
 
     val oemNote = remember { restrictedSettingsOemNote() }
 
@@ -219,7 +284,7 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                             com.phantom.checker.ui.components.AuroraTokens.CornerCard
                         ),
                         color = if (pendingPermCount > 0) {
-                            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f)
+                            MaterialTheme.colorScheme.warningContainer.copy(alpha = 0.75f)
                         } else {
                             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
                         }
@@ -233,7 +298,7 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = if (pendingPermCount > 0) {
-                                    MaterialTheme.colorScheme.onErrorContainer
+                                    MaterialTheme.colorScheme.onWarningContainer
                                 } else {
                                     MaterialTheme.colorScheme.onPrimaryContainer
                                 }
@@ -245,7 +310,11 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                                     stringResource(R.string.perm_hub_s_c3b64d)
                                 },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (pendingPermCount > 0) {
+                                    MaterialTheme.colorScheme.onWarningContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
                             )
                         }
                     }
@@ -283,7 +352,7 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                                 Text(
                                     text = oemNote,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.warning
                                 )
                             }
                         }
@@ -347,31 +416,15 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                                 }
                             }
                             HorizontalDivider()
-                            val hcAvailability = remember { com.phantom.checker.util.HealthConnectBridge.checkAvailability(appCtx) }
-                            var hcPermStatus by remember { mutableStateOf(com.phantom.checker.util.HealthConnectBridge.HealthPermissionStatus()) }
                             var healthAiQueryEnabled by remember { mutableStateOf(PhantomPrefs.isHealthAiQueryEnabled(appCtx)) }
-                            androidx.compose.runtime.LaunchedEffect(Unit) {
-                                hcPermStatus = com.phantom.checker.util.HealthConnectBridge.getPermissionStatus(appCtx)
-                            }
-                            val hcPermLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-                                androidx.health.connect.client.PermissionController.createRequestPermissionResultContract()
-                            ) { grantedSet ->
-                                hcPermStatus = com.phantom.checker.util.HealthConnectBridge.HealthPermissionStatus(
-                                    sleep = com.phantom.checker.util.HealthConnectBridge.PERM_READ_SLEEP in grantedSet,
-                                    steps = com.phantom.checker.util.HealthConnectBridge.PERM_READ_STEPS in grantedSet,
-                                    heartRate = com.phantom.checker.util.HealthConnectBridge.PERM_READ_HEART_RATE in grantedSet,
-                                    distance = com.phantom.checker.util.HealthConnectBridge.PERM_READ_DISTANCE in grantedSet,
-                                    calories = com.phantom.checker.util.HealthConnectBridge.PERM_READ_TOTAL_CALORIES in grantedSet
-                                )
-                            }
                             val hcGranted = hcPermStatus.allGranted
                             PermissionRow(
                                 name = stringResource(R.string.perm_hub_s_efd3d3),
                                 granted = hcPermStatus.anyGranted,
                                 desc = when {
-                                    hcAvailability == com.phantom.checker.util.HealthConnectBridge.SdkAvailability.UNAVAILABLE ->
+                                    hcAvailability == HealthConnectBridge.SdkAvailability.UNAVAILABLE ->
                                         stringResource(R.string.perm_hub_s_5698c6)
-                                    hcAvailability == com.phantom.checker.util.HealthConnectBridge.SdkAvailability.PROVIDER_UPDATE_REQUIRED ->
+                                    hcAvailability == HealthConnectBridge.SdkAvailability.PROVIDER_UPDATE_REQUIRED ->
                                         stringResource(R.string.perm_hub_s_d93e7c)
                                     hcPermStatus.allGranted ->
                                         stringResource(R.string.perm_hub_s_57b167)
@@ -381,22 +434,22 @@ private fun PermissionHubScreen(onBack: () -> Unit) {
                                         stringResource(R.string.perm_hub_s_a4d302)
                                 },
                                 actionLabel = when {
-                                    hcAvailability != com.phantom.checker.util.HealthConnectBridge.SdkAvailability.AVAILABLE -> stringResource(R.string.perm_hub_s_f5ef17)
+                                    hcAvailability != HealthConnectBridge.SdkAvailability.AVAILABLE -> stringResource(R.string.perm_hub_s_f5ef17)
                                     hcGranted -> stringResource(R.string.perm_hub_s_c75ad9)
                                     hcPermStatus.anyGranted -> stringResource(R.string.perm_hub_s_a1dcba)
                                     else -> stringResource(R.string.perm_hub_s_4665c7)
                                 }
                             ) {
-                                if (hcAvailability != com.phantom.checker.util.HealthConnectBridge.SdkAvailability.AVAILABLE || hcGranted) {
+                                if (hcAvailability != HealthConnectBridge.SdkAvailability.AVAILABLE || hcGranted) {
                                     runCatching {
-                                        ctx.startActivity(com.phantom.checker.util.HealthConnectBridge.buildInstallOrSettingsIntent(ctx))
+                                        ctx.startActivity(HealthConnectBridge.buildInstallOrSettingsIntent(ctx))
                                     }
                                 } else {
                                     runCatching {
-                                        hcPermLauncher.launch(com.phantom.checker.util.HealthConnectBridge.ALL_READ_PERMISSIONS)
+                                        hcPermLauncher.launch(HealthConnectBridge.ALL_READ_PERMISSIONS)
                                     }.onFailure {
                                         runCatching {
-                                            ctx.startActivity(com.phantom.checker.util.HealthConnectBridge.buildInstallOrSettingsIntent(ctx))
+                                            ctx.startActivity(HealthConnectBridge.buildInstallOrSettingsIntent(ctx))
                                         }
                                     }
                                 }

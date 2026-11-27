@@ -1,10 +1,20 @@
 package com.phantom.checker.ui
 
 import com.phantom.checker.ui.components.phantomEnter
+import android.Manifest
 import android.app.TimePickerDialog
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
+import android.text.format.DateFormat
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,10 +26,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -28,14 +40,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import com.phantom.checker.ui.components.FluidSwitch
 import com.phantom.checker.ui.components.pressableScale
 import dev.chrisbanes.haze.HazeState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +63,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.phantom.checker.service.AutoReplyConfig
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -68,6 +88,28 @@ class AutoReplySettingsActivity : ComponentActivity() {
     }
 }
 
+private fun hasSmsAutoReplyPermissions(ctx: Context): Boolean =
+    ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED &&
+        ContextCompat.checkSelfPermission(ctx, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+
+private fun openSmsPermissionSettings(ctx: Context) {
+    val detailsIntent = Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.fromParts("package", ctx.packageName, null)
+    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    try {
+        ctx.startActivity(detailsIntent)
+        return
+    } catch (_: Exception) {
+    }
+    try {
+        ctx.startActivity(Intent(ctx, PermissionHubActivity::class.java))
+        return
+    } catch (_: Exception) {
+    }
+    Toast.makeText(ctx, ctx.getString(R.string.perm_hub_open_settings_failed), Toast.LENGTH_SHORT).show()
+}
+
 private fun formatMinuteOfDay(totalMinutes: Int): String {
     val normalized = ((totalMinutes % 1440) + 1440) % 1440
     val hour = normalized / 60
@@ -83,8 +125,12 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    var enabled by remember { mutableStateOf(AutoReplyConfig.enabled) }
+    var smsPermissionGranted by remember { mutableStateOf(hasSmsAutoReplyPermissions(appCtx)) }
+    var pendingEnableAfterPermission by remember { mutableStateOf(false) }
+
+    var enabled by remember { mutableStateOf(AutoReplyConfig.enabled && smsPermissionGranted) }
     var startMinute by remember { mutableIntStateOf(AutoReplyConfig.startMinute) }
     var endMinute by remember { mutableIntStateOf(AutoReplyConfig.endMinute) }
     var smsTemplate by remember { mutableStateOf(AutoReplyConfig.smsTemplate) }
@@ -102,6 +148,55 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
             endMinute = newEndMinute,
             smsTemplate = newSmsTemplate
         )
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val granted = hasSmsAutoReplyPermissions(appCtx)
+                smsPermissionGranted = granted
+                if (!granted && enabled) {
+                    enabled = false
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val smsPermLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        val granted = hasSmsAutoReplyPermissions(appCtx)
+        smsPermissionGranted = granted
+        if (granted) {
+            if (pendingEnableAfterPermission) {
+                pendingEnableAfterPermission = false
+                enabled = true
+                persist(newEnabled = true)
+                scope.launch {
+                    snackbarHostState.showSnackbar(resCtx.getString(R.string.auto_reply_s_c243c5))
+                }
+            }
+        } else {
+            pendingEnableAfterPermission = false
+            enabled = false
+            persist(newEnabled = false)
+            scope.launch {
+                val res = snackbarHostState.showSnackbar(
+                    message = resCtx.getString(
+                        R.string.chat_s_c1aacd,
+                        resCtx.getString(R.string.perm_hub_s_becc64),
+                        resCtx.getString(R.string.linked_apps_s_3df23c)
+                    ),
+                    actionLabel = resCtx.getString(R.string.perm_hub_s_50912e),
+                    duration = SnackbarDuration.Long
+                )
+                if (res == SnackbarResult.ActionPerformed) {
+                    openSmsPermissionSettings(ctx)
+                }
+            }
+        }
     }
 
     com.phantom.checker.ui.components.PhantomPageScaffold(
@@ -122,6 +217,72 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (!smsPermissionGranted) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.warningContainer
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.warning,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(
+                                    R.string.chat_s_c1aacd,
+                                    stringResource(R.string.perm_hub_s_becc64),
+                                    stringResource(R.string.linked_apps_s_3df23c)
+                                ),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onWarningContainer
+                            )
+                        }
+                        Text(
+                            text = stringResource(R.string.perm_hub_s_30a359),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onWarningContainer
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    smsPermLauncher.launch(
+                                        arrayOf(
+                                            Manifest.permission.RECEIVE_SMS,
+                                            Manifest.permission.SEND_SMS
+                                        )
+                                    )
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .pressableScale()
+                            ) {
+                                Text(stringResource(R.string.perm_hub_s_4665c7))
+                            }
+                            OutlinedButton(
+                                onClick = { openSmsPermissionSettings(ctx) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .pressableScale()
+                            ) {
+                                Text(stringResource(R.string.perm_hub_s_50912e))
+                            }
+                        }
+                    }
+                }
+            }
+
             PhantomGlassCard(
                 glassState = glassState,
                 modifier = Modifier.phantomEnter(0, key = "ar_card_0").fillMaxWidth(),
@@ -170,8 +331,26 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                     FluidSwitch(
                         checked = enabled,
                         onCheckedChange = { checked ->
-                            enabled = checked
-                            persist(newEnabled = checked)
+                            if (checked) {
+                                val granted = hasSmsAutoReplyPermissions(appCtx)
+                                smsPermissionGranted = granted
+                                if (!granted) {
+                                    pendingEnableAfterPermission = true
+                                    smsPermLauncher.launch(
+                                        arrayOf(
+                                            Manifest.permission.RECEIVE_SMS,
+                                            Manifest.permission.SEND_SMS
+                                        )
+                                    )
+                                } else {
+                                    enabled = true
+                                    persist(newEnabled = true)
+                                }
+                            } else {
+                                pendingEnableAfterPermission = false
+                                enabled = false
+                                persist(newEnabled = false)
+                            }
                         }
                     )
                 }
@@ -217,7 +396,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                                     },
                                     startMinute / 60,
                                     startMinute % 60,
-                                    true
+                                    DateFormat.is24HourFormat(ctx)
                                 ).show()
                             },
                             modifier = Modifier
@@ -237,7 +416,7 @@ fun AutoReplySettingsScreen(onBack: () -> Unit) {
                                     },
                                     endMinute / 60,
                                     endMinute % 60,
-                                    true
+                                    DateFormat.is24HourFormat(ctx)
                                 ).show()
                             },
                             modifier = Modifier

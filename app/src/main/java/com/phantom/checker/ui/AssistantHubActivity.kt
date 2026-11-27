@@ -100,6 +100,33 @@ class AssistantHubActivity : ComponentActivity() {
     }
 }
 
+private fun parseHourMinute(hhmm: String, defaultHour: Int = 9, defaultMinute: Int = 0): Pair<Int, Int> {
+    val parts = hhmm.trim().split(":")
+    val hour = parts.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 23) ?: defaultHour
+    val minute = parts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 59) ?: defaultMinute
+    return hour to minute
+}
+
+private fun showSystemTimePicker(
+    ctx: android.content.Context,
+    currentHHmm: String,
+    defaultHour: Int = 9,
+    defaultMinute: Int = 0,
+    onPicked: (String) -> Unit
+) {
+    val (initHour, initMinute) = parseHourMinute(currentHHmm, defaultHour, defaultMinute)
+    val is24Hour = android.text.format.DateFormat.is24HourFormat(ctx)
+    android.app.TimePickerDialog(
+        ctx,
+        { _, hourOfDay, minute ->
+            onPicked(String.format(Locale.US, "%02d:%02d", hourOfDay, minute))
+        },
+        initHour,
+        initMinute,
+        is24Hour
+    ).show()
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun AssistantHubScreen(onBack: () -> Unit) {
@@ -144,7 +171,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
     var verbosity by remember { mutableStateOf(PhantomPrefs.getAssistantVerbosity(appCtx)) }
     var notifEnabled by remember { mutableStateOf(ProactiveEngine.areNotificationsEnabled(appCtx)) }
     var batteryIgnored by remember { mutableStateOf(isBatteryOptimizationIgnored(appCtx)) }
-    val lifecycleOwner = ctx as? androidx.lifecycle.LifecycleOwner
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
@@ -152,8 +179,8 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                 batteryIgnored = isBatteryOptimizationIgnored(appCtx)
             }
         }
-        lifecycleOwner?.lifecycle?.addObserver(observer)
-        onDispose { lifecycleOwner?.lifecycle?.removeObserver(observer) }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val locationLauncher = rememberLauncherForActivityResult(
@@ -279,6 +306,15 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 onValueChange = { morningTime = it },
                                 label = { Text(stringResource(R.string.assistant_hub_s_40fa87)) },
                                 singleLine = true,
+                                trailingIcon = {
+                                    IconButton(onClick = {
+                                        showSystemTimePicker(ctx, morningTime, defaultHour = 8, defaultMinute = 0) { picked ->
+                                            morningTime = picked
+                                        }
+                                    }) {
+                                        Text("🕒")
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth()
                             )
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -318,6 +354,15 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 onValueChange = { eveningTime = it },
                                 label = { Text(stringResource(R.string.assistant_hub_s_dd2f0c)) },
                                 singleLine = true,
+                                trailingIcon = {
+                                    IconButton(onClick = {
+                                        showSystemTimePicker(ctx, eveningTime, defaultHour = 21, defaultMinute = 0) { picked ->
+                                            eveningTime = picked
+                                        }
+                                    }) {
+                                        Text("🕒")
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth()
                             )
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -352,7 +397,7 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 Text(
                                     text = stringResource(R.string.assistant_hub_s_901722),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.warning
                                 )
                                 OutlinedButton(
                                     onClick = { openBatteryOptimizationSettings(ctx) },
@@ -464,6 +509,17 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                 },
                                 label = { Text(stringResource(R.string.assistant_hub_s_68d2d3)) },
                                 singleLine = true,
+                                trailingIcon = {
+                                    IconButton(onClick = {
+                                        showSystemTimePicker(ctx, allDayRemindTime, defaultHour = 9, defaultMinute = 0) { picked ->
+                                            allDayRemindTime = picked
+                                            PhantomPrefs.setProactiveAllDayRemindTime(appCtx, picked)
+                                            PhantomSettingsBus.notifyChanged()
+                                        }
+                                    }) {
+                                        Text("🕒")
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth()
                             )
 
@@ -533,6 +589,16 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                     },
                                     label = { Text(stringResource(R.string.assistant_hub_s_32ac23)) },
                                     singleLine = true,
+                                    trailingIcon = {
+                                        IconButton(onClick = {
+                                            showSystemTimePicker(ctx, dndStart, defaultHour = 22, defaultMinute = 0) { picked ->
+                                                dndStart = picked
+                                                PhantomPrefs.setProactiveDndStart(appCtx, picked)
+                                            }
+                                        }) {
+                                            Text("🕒")
+                                        }
+                                    },
                                     modifier = Modifier.weight(1f)
                                 )
                                 OutlinedTextField(
@@ -543,6 +609,16 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                     },
                                     label = { Text(stringResource(R.string.assistant_hub_s_51d928)) },
                                     singleLine = true,
+                                    trailingIcon = {
+                                        IconButton(onClick = {
+                                            showSystemTimePicker(ctx, dndEnd, defaultHour = 7, defaultMinute = 0) { picked ->
+                                                dndEnd = picked
+                                                PhantomPrefs.setProactiveDndEnd(appCtx, picked)
+                                            }
+                                        }) {
+                                            Text("🕒")
+                                        }
+                                    },
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -1039,6 +1115,15 @@ private fun AssistantHubScreen(onBack: () -> Unit) {
                                                     onValueChange = { tplTriggerTime = it },
                                                     label = { Text(stringResource(R.string.assistant_hub_s_4cfc16)) },
                                                     singleLine = true,
+                                                    trailingIcon = {
+                                                        IconButton(onClick = {
+                                                            showSystemTimePicker(ctx, tplTriggerTime, defaultHour = 9, defaultMinute = 0) { picked ->
+                                                                tplTriggerTime = picked
+                                                            }
+                                                        }) {
+                                                            Text("🕒")
+                                                        }
+                                                    },
                                                     modifier = Modifier.fillMaxWidth()
                                                 )
                                             }
