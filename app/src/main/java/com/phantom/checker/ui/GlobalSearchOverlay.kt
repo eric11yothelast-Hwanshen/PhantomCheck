@@ -159,23 +159,30 @@ internal fun PhantomGlobalSearchOverlay(
         }
         delay(200L)
         val qLower = trimmedQuery.lowercase()
-        withContext(Dispatchers.IO) {
+        val (nextMemMatches, nextNoteMatches) = withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
-            if (selectedScope == GlobalSearchScope.ALL || selectedScope == GlobalSearchScope.MEMORY) {
-                memoryMatches = db.memoryDao().all().filter { mem ->
+            val mems = if (selectedScope == GlobalSearchScope.ALL || selectedScope == GlobalSearchScope.MEMORY) {
+                db.memoryDao().search(trimmedQuery).filter { mem ->
                     val isSensitive = mem.privacyTier != MemoryEntity.PRIVACY_NORMAL
-                    mem.subject.lowercase().contains(qLower) ||
-                        mem.category.lowercase().contains(qLower) ||
-                        (!isSensitive && mem.content.lowercase().contains(qLower))
+                    !isSensitive ||
+                        mem.subject.lowercase().contains(qLower) ||
+                        mem.category.lowercase().contains(qLower)
                 }
+            } else {
+                emptyList()
             }
-            if (selectedScope == GlobalSearchScope.ALL || selectedScope == GlobalSearchScope.NOTES) {
-                noteMatches = db.noteDao().all().filter { note ->
+            val notes = if (selectedScope == GlobalSearchScope.ALL || selectedScope == GlobalSearchScope.NOTES) {
+                db.noteDao().topRecent(500).filter { note ->
                     note.content.lowercase().contains(qLower) ||
                         (note.relatedAppLabel?.lowercase()?.contains(qLower) == true)
                 }
+            } else {
+                emptyList()
             }
+            mems to notes
         }
+        memoryMatches = nextMemMatches
+        noteMatches = nextNoteMatches
     }
 
     val isAiConfigured = remember(visible, settingsBusVer) {

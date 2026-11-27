@@ -88,6 +88,7 @@ import com.phantom.checker.util.AiPurpose
 import com.phantom.checker.util.OtpDetector
 import com.phantom.checker.util.PhantomPrefs
 import com.phantom.checker.util.PhantomSettingsBus
+import com.phantom.checker.widget.WidgetUpdater
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -99,6 +100,18 @@ import java.util.Date
 import java.util.Locale
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+
+private data class MessageDetailSnapshot(
+    val message: MessageEntity?,
+    val intelResult: IntelResultEntity?,
+    val allTags: List<TagEntity>,
+    val selectedTagIds: Set<Long>,
+    val tagSourceByTagId: Map<Long, String>,
+    val calendarSuggestion: com.phantom.checker.util.CalendarBridge.CalendarEventSuggestion?,
+    val calendarWritableCals: List<com.phantom.checker.util.CalendarBridge.DeviceCalendarInfo>,
+    val calendarConflicts: List<com.phantom.checker.util.CalendarBridge.CalendarEventConflict>,
+    val calendarAllDayEvents: List<com.phantom.checker.util.CalendarBridge.CalendarEventConflict>
+)
 
 class MessageDetailActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -182,39 +195,58 @@ fun MessageDetailScreen(
 
     LaunchedEffect(messageId, resumeRefreshTrigger) {
         isLoading = true
-        withContext(Dispatchers.IO) {
+        val snapshot = withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
             val loaded = db.messageDao().byId(messageId)
             if (loaded != null && !loaded.isRead) {
                 db.messageDao().update(loaded.copy(isRead = true))
                 StatsForegroundService.startOrRefresh(appCtx)
+                WidgetUpdater.scheduleRefresh(appCtx)
             }
-            message = loaded?.copy(isRead = true)
-            intelResult = db.intelDao().getResult(messageId)
-            allTags = db.tagDao().all()
+            val loadedIntel = db.intelDao().getResult(messageId)
+            val loadedAllTags = db.tagDao().all()
             val refs = db.tagDao().crossRefsForMessage(messageId)
-            selectedTagIds = refs.map { it.tagId }.toSet()
-            tagSourceByTagId = refs.associate { it.tagId to it.source }
-            if (loaded != null) {
-                val sug = com.phantom.checker.util.CalendarBridge.evaluateMessageForSuggestion(appCtx, loaded)
-                calendarSuggestion = sug
-                if (sug != null) {
-                    calendarWritableCals = com.phantom.checker.util.CalendarBridge.listSelectedWritableCalendars(appCtx)
-                    calendarConflicts = com.phantom.checker.util.CalendarBridge.findConflictingEvents(
-                        ctx = appCtx,
-                        startMs = sug.startMs,
-                        endMs = sug.endMs
-                    )
-                    calendarAllDayEvents = if (calendarConflicts.isEmpty()) {
-                        com.phantom.checker.util.CalendarBridge.findAllDayEventsInWindow(
-                            ctx = appCtx,
-                            startMs = sug.startMs,
-                            endMs = sug.endMs
-                        )
-                    } else emptyList()
-                }
-            }
+            val sug = if (loaded != null) {
+                com.phantom.checker.util.CalendarBridge.evaluateMessageForSuggestion(appCtx, loaded)
+            } else null
+            val writableCals = if (sug != null) {
+                com.phantom.checker.util.CalendarBridge.listSelectedWritableCalendars(appCtx)
+            } else emptyList()
+            val conflicts = if (sug != null) {
+                com.phantom.checker.util.CalendarBridge.findConflictingEvents(
+                    ctx = appCtx,
+                    startMs = sug.startMs,
+                    endMs = sug.endMs
+                )
+            } else emptyList()
+            val allDayEvents = if (sug != null && conflicts.isEmpty()) {
+                com.phantom.checker.util.CalendarBridge.findAllDayEventsInWindow(
+                    ctx = appCtx,
+                    startMs = sug.startMs,
+                    endMs = sug.endMs
+                )
+            } else emptyList()
+            MessageDetailSnapshot(
+                message = loaded?.copy(isRead = true),
+                intelResult = loadedIntel,
+                allTags = loadedAllTags,
+                selectedTagIds = refs.map { it.tagId }.toSet(),
+                tagSourceByTagId = refs.associate { it.tagId to it.source },
+                calendarSuggestion = sug,
+                calendarWritableCals = writableCals,
+                calendarConflicts = conflicts,
+                calendarAllDayEvents = allDayEvents
+            )
         }
+        message = snapshot.message
+        intelResult = snapshot.intelResult
+        allTags = snapshot.allTags
+        selectedTagIds = snapshot.selectedTagIds
+        tagSourceByTagId = snapshot.tagSourceByTagId
+        calendarSuggestion = snapshot.calendarSuggestion
+        calendarWritableCals = snapshot.calendarWritableCals
+        calendarConflicts = snapshot.calendarConflicts
+        calendarAllDayEvents = snapshot.calendarAllDayEvents
         isLoading = false
     }
 
@@ -229,11 +261,9 @@ fun MessageDetailScreen(
                         scope.launch {
                             withContext(Dispatchers.IO) {
                                 val db = AppDatabaseHolder.db(appCtx)
-                                db.withTransaction {
-                                    db.tagDao().deleteCrossRefsByMessage(messageId)
-                                    db.messageDao().deleteById(messageId)
-                                }
+                                db.messageDao().deleteByIdWithOrphans(messageId)
                                 StatsForegroundService.startOrRefresh(appCtx)
+                                WidgetUpdater.scheduleRefresh(appCtx)
                             }
                             showDeleteConfirm = false
                             onBack()
@@ -263,6 +293,7 @@ fun MessageDetailScreen(
                         AppDatabaseHolder.db(appCtx).messageDao().setRemindAt(target.id, ts)
                     }
                     ReminderScheduler.schedule(appCtx, target.id, ts)
+                    WidgetUpdater.scheduleRefresh(appCtx)
                     message = target.copy(remindAt = ts)
                     val formatted = PhantomPrefs.formatMessageTime(appCtx, ts, includeDate = true)
                     snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_ed678a, formatted))
@@ -291,7 +322,7 @@ fun MessageDetailScreen(
                     Icon(
                         imageVector = Icons.Default.Star,
                         contentDescription = resCtx.getString(R.string.common_star),
-                        tint = if (msg.isStarred) Color(0xFFE6A100) else MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = if (msg.isStarred) MaterialTheme.colorScheme.warning else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 IconButton(onClick = { showDeleteConfirm = true }) {
@@ -581,12 +612,12 @@ fun MessageDetailScreen(
                         ) {
                             val riskColor = when (msg.riskLabel) {
                                 "scam" -> MaterialTheme.colorScheme.error
-                                "suspicious" -> Color(0xFFE6A100)
+                                "warning", "suspicious" -> MaterialTheme.colorScheme.warning
                                 else -> MaterialTheme.colorScheme.primary
                             }
                             val riskText = when (msg.riskLabel) {
                                 "scam" -> stringResource(R.string.detail_s_526177, msg.riskScore)
-                                "suspicious" -> stringResource(R.string.detail_s_5ed046, msg.riskScore)
+                                "warning", "suspicious" -> stringResource(R.string.detail_s_5ed046, msg.riskScore)
                                 "safe" -> stringResource(R.string.detail_s_ec55a0, msg.riskScore)
                                 else -> stringResource(R.string.detail_s_c767ca)
                             }
@@ -1015,6 +1046,7 @@ fun MessageDetailScreen(
                                                                 )
                                                             )
                                                         }
+                                                        WidgetUpdater.scheduleRefresh(appCtx)
                                                     }
                                                     if (isSelected) {
                                                         selectedTagIds = selectedTagIds - tag.id
@@ -1100,6 +1132,7 @@ fun MessageDetailScreen(
                                             )
                                             if (res.isSuccess) {
                                                 db.messageDao().update(updatedMsg)
+                                                WidgetUpdater.scheduleRefresh(appCtx)
                                             }
                                             res
                                         }
@@ -1164,6 +1197,7 @@ fun MessageDetailScreen(
                                                 AppDatabaseHolder.db(appCtx).messageDao().setRemindAt(msg.id, null)
                                             }
                                             ReminderScheduler.cancel(appCtx, msg.id)
+                                            WidgetUpdater.scheduleRefresh(appCtx)
                                             message = msg.copy(remindAt = null)
                                             snackbarHostState.showSnackbar(resCtx.getString(R.string.detail_s_f677a6))
                                         }

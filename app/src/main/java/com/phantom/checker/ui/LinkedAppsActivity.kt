@@ -423,7 +423,7 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.SemiBold,
                                         color = when {
-                                            isWarn -> Color(0xFFB45309)
+                                            isWarn -> MaterialTheme.colorScheme.warning
                                             isGray -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
                                             else -> MaterialTheme.colorScheme.onSurface
                                         }
@@ -443,7 +443,7 @@ private fun LinkedAppsScreen(onBack: () -> Unit) {
                                         } else "",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = when {
-                                            isWarn -> Color(0xFFB45309)
+                                            isWarn -> MaterialTheme.colorScheme.warning
                                             isGray -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                             else -> MaterialTheme.colorScheme.primary
                                         }

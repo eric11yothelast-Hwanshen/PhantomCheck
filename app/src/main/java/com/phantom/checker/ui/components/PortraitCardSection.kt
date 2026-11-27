@@ -24,7 +24,9 @@ import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.ui.PhantomGlassCard
 import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
 
@@ -44,21 +46,32 @@ fun PortraitCardSection(
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
-    val db = remember(appCtx) { AppDatabaseHolder.db(appCtx) }
 
     var portraitText by remember { mutableStateOf(PhantomPrefs.getPortraitCardText(appCtx)) }
     var updatedAt by remember { mutableStateOf(PhantomPrefs.getPortraitCardUpdatedAt(appCtx)) }
     var isRefreshing by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        if (MemoryEngine.shouldRefreshPortrait(appCtx, db)) {
+        val shouldRefresh = withContext(Dispatchers.IO) {
+            val db = AppDatabaseHolder.db(appCtx)
+            MemoryEngine.shouldRefreshPortrait(appCtx, db)
+        }
+        if (shouldRefresh) {
             isRefreshing = true
-            val next = MemoryEngine.generatePortraitCard(appCtx, db, forceManual = false)
-            if (!next.isNullOrBlank()) {
-                portraitText = next
-                updatedAt = PhantomPrefs.getPortraitCardUpdatedAt(appCtx)
+            try {
+                val (next, nextUpdatedAt) = withContext(Dispatchers.IO) {
+                    val db = AppDatabaseHolder.db(appCtx)
+                    val generated = MemoryEngine.generatePortraitCard(appCtx, db, forceManual = false)
+                    val ts = if (!generated.isNullOrBlank()) PhantomPrefs.getPortraitCardUpdatedAt(appCtx) else updatedAt
+                    generated to ts
+                }
+                if (!next.isNullOrBlank()) {
+                    portraitText = next
+                    updatedAt = nextUpdatedAt
+                }
+            } finally {
+                isRefreshing = false
             }
-            isRefreshing = false
         }
     }
 
@@ -83,16 +96,25 @@ fun PortraitCardSection(
                 TextButton(
                     enabled = !isRefreshing,
                     onClick = {
+                        if (isRefreshing) return@TextButton
                         isRefreshing = true
                         scope.launch {
-                            val next = MemoryEngine.generatePortraitCard(appCtx, db, forceManual = true)
-                            isRefreshing = false
-                            if (!next.isNullOrBlank()) {
-                                portraitText = next
-                                updatedAt = PhantomPrefs.getPortraitCardUpdatedAt(appCtx)
-                                onShowMessage(resCtx.getString(R.string.portrait_s_c70059))
-                            } else {
-                                onShowMessage(resCtx.getString(R.string.portrait_s_2625ee))
+                            try {
+                                val (next, nextUpdatedAt) = withContext(Dispatchers.IO) {
+                                    val db = AppDatabaseHolder.db(appCtx)
+                                    val generated = MemoryEngine.generatePortraitCard(appCtx, db, forceManual = true)
+                                    val ts = if (!generated.isNullOrBlank()) PhantomPrefs.getPortraitCardUpdatedAt(appCtx) else updatedAt
+                                    generated to ts
+                                }
+                                if (!next.isNullOrBlank()) {
+                                    portraitText = next
+                                    updatedAt = nextUpdatedAt
+                                    onShowMessage(resCtx.getString(R.string.portrait_s_c70059))
+                                } else {
+                                    onShowMessage(resCtx.getString(R.string.portrait_s_2625ee))
+                                }
+                            } finally {
+                                isRefreshing = false
                             }
                         }
                     }

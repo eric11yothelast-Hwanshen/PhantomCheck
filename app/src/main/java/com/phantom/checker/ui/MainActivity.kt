@@ -206,6 +206,7 @@ import com.phantom.checker.util.ShareCardReportData
 import com.phantom.checker.util.StatsShareCardGenerator
 import com.phantom.checker.util.TabBarDisplayMode
 import com.phantom.checker.util.UpdateCheckResult
+import com.phantom.checker.widget.WidgetUpdater
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -228,6 +229,40 @@ import androidx.compose.ui.res.stringResource
 import androidx.annotation.StringRes
 private const val PAGE_SIZE = 100
 private const val MAX_BATCH_SELECT = 100
+
+private sealed interface MainLoadSnapshot {
+    data object NoOp : MainLoadSnapshot
+    data class Search(
+        val notedMsgIds: Set<Long>,
+        val todoedMsgIds: Set<Long>,
+        val searchResults: List<MessageEntity>,
+        val activeFilterKeywords: List<String>,
+        val messageTagsMap: Map<Long, List<MessageTagRow>>
+    ) : MainLoadSnapshot
+    data class MessagesAll(
+        val todayCount: Int,
+        val unreadCount: Int,
+        val todayScamCount: Int,
+        val availableTags: List<TagEntity>,
+        val tagCounts: List<TagTotalCountRow>,
+        val notedMsgIds: Set<Long>,
+        val todoedMsgIds: Set<Long>,
+        val appGroups: List<AppGroupUi>
+    ) : MainLoadSnapshot
+    data class MessagesFiltered(
+        val todayCount: Int,
+        val unreadCount: Int,
+        val todayScamCount: Int,
+        val availableTags: List<TagEntity>,
+        val tagCounts: List<TagTotalCountRow>,
+        val notedMsgIds: Set<Long>,
+        val todoedMsgIds: Set<Long>,
+        val filteredMessages: List<MessageEntity>,
+        val messageTagsMap: Map<Long, List<MessageTagRow>>,
+        val hasMoreFiltered: Boolean
+    ) : MainLoadSnapshot
+    data class Stats(val statsState: StatsUiState) : MainLoadSnapshot
+}
 
 /** 記憶庫專屬圖示（純向量繪製，無需額外依賴） */
 internal val MemoryIcon: ImageVector by lazy {
@@ -745,7 +780,7 @@ private fun PhantomCheckApp(
             delay(300L)
         }
         isLoading = true
-        withContext(Dispatchers.IO) {
+        val loadSnapshot: MainLoadSnapshot = withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
             val dao = db.messageDao()
             val startOfDay = NotificationCollectorService.startOfTodayMillis()
@@ -762,22 +797,21 @@ private fun PhantomCheckApp(
                 } else {
                     db.tagDao().tagsForMessages(found.map { it.id }).groupBy { it.messageId }
                 }
-                notedMsgIds = dao.notedMessageIds().toSet()
-                todoedMsgIds = dao.todoedMessageIds().toSet()
-                searchResults = found
-                activeFilterKeywords = keywords
-                messageTagsMap = foundTags
+                MainLoadSnapshot.Search(
+                    notedMsgIds = dao.notedMessageIds().toSet(),
+                    todoedMsgIds = dao.todoedMessageIds().toSet(),
+                    searchResults = found,
+                    activeFilterKeywords = keywords,
+                    messageTagsMap = foundTags
+                )
             } else {
                 when (selectedTab) {
                     MainTab.MESSAGES -> {
                         val overview = dao.statsOverview(startOfDay)
-                        todayCount = overview.today
-                        unreadCount = overview.unread
-                        todayScamCount = overview.scam
-                        availableTags = db.tagDao().all()
-                        tagCounts = db.tagDao().allTagCounts()
-                        notedMsgIds = dao.notedMessageIds().toSet()
-                        todoedMsgIds = dao.todoedMessageIds().toSet()
+                        val loadedTags = db.tagDao().all()
+                        val loadedTagCounts = db.tagDao().allTagCounts()
+                        val loadedNotedIds = dao.notedMessageIds().toSet()
+                        val loadedTodoedIds = dao.todoedMessageIds().toSet()
 
                         if (activeFilter == MessageFilter.All) {
                             val groups = dao.groupByApp()
@@ -787,23 +821,24 @@ private fun PhantomCheckApp(
                                 .associate { it.packageName to it.cnt }
                             val totalUnreadMap = dao.unreadCountsByApp()
                                 .associate { it.packageName to it.cnt }
-                            val recentMsgs = dao.paged(PAGE_SIZE, 0)
-                            val latestPreviewByPkg = recentMsgs
-                                .groupBy { it.packageName }
-                                .mapValues { (_, list) -> list.maxByOrNull { it.timestamp }?.content.orEmpty() }
                             val latestIdsByApp = dao.latestMessageIdsByApp()
                                 .associate { it.packageName to it.messageId }
                             val latestMsgIds = latestIdsByApp.values.distinct()
+                            // P0: 單次批次 SQL 取得各 App 最新訊息預覽（自動 chunked(500)），消除 N+1 dao.byApp() OOM
+                            val latestMsgsById = if (latestMsgIds.isEmpty()) {
+                                emptyMap()
+                            } else {
+                                dao.byIds(latestMsgIds).associateBy { it.id }
+                            }
                             val tagsByLatestMsgId = if (latestMsgIds.isEmpty()) {
                                 emptyMap()
                             } else {
                                 db.tagDao().tagsForMessages(latestMsgIds).groupBy { it.messageId }
                             }
                             val sortOrder = PhantomPrefs.getHomeSortOrder(appCtx)
-                            appGroups = groups.map { g ->
-                                val preview = latestPreviewByPkg[g.packageName]
-                                    ?: dao.byApp(g.packageName).firstOrNull()?.content.orEmpty()
+                            val loadedAppGroups = groups.map { g ->
                                 val latestMsgId = latestIdsByApp[g.packageName]
+                                val preview = latestMsgId?.let { latestMsgsById[it]?.content }.orEmpty()
                                 AppGroupUi(
                                     packageName = g.packageName,
                                     appLabel = g.appLabel.ifBlank { g.packageName },
@@ -826,6 +861,16 @@ private fun PhantomCheckApp(
                                         list.sortedWith(compareByDescending<AppGroupUi> { it.riskScore }.thenByDescending { it.lastTs })
                                 }
                             }
+                            MainLoadSnapshot.MessagesAll(
+                                todayCount = overview.today,
+                                unreadCount = overview.unread,
+                                todayScamCount = overview.scam,
+                                availableTags = loadedTags,
+                                tagCounts = loadedTagCounts,
+                                notedMsgIds = loadedNotedIds,
+                                todoedMsgIds = loadedTodoedIds,
+                                appGroups = loadedAppGroups
+                            )
                         } else {
                             val page = queryFilteredPage(0)
                             val pageTags = if (page.isEmpty()) {
@@ -833,15 +878,24 @@ private fun PhantomCheckApp(
                             } else {
                                 db.tagDao().tagsForMessages(page.map { it.id }).groupBy { it.messageId }
                             }
-                            filteredMessages = page
-                            messageTagsMap = pageTags
-                            hasMoreFiltered = page.size >= PAGE_SIZE
+                            MainLoadSnapshot.MessagesFiltered(
+                                todayCount = overview.today,
+                                unreadCount = overview.unread,
+                                todayScamCount = overview.scam,
+                                availableTags = loadedTags,
+                                tagCounts = loadedTagCounts,
+                                notedMsgIds = loadedNotedIds,
+                                todoedMsgIds = loadedTodoedIds,
+                                filteredMessages = page,
+                                messageTagsMap = pageTags,
+                                hasMoreFiltered = page.size >= PAGE_SIZE
+                            )
                         }
                     }
-                    MainTab.ASSISTANT -> Unit
-                    MainTab.MEMORY -> Unit
-                    MainTab.NOTES -> Unit
-                    MainTab.LINK -> Unit
+                    MainTab.ASSISTANT -> MainLoadSnapshot.NoOp
+                    MainTab.MEMORY -> MainLoadSnapshot.NoOp
+                    MainTab.NOTES -> MainLoadSnapshot.NoOp
+                    MainTab.LINK -> MainLoadSnapshot.NoOp
                     MainTab.INSIGHT -> if (insightSubTab == InsightSubTab.STATS) {
                         val summary = db.aiSummaryDao().latest()
                         val cal = Calendar.getInstance().apply {
@@ -885,7 +939,7 @@ private fun PhantomCheckApp(
                             }
                         }
                         val safe = dao.countByRiskLabel("safe") + dao.countByRiskLabel("")
-                        val suspicious = dao.countByRiskLabel("suspicious")
+                        val suspicious = dao.countByRiskLabel("suspicious") + dao.warningCount()
                         val scam = dao.countByRiskLabel("scam")
                         val harassmentTagIds = db.tagDao().all()
                             .filter { it.name == "行銷" || it.name == "垃圾通知" }
@@ -894,11 +948,9 @@ private fun PhantomCheckApp(
                         val harassmentCnt = if (harassmentTagIds.isEmpty()) {
                             0
                         } else {
-                            db.tagDao().allCrossRefs()
+                            db.tagDao().allTagCounts()
                                 .filter { it.tagId in harassmentTagIds }
-                                .map { it.messageId }
-                                .toSet()
-                                .size
+                                .sumOf { it.cnt }
                         }
                         val topRisky = dao.topRiskyApps()
                         val rawGroups = dao.groupByApp()
@@ -924,28 +976,67 @@ private fun PhantomCheckApp(
                         val todoCompletion = db.todoDao().completionStats()
                         val aiTagCounts = db.tagDao().todayAiTagCounts(startOfDay)
                         val weeklySummary = db.aiSummaryDao().latestWeekly()
-                        statsState = StatsUiState(
-                            latestSummary = summary,
-                            latestWeeklySummary = weeklySummary,
-                            weeklyCounts = weekly,
-                            weeklyRiskCounts = weeklyRisk,
-                            safeCount = safe,
-                            suspiciousCount = suspicious,
-                            scamCount = scam,
-                            topRiskyApps = topRisky,
-                            dailyTopApps = dailyTopApps,
-                            rawAppGroups = rawGroups,
-                            todayAiTagCounts = aiTagCounts,
-                            todayHourlyCounts = hourly.toList(),
-                            harassmentCount = harassmentCnt,
-                            totalMessageCount = safe + suspicious + scam,
-                            unreadTotalCount = unreadTotal,
-                            todoTotalCount = todoCompletion.total,
-                            todoDoneCount = todoCompletion.done
+                        MainLoadSnapshot.Stats(
+                            StatsUiState(
+                                latestSummary = summary,
+                                latestWeeklySummary = weeklySummary,
+                                weeklyCounts = weekly,
+                                weeklyRiskCounts = weeklyRisk,
+                                safeCount = safe,
+                                suspiciousCount = suspicious,
+                                scamCount = scam,
+                                topRiskyApps = topRisky,
+                                dailyTopApps = dailyTopApps,
+                                rawAppGroups = rawGroups,
+                                todayAiTagCounts = aiTagCounts,
+                                todayHourlyCounts = hourly.toList(),
+                                harassmentCount = harassmentCnt,
+                                totalMessageCount = safe + suspicious + scam,
+                                unreadTotalCount = unreadTotal,
+                                todoTotalCount = todoCompletion.total,
+                                todoDoneCount = todoCompletion.done
+                            )
                         )
+                    } else {
+                        MainLoadSnapshot.NoOp
                     }
                 }
             }
+        }
+        when (loadSnapshot) {
+            is MainLoadSnapshot.Search -> {
+                notedMsgIds = loadSnapshot.notedMsgIds
+                todoedMsgIds = loadSnapshot.todoedMsgIds
+                searchResults = loadSnapshot.searchResults
+                activeFilterKeywords = loadSnapshot.activeFilterKeywords
+                messageTagsMap = loadSnapshot.messageTagsMap
+            }
+            is MainLoadSnapshot.MessagesAll -> {
+                todayCount = loadSnapshot.todayCount
+                unreadCount = loadSnapshot.unreadCount
+                todayScamCount = loadSnapshot.todayScamCount
+                availableTags = loadSnapshot.availableTags
+                tagCounts = loadSnapshot.tagCounts
+                notedMsgIds = loadSnapshot.notedMsgIds
+                todoedMsgIds = loadSnapshot.todoedMsgIds
+                appGroups = loadSnapshot.appGroups
+            }
+            is MainLoadSnapshot.MessagesFiltered -> {
+                todayCount = loadSnapshot.todayCount
+                unreadCount = loadSnapshot.unreadCount
+                todayScamCount = loadSnapshot.todayScamCount
+                availableTags = loadSnapshot.availableTags
+                tagCounts = loadSnapshot.tagCounts
+                notedMsgIds = loadSnapshot.notedMsgIds
+                todoedMsgIds = loadSnapshot.todoedMsgIds
+                filteredMessages = loadSnapshot.filteredMessages
+                messageTagsMap = loadSnapshot.messageTagsMap
+                hasMoreFiltered = loadSnapshot.hasMoreFiltered
+            }
+            is MainLoadSnapshot.Stats -> {
+                statsState = loadSnapshot.statsState
+            }
+            MainLoadSnapshot.NoOp -> Unit
         }
         if (q.isEmpty()) {
             tabLastLoadedMs[selectedTab] = System.currentTimeMillis()
@@ -1095,11 +1186,12 @@ private fun PhantomCheckApp(
                             withContext(Dispatchers.IO) {
                                 val db = AppDatabaseHolder.db(appCtx)
                                 db.withTransaction {
-                                    db.tagDao().deleteCrossRefsByApp(target.packageName)
                                     db.messageDao().deleteByApp(target.packageName)
+                                    db.messageDao().deleteAllMessageOrphans()
                                 }
                             }
                             StatsForegroundService.startOrRefresh(appCtx)
+                            WidgetUpdater.scheduleRefresh(appCtx)
                             deleteAppConfirm = null
                             refreshTrigger++
                             snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_af39ba, target.appLabel))
@@ -1129,12 +1221,10 @@ private fun PhantomCheckApp(
                         scope.launch {
                             withContext(Dispatchers.IO) {
                                 val db = AppDatabaseHolder.db(appCtx)
-                                db.withTransaction {
-                                    db.tagDao().deleteCrossRefsByMessage(target.id)
-                                    db.messageDao().deleteById(target.id)
-                                }
+                                db.messageDao().deleteByIdWithOrphans(target.id)
                             }
                             StatsForegroundService.startOrRefresh(appCtx)
+                            WidgetUpdater.scheduleRefresh(appCtx)
                             deleteMessageConfirm = null
                             refreshTrigger++
                             snackbarHostState.showSnackbar(resCtx.getString(R.string.common_message_deleted))
@@ -1164,19 +1254,27 @@ private fun PhantomCheckApp(
                     onClick = {
                         val ids = selectedMessageIds.toList()
                         scope.launch {
-                            withContext(Dispatchers.IO) {
+                            val (deletedCount, protectedCount) = withContext(Dispatchers.IO) {
                                 val db = AppDatabaseHolder.db(appCtx)
-                                db.withTransaction {
-                                    db.tagDao().deleteCrossRefsByMessageIds(ids)
-                                    db.messageDao().deleteByIds(ids)
-                                }
+                                val deleted = db.messageDao().deleteNonScamByIdsWithOrphans(ids)
+                                val protected = (ids.size - deleted).coerceAtLeast(0)
+                                deleted to protected
                             }
                             StatsForegroundService.startOrRefresh(appCtx)
+                            WidgetUpdater.scheduleRefresh(appCtx)
                             showBatchDeleteConfirm = false
                             isMultiSelectMode = false
                             selectedMessageIds = emptySet()
                             refreshTrigger++
-                            snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_330b12, count))
+                            val msgText = when {
+                                deletedCount > 0 && protectedCount > 0 ->
+                                    resCtx.getString(R.string.threads_s_8b7bd6, deletedCount, protectedCount)
+                                deletedCount == 0 && protectedCount > 0 ->
+                                    resCtx.getString(R.string.conv_s_6703f2, protectedCount)
+                                else ->
+                                    resCtx.getString(R.string.main_s_330b12, deletedCount)
+                            }
+                            snackbarHostState.showSnackbar(msgText)
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -1211,15 +1309,13 @@ private fun PhantomCheckApp(
                                 if (ids.isEmpty()) {
                                     0 to 0
                                 } else {
-                                    db.withTransaction {
-                                        db.tagDao().deleteCrossRefsByMessageIds(ids)
-                                        db.messageDao().deleteByIds(ids)
-                                    }
+                                    val deleted = db.messageDao().deleteNonScamByIdsWithOrphans(ids)
                                     val rem = db.messageDao().countDeletableByApps(pkgs)
-                                    ids.size to rem
+                                    deleted to rem
                                 }
                             }
                             StatsForegroundService.startOrRefresh(appCtx)
+                            WidgetUpdater.scheduleRefresh(appCtx)
                             showAppBatchDeleteConfirm = false
                             if (remainingCount <= 0) {
                                 isAppMultiSelectMode = false
@@ -1339,6 +1435,7 @@ private fun PhantomCheckApp(
                                                 }
                                             }
                                         }
+                                        WidgetUpdater.scheduleRefresh(appCtx)
                                     }
                                     messageSheetTarget = null
                                     refreshTrigger++
@@ -1377,6 +1474,7 @@ private fun PhantomCheckApp(
                                                     MessageTagCrossRef(msg.id, tag.id, MessageTagCrossRef.SOURCE_MANUAL)
                                                 )
                                             }
+                                            WidgetUpdater.scheduleRefresh(appCtx)
                                         }
                                         sheetMsgTagIds = if (selected) sheetMsgTagIds - tag.id else sheetMsgTagIds + tag.id
                                         refreshTrigger++
@@ -1440,6 +1538,7 @@ private fun PhantomCheckApp(
                         AppDatabaseHolder.db(appCtx).messageDao().setRemindAt(target.id, ts)
                     }
                     com.phantom.checker.service.ReminderScheduler.schedule(appCtx, target.id, ts)
+                    WidgetUpdater.scheduleRefresh(appCtx)
                     refreshTrigger++
                     val formatted = PhantomPrefs.formatMessageTime(appCtx, ts, includeDate = true)
                     snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_ed678a, formatted))
@@ -1625,6 +1724,7 @@ private fun PhantomCheckApp(
                                             AppDatabaseHolder.db(appCtx).messageDao().markReadByIds(ids)
                                         }
                                         StatsForegroundService.startOrRefresh(appCtx)
+                                        WidgetUpdater.scheduleRefresh(appCtx)
                                         isMultiSelectMode = false
                                         selectedMessageIds = emptySet()
                                         refreshTrigger++
@@ -2071,6 +2171,7 @@ private fun PhantomCheckApp(
                                     AppDatabaseHolder.db(appCtx).messageDao().markAllRead()
                                 }
                                 StatsForegroundService.startOrRefresh(appCtx)
+                                WidgetUpdater.scheduleRefresh(appCtx)
                                 refreshTrigger++
                                 snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_b23686))
                             }
@@ -2292,7 +2393,7 @@ private fun PhantomCheckApp(
             when (searchRiskFilter) {
                 SearchRiskFilter.ALL -> searchResults
                 SearchRiskFilter.SCAM -> searchResults.filter { it.riskLabel == "scam" }
-                SearchRiskFilter.SUSPICIOUS -> searchResults.filter { it.riskLabel == "suspicious" }
+                SearchRiskFilter.SUSPICIOUS -> searchResults.filter { it.riskLabel == "suspicious" || it.riskLabel == "warning" }
                 SearchRiskFilter.STARRED -> searchResults.filter { it.isStarred }
             }
         }

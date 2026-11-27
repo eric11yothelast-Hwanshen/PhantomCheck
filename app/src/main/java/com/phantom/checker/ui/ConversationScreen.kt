@@ -1,13 +1,17 @@
 package com.phantom.checker.ui
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.telephony.SmsManager
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -97,9 +101,11 @@ import com.phantom.checker.network.AiClient
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.NotificationCollectorService
 import com.phantom.checker.service.ReplyProxyManager
+import com.phantom.checker.service.ReplyProxyReceiver
 import com.phantom.checker.service.StatsForegroundService
 import com.phantom.checker.ui.components.SwipeToRevealRow
 import com.phantom.checker.util.PhantomPrefs
+import com.phantom.checker.widget.WidgetUpdater
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -112,7 +118,35 @@ import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
 
 private const val MAX_BATCH_SELECT = 100
-private val TW_PHONE_REGEX = Regex("^09\\d{8}$")
+private val PHONE_NUMBER_REGEX = Regex("^(?:\\+?[0-9]{7,15}|09\\d{8})$")
+private val CONVERSATION_MSG_ORDER = compareBy<MessageEntity>({ it.timestamp }, { it.id })
+
+private data class ConversationLoadSnapshot(
+    val messages: List<MessageEntity>,
+    val avatars: Map<String, ByteArray>,
+    val allTags: List<TagEntity>,
+    val msgTagsMap: Map<Long, List<MessageTagRow>>,
+    val msgTagIdsMap: Map<Long, Set<Long>>
+)
+
+private data class PendingSmsConfirm(
+    val phone: String,
+    val text: String,
+    val targetSender: String,
+    val targetSnippet: String
+)
+
+private fun resolveSmsManager(ctx: Context): SmsManager? {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        ctx.getSystemService(SmsManager::class.java)
+    } else {
+        @Suppress("DEPRECATION")
+        SmsManager.getDefault()
+    }
+}
+
+private fun normalizePhoneCandidate(raw: String): String =
+    raw.trim().replace(" ", "").replace("-", "")
 
 class ConversationActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -222,6 +256,7 @@ fun ConversationScreen(
     var replyText by rememberSaveable { mutableStateOf("") }
     var isSendingReply by remember { mutableStateOf(false) }
     var scrollToBottomPending by remember { mutableStateOf(false) }
+    var pendingSmsConfirm by remember { mutableStateOf<PendingSmsConfirm?>(null) }
 
     val isImeVisible = WindowInsets.isImeVisible
     LaunchedEffect(isImeVisible) {
@@ -284,48 +319,63 @@ fun ConversationScreen(
     LaunchedEffect(packageName, conversationKey, refreshTrigger) {
         isLoading = true
         val pageSize = 200
-        val (loaded, loadedAvatars) = withContext(Dispatchers.IO) {
+        val snapshot = withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
             val dao = db.messageDao()
-            dao.markConversationRead(packageName, conversationKey)
+            val marked = dao.markReadByConversation(packageName, conversationKey)
             StatsForegroundService.startOrRefresh(appCtx)
-            allTags = db.tagDao().all()
-            val msgs = dao.byConversationKeyset(packageName, conversationKey, null, pageSize).asReversed()
+            if (marked > 0) {
+                WidgetUpdater.scheduleRefresh(appCtx)
+            }
+            val loadedTags = db.tagDao().all()
+            val msgs = dao.byConversationKeyset(packageName, conversationKey, null, pageSize)
+                .sortedWith(CONVERSATION_MSG_ORDER)
             val ids = msgs.map { it.id }
             val tagRows = if (ids.isEmpty()) emptyList() else db.tagDao().tagsForMessages(ids)
-            msgTagsMap = tagRows.groupBy { it.messageId }
-            msgTagIdsMap = tagRows.groupBy { it.messageId }
-                .mapValues { (_, list) -> list.map { it.tagId }.toSet() }
+            val tagsGrouped = tagRows.groupBy { it.messageId }
+            val tagIdsGrouped = tagsGrouped.mapValues { (_, list) -> list.map { it.tagId }.toSet() }
             val avatars = db.senderAvatarDao().byPackage(packageName).associate { it.sender to it.icon }
-            msgs to avatars
+            ConversationLoadSnapshot(
+                messages = msgs,
+                avatars = avatars,
+                allTags = loadedTags,
+                msgTagsMap = tagsGrouped,
+                msgTagIdsMap = tagIdsGrouped
+            )
         }
-        messages = loaded
-        avatarMap = loadedAvatars
-        hasMoreOlder = loaded.size >= pageSize
+        allTags = snapshot.allTags
+        msgTagsMap = snapshot.msgTagsMap
+        msgTagIdsMap = snapshot.msgTagIdsMap
+        messages = snapshot.messages
+        avatarMap = snapshot.avatars
+        hasMoreOlder = snapshot.messages.size >= pageSize
         isLoading = false
-        if (loaded.isNotEmpty() && (refreshTrigger <= 1 || scrollToBottomPending)) {
+        if (snapshot.messages.isNotEmpty() && (refreshTrigger <= 1 || scrollToBottomPending)) {
             scrollToBottomPending = false
-            listState.scrollToItem(loaded.lastIndex)
+            listState.scrollToItem(snapshot.messages.lastIndex)
         }
     }
 
     LaunchedEffect(shouldLoadOlder, hasMoreOlder, isLoading, isLoadingMoreOlder) {
         if (!shouldLoadOlder || !hasMoreOlder || isLoading || isLoadingMoreOlder) return@LaunchedEffect
         val oldestTs = messages.firstOrNull()?.timestamp ?: return@LaunchedEffect
+        val sameTsLoadedCount = messages.count { it.timestamp == oldestTs }
+        val inclusiveBeforeTs = if (oldestTs < Long.MAX_VALUE) oldestTs + 1L else Long.MAX_VALUE
         isLoadingMoreOlder = true
         val pageSize = 200
-        val (older, olderTagRows) = withContext(Dispatchers.IO) {
+        val fetchLimit = pageSize + sameTsLoadedCount
+        val (olderRaw, olderTagRows) = withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
             val olderMsgs = db.messageDao()
-                .byConversationKeyset(packageName, conversationKey, oldestTs, pageSize)
-                .asReversed()
+                .byConversationKeyset(packageName, conversationKey, inclusiveBeforeTs, fetchLimit)
+                .sortedWith(CONVERSATION_MSG_ORDER)
             val olderIds = olderMsgs.map { it.id }
             val tagRows = if (olderIds.isEmpty()) emptyList() else db.tagDao().tagsForMessages(olderIds)
             olderMsgs to tagRows
         }
-        if (older.isNotEmpty()) {
+        if (olderRaw.isNotEmpty()) {
             val existingIds = messages.map { it.id }.toHashSet()
-            val uniqueOlder = older.filter { it.id !in existingIds }
+            val uniqueOlder = olderRaw.filter { it.id !in existingIds }
             if (uniqueOlder.isNotEmpty()) {
                 val olderTagsGrouped = olderTagRows.groupBy { it.messageId }
                 msgTagsMap = msgTagsMap + olderTagsGrouped
@@ -334,11 +384,13 @@ fun ConversationScreen(
                 }
                 val prevFirstIdx = listState.firstVisibleItemIndex
                 val prevOffset = listState.firstVisibleItemScrollOffset
-                messages = uniqueOlder + messages
-                listState.scrollToItem(prevFirstIdx + uniqueOlder.size, prevOffset)
+                val merged = (uniqueOlder + messages).sortedWith(CONVERSATION_MSG_ORDER)
+                val insertedBeforeAnchor = uniqueOlder.count { it.timestamp <= oldestTs }
+                messages = merged
+                listState.scrollToItem((prevFirstIdx + insertedBeforeAnchor).coerceAtMost(merged.lastIndex), prevOffset)
             }
         }
-        hasMoreOlder = older.size >= pageSize
+        hasMoreOlder = olderRaw.size >= fetchLimit
         isLoadingMoreOlder = false
     }
 
@@ -354,10 +406,11 @@ fun ConversationScreen(
                             withContext(Dispatchers.IO) {
                                 val db = AppDatabaseHolder.db(appCtx)
                                 db.withTransaction {
-                                    db.tagDao().deleteCrossRefsByConversation(packageName, conversationKey)
                                     db.messageDao().deleteByConversation(packageName, conversationKey)
+                                    db.messageDao().deleteAllMessageOrphans()
                                 }
                                 StatsForegroundService.startOrRefresh(appCtx)
+                                WidgetUpdater.scheduleRefresh(appCtx)
                             }
                             showClearConfirm = false
                             onBack()
@@ -387,11 +440,9 @@ fun ConversationScreen(
                         scope.launch {
                             withContext(Dispatchers.IO) {
                                 val db = AppDatabaseHolder.db(appCtx)
-                                db.withTransaction {
-                                    db.tagDao().deleteCrossRefsByMessage(target.id)
-                                    db.messageDao().deleteById(target.id)
-                                }
+                                db.messageDao().deleteByIdWithOrphans(target.id)
                                 StatsForegroundService.startOrRefresh(appCtx)
+                                WidgetUpdater.scheduleRefresh(appCtx)
                             }
                             deleteCandidate = null
                             refreshTrigger++
@@ -423,17 +474,12 @@ fun ConversationScreen(
                         scope.launch {
                             val (deletedCount, protectedCount) = withContext(Dispatchers.IO) {
                                 val db = AppDatabaseHolder.db(appCtx)
-                                db.withTransaction {
-                                    val deletableIds = db.messageDao().nonScamIdsFrom(ids)
-                                    val protected = ids.size - deletableIds.size
-                                    if (deletableIds.isNotEmpty()) {
-                                        db.tagDao().deleteCrossRefsByMessageIds(deletableIds)
-                                        db.messageDao().deleteNonScamByIds(deletableIds)
-                                    }
-                                    deletableIds.size to protected
-                                }
+                                val deleted = db.messageDao().deleteNonScamByIdsWithOrphans(ids)
+                                val protected = (ids.size - deleted).coerceAtLeast(0)
+                                deleted to protected
                             }
                             StatsForegroundService.startOrRefresh(appCtx)
+                            WidgetUpdater.scheduleRefresh(appCtx)
                             showBatchDeleteConfirm = false
                             isMultiSelectMode = false
                             selectedMessageIds = emptySet()
@@ -456,6 +502,113 @@ fun ConversationScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showBatchDeleteConfirm = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
+    pendingSmsConfirm?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { pendingSmsConfirm = null },
+            title = { Text("${stringResource(R.string.conv_s_53fe74)} (SMS)") },
+            text = {
+                Text("${stringResource(R.string.notif_reply_rx_s_74cc37)}\n\n${pending.phone}\n${pending.text}")
+            },
+            confirmButton = {
+                Button(
+                    enabled = !isSendingReply,
+                    onClick = {
+                        pendingSmsConfirm = null
+                        if (isSendingReply) return@Button
+                        isSendingReply = true
+                        scope.launch {
+                            try {
+                                val sentOk = withContext(Dispatchers.IO) {
+                                    val isGenuine = ReplyProxyReceiver.isGenuineSmsSource(appCtx, packageName)
+                                    val hasPerm = ContextCompat.checkSelfPermission(
+                                        appCtx,
+                                        Manifest.permission.SEND_SMS
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                    if (!isGenuine || !hasPerm) return@withContext false
+                                    val smsManager = resolveSmsManager(appCtx)
+                                        ?: throw IllegalStateException("SmsManager unavailable")
+                                    val parts = smsManager.divideMessage(pending.text)
+                                    if (parts.isNullOrEmpty()) {
+                                        throw IllegalStateException("Empty SMS parts")
+                                    }
+                                    NotificationCollectorService.recordOwnReplyEcho(
+                                        ctx = appCtx,
+                                        packageName = packageName,
+                                        conversationKey = conversationKey,
+                                        replyText = pending.text
+                                    )
+                                    smsManager.sendMultipartTextMessage(
+                                        pending.phone,
+                                        null,
+                                        parts,
+                                        null,
+                                        null
+                                    )
+                                    AppDatabaseHolder.db(appCtx).messageDao().insert(
+                                        MessageEntity(
+                                            packageName = packageName,
+                                            appLabel = appLabel,
+                                            sender = "我",
+                                            content = pending.text,
+                                            timestamp = System.currentTimeMillis(),
+                                            riskScore = 0,
+                                            riskLabel = "",
+                                            riskReason = "",
+                                            isRead = true,
+                                            conversationKey = conversationKey,
+                                            dedupKey = null,
+                                            isOwn = true
+                                        )
+                                    )
+                                    WidgetUpdater.scheduleRefresh(appCtx)
+                                    true
+                                }
+                                if (sentOk) {
+                                    ReplyProxyManager.startOrRefreshSession(
+                                        ctx = appCtx,
+                                        packageName = packageName,
+                                        appLabel = appLabel,
+                                        sender = pending.targetSender,
+                                        originalSnippet = pending.targetSnippet,
+                                        initialReplyText = pending.text,
+                                        conversationKey = conversationKey
+                                    )
+                                    scrollToBottomPending = true
+                                    refreshTrigger++
+                                    replyText = ""
+                                    snackbarHostState.showSnackbar(resCtx.getString(R.string.conv_s_a2a8fd))
+                                } else {
+                                    snackbarHostState.showSnackbar(resCtx.getString(R.string.notif_reply_rx_s_74cc37))
+                                }
+                            } catch (e: Exception) {
+                                Log.e("PhantomReply", "ConversationScreen confirmed SMS send failed pkg=$packageName phone=${pending.phone}", e)
+                                snackbarHostState.showSnackbar(
+                                    resCtx.getString(
+                                        R.string.conv_s_e8fa55,
+                                        e.message ?: resCtx.getString(R.string.conv_s_0b3b9c)
+                                    )
+                                )
+                            } finally {
+                                isSendingReply = false
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.warning,
+                        contentColor = MaterialTheme.colorScheme.onWarning
+                    )
+                ) {
+                    Text("${stringResource(R.string.common_confirm)} (SMS)")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingSmsConfirm = null }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             }
@@ -525,6 +678,7 @@ fun ConversationScreen(
                                                 riskReason = res.third
                                             )
                                         )
+                                        WidgetUpdater.scheduleRefresh(appCtx)
                                     }
                                     sheetMessage = null
                                     refreshTrigger++
@@ -561,6 +715,7 @@ fun ConversationScreen(
                                             } else {
                                                 tagDao.addTagToMessage(MessageTagCrossRef(msg.id, tag.id))
                                             }
+                                            WidgetUpdater.scheduleRefresh(appCtx)
                                         }
                                         refreshTrigger++
                                     }
@@ -623,6 +778,7 @@ fun ConversationScreen(
                         AppDatabaseHolder.db(appCtx).messageDao().setRemindAt(target.id, ts)
                     }
                     com.phantom.checker.service.ReminderScheduler.schedule(appCtx, target.id, ts)
+                    WidgetUpdater.scheduleRefresh(appCtx)
                     refreshTrigger++
                     val formatted = PhantomPrefs.formatMessageTime(appCtx, ts, includeDate = true)
                     snackbarHostState.showSnackbar(resCtx.getString(R.string.main_s_ed678a, formatted))
@@ -777,6 +933,7 @@ fun ConversationScreen(
                                         AppDatabaseHolder.db(appCtx).messageDao().markReadByIds(ids)
                                     }
                                     StatsForegroundService.startOrRefresh(appCtx)
+                                    WidgetUpdater.scheduleRefresh(appCtx)
                                     isMultiSelectMode = false
                                     selectedMessageIds = emptySet()
                                     refreshTrigger++
@@ -865,7 +1022,8 @@ fun ConversationScreen(
                                                     appLabel = appLabel,
                                                     sender = targetSender,
                                                     originalSnippet = targetSnippet,
-                                                    initialReplyText = textToSend
+                                                    initialReplyText = textToSend,
+                                                    conversationKey = conversationKey
                                                 )
                                                 withContext(Dispatchers.IO) {
                                                     AppDatabaseHolder.db(appCtx).messageDao().insert(
@@ -884,6 +1042,7 @@ fun ConversationScreen(
                                                             isOwn = true
                                                         )
                                                     )
+                                                    WidgetUpdater.scheduleRefresh(appCtx)
                                                 }
                                                 scrollToBottomPending = true
                                                 refreshTrigger++
@@ -891,64 +1050,27 @@ fun ConversationScreen(
                                                 snackbarHostState.showSnackbar(resCtx.getString(R.string.common_sent))
                                             }
                                             is NotificationCollectorService.Companion.ReplySendResult.Unavailable -> {
-                                                val isSmsFallback = packageName == "sms" ||
-                                                    TW_PHONE_REGEX.matches(targetSender.trim()) ||
-                                                    TW_PHONE_REGEX.matches(conversationKey.trim())
-                                                if (isSmsFallback) {
-                                                    val phone = when {
-                                                        TW_PHONE_REGEX.matches(targetSender.trim()) -> targetSender.trim()
-                                                        TW_PHONE_REGEX.matches(conversationKey.trim()) -> conversationKey.trim()
-                                                        else -> targetSender.trim()
-                                                    }
-                                                    try {
-                                                        withContext(Dispatchers.IO) {
-                                                            @Suppress("DEPRECATION")
-                                                            SmsManager.getDefault().sendTextMessage(
-                                                                phone,
-                                                                null,
-                                                                textToSend,
-                                                                null,
-                                                                null
-                                                            )
-                                                            NotificationCollectorService.recordOwnReplyEcho(
-                                                                ctx = appCtx,
-                                                                packageName = packageName,
-                                                                conversationKey = conversationKey,
-                                                                replyText = textToSend
-                                                            )
-                                                            AppDatabaseHolder.db(appCtx).messageDao().insert(
-                                                                MessageEntity(
-                                                                    packageName = packageName,
-                                                                    appLabel = appLabel,
-                                                                    sender = "我",
-                                                                    content = textToSend,
-                                                                    timestamp = System.currentTimeMillis(),
-                                                                    riskScore = 0,
-                                                                    riskLabel = "",
-                                                                    riskReason = "",
-                                                                    isRead = true,
-                                                                    conversationKey = conversationKey,
-                                                                    dedupKey = null,
-                                                                    isOwn = true
-                                                                )
-                                                            )
-                                                        }
-                                                        ReplyProxyManager.startOrRefreshSession(
-                                                            ctx = appCtx,
-                                                            packageName = packageName,
-                                                            appLabel = appLabel,
-                                                            sender = targetSender,
-                                                            originalSnippet = targetSnippet,
-                                                            initialReplyText = textToSend
-                                                        )
-                                                        scrollToBottomPending = true
-                                                        refreshTrigger++
-                                                        replyText = ""
-                                                        snackbarHostState.showSnackbar(resCtx.getString(R.string.conv_s_a2a8fd))
-                                                    } catch (e: Exception) {
-                                                        Log.e("PhantomReply", "ConversationScreen SMS fallback failed pkg=$packageName phone=$phone", e)
-                                                        snackbarHostState.showSnackbar(resCtx.getString(R.string.conv_s_e8fa55, e.message ?: resCtx.getString(R.string.conv_s_0b3b9c)))
-                                                    }
+                                                // P0: 僅限真正簡訊來源（與 R3 ReplyProxy 同源規則）且具 SEND_SMS 權限與有效電話號碼，
+                                                // 並須經使用者明確確認才可發送付費簡訊，絕不靜默偷發。
+                                                val isGenuineSms = ReplyProxyReceiver.isGenuineSmsSource(appCtx, packageName)
+                                                val hasSmsPerm = ContextCompat.checkSelfPermission(
+                                                    appCtx,
+                                                    Manifest.permission.SEND_SMS
+                                                ) == PackageManager.PERMISSION_GRANTED
+                                                val senderPhone = normalizePhoneCandidate(targetSender)
+                                                val convPhone = normalizePhoneCandidate(conversationKey)
+                                                val validPhone = when {
+                                                    PHONE_NUMBER_REGEX.matches(senderPhone) -> senderPhone
+                                                    PHONE_NUMBER_REGEX.matches(convPhone) -> convPhone
+                                                    else -> null
+                                                }
+                                                if (isGenuineSms && hasSmsPerm && validPhone != null) {
+                                                    pendingSmsConfirm = PendingSmsConfirm(
+                                                        phone = validPhone,
+                                                        text = textToSend,
+                                                        targetSender = targetSender,
+                                                        targetSnippet = targetSnippet
+                                                    )
                                                 } else {
                                                     Log.w("PhantomReply", "ConversationScreen reply unavailable pkg=$packageName reason=${res.reason}")
                                                     snackbarHostState.showSnackbar(res.reason)
@@ -1002,7 +1124,7 @@ fun ConversationScreen(
             Spacer(Modifier.height(8.dp))
             if (messages.isNotEmpty()) {
                 val scamCnt = messages.count { it.riskLabel == "scam" }
-                val suspCnt = messages.count { it.riskLabel == "suspicious" }
+                val suspCnt = messages.count { it.riskLabel == "suspicious" || it.riskLabel == "warning" }
                 val safeCnt = messages.size - scamCnt - suspCnt
                 val activeDays = remember(messages) {
                     val dayFmt = SimpleDateFormat("yyyyMMdd", Locale.US)
@@ -1017,7 +1139,11 @@ fun ConversationScreen(
                     Text(
                         text = stringResource(R.string.conv_s_3d970b, messages.size, activeDays, safeCnt, suspCnt, scamCnt),
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (scamCnt > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                        color = when {
+                            scamCnt > 0 -> MaterialTheme.colorScheme.error
+                            suspCnt > 0 -> MaterialTheme.colorScheme.warning
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                 }
                 Spacer(Modifier.height(8.dp))
@@ -1208,7 +1334,7 @@ private fun ChatBubbleItem(
     }
     val riskDotColor: Color? = if (isOwn) null else when (message.riskLabel) {
         "scam" -> MaterialTheme.colorScheme.error
-        "suspicious" -> Color(0xFFE6A100)
+        "warning", "suspicious" -> MaterialTheme.colorScheme.warning
         else -> null
     }
 
@@ -1335,7 +1461,7 @@ private fun ChatBubbleItem(
                     Icon(
                         imageVector = Icons.Default.Star,
                         contentDescription = stringResource(R.string.common_star),
-                        tint = Color(0xFFE6A100),
+                        tint = MaterialTheme.colorScheme.warning,
                         modifier = Modifier.size(12.dp)
                     )
                 }

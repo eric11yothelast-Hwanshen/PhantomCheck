@@ -76,6 +76,7 @@ import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.shizuku.ShizukuKeepAlive
 import com.phantom.checker.shizuku.ShizukuManager
+import com.phantom.checker.widget.WidgetUpdater
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -84,6 +85,16 @@ import java.util.Date
 import java.util.Locale
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+
+private data class ScamCenterSnapshot(
+    val scamMessages: List<MessageEntity>,
+    val intelResults: Map<Long, IntelResultEntity>,
+    val weekScamCount: Int,
+    val lastWeekScamCount: Int,
+    val monthScamCount: Int,
+    val warningCount: Int,
+    val top3RiskyApps: List<com.phantom.checker.data.AppRiskRow>
+)
 
 class ScamCenterActivity : ComponentActivity() {
     override fun attachBaseContext(newBase: android.content.Context) {
@@ -109,6 +120,7 @@ fun ScamCenterScreen(onBack: () -> Unit) {
     var weekScamCount by remember { mutableIntStateOf(0) }
     var lastWeekScamCount by remember { mutableIntStateOf(0) }
     var monthScamCount by remember { mutableIntStateOf(0) }
+    var warningCount by remember { mutableIntStateOf(0) }
     var top3RiskyApps by remember { mutableStateOf(listOf<com.phantom.checker.data.AppRiskRow>()) }
     var isLoading by remember { mutableStateOf(true) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
@@ -134,21 +146,40 @@ fun ScamCenterScreen(onBack: () -> Unit) {
         val weekAgo = now - java.util.concurrent.TimeUnit.DAYS.toMillis(7)
         val twoWeeksAgo = now - java.util.concurrent.TimeUnit.DAYS.toMillis(14)
         val monthAgo = now - java.util.concurrent.TimeUnit.DAYS.toMillis(30)
-        withContext(Dispatchers.IO) {
+        val snapshot = withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
             val dao = db.messageDao()
             val scams = dao.scams()
-            scamMessages = scams
-            intelResults = if (scams.isNotEmpty()) {
-                db.intelDao().getResults(scams.map { it.id }).associateBy { it.messageId }
+            val warnings = dao.riskyBetween(0L, Long.MAX_VALUE, limit = 500)
+                .filter { it.riskLabel == "warning" }
+            val mergedRisky = (scams + warnings)
+                .distinctBy { it.id }
+                .sortedByDescending { it.timestamp }
+            val intelMap = if (mergedRisky.isNotEmpty()) {
+                mergedRisky.map { it.id }
+                    .chunked(500)
+                    .flatMap { batch -> db.intelDao().getResults(batch) }
+                    .associateBy { it.messageId }
             } else {
                 emptyMap()
             }
-            weekScamCount = dao.scamCountSince(weekAgo)
-            lastWeekScamCount = dao.scamCountBetween(twoWeeksAgo, weekAgo)
-            monthScamCount = dao.scamCountSince(monthAgo)
-            top3RiskyApps = dao.topRiskyApps().take(3)
+            ScamCenterSnapshot(
+                scamMessages = mergedRisky,
+                intelResults = intelMap,
+                weekScamCount = dao.scamCountSince(weekAgo),
+                lastWeekScamCount = dao.scamCountBetween(twoWeeksAgo, weekAgo),
+                monthScamCount = dao.scamCountSince(monthAgo),
+                warningCount = dao.warningCount(),
+                top3RiskyApps = dao.topRiskyApps().take(3)
+            )
         }
+        scamMessages = snapshot.scamMessages
+        intelResults = snapshot.intelResults
+        weekScamCount = snapshot.weekScamCount
+        lastWeekScamCount = snapshot.lastWeekScamCount
+        monthScamCount = snapshot.monthScamCount
+        warningCount = snapshot.warningCount
+        top3RiskyApps = snapshot.top3RiskyApps
         isLoading = false
     }
 
@@ -308,16 +339,17 @@ fun ScamCenterScreen(onBack: () -> Unit) {
 @Composable
 private fun RiskScoreBadge(
     score: Int,
+    isWarning: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.error
+        color = if (isWarning) MaterialTheme.colorScheme.warning else MaterialTheme.colorScheme.error
     ) {
         Text(
             text = stringResource(R.string.scam_center_s_f094d2, score),
-            color = MaterialTheme.colorScheme.onError,
+            color = if (isWarning) MaterialTheme.colorScheme.onWarning else MaterialTheme.colorScheme.onError,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -336,6 +368,10 @@ private fun ScamMessageCard(
     val timeText = remember(message.timestamp) {
         SimpleDateFormat("MM/dd HH:mm", Locale.getDefault()).format(Date(message.timestamp))
     }
+    val isWarning = message.riskLabel == "warning"
+    val accentColor = if (isWarning) MaterialTheme.colorScheme.warning else MaterialTheme.colorScheme.error
+    val containerColor = if (isWarning) MaterialTheme.colorScheme.warningContainer else MaterialTheme.colorScheme.errorContainer
+    val onContainerColor = if (isWarning) MaterialTheme.colorScheme.onWarningContainer else MaterialTheme.colorScheme.onErrorContainer
 
     Box(
         modifier = Modifier
@@ -344,13 +380,13 @@ private fun ScamMessageCard(
             .animateContentSize(spring())
             .phantomGlassSurface(
                 state = glassState,
-                fallbackColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f),
-                outlineColor = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
+                fallbackColor = containerColor.copy(alpha = 0.65f),
+                outlineColor = accentColor.copy(alpha = 0.6f),
                 cornerRadius = 20.dp
             )
             .clickable(onClick = onClick)
     ) {
-        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onErrorContainer) {
+        CompositionLocalProvider(LocalContentColor provides onContainerColor) {
             Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -364,7 +400,7 @@ private fun ScamMessageCard(
                     Text(
                         text = "[${message.appLabel}] ",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                        color = onContainerColor.copy(alpha = 0.8f)
                     )
                     Text(
                         text = message.sender,
@@ -375,13 +411,13 @@ private fun ScamMessageCard(
                         modifier = Modifier.weight(1f, fill = false)
                     )
                     Spacer(Modifier.width(8.dp))
-                    RiskScoreBadge(score = message.riskScore)
+                    RiskScoreBadge(score = message.riskScore, isWarning = isWarning)
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = timeText,
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.75f)
+                    color = onContainerColor.copy(alpha = 0.75f)
                 )
             }
 
@@ -399,7 +435,7 @@ private fun ScamMessageCard(
                 Text(
                     text = stripMarkdown(message.riskReason),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
+                    color = onContainerColor.copy(alpha = 0.85f),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -417,7 +453,7 @@ private fun ScamMessageCard(
                         resCtx.getString(R.string.scam_center_s_a93acf, intelTimeStr)
                     },
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                    color = onContainerColor.copy(alpha = 0.8f)
                 )
             }
 
@@ -425,7 +461,7 @@ private fun ScamMessageCard(
             Text(
                 text = resCtx.getString(R.string.scam_center_s_168334),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
+                color = accentColor,
                 fontWeight = FontWeight.Medium
             )
             }
@@ -451,6 +487,10 @@ private fun ScamDetailDialog(
     var showWhitelistFlow by remember { mutableStateOf(false) }
     var showImmunityConfirm by remember { mutableStateOf(false) }
     var showDecisionFeedback by remember { mutableStateOf(false) }
+    val isWarning = message.riskLabel == "warning"
+    val accentColor = if (isWarning) MaterialTheme.colorScheme.warning else MaterialTheme.colorScheme.error
+    val containerColor = if (isWarning) MaterialTheme.colorScheme.warningContainer else MaterialTheme.colorScheme.errorContainer
+    val onContainerColor = if (isWarning) MaterialTheme.colorScheme.onWarningContainer else MaterialTheme.colorScheme.onErrorContainer
     if (showDecisionFeedback) {
         DecisionFeedbackDialog(
             message = message,
@@ -504,26 +544,30 @@ private fun ScamDetailDialog(
                 Button(
                     enabled = immunitySubject.isNotBlank() && immunityContent.isNotBlank(),
                     onClick = {
+                        val subj = immunitySubject.trim()
+                        val body = immunityContent.trim()
                         scope.launch {
-                            val db = AppDatabaseHolder.db(appCtx)
-                            val sourceRef = com.phantom.checker.data.MemoryEngine.formatNotificationSourceRef(
-                                messageId = message.id,
-                                appLabel = message.appLabel,
-                                sender = message.sender,
-                                timestampMs = message.timestamp,
-                                timeFormatted = fullTimeText
-                            )
-                            com.phantom.checker.data.MemoryEngine.writeMemoryWithConflictDetection(
-                                db = db,
-                                category = com.phantom.checker.data.MemoryEntity.CATEGORY_SCAM_IMMUNITY,
-                                subject = immunitySubject.trim(),
-                                content = immunityContent.trim(),
-                                layer = com.phantom.checker.data.MemoryEntity.LAYER_LONG_TERM,
-                                privacyTier = com.phantom.checker.data.MemoryEntity.PRIVACY_NORMAL,
-                                confidence = com.phantom.checker.data.MemoryEntity.CONFIDENCE_INFERRED,
-                                sourceType = com.phantom.checker.data.MemoryEntity.SOURCE_NOTIFICATION,
-                                sourceRef = sourceRef
-                            )
+                            withContext(Dispatchers.IO) {
+                                val db = AppDatabaseHolder.db(appCtx)
+                                val sourceRef = com.phantom.checker.data.MemoryEngine.formatNotificationSourceRef(
+                                    messageId = message.id,
+                                    appLabel = message.appLabel,
+                                    sender = message.sender,
+                                    timestampMs = message.timestamp,
+                                    timeFormatted = fullTimeText
+                                )
+                                com.phantom.checker.data.MemoryEngine.writeMemoryWithConflictDetection(
+                                    db = db,
+                                    category = com.phantom.checker.data.MemoryEntity.CATEGORY_SCAM_IMMUNITY,
+                                    subject = subj,
+                                    content = body,
+                                    layer = com.phantom.checker.data.MemoryEntity.LAYER_LONG_TERM,
+                                    privacyTier = com.phantom.checker.data.MemoryEntity.PRIVACY_NORMAL,
+                                    confidence = com.phantom.checker.data.MemoryEntity.CONFIDENCE_INFERRED,
+                                    sourceType = com.phantom.checker.data.MemoryEntity.SOURCE_NOTIFICATION,
+                                    sourceRef = sourceRef
+                                )
+                            }
                             showImmunityConfirm = false
                             Toast.makeText(ctx, resCtx.getString(R.string.scam_center_s_3d57ef), Toast.LENGTH_SHORT).show()
                         }
@@ -571,6 +615,7 @@ private fun ScamDetailDialog(
                                     riskReason = "使用者手動加入白名單"
                                 )
                             )
+                            WidgetUpdater.scheduleRefresh(appCtx)
                         }
                         res
                     }
@@ -590,7 +635,9 @@ private fun ScamDetailDialog(
             confirmButton = {
                 Button(onClick = {
                     scope.launch {
-                        val res = ShizukuKeepAlive.suspendTargetApp(appCtx, message.packageName)
+                        val res = withContext(Dispatchers.IO) {
+                            ShizukuKeepAlive.suspendTargetApp(appCtx, message.packageName)
+                        }
                         showSuspendConfirm = false
                         Toast.makeText(
                             ctx,
@@ -620,7 +667,7 @@ private fun ScamDetailDialog(
                 Icon(
                     imageVector = Icons.Default.Warning,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
+                    tint = accentColor
                 )
                 Text(
                     text = stringResource(R.string.scam_center_s_2b99b0),
@@ -628,7 +675,7 @@ private fun ScamDetailDialog(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
-                RiskScoreBadge(score = message.riskScore)
+                RiskScoreBadge(score = message.riskScore, isWarning = isWarning)
             }
         },
         text = {
@@ -674,17 +721,17 @@ private fun ScamDetailDialog(
                     text = stringResource(R.string.scam_center_s_375047),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error
+                    color = accentColor
                 )
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                    color = containerColor.copy(alpha = 0.5f)
                 ) {
                     PhantomMarkdownText(
                         markdown = message.riskReason.ifBlank { resCtx.getString(R.string.scam_center_s_6f35f7) },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        color = onContainerColor,
                         modifier = Modifier.padding(10.dp)
                     )
                 }
@@ -736,7 +783,9 @@ private fun ScamDetailDialog(
                         TextButton(
                             onClick = {
                                 scope.launch {
-                                    val res = ShizukuKeepAlive.forceStopTargetApp(appCtx, message.packageName)
+                                    val res = withContext(Dispatchers.IO) {
+                                        ShizukuKeepAlive.forceStopTargetApp(appCtx, message.packageName)
+                                    }
                                     Toast.makeText(
                                         ctx,
                                         if (res.isSuccess) resCtx.getString(R.string.detail_s_59632d, message.appLabel) else resCtx.getString(R.string.detail_s_d45d8d, res.output),

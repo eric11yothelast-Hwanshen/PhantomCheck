@@ -64,11 +64,27 @@ import com.phantom.checker.shared.LinkProtocol
 import com.phantom.checker.shared.QrPairingPayloadV2
 import com.phantom.checker.ui.components.PhantomChevron
 import com.phantom.checker.ui.components.PhantomMotion
+import com.phantom.checker.ui.warning
+import com.phantom.checker.util.CommandAuditEntry
 import com.phantom.checker.util.DesktopLinkStore
+import com.phantom.checker.util.DiagnosticLogEntry
+import com.phantom.checker.util.UnknownAttempt
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private data class LinkStoreSnapshot(
+    val linkEnabled: Boolean,
+    val unknownAttempts: List<UnknownAttempt>,
+    val auditLogs: List<CommandAuditEntry>,
+    val diagnostics: List<DiagnosticLogEntry>,
+    val onWifi: Boolean
+)
 
 /**
  * #476 / #477 手機端桌面連線共用內容（供 LinkHubActivity 與 MainActivity 底部「連線」分頁共用）：
@@ -83,25 +99,16 @@ fun LinkHubContent(
 ) {
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
+    val scope = rememberCoroutineScope()
     val clientStatus by DesktopLinkClient.status.collectAsState()
     val discoveredDesktops by DesktopLinkClient.discoveredDesktops.collectAsState()
+    val linkEnabled by DesktopLinkStore.linkEnabledFlow.collectAsState()
+    val pairedDevices by DesktopLinkStore.pairedDevicesFlow.collectAsState()
 
     var localError by remember { mutableStateOf(initialError) }
-    var linkEnabled by remember {
-        mutableStateOf(runCatching { DesktopLinkStore.isLinkEnabled(appCtx) }.getOrDefault(true))
-    }
-    var pairedDevices by remember {
-        mutableStateOf(runCatching { DesktopLinkStore.getPairedDevices(appCtx) }.getOrDefault(emptyList()))
-    }
-    var unknownAttempts by remember {
-        mutableStateOf(runCatching { DesktopLinkStore.getUnknownAttempts(appCtx) }.getOrDefault(emptyList()))
-    }
-    var auditLogs by remember {
-        mutableStateOf(runCatching { DesktopLinkStore.getAuditLogs(appCtx) }.getOrDefault(emptyList()))
-    }
-    var diagnostics by remember {
-        mutableStateOf(runCatching { DesktopLinkStore.getDiagnostics(appCtx) }.getOrDefault(emptyList()))
-    }
+    var unknownAttempts by remember { mutableStateOf<List<UnknownAttempt>>(emptyList()) }
+    var auditLogs by remember { mutableStateOf<List<CommandAuditEntry>>(emptyList()) }
+    var diagnostics by remember { mutableStateOf<List<DiagnosticLogEntry>>(emptyList()) }
 
     // #477 QR Scanner & CAMERA permission states (intentionally non-saveable so Activity recreate never retains stale scan session)
     var showQrScanner by remember { mutableStateOf(false) }
@@ -139,7 +146,7 @@ fun LinkHubContent(
     var manualCode by remember { mutableStateOf("") }
     var manualFp by remember { mutableStateOf("") }
     var manualDesktopName by remember { mutableStateOf("") }
-    var onWifi by remember { mutableStateOf(DesktopLinkClient.isOnWifi(appCtx)) }
+    var onWifi by remember { mutableStateOf(true) }
 
     DisposableEffect(Unit) {
         DesktopLinkClient.startDiscovery(appCtx)
@@ -151,7 +158,21 @@ fun LinkHubContent(
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     LaunchedEffect(Unit) {
-        if (linkEnabled) {
+        val initSnap = withContext(Dispatchers.IO) {
+            runCatching { DesktopLinkStore.warmUp(appCtx) }
+            LinkStoreSnapshot(
+                linkEnabled = runCatching { DesktopLinkStore.isLinkEnabled(appCtx) }.getOrDefault(true),
+                unknownAttempts = runCatching { DesktopLinkStore.getUnknownAttempts(appCtx) }.getOrDefault(emptyList()),
+                auditLogs = runCatching { DesktopLinkStore.getAuditLogs(appCtx) }.getOrDefault(emptyList()),
+                diagnostics = runCatching { DesktopLinkStore.getDiagnostics(appCtx) }.getOrDefault(emptyList()),
+                onWifi = DesktopLinkClient.isOnWifi(appCtx)
+            )
+        }
+        unknownAttempts = initSnap.unknownAttempts
+        auditLogs = initSnap.auditLogs
+        diagnostics = initSnap.diagnostics
+        onWifi = initSnap.onWifi
+        if (initSnap.linkEnabled) {
             runCatching { DesktopLinkClient.autoConnectIfPaired(appCtx) }
                 .onFailure { err -> if (localError.isNullOrBlank()) localError = err.message ?: err.javaClass.simpleName }
         }
@@ -160,12 +181,19 @@ fun LinkHubContent(
             delay(3000L)
             if (!lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) continue
             if (pm != null && !pm.isInteractive) continue
-            onWifi = DesktopLinkClient.isOnWifi(appCtx)
-            linkEnabled = runCatching { DesktopLinkStore.isLinkEnabled(appCtx) }.getOrDefault(linkEnabled)
-            pairedDevices = runCatching { DesktopLinkStore.getPairedDevices(appCtx) }.getOrDefault(pairedDevices)
-            unknownAttempts = runCatching { DesktopLinkStore.getUnknownAttempts(appCtx) }.getOrDefault(unknownAttempts)
-            auditLogs = runCatching { DesktopLinkStore.getAuditLogs(appCtx) }.getOrDefault(auditLogs)
-            diagnostics = runCatching { DesktopLinkStore.getDiagnostics(appCtx) }.getOrDefault(diagnostics)
+            val pollSnap = withContext(Dispatchers.IO) {
+                LinkStoreSnapshot(
+                    linkEnabled = runCatching { DesktopLinkStore.isLinkEnabled(appCtx) }.getOrDefault(true),
+                    unknownAttempts = runCatching { DesktopLinkStore.getUnknownAttempts(appCtx) }.getOrDefault(emptyList()),
+                    auditLogs = runCatching { DesktopLinkStore.getAuditLogs(appCtx) }.getOrDefault(emptyList()),
+                    diagnostics = runCatching { DesktopLinkStore.getDiagnostics(appCtx) }.getOrDefault(emptyList()),
+                    onWifi = DesktopLinkClient.isOnWifi(appCtx)
+                )
+            }
+            onWifi = pollSnap.onWifi
+            unknownAttempts = pollSnap.unknownAttempts
+            auditLogs = pollSnap.auditLogs
+            diagnostics = pollSnap.diagnostics
         }
     }
 
@@ -214,12 +242,7 @@ fun LinkHubContent(
                     isDarkBg -> Color(0xFF4ADE80)
                     else -> Color(0xFF15803D)
                 }
-                PhoneLinkConnState.CONNECTING, PhoneLinkConnState.RECONNECTING -> when {
-                    isHc && isDarkBg -> Color(0xFFFCD34D)
-                    isHc -> Color(0xFF92400E)
-                    isDarkBg -> Color(0xFFFBBF24)
-                    else -> Color(0xFFB45309)
-                }
+                PhoneLinkConnState.CONNECTING, PhoneLinkConnState.RECONNECTING -> MaterialTheme.colorScheme.warning
                 PhoneLinkConnState.DISCONNECTED -> MaterialTheme.colorScheme.outline
             }
             val heroBgColor by androidx.compose.animation.animateColorAsState(
@@ -437,17 +460,19 @@ fun LinkHubContent(
                         Switch(
                             checked = linkEnabled,
                             onCheckedChange = { checked ->
-                                linkEnabled = checked
-                                runCatching {
-                                    DesktopLinkStore.setLinkEnabled(appCtx, checked)
-                                    if (checked) {
-                                        DesktopLinkClient.autoConnectIfPaired(appCtx)
-                                    } else {
-                                        DesktopLinkClient.disconnect(clearError = true)
+                                scope.launch {
+                                    val errMsg = withContext(Dispatchers.IO) {
+                                        runCatching {
+                                            DesktopLinkStore.setLinkEnabled(appCtx, checked)
+                                            if (checked) {
+                                                DesktopLinkClient.autoConnectIfPaired(appCtx)
+                                            } else {
+                                                DesktopLinkClient.disconnect(clearError = true)
+                                            }
+                                            null
+                                        }.getOrElse { err -> err.message ?: err.javaClass.simpleName }
                                     }
-                                    localError = null
-                                }.onFailure { err ->
-                                    localError = err.message ?: err.javaClass.simpleName
+                                    localError = errMsg
                                 }
                             }
                         )
@@ -634,7 +659,9 @@ fun LinkHubContent(
                                 }
                                 OutlinedButton(onClick = {
                                     manualHostPort = "${pc.host}:${pc.port}"
-                                    manualFp = pc.fingerprintPrefix
+                                    // R6 交接：TLS 已強制完整 64 字元 SHA-256 指紋比對，不可預填 8 字元 mDNS 前綴
+                                    val fpCandidate = pc.fingerprintPrefix.trim()
+                                    manualFp = if (fpCandidate.length == 64) fpCandidate else ""
                                     manualDesktopName = pc.friendlyName
                                     manualExpanded = true
                                 }) {
@@ -806,11 +833,14 @@ fun LinkHubContent(
                                     }
                                     TextButton(
                                         onClick = {
-                                            runCatching {
-                                                DesktopLinkClient.unpairDesktop(appCtx, dev.instanceId)
-                                                pairedDevices = DesktopLinkStore.getPairedDevices(appCtx)
-                                            }.onFailure { err ->
-                                                localError = err.message ?: err.javaClass.simpleName
+                                            scope.launch {
+                                                val errMsg = withContext(Dispatchers.IO) {
+                                                    runCatching {
+                                                        DesktopLinkClient.unpairDesktop(appCtx, dev.instanceId)
+                                                        null
+                                                    }.getOrElse { err -> err.message ?: err.javaClass.simpleName }
+                                                }
+                                                if (errMsg != null) localError = errMsg
                                             }
                                         }
                                     ) {
@@ -896,8 +926,12 @@ fun LinkHubContent(
                                 ) { Text(stringResource(R.string.link_hub_diag_now_btn)) }
                                 if (diagnostics.isNotEmpty()) {
                                     TextButton(onClick = {
-                                        runCatching { DesktopLinkStore.clearDiagnostics(appCtx) }
-                                        diagnostics = emptyList()
+                                        scope.launch {
+                                            withContext(Dispatchers.IO) {
+                                                runCatching { DesktopLinkStore.clearDiagnostics(appCtx) }
+                                            }
+                                            diagnostics = emptyList()
+                                        }
                                     }) { Text(stringResource(R.string.link_hub_clear)) }
                                 }
                             }
@@ -950,8 +984,12 @@ fun LinkHubContent(
                         if (activeSubLog == "unknown") {
                             if (unknownAttempts.isNotEmpty()) {
                                 TextButton(onClick = {
-                                    runCatching { DesktopLinkStore.clearUnknownAttempts(appCtx) }
-                                    unknownAttempts = emptyList()
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            runCatching { DesktopLinkStore.clearUnknownAttempts(appCtx) }
+                                        }
+                                        unknownAttempts = emptyList()
+                                    }
                                 }) { Text(stringResource(R.string.link_hub_clear)) }
                             }
                             if (unknownAttempts.isEmpty()) {
@@ -988,8 +1026,12 @@ fun LinkHubContent(
                         if (activeSubLog == "audit") {
                             if (auditLogs.isNotEmpty()) {
                                 TextButton(onClick = {
-                                    runCatching { DesktopLinkStore.clearAuditLogs(appCtx) }
-                                    auditLogs = emptyList()
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            runCatching { DesktopLinkStore.clearAuditLogs(appCtx) }
+                                        }
+                                        auditLogs = emptyList()
+                                    }
                                 }) { Text(stringResource(R.string.link_hub_clear)) }
                             }
                             if (auditLogs.isEmpty()) {

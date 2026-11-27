@@ -193,9 +193,10 @@ fun AppThreadsScreen(
             val dao = db.messageDao()
             val vipSenders = PhantomPrefs.getVipSenders(appCtx, packageName)
             val groups: List<SenderGroupRow> = dao.groupByConversation(packageName)
-            val allAppMsgs = dao.byApp(packageName)
-            val latestByConv = allAppMsgs.groupBy { it.conversationKey.ifBlank { it.sender } }
-                .mapValues { (_, list) -> list.maxByOrNull { it.timestamp } }
+            // 改以各對話索引 LIMIT 1 取代 dao.byApp(packageName) 全表載入，避免大量訊息 OOM
+            val latestByConv = groups.associate { g ->
+                g.conversationKey to dao.byConversationKeyset(packageName, g.conversationKey, null, 1).firstOrNull()
+            }
             val latestIds = latestByConv.values.mapNotNull { it?.id }.distinct()
             val tagsMap = if (latestIds.isEmpty()) {
                 emptyMap()
@@ -277,10 +278,11 @@ fun AppThreadsScreen(
                             withContext(Dispatchers.IO) {
                                 val db = AppDatabaseHolder.db(appCtx)
                                 db.withTransaction {
-                                    db.tagDao().deleteCrossRefsByConversation(packageName, target.conversationKey)
                                     db.messageDao().deleteByConversation(packageName, target.conversationKey)
+                                    db.messageDao().deleteAllMessageOrphans()
                                 }
                                 StatsForegroundService.startOrRefresh(appCtx)
+                                com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx)
                             }
                             deleteThreadConfirm = null
                             refreshTrigger++
@@ -311,10 +313,11 @@ fun AppThreadsScreen(
                             withContext(Dispatchers.IO) {
                                 val db = AppDatabaseHolder.db(appCtx)
                                 db.withTransaction {
-                                    db.tagDao().deleteCrossRefsByApp(packageName)
                                     db.messageDao().deleteByApp(packageName)
+                                    db.messageDao().deleteAllMessageOrphans()
                                 }
                                 StatsForegroundService.startOrRefresh(appCtx)
+                                com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx)
                             }
                             showDeleteConfirm = false
                             onBack()
@@ -347,13 +350,20 @@ fun AppThreadsScreen(
                             val (deletedCount, protectedCount) = withContext(Dispatchers.IO) {
                                 val db = AppDatabaseHolder.db(appCtx)
                                 db.withTransaction {
-                                    val protected = db.messageDao().countScamByConversations(packageName, keys)
-                                    db.tagDao().deleteNonScamCrossRefsByConversations(packageName, keys)
-                                    val deleted = db.messageDao().deleteNonScamByConversations(packageName, keys)
+                                    var protected = 0
+                                    var deleted = 0
+                                    keys.chunked(500).forEach { batch ->
+                                        protected += db.messageDao().countScamByConversations(packageName, batch)
+                                        deleted += db.messageDao().deleteNonScamByConversations(packageName, batch)
+                                    }
+                                    if (deleted > 0) {
+                                        db.messageDao().deleteAllMessageOrphans()
+                                    }
                                     deleted to protected
                                 }
                             }
                             StatsForegroundService.startOrRefresh(appCtx)
+                            com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx)
                             showBatchDeleteConfirm = false
                             isMultiSelectMode = false
                             selectedConversationKeys = emptySet()
@@ -520,9 +530,13 @@ fun AppThreadsScreen(
                                 val keys = selectedConversationKeys.toList()
                                 scope.launch {
                                     withContext(Dispatchers.IO) {
-                                        AppDatabaseHolder.db(appCtx).messageDao().markConversationsRead(packageName, keys)
+                                        val dao = AppDatabaseHolder.db(appCtx).messageDao()
+                                        keys.chunked(500).forEach { batch ->
+                                            dao.markConversationsRead(packageName, batch)
+                                        }
                                     }
                                     StatsForegroundService.startOrRefresh(appCtx)
+                                    com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx)
                                     isMultiSelectMode = false
                                     selectedConversationKeys = emptySet()
                                     refreshTrigger++
