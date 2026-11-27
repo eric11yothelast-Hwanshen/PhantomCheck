@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.view.View
 import android.widget.RemoteViews
+import com.phantom.checker.PhantomApplication
 import com.phantom.checker.R
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.service.AppDatabaseHolder
@@ -75,7 +76,7 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
                                 msg.copy(
                                     riskLabel = "safe",
                                     riskScore = 0,
-                                    riskReason = "已由桌面小工具加入白名單", // TODO(R17): 抽離至 strings.xml
+                                    riskReason = PhantomApplication.str(R.string.widget_risk_reason_whitelisted),
                                     isRead = true
                                 )
                             )
@@ -83,7 +84,7 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
                             if (sender.isNotEmpty()) {
                                 com.phantom.checker.data.WhitelistRuleHelper.upsertWhitelist(
                                     dao = db.aiRuleDao(),
-                                    ruleText = "信任「$sender」的訊息（桌面小工具加入白名單）", // TODO(R17): 抽離至 strings.xml
+                                    ruleText = PhantomApplication.str(R.string.widget_whitelist_rule_text, sender),
                                     sender = sender,
                                     packageName = msg.packageName,
                                     onCacheInvalidate = { com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches() }

@@ -30,6 +30,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
+private val LIST_SEPARATOR_REGEX = Regex("[\\s,，、/]+")
+
+
 /**
  * #390 / #456 / #532 主動情報中樞 v3：
  * - 省 Token 模式改降級不停機：每日 1 輪、僅高優先主題、走 Google News RSS＋規則層判決（零 AI token）
@@ -232,7 +235,7 @@ object DigestComposer {
     ): Boolean {
         if (item.domainScore < 0) return false
         val keywords = "$topicLabel $queryHint"
-            .split(Regex("[\\s,，、/]+"))
+            .split(LIST_SEPARATOR_REGEX)
             .map { it.trim() }
             .filter { it.length >= 2 }
         val titleLower = item.title.lowercase()

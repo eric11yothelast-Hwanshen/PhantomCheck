@@ -25,7 +25,6 @@ import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.data.MessageTagCrossRef
 import com.phantom.checker.data.NoteEntity
 import com.phantom.checker.data.PendingAiAnalysisEntity
-import com.phantom.checker.data.TagEntity
 import com.phantom.checker.data.TodoEntity
 import com.phantom.checker.data.UserTagRuleEntity
 import com.phantom.checker.network.AiClient

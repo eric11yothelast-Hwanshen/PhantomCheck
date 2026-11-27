@@ -1,25 +1,20 @@
 package com.phantom.checker.service
 
 import android.content.Context
-import androidx.work.BackoffPolicy
 import androidx.work.CoroutineWorker
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.phantom.checker.data.AiSummaryEntity
 import com.phantom.checker.data.MessageEntity
-import com.phantom.checker.network.AiClient
 import com.phantom.checker.util.PhantomPrefs
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 import com.phantom.checker.R
+
+private val WHITESPACE_REGEX = Regex("\\s+")
+
 
 /**
  * 每日自動生成當日訊息 AI 摘要的排程 Worker。
@@ -180,7 +175,7 @@ object DailySummaryPolicy {
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
         )
         val plainPreview = com.phantom.checker.ui.stripMarkdown(summaryText)
-            .replace(Regex("\\s+"), " ")
+            .replace(WHITESPACE_REGEX, " ")
             .trim()
             .take(120)
             .ifBlank { com.phantom.checker.PhantomApplication.str(R.string.notif_daily_s_88f2a5) }

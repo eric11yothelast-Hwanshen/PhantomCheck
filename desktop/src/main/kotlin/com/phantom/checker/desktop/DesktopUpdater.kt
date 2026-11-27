@@ -18,6 +18,10 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
+private val UNSAFE_FILENAME_REGEX = Regex("[^A-Za-z0-9._-]")
+private val SHA256_HEX_REGEX = Regex("[0-9a-fA-F]{64}")
+
+
 data class DesktopReleaseEntry(
     val tagName: String,
     val publishedDate: String,
@@ -233,7 +237,7 @@ object DesktopUpdater {
                 throw IllegalStateException("Unable to verify installer SHA-256 checksum (missing or invalid .sha256 asset); installation rejected for safety")
             }
 
-            val safeName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            val safeName = fileName.replace(UNSAFE_FILENAME_REGEX, "_")
             val tmpDir = File(System.getProperty("java.io.tmpdir"))
             val outFile = File(tmpDir, safeName)
             val tmpFile = File.createTempFile("$safeName.", ".tmp", tmpDir)
@@ -316,7 +320,7 @@ object DesktopUpdater {
         try {
             if (conn.responseCode !in 200..299) return@runCatching null
             val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }.trim()
-            Regex("[0-9a-fA-F]{64}").find(text)?.value?.lowercase(Locale.ROOT)
+            SHA256_HEX_REGEX.find(text)?.value?.lowercase(Locale.ROOT)
         } finally {
             conn.disconnect()
         }

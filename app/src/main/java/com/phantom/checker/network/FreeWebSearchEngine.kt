@@ -15,6 +15,10 @@ import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
+private val CONTROL_WS_REGEX = Regex("[\\r\\n\\t]+")
+private val MULTI_SPACE_REGEX = Regex("\\s{2,}")
+
+
 data class FreeSearchSnippet(
     val title: String,
     val snippet: String,
@@ -210,8 +214,8 @@ object FreeWebSearchEngine {
             runCatching { URLDecoder.decode(m.value, "UTF-8") }.getOrDefault(m.value)
         }
         return decodedPercent
-            .replace(Regex("[\\r\\n\\t]+"), " ")
-            .replace(Regex("\\s{2,}"), " ")
+            .replace(CONTROL_WS_REGEX, " ")
+            .replace(MULTI_SPACE_REGEX, " ")
             .trim()
     }
 

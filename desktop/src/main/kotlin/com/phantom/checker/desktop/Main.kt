@@ -3,11 +3,9 @@ package com.phantom.checker.desktop
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -31,6 +29,8 @@ import java.awt.Dimension
 import java.awt.SystemTray
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.SwingUtilities
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #469 桌面系統匣常駐入口（Compose Multiplatform 官方 androidx.compose.ui.window.Tray API）：

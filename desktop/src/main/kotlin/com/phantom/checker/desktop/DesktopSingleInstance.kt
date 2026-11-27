@@ -15,6 +15,9 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.SwingUtilities
 
+private val WHITESPACE_REGEX = Regex("\\s+")
+
+
 /**
  * #495 桌面端單實例鎖定與本機回環 IPC（防雙開搶埠 + 第二實例喚醒既有視窗 + 安裝器優雅關閉）。
  * - 使用 NIO FileLock（%APPDATA%\PhantomCheckDesktop\instance.lock）保證跨進程互斥，崩潰後由 OS 自動釋放。
@@ -219,7 +222,7 @@ class DesktopSingleInstance private constructor(
         private fun sendCommandToExisting(portFile: File, command: String): Boolean = runCatching {
             if (!portFile.exists()) return@runCatching false
             val raw = portFile.readText(Charsets.UTF_8).trim()
-            val parts = raw.split(Regex("\\s+"), limit = 2)
+            val parts = raw.split(WHITESPACE_REGEX, limit = 2)
             if (parts.size != 2) return@runCatching false
             val port = parts[0].toIntOrNull() ?: return@runCatching false
             val token = parts[1].trim()

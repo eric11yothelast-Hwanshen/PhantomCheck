@@ -3,9 +3,7 @@ package com.phantom.checker.ui
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -80,11 +78,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
@@ -104,10 +100,8 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -137,21 +131,21 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
-import com.phantom.checker.ui.components.GlassCard
 import com.phantom.checker.ui.components.glassSource
 import com.phantom.checker.ui.components.glassSurface
-import com.phantom.checker.ui.components.phantomEnter
 import com.phantom.checker.ui.components.phantomPopIn
-import com.phantom.checker.ui.components.phantomPressable
 import com.phantom.checker.ui.components.phantomSheen
 import com.phantom.checker.ui.components.pressableScale
 import com.phantom.checker.util.PhantomPrefs
 import dev.chrisbanes.haze.HazeState
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+
+private val WHITESPACE_REGEX = Regex("\\s+")
+
 
 @Composable
 fun Modifier.phantomGlassSource(state: HazeState): Modifier {
@@ -1952,7 +1946,7 @@ fun DecisionFeedbackDialog(
     var alsoAddMemoNever by remember { mutableStateOf(false) }
     var keywordInput by remember {
         mutableStateOf(
-            message.content.trim().split(Regex("\\s+")).firstOrNull { it.length >= 2 }?.take(18)
+            message.content.trim().split(WHITESPACE_REGEX).firstOrNull { it.length >= 2 }?.take(18)
                 ?: message.sender.trim().take(18)
         )
     }

@@ -37,11 +37,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -62,6 +60,8 @@ import com.phantom.checker.util.PhantomSettingsBus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #336 通訊錄整合設定元件（暱稱綁定、關係單位匯入嚮導、VIP 信任圈連動）：
@@ -207,9 +207,11 @@ fun ContactsIntegrationSection(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            val appLabel = entry.packageName
+                                ?.takeIf { it.isNotBlank() }
+                                ?.let { stringResource(R.string.contacts_app_prefix, it) }
                             val sub = listOfNotNull(
-                                // TODO(R17): 抽離硬編碼字串進 strings.xml
-                                entry.packageName?.takeIf { it.isNotBlank() }?.let { "App：$it" },
+                                appLabel,
                                 entry.note?.takeIf { it.isNotBlank() }
                             ).joinToString(" · ")
                             if (sub.isNotBlank()) {

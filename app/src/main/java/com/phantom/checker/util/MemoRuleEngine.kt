@@ -1,5 +1,7 @@
 package com.phantom.checker.util
 
+import com.phantom.checker.PhantomApplication
+import com.phantom.checker.R
 import com.phantom.checker.data.MemoRuleEntity
 
 /**
@@ -56,23 +58,22 @@ object MemoRuleEngine {
             .firstOrNull()
     }
 
-    // TODO(R17): 硬編碼繁中 UI 文案留待 R17 抽離至 strings.xml
     fun actionLabel(action: String): String = when (action) {
-        MemoRuleEntity.ACTION_NEVER -> "永不記事/待辦"
-        MemoRuleEntity.ACTION_TODO -> "一律加入待辦"
-        MemoRuleEntity.ACTION_NOTE -> "一律加入記事"
+        MemoRuleEntity.ACTION_NEVER -> PhantomApplication.str(R.string.memo_action_never)
+        MemoRuleEntity.ACTION_TODO -> PhantomApplication.str(R.string.memo_action_todo)
+        MemoRuleEntity.ACTION_NOTE -> PhantomApplication.str(R.string.memo_action_note)
         else -> action
     }
 
-    // TODO(R17): 硬編碼繁中 UI 文案留待 R17 抽離至 strings.xml
     fun formatConditionSummary(rule: MemoRuleEntity, appLabelOverride: String? = null): String {
         val parts = mutableListOf<String>()
         val pkg = rule.packageName?.trim()?.takeIf { it.isNotEmpty() }
-        if (pkg != null) parts.add("App ${appLabelOverride ?: pkg}")
+        if (pkg != null) parts.add(PhantomApplication.str(R.string.memo_cond_app, appLabelOverride ?: pkg))
         val snd = rule.sender?.trim()?.takeIf { it.isNotEmpty() }
-        if (snd != null) parts.add("寄件者 $snd")
+        if (snd != null) parts.add(PhantomApplication.str(R.string.memo_cond_sender, snd))
         val kw = rule.keyword?.trim()?.takeIf { it.isNotEmpty() }
-        if (kw != null) parts.add("含「$kw」")
-        return parts.joinToString("／").ifBlank { "（無條件）" }
+        if (kw != null) parts.add(PhantomApplication.str(R.string.memo_cond_keyword, kw))
+        return parts.joinToString(PhantomApplication.str(R.string.memo_cond_join))
+            .ifBlank { PhantomApplication.str(R.string.memo_cond_none) }
     }
 }
