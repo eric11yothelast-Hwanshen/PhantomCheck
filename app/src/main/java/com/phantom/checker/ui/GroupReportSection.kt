@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -88,6 +87,7 @@ fun GroupReportSettingsSection(
     var editingTarget by remember { mutableStateOf<GroupReportTargetEntity?>(null) }
     var showReportsDialog by remember { mutableStateOf(false) }
     var showModeDetailInfo by remember { mutableStateOf(false) }
+    var lastTriggeredAtMap by remember { mutableStateOf<Map<Long, Long>>(emptyMap()) }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -227,6 +227,10 @@ fun GroupReportSettingsSection(
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 IconButton(onClick = {
+                                    val nowMs = System.currentTimeMillis()
+                                    val prevMs = lastTriggeredAtMap[target.id] ?: 0L
+                                    if (nowMs - prevMs < 2_000L) return@IconButton
+                                    lastTriggeredAtMap = lastTriggeredAtMap + (target.id to nowMs)
                                     GroupReportEngine.triggerImmediate(appCtx, target.id)
                                     onShowMessage(ctx.getString(R.string.group_report_triggered_toast))
                                 }) {
@@ -350,6 +354,7 @@ fun GroupReportsViewer(
     val ctx = LocalContext.current
     val appCtx = ctx.applicationContext
     var viewingReport by remember { mutableStateOf<GroupReportEntity?>(null) }
+    var pendingDeleteReport by remember { mutableStateOf<GroupReportEntity?>(null) }
 
     if (reports.isEmpty()) {
         Text(
@@ -391,14 +396,14 @@ fun GroupReportsViewer(
                                 modifier = Modifier.weight(1f)
                             )
                             IconButton(
-                                onClick = { onDeleteReport(report.id) },
-                                modifier = Modifier.size(28.dp)
+                                onClick = { pendingDeleteReport = report },
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 Icon(
                                     Icons.Default.Delete,
                                     contentDescription = stringResource(R.string.common_delete),
                                     tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
@@ -437,15 +442,52 @@ fun GroupReportsViewer(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     HorizontalDivider()
-                    Text(
-                        text = report.summaryText,
-                        style = MaterialTheme.typography.bodyMedium
+                    PhantomMarkdownText(
+                        markdown = report.summaryText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             },
             confirmButton = {
                 TextButton(onClick = { viewingReport = null }) {
                     Text(stringResource(R.string.common_close))
+                }
+            }
+        )
+    }
+
+    pendingDeleteReport?.let { targetReport ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteReport = null },
+            title = { Text(stringResource(R.string.common_confirm_delete)) },
+            text = {
+                Text(
+                    text = "${targetReport.appLabel} · ${targetReport.conversationKey}" +
+                        stringResource(R.string.memory_s_071ef4),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val id = targetReport.id
+                        pendingDeleteReport = null
+                        if (viewingReport?.id == id) {
+                            viewingReport = null
+                        }
+                        onDeleteReport(id)
+                    }
+                ) {
+                    Text(
+                        text = stringResource(R.string.common_delete),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteReport = null }) {
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -467,6 +509,7 @@ private fun GroupTargetPickerDialog(
     var groups by remember { mutableStateOf<List<ObservedGroupRow>>(emptyList()) }
     var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var loading by remember { mutableStateOf(true) }
+    var isAdding by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         apps = withContext(Dispatchers.IO) { dao.observedGroupApps() }
@@ -597,32 +640,41 @@ private fun GroupTargetPickerDialog(
         },
         confirmButton = {
             if (selectedApp != null && selectedKeys.isNotEmpty()) {
-                Button(onClick = {
-                    val app = selectedApp ?: return@Button
-                    val keys = selectedKeys.toList()
-                    scope.launch {
-                        var added = 0
-                        withContext(Dispatchers.IO) {
-                            keys.forEach { key ->
-                                val id = dao.insertTarget(
-                                    GroupReportTargetEntity(
-                                        packageName = app.packageName,
-                                        appLabel = app.appLabel.ifBlank { app.packageName },
-                                        conversationKey = key
-                                    )
-                                )
-                                if (id > 0L) added++
+                Button(
+                    enabled = !isAdding,
+                    onClick = {
+                        if (isAdding) return@Button
+                        val app = selectedApp ?: return@Button
+                        val keys = selectedKeys.toList()
+                        isAdding = true
+                        scope.launch {
+                            try {
+                                var added = 0
+                                withContext(Dispatchers.IO) {
+                                    keys.forEach { key ->
+                                        val id = dao.insertTarget(
+                                            GroupReportTargetEntity(
+                                                packageName = app.packageName,
+                                                appLabel = app.appLabel.ifBlank { app.packageName },
+                                                conversationKey = key
+                                            )
+                                        )
+                                        if (id > 0L) added++
+                                    }
+                                }
+                                onAdded(added)
+                            } finally {
+                                isAdding = false
                             }
                         }
-                        onAdded(added)
                     }
-                }) {
+                ) {
                     Text(stringResource(R.string.group_report_confirm_add, selectedKeys.size))
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(enabled = !isAdding, onClick = onDismiss) {
                 Text(stringResource(R.string.common_cancel))
             }
         }
@@ -760,7 +812,7 @@ private fun GroupTargetEditDialog(
                         target.copy(
                             scheduleEnabled = scheduleEnabled,
                             scheduleHour = scheduleHour,
-                            scheduleMinute = 0,
+                            scheduleMinute = target.scheduleMinute,
                             countEnabled = countEnabled,
                             countThreshold = countThreshold,
                             outputMode = outputMode

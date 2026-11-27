@@ -1,62 +1,26 @@
 // #301 來源：MainActivity.kt（MessagesHomeTab、SearchResultsSection、MessageFilter、SearchRiskFilter、AppGroupUi）
 package com.phantom.checker.ui.home
 
-import com.phantom.checker.ui.components.PhantomAnimatedCount
-import com.phantom.checker.ui.components.PhantomChevron
-import com.phantom.checker.ui.components.phantomEnter
-import com.phantom.checker.ui.components.PhantomMotion
-import android.Manifest
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
-import android.os.Bundle
-import android.provider.Settings
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.gestures.ScrollableDefaults
-import androidx.compose.foundation.gestures.snapping.SnapLayoutInfoProvider
-import androidx.compose.foundation.gestures.snapping.SnapPosition
-import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -65,154 +29,69 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.phantom.checker.ui.components.AuroraTokens
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
-import androidx.compose.ui.zIndex
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.LifecycleOwner
-import androidx.room.withTransaction
-import com.phantom.checker.data.AiSummaryEntity
-import com.phantom.checker.data.AiTagCountRow
-import com.phantom.checker.data.AppGroupRow
-import com.phantom.checker.data.AppRiskRow
+import com.phantom.checker.R
 import com.phantom.checker.data.MessageEntity
-import com.phantom.checker.data.MessageTagCrossRef
 import com.phantom.checker.data.MessageTagRow
-import com.phantom.checker.data.NoteEntity
 import com.phantom.checker.data.TagEntity
-import com.phantom.checker.data.TagTotalCountRow
-import com.phantom.checker.data.TodoEntity
-import com.phantom.checker.network.AiClient
 import com.phantom.checker.service.AppDatabaseHolder
-import com.phantom.checker.service.DailySummaryPolicy
-import com.phantom.checker.service.WeeklySummaryPolicy
-import com.phantom.checker.service.HeartbeatPolicy
-import com.phantom.checker.service.NotificationCollectorService
-import com.phantom.checker.service.ReminderScheduler
-import com.phantom.checker.service.RetentionPolicy
-import com.phantom.checker.service.StatsForegroundService
-import com.phantom.checker.shizuku.ShizukuManager
-import com.phantom.checker.ui.components.LiquidGlassTabBar
-import com.phantom.checker.ui.components.LiquidGlassTabBarItem
+import com.phantom.checker.ui.*
+import com.phantom.checker.ui.components.AuroraTokens
+import com.phantom.checker.ui.components.PhantomAnimatedCount
+import com.phantom.checker.ui.components.PhantomMotion
+import com.phantom.checker.ui.components.phantomEnter
 import com.phantom.checker.ui.components.pressableScale
-import com.phantom.checker.util.AppUpdateHelper
-import com.phantom.checker.util.MessageExporter
-import com.phantom.checker.util.MuteMode
 import com.phantom.checker.util.PhantomPrefs
 import com.phantom.checker.util.PhantomSettingsBus
-import com.phantom.checker.util.ShareCardReportData
-import com.phantom.checker.util.StatsShareCardGenerator
-import com.phantom.checker.util.TabBarDisplayMode
-import com.phantom.checker.util.UpdateCheckResult
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
-
-import com.phantom.checker.ui.*
-import com.phantom.checker.R
-import androidx.compose.ui.res.stringResource
-import androidx.annotation.StringRes
 
 private const val PAGE_SIZE = 100
 private const val MAX_BATCH_SELECT = 100
@@ -453,8 +332,9 @@ internal fun MessagesHomeTab(
     val pendingRetryCount by remember(ctx) {
         AppDatabaseHolder.db(ctx).pendingAiAnalysisDao().observePendingCount()
     }.collectAsState(initial = 0)
-    var isRetryPaused by remember { mutableStateOf(PhantomPrefs.isAiOfflineRetryPaused(ctx)) }
-    val offlineRetryEnabled = PhantomPrefs.isAiOfflineRetryEnabled(ctx)
+    val homeSettingsVersion by PhantomSettingsBus.version.collectAsState()
+    var isRetryPaused by remember(homeSettingsVersion) { mutableStateOf(PhantomPrefs.isAiOfflineRetryPaused(ctx)) }
+    val offlineRetryEnabled = remember(homeSettingsVersion) { PhantomPrefs.isAiOfflineRetryEnabled(ctx) }
 
     // 捲動到底部自動載入下一頁（非「全部」篩選模式）
     LaunchedEffect(listState, activeFilter, hasMoreFiltered, isLoadingMore) {
@@ -472,7 +352,6 @@ internal fun MessagesHomeTab(
             }
     }
 
-    val homeSettingsVersion by PhantomSettingsBus.version.collectAsState()
     val layoutMode = remember(homeSettingsVersion) { PhantomPrefs.getHomeCardLayoutMode(ctx) }
     val messagesFontScale = remember(homeSettingsVersion) { PhantomPrefs.getMessagesFontScale(ctx) }
     val baseDensity = LocalDensity.current
@@ -654,8 +533,8 @@ internal fun MessagesHomeTab(
 
         // §4.1 篩選列：單排 3 顆智慧 chips（全部／未讀／高風險）＋「更多」ModalBottomSheet
         val activeTag = (activeFilter as? MessageFilter.Tag)?.tag
-        val visibleFilters = PhantomPrefs.getVisibleHomeFilters(ctx)
-        var filterChipsCollapsed by remember { mutableStateOf(PhantomPrefs.isHomeFilterChipsCollapsed(ctx)) }
+        val visibleFilters = remember(homeSettingsVersion) { PhantomPrefs.getVisibleHomeFilters(ctx) }
+        var filterChipsCollapsed by remember(homeSettingsVersion) { mutableStateOf(PhantomPrefs.isHomeFilterChipsCollapsed(ctx)) }
         var showMoreFiltersSheet by remember { mutableStateOf(false) }
         var showGroupReportsSheet by remember { mutableStateOf(false) }
         val chipShape = RoundedCornerShape(AuroraTokens.CornerChip)
@@ -906,6 +785,7 @@ internal fun MessagesHomeTab(
                             onCheckedChange = { next ->
                                 filterChipsCollapsed = next
                                 PhantomPrefs.setHomeFilterChipsCollapsed(ctx, next)
+                                PhantomSettingsBus.notifyChanged()
                             }
                         )
                     }
@@ -931,16 +811,29 @@ internal fun MessagesHomeTab(
                     val visibleFavorites = remember(favoritePackages, favMax) {
                         if (favMax > 0) favoritePackages.take(favMax) else favoritePackages
                     }
+                    val resolvedFavLabels = remember { mutableStateMapOf<String, String>() }
+                    val missingLabelPkgs = remember(visibleFavorites, groupMap, resolvedFavLabels.size) {
+                        visibleFavorites.filter { pkg -> groupMap[pkg] == null && pkg !in resolvedFavLabels }
+                    }
+                    LaunchedEffect(missingLabelPkgs) {
+                        if (missingLabelPkgs.isEmpty()) return@LaunchedEffect
+                        val appCtx = ctx.applicationContext
+                        val resolved = withContext(Dispatchers.IO) {
+                            val pm = appCtx.packageManager
+                            missingLabelPkgs.associateWith { pkg ->
+                                try {
+                                    pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+                                } catch (_: Exception) {
+                                    pkg
+                                }
+                            }
+                        }
+                        resolvedFavLabels.putAll(resolved)
+                    }
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(visibleFavorites, key = { it }) { pkg ->
                             val group = groupMap[pkg]
-                            val label = group?.appLabel ?: try {
-                                ctx.packageManager.getApplicationLabel(
-                                    ctx.packageManager.getApplicationInfo(pkg, 0)
-                                ).toString()
-                            } catch (_: Exception) {
-                                pkg
-                            }
+                            val label = group?.appLabel ?: resolvedFavLabels[pkg] ?: pkg
                             val unreadBadge = group?.totalUnreadCount ?: 0
                             val favTags = group?.latestTags.orEmpty()
                             PhantomGlassCard(
