@@ -9,7 +9,6 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.google.gson.JsonParser
-import com.phantom.checker.data.MemoryEngine
 import com.phantom.checker.data.MemoryEntity
 import com.phantom.checker.data.WatchTopicEntity
 import com.phantom.checker.network.AiClient
@@ -22,6 +21,9 @@ import com.phantom.checker.util.HealthConnectBridge
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
+
+private val PUNCT_STRIP_REGEX = Regex("[\\s\\p{Punct}，。！？、；：「」『』（）【】《》]+")
+
 
 /**
  * #388 / #456 主動情報中樞：關注主題實體檔、每日自動萃取引擎與 v2 查詢情境化。
@@ -339,7 +341,7 @@ object WatchTopicEngine {
 
     internal fun normalizeForSimilarity(raw: String): String =
         raw.lowercase()
-            .replace(Regex("[\\s\\p{Punct}，。！？、；：「」『』（）【】《》]+"), "")
+            .replace(PUNCT_STRIP_REGEX, "")
             .trim()
 
     /** 執行單次每日萃取（回傳實際新增的候選筆數；失敗或跳過回傳 0） */

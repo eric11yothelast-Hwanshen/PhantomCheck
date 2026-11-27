@@ -1994,12 +1994,11 @@ object DesktopLinkClient {
                         delay(3_000L)
                         runCatching { ringtone?.stop() }
                     }
-                    // TODO(R17): 多語系硬編碼字串抽離至 strings.xml
                     val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
                     val notif = androidx.core.app.NotificationCompat.Builder(appCtx, ProactiveEngine.CHANNEL_ASSISTANT_BRIEFING)
                         .setSmallIcon(com.phantom.checker.R.drawable.ic_stat_phantom)
                         .setContentTitle("PhantomCheck")
-                        .setContentText("Find My Phone")
+                        .setContentText(com.phantom.checker.PhantomApplication.str(com.phantom.checker.R.string.notif_find_my_phone))
                         .setAutoCancel(true)
                         .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
                         .build()

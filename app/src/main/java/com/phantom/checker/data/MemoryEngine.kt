@@ -16,6 +16,9 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+private val WHITESPACE_REGEX = Regex("\\s+")
+
+
 /**
  * 個人長期／短期記憶庫核心引擎（#314 A2 / A3 / A5）。
  *
@@ -111,7 +114,7 @@ object MemoryEngine {
 
     /** 正規化 subject 作為衝突偵測鍵（去首尾空白與多餘空白，小寫化） */
     fun normalizeSubjectKey(raw: String): String =
-        raw.trim().replace(Regex("\\s+"), " ").lowercase(Locale.ROOT)
+        raw.trim().replace(WHITESPACE_REGEX, " ").lowercase(Locale.ROOT)
 
     /** 正規化內容以比對是否「實質不同」（去標點、符號、空白與大小寫差異） */
     fun normalizeContentForComparison(raw: String): String =

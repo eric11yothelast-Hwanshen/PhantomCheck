@@ -10,6 +10,11 @@ import kotlinx.coroutines.launch
 import androidx.annotation.StringRes
 import com.phantom.checker.R
 
+private val SETTINGS_SEPARATOR_REGEX = Regex("[\\s,，、/／|｜]+")
+private val QUERY_SEPARATOR_REGEX = Regex("[\\s,，、/／|｜？?！!。]+")
+private val KEY_SEPARATOR_REGEX = Regex("[\\s_\\-/、,，]+")
+
+
 data class SettingSearchItem(
     val id: String,
     val cardKey: String,
@@ -469,7 +474,7 @@ object SettingsCatalog {
         val cleaned = rawQuery.trim().lowercase(java.util.Locale.ROOT)
         if (cleaned.isEmpty()) return emptyList()
 
-        val whitespaceTokens = cleaned.split(Regex("[\\s,，、/／|｜]+")).filter { it.isNotEmpty() }
+        val whitespaceTokens = cleaned.split(SETTINGS_SEPARATOR_REGEX).filter { it.isNotEmpty() }
         // 單一短詞（≤ 4 字且不含虛詞）直接回傳，確保單一關鍵字行為零回歸
         if (whitespaceTokens.size == 1 && cleaned.length <= 3 && STOP_WORDS.none { cleaned.contains(it) }) {
             return listOf(cleaned)
@@ -481,7 +486,7 @@ object SettingsCatalog {
         for (sw in STOP_WORDS) {
             stripped = stripped.replace(sw, " ")
         }
-        val coreParts = stripped.split(Regex("[\\s,，、/／|｜？?！!。]+")).filter { it.isNotEmpty() }
+        val coreParts = stripped.split(QUERY_SEPARATOR_REGEX).filter { it.isNotEmpty() }
         for (part in coreParts) {
             tokens.add(part)
             // 若片段仍偏長（例如「訊息卡高度」或「晚上簡報幾點」），補充已知領域核心詞與 2 字元滑動詞
@@ -850,7 +855,7 @@ object SettingsCatalog {
     /** 對全 catalog（id / 標題 / 別名 / 說明）進行關鍵字比對，回傳最相關的前 N 筆 */
     fun keywordSearch(query: String, limit: Int = 5): List<SettingSearchItem> {
         val tokens = query.trim().lowercase()
-            .split(Regex("[\\s_\\-/、,，]+"))
+            .split(KEY_SEPARATOR_REGEX)
             .filter { it.isNotEmpty() }
         if (tokens.isEmpty()) return emptyList()
         return ITEMS.mapNotNull { item ->

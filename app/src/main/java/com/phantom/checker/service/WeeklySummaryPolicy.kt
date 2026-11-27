@@ -26,6 +26,9 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
+private val WHITESPACE_REGEX = Regex("\\s+")
+
+
 /**
  * 每週日 22:00 自動生成當週訊息統計與風險趨勢 AI 摘要的排程 Worker。
  * 不受省 token 模式限制，並以排程錨定週計算區間避免延遲跨週失真。
@@ -287,7 +290,7 @@ object WeeklySummaryPolicy {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val plainPreview = stripMarkdown(summaryText)
-            .replace(Regex("\\s+"), " ")
+            .replace(WHITESPACE_REGEX, " ")
             .trim()
             .take(120)
             .ifBlank { com.phantom.checker.PhantomApplication.str(R.string.notif_weekly_s_2ffc1d) }

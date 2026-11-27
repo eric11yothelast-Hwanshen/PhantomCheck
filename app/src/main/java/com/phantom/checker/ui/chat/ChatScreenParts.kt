@@ -1,6 +1,9 @@
 // #301 來源：ChatScreen.kt（動作解析模型與執行、RAG 提示詞建置、時間格式化、圖片編碼、輔助元件）
 package com.phantom.checker.ui.chat
 
+import com.phantom.checker.PhantomApplication
+import com.phantom.checker.R
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -22,7 +25,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -145,11 +147,18 @@ internal data class RagPromptBuildResult(
     val needsUsagePermissionPrompt: Boolean = false
 )
 
+private val TOKEN_BOUNDARY_REGEX_CACHE = java.util.concurrent.ConcurrentHashMap<String, Regex>()
+
+private fun tokenBoundaryRegex(token: String): Regex =
+    TOKEN_BOUNDARY_REGEX_CACHE.getOrPut(token) {
+        Regex("(?<![a-z0-9_])${Regex.escape(token)}(?![a-z0-9_])")
+    }
+
 private fun matchesAppQueryToken(lowerQuery: String, token: String): Boolean {
     if (token.isBlank()) return false
     val isAscii = token.all { it.code < 128 }
     return if (isAscii) {
-        Regex("(?<![a-z0-9_])${Regex.escape(token)}(?![a-z0-9_])").containsMatchIn(lowerQuery)
+        tokenBoundaryRegex(token).containsMatchIn(lowerQuery)
     } else {
         token.length >= 2 && lowerQuery.contains(token)
     }
@@ -1180,7 +1189,7 @@ private fun parseSingleActionJson(
         parsed.asJsonObject
     } catch (_: Exception) {
         if (jsonStr.contains("\"action\"", ignoreCase = true)) {
-            errorsOut.add("部分動作指令的 JSON 格式無法解析，請重新嘗試。")
+            errorsOut.add(PhantomApplication.str(R.string.chat_action_err_json_parse))
             return true
         }
         return false
@@ -1188,7 +1197,7 @@ private fun parseSingleActionJson(
     val action = obj.optPrimitiveString("action")?.lowercase()
         ?: return false
     if (action !in KNOWN_CHAT_ACTIONS) {
-        errorsOut.add("不支援的動作類型「$action」。")
+        errorsOut.add(PhantomApplication.str(R.string.chat_action_err_unsupported_action, action))
         return true
     }
 
@@ -1201,14 +1210,14 @@ private fun parseSingleActionJson(
                 val keyword = obj.optPrimitiveStringNonNullLiteral("keyword")
                 val memoAction = obj.optPrimitiveStringNonNullLiteral("memoAction")?.lowercase()
                 if (app == null && sender == null && keyword == null) {
-                    errorsOut.add("自動記事規則至少需指定 App、寄件者或關鍵字其中一項。")
+                    errorsOut.add(PhantomApplication.str(R.string.chat_action_err_memo_rule_missing_condition))
                 } else if (memoAction !in setOf(
                         com.phantom.checker.data.MemoRuleEntity.ACTION_NOTE,
                         com.phantom.checker.data.MemoRuleEntity.ACTION_TODO,
                         com.phantom.checker.data.MemoRuleEntity.ACTION_NEVER
                     )
                 ) {
-                    errorsOut.add("自動記事規則缺少有效的 memoAction（note/todo/never）。")
+                    errorsOut.add(PhantomApplication.str(R.string.chat_action_err_memo_rule_invalid_action))
                 } else {
                     val cond = listOfNotNull(
                         app?.let { "App $it" },
@@ -1233,7 +1242,7 @@ private fun parseSingleActionJson(
                 val ruleText = obj.optPrimitiveString("ruleText").orEmpty()
                 val tagName = obj.optPrimitiveString("tagName")
                 if (ruleText.isBlank()) {
-                    errorsOut.add("新增規則動作缺少 ruleText 內容。")
+                    errorsOut.add(PhantomApplication.str(R.string.chat_action_err_add_rule_missing_text))
                 } else {
                     ruleOut.add(PendingRuleProposal(kind, ruleText, tagName))
                 }
@@ -1252,9 +1261,9 @@ private fun parseSingleActionJson(
                 if (tagName.isNotEmpty()) append(" → $tagName")
             }.ifBlank { "自訂標籤記憶規則" }
             if (tagName.isBlank()) {
-                errorsOut.add("標籤記憶規則缺少目標標籤名稱（tagName）。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_tag_rule_missing_name))
             } else if (appPkg == null && appLbl == null && senderPat == null && kw == null && regex == null && sem == null) {
-                errorsOut.add("標籤記憶規則至少須指定一項條件（App、寄件者、關鍵字或語意類別）。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_tag_rule_missing_condition))
             } else {
                 tagRuleOut.add(TagRuleProposal(desc, appPkg, appLbl, senderPat, kw, regex, sem, tagName))
             }
@@ -1269,7 +1278,7 @@ private fun parseSingleActionJson(
                 else -> null
             }
             if (label.isBlank() || prompt.isBlank()) {
-                errorsOut.add("加入常用指令動作缺少名稱（label）或指令內容（prompt）。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_quick_command_missing_fields))
             } else {
                 quickCommandOut.add(QuickCommandProposal(label = label, prompt = prompt, mode = mode))
             }
@@ -1291,7 +1300,7 @@ private fun parseSingleActionJson(
             }
             val notes = obj.optPrimitiveString("notes").orEmpty()
             if (title.isBlank() && time == null) {
-                errorsOut.add("新增待辦提醒缺少待辦內容（title）與時間（time）。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_todo_reminder_missing_fields))
             } else {
                 reminderOut.add(TodoProposal(title = title, time = time, priority = priority, notes = notes, repeatRule = repeatRule))
             }
@@ -1301,7 +1310,7 @@ private fun parseSingleActionJson(
             val kind = if (rawKind == "message") "message" else "sender"
             val messageRef = obj.optPrimitiveString("messageRef").orEmpty()
             if (messageRef.isBlank()) {
-                errorsOut.add("加入白名單動作缺少目標寄件者或訊息（messageRef）。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_whitelist_add_missing_target))
             } else {
                 whitelistOut.add(WhitelistActionProposal(kind, messageRef))
             }
@@ -1312,7 +1321,7 @@ private fun parseSingleActionJson(
                 ?: obj.optPrimitiveString("sender")
                 ?: obj.optPrimitiveString("target")
             if (ruleId == null && queryStr == null) {
-                errorsOut.add("移出白名單動作缺少規則 ID（ruleId）或查詢條件（query）。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_whitelist_delete_missing_ref))
             } else {
                 whitelistDeleteOut.add(WhitelistDeleteProposal(ruleId = ruleId, query = queryStr))
             }
@@ -1321,7 +1330,7 @@ private fun parseSingleActionJson(
             val id = obj.optPrimitiveString("settingId").orEmpty()
             val stateStr = obj.optPrimitiveString("state")?.lowercase()
             if (id.isBlank() || (stateStr != "on" && stateStr != "off")) {
-                errorsOut.add("切換設定動作缺少有效的 settingId 或 state（on/off）。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_toggle_missing_fields))
             } else {
                 toggleOut.add(SettingToggleProposal(id, stateStr == "on"))
             }
@@ -1332,7 +1341,7 @@ private fun parseSingleActionJson(
                 el.asPrimitiveStringOrNull()?.trim()?.takeIf { s -> s.isNotEmpty() }
             }.orEmpty()
             if (ids.isEmpty()) {
-                errorsOut.add("設定候選動作未提供任何設定項目。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_setting_candidates_empty))
             } else {
                 candidatesOut.add(SettingCandidatesProposal(ids))
             }
@@ -1341,7 +1350,7 @@ private fun parseSingleActionJson(
             val id = obj.optPrimitiveString("settingId").orEmpty()
             val valueInt = obj.optPrimitiveInt("value")
             if (id.isBlank() || valueInt == null) {
-                errorsOut.add("調整數值設定動作缺少有效的 settingId 或整數 value。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_adjust_missing_value))
             } else {
                 adjustOut.add(SettingAdjustProposal(id, valueInt))
             }
@@ -1349,7 +1358,7 @@ private fun parseSingleActionJson(
         "open_setting" -> {
             val id = obj.optPrimitiveString("settingId").orEmpty()
             if (id.isBlank()) {
-                errorsOut.add("開啟設定動作缺少有效的 settingId。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_open_setting_missing_id))
             } else {
                 openOut.add(OpenSettingProposal(id))
             }
@@ -1377,7 +1386,7 @@ private fun parseSingleActionJson(
                     "tag_message" -> "標記標籤"
                     else -> action
                 }
-                errorsOut.add("你要求的「$actionLabel」動作缺少目標訊息，請指定要操作哪一則訊息。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_action_missing_target, actionLabel))
             } else {
                 messageOut.add(
                     MessageActionProposal(
@@ -1406,7 +1415,7 @@ private fun parseSingleActionJson(
             val newTitle = obj.optPrimitiveSanitized("newTitle")
             val time = obj.optPrimitiveSanitized("time")
             if (title == null) {
-                errorsOut.add("請指定要操作的待辦事項名稱。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_todo_target_missing))
             } else {
                 todoManageOut.add(TodoManageProposal(action = action, title = title, newTitle = newTitle, time = time))
             }
@@ -1416,7 +1425,7 @@ private fun parseSingleActionJson(
             val pkg = obj.optPrimitiveSanitized("packageName")
             val pin = obj.optPrimitiveBoolean("pin") ?: true
             if (sender == null) {
-                errorsOut.add("請指定要釘選或取消釘選 VIP 的寄件者名稱。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_vip_target_missing))
             } else {
                 vipPinOut.add(VipPinProposal(sender = sender, packageName = pkg, pin = pin))
             }
@@ -1425,7 +1434,7 @@ private fun parseSingleActionJson(
             val appLabel = obj.optPrimitiveSanitized("appLabel") ?: obj.optPrimitiveSanitized("packageName")
             val mute = obj.optPrimitiveBoolean("mute") ?: true
             if (appLabel == null) {
-                errorsOut.add("請指定要靜音或取消靜音的 App 名稱。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_mute_target_missing))
             } else {
                 muteAppOut.add(MuteAppProposal(appLabel = appLabel, mute = mute))
             }
@@ -1465,7 +1474,7 @@ private fun parseSingleActionJson(
                 com.phantom.checker.data.MemoryEntity.PRIVACY_NORMAL
             }
             if (content.isBlank()) {
-                errorsOut.add("新增記憶動作缺少記憶內容（content）。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_memory_add_missing_content))
             } else {
                 memoryAddOut.add(
                     MemoryAddProposal(
@@ -1492,9 +1501,9 @@ private fun parseSingleActionJson(
                 it == com.phantom.checker.data.MemoryEntity.PRIVACY_NORMAL || it == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE
             }
             if (content.isBlank()) {
-                errorsOut.add("更新記憶動作缺少更新後的內容（content）。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_memory_update_missing_content))
             } else if (memId == null && subject == null) {
-                errorsOut.add("更新記憶動作需提供記憶 ID（memoryId）或主題（subject）。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_memory_update_missing_ref))
             } else {
                 memoryUpdateOut.add(
                     MemoryUpdateProposal(
@@ -1513,7 +1522,7 @@ private fun parseSingleActionJson(
             val q = obj.optPrimitiveSanitized("query")
             val subj = obj.optPrimitiveSanitized("subject") ?: obj.optPrimitiveSanitized("person")
             if (memId == null && q == null && subj == null) {
-                errorsOut.add("刪除記憶動作需指定記憶 ID（memoryId）、關鍵字（query）或人物/主題（subject）。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_memory_delete_missing_ref))
             } else {
                 memoryDeleteOut.add(MemoryDeleteProposal(memoryId = memId, query = q, subject = subj))
             }
@@ -1547,7 +1556,7 @@ private fun parseSingleActionJson(
             val location = obj.optPrimitiveSanitized("location")
             val notes = obj.optPrimitiveSanitized("notes")
             if (title.isBlank() || startRaw.isBlank()) {
-                errorsOut.add("新增日曆行程動作缺少標題（title）或開始時間（start）。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_calendar_add_missing_fields))
             } else {
                 calendarAddOut.add(
                     CalendarAddProposal(
@@ -1572,7 +1581,7 @@ private fun parseSingleActionJson(
                 ?: obj.optPrimitiveString("address")
                 ?: obj.optPrimitiveString("query")).orEmpty()
             if (dest.isBlank()) {
-                errorsOut.add("地圖導航動作缺少目的地（destination）。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_map_nav_missing_destination))
             } else {
                 crossAppOut.add(com.phantom.checker.util.CrossAppActionProposal.MapsNavigate(destination = dest))
             }
@@ -1581,7 +1590,7 @@ private fun parseSingleActionJson(
             val hhmm = (obj.optPrimitiveString("hhmm") ?: obj.optPrimitiveString("time")).orEmpty()
             val label = (obj.optPrimitiveString("label") ?: obj.optPrimitiveString("message")).orEmpty()
             if (hhmm.isBlank()) {
-                errorsOut.add("設定鬧鐘動作缺少時間（hhmm）。")
+                errorsOut.add(PhantomApplication.str(R.string.chat_action_err_alarm_missing_time))
             } else {
                 crossAppOut.add(com.phantom.checker.util.CrossAppActionProposal.SetAlarm(hhmm = hhmm, label = label))
             }
@@ -1629,7 +1638,7 @@ internal fun parseAllChatActions(rawReply: String): ParsedChatActions {
         val objs = splitBalancedJsonObjects(body)
         if (objs.isEmpty()) {
             // TODO(R17): extract hardcoded zh-TW error string
-            errors.add("動作指令格式無法解析，請重新嘗試。")
+            errors.add(PhantomApplication.str(R.string.chat_action_err_format_unparsable))
         } else {
             var anyHandled = false
             objs.forEach { (_, jsonStr) ->

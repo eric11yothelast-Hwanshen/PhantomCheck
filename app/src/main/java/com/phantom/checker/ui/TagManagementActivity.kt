@@ -30,7 +30,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -47,20 +46,16 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -983,7 +978,14 @@ fun TagManagementScreen(onBack: () -> Unit) {
                                     )
                                     if (regexErr != null) {
                                         Text(
-                                            text = "⚠ Regex: $regexErr",
+                                            text = "⚠ " + stringResource(
+                                                R.string.tag_regex_error_line,
+                                                when (regexErr) {
+                                                    "pattern_too_long" -> stringResource(R.string.tag_regex_err_too_long)
+                                                    "unsafe_complexity" -> stringResource(R.string.tag_regex_err_unsafe)
+                                                    else -> stringResource(R.string.tag_regex_err_invalid)
+                                                }
+                                            ),
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.warning
                                         )
@@ -1544,7 +1546,14 @@ private fun UserTagRuleEditorDialog(
                     supportingText = if (regexValidationError != null) {
                         {
                             Text(
-                                text = "⚠ Regex: $regexValidationError",
+                                text = "⚠ " + stringResource(
+                                    R.string.tag_regex_error_line,
+                                    when (regexValidationError) {
+                                        "pattern_too_long" -> stringResource(R.string.tag_regex_err_too_long)
+                                        "unsafe_complexity" -> stringResource(R.string.tag_regex_err_unsafe)
+                                        else -> stringResource(R.string.tag_regex_err_invalid)
+                                    }
+                                ),
                                 color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.labelSmall
                             )

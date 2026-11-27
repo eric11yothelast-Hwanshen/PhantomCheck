@@ -18,6 +18,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+private val WHITESPACE_REGEX = Regex("\\s+")
+
+
 /**
  * 桌面 2x2「最新 AI 摘要」小工具：
  * 顯示最近一則每日／每週 AI 摘要節錄，點擊開啟統計頁摘要卡。
@@ -41,7 +44,7 @@ class AiSummaryWidgetProvider : AppWidgetProvider() {
                         com.phantom.checker.PhantomApplication.str(R.string.widget_ai_s_8eb256)
                     } else {
                         stripMarkdown(latest.summary)
-                            .replace(Regex("\\s+"), " ")
+                            .replace(WHITESPACE_REGEX, " ")
                             .trim()
                             .take(140)
                     }
@@ -108,7 +111,7 @@ class AiSummaryWidgetProvider : AppWidgetProvider() {
                 com.phantom.checker.PhantomApplication.str(R.string.widget_ai_s_8eb256)
             } else {
                 stripMarkdown(latest.summary)
-                    .replace(Regex("\\s+"), " ")
+                    .replace(WHITESPACE_REGEX, " ")
                     .trim()
                     .take(140)
             }
