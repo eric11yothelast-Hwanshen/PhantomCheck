@@ -14,6 +14,7 @@ import com.phantom.checker.data.MemoryEntity
 import com.phantom.checker.data.WatchTopicEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.util.PhantomPrefs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.phantom.checker.util.CalendarBridge
@@ -49,6 +50,10 @@ object WatchTopicEngine {
     }
 
     private val LOCATION_SUBJECT_CUES = listOf("居住", "住在", "地點", "城市", "地區", "所在地", "位於", "location", "city", "live")
+    private val LOCATION_PREFIX_REGEX = Regex(
+        "^(?:(?:我|目前|現在|個人)?(?:居住於|居住在|居住地|所在地|住在|位於|居住|城市|地區|地點|location|city|live\\s+in|lives\\s+in)\\s*[：:是為]?\\s*)+",
+        RegexOption.IGNORE_CASE
+    )
     private val WEATHER_OR_LOCAL_CUES = listOf("天氣", "氣象", "降雨", "颱風", "地震", "停班", "停課", "交通", "路況", "活動", "weather", "traffic")
     private val HEALTH_TOPIC_CUES = listOf("健康", "睡眠", "運動", "跑步", "飲食", "保健", "減脂", "健身", "health", "sleep", "fitness")
 
@@ -82,7 +87,7 @@ object WatchTopicEngine {
             if (subj.isBlank() && content.isBlank()) continue
             val combined = "$subj $content".lowercase()
             if (locationHint.isBlank() && LOCATION_SUBJECT_CUES.any { combined.contains(it) }) {
-                locationHint = content.replace(Regex("[我住在位於居住地城市地區：:\\s]+"), "").take(12)
+                locationHint = content.replace(LOCATION_PREFIX_REGEX, "").trim().take(12)
             }
             if (memSnippets.size < 6) {
                 memSnippets.add(if (subj.isNotBlank()) "$subj：$content" else content)
@@ -244,11 +249,11 @@ object WatchTopicEngine {
         val since7d = nowMs - TimeUnit.DAYS.toMillis(7)
 
         val recentMessages = runCatching {
-            db.messageDao().since(since7d).take(40)
+            db.messageDao().sinceLimited(since7d, 40)
         }.getOrDefault(emptyList())
 
         val notes = runCatching {
-            db.noteDao().all().take(15)
+            db.noteDao().topRecent(15)
         }.getOrDefault(emptyList())
 
         // 雙層硬排除 sensitive 記憶：DAO SQL 已限定 privacyTier='normal'，Kotlin 端再顯式過濾一次
@@ -410,6 +415,8 @@ class WatchTopicExtractWorker(
         return try {
             WatchTopicEngine.runDailyExtraction(applicationContext, forceRun = false)
             Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             // 離線／429／例外靜默退避，不重試轟炸
             Result.success()

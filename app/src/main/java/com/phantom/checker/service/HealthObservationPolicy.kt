@@ -60,17 +60,19 @@ object HealthObservationPolicy {
             )
         }
 
-        // 規則 2：連續 3 日步數 < 2000（取最近 3 個已結束的完整日，即排除今日最後一筆；若不足 4 筆則取前 3 筆）
-        val completedDays = if (trend.size >= 4) trend.dropLast(1).takeLast(3) else trend.take(3)
-        if (completedDays.size == 3 && completedDays.all { it.steps in 1L..1999L }) {
-            val avgSteps = completedDays.map { it.steps }.average().toLong()
-            matches.add(
-                HealthRuleMatch(
-                    ruleId = RULE_STEPS_3DAYS_UNDER_2000,
-                    title = "健康觀察提醒：連續三日活動步數偏低",
-                    message = "🩺 **健康觀察提醒**\n系統本機聚合發現您最近連續 3 日步數皆低於 2,000 步（平均約 $avgSteps 步）。建議今日趁空檔起身散步或伸展 10–15 分鐘，活絡循環。"
+        // 規則 2：連續 3 日步數 < 2000（僅在 trend.size >= 4 時取最近 3 個已結束的完整日，排除今日進行中）
+        if (trend.size >= 4) {
+            val completedDays = trend.dropLast(1).takeLast(3)
+            if (completedDays.size == 3 && completedDays.all { it.steps in 1L..1999L }) {
+                val avgSteps = completedDays.map { it.steps }.average().toLong()
+                matches.add(
+                    HealthRuleMatch(
+                        ruleId = RULE_STEPS_3DAYS_UNDER_2000,
+                        title = "健康觀察提醒：連續三日活動步數偏低",
+                        message = "🩺 **健康觀察提醒**\n系統本機聚合發現您最近連續 3 日步數皆低於 2,000 步（平均約 $avgSteps 步）。建議今日趁空檔起身散步或伸展 10–15 分鐘，活絡循環。"
+                    )
                 )
-            )
+            }
         }
 
         // 規則 3：昨日平均心率較 7 日基準高 ≥ 12 bpm
@@ -112,25 +114,36 @@ object HealthObservationPolicy {
         if (matches.isEmpty()) return@withContext
 
         val dayKey = LocalDate.now(ZoneId.systemDefault()).format(DateTimeFormatter.ISO_LOCAL_DATE)
-        for (match in matches) {
+        val eligibleMatches = matches.filter { match ->
             val milestoneKey = "health:${match.ruleId}:$dayKey"
-            if (PhantomPrefs.isProactiveMilestoneDelivered(appCtx, milestoneKey, dayKey)) {
-                continue
+            !PhantomPrefs.isProactiveMilestoneDelivered(appCtx, milestoneKey, dayKey) &&
+                PhantomPrefs.getHealthRuleWeeklyCount(appCtx, match.ruleId, nowMs) < MAX_WEEKLY_PER_RULE
+        }
+        if (eligibleMatches.isEmpty()) return@withContext
+
+        val milestoneKeys = eligibleMatches.map { "health:${it.ruleId}:$dayKey" }
+        val (title, body) = if (eligibleMatches.size == 1) {
+            eligibleMatches.first().title to eligibleMatches.first().message
+        } else {
+            val prefix = eligibleMatches.first().title.substringBefore("：")
+            val combinedSubjects = eligibleMatches.joinToString(" / ") {
+                it.title.substringAfter("：", it.title)
             }
-            if (PhantomPrefs.getHealthRuleWeeklyCount(appCtx, match.ruleId, nowMs) >= MAX_WEEKLY_PER_RULE) {
-                continue
-            }
-            val msgId = ProactiveEngine.deliverProactiveMessage(
-                ctx = appCtx,
-                title = match.title,
-                body = match.message,
-                notifId = NotifIds.HEALTH_PROACTIVE,
-                sendNotif = true,
-                respectDailyCap = true,
-                nowMs = nowMs,
-                milestoneKeys = listOf(milestoneKey)
-            )
-            if (msgId != null) {
+            val combinedBody = eligibleMatches.joinToString("\n\n") { it.message }
+            "$prefix：$combinedSubjects" to combinedBody
+        }
+        val msgId = ProactiveEngine.deliverProactiveMessage(
+            ctx = appCtx,
+            title = title,
+            body = body,
+            notifId = NotifIds.HEALTH_PROACTIVE,
+            sendNotif = true,
+            respectDailyCap = true,
+            nowMs = nowMs,
+            milestoneKeys = milestoneKeys
+        )
+        if (msgId != null) {
+            eligibleMatches.forEach { match ->
                 PhantomPrefs.recordHealthRuleDelivered(appCtx, match.ruleId, nowMs)
             }
         }

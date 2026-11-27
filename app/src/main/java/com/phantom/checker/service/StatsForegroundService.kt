@@ -19,10 +19,12 @@ import android.os.Looper
 import android.os.PowerManager
 import android.view.View
 import android.widget.RemoteViews
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.phantom.checker.R
 import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.ui.buildRecentAppsHorizontalStripBitmap
+import com.phantom.checker.util.DesktopLinkStore
 import com.phantom.checker.util.NotifClickBehavior
 import com.phantom.checker.util.PersistentNotifStyle
 import com.phantom.checker.util.PersistentNotifSubtitleMode
@@ -94,6 +96,20 @@ class StatsForegroundService : Service() {
         ensureChannel(applicationContext)
         KeepAlivePolicy.scheduleAll(applicationContext)
         registerScreenStateReceiver()
+        // R5: 背景預熱 DesktopLinkStore 記憶體快取，避免主執行緒通知建構時同步解密
+        scope.launch {
+            runCatching { DesktopLinkStore.warmUp(applicationContext) }
+        }
+        scope.launch {
+            DesktopLinkStore.pairedDevicesFlow
+                .drop(1)
+                .collect {
+                    val mode = PhantomPrefs.getPersistentNotifSubtitleMode(applicationContext)
+                    if (mode == PersistentNotifSubtitleMode.LINK_STATUS || mode == PersistentNotifSubtitleMode.BOTH) {
+                        performRefresh(force = true)
+                    }
+                }
+        }
         // #512 僅於桌面連線狀態或裝置名稱變化時觸發常駐通知刷新，零輪詢開銷
         scope.launch {
             DesktopLinkClient.status
@@ -110,12 +126,20 @@ class StatsForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (!PhantomPrefs.isPersistentStatsEnabled(applicationContext)) {
-            stopForegroundCompat()
-            stopSelf()
-            return START_NOT_STICKY
-        }
-        if (!hasPostNotificationsPermission(applicationContext)) {
+        val shouldStop = !PhantomPrefs.isPersistentStatsEnabled(applicationContext) ||
+            !hasPostNotificationsPermission(applicationContext)
+        if (shouldStop) {
+            // P0 (#543): Android 8+ startForegroundService 啟動後即使要立即停止也須先 startForeground 一次，避免 FGS 逾時系統閃退
+            if (!isForegroundStarted) {
+                val minimalNotif = buildNotification(
+                    ctx = applicationContext,
+                    today = lastToday,
+                    unread = lastUnread,
+                    scam = lastScam,
+                    largeIcon = cachedStripBitmap
+                )
+                startForegroundCompat(minimalNotif)
+            }
             stopForegroundCompat()
             stopSelf()
             return START_NOT_STICKY
@@ -158,6 +182,9 @@ class StatsForegroundService : Service() {
         unregisterScreenStateReceiver()
         mainHandler.removeCallbacks(delayedRefreshRunnable)
         scope.cancel()
+        cachedStripBitmap = null
+        cachedStripPackages = emptyList()
+        lastStripBitmap = null
         if (PhantomPrefs.isPersistentStatsEnabled(applicationContext) &&
             hasPostNotificationsPermission(applicationContext)
         ) {
@@ -235,7 +262,7 @@ class StatsForegroundService : Service() {
                 stopSelf()
                 return@launch
             }
-            if (!isScreenInteractive() && !isRefreshStale()) {
+            if (!force && !isScreenInteractive() && !isRefreshStale()) {
                 return@launch
             }
             try {
@@ -283,7 +310,8 @@ class StatsForegroundService : Service() {
                 )
 
                 val now = System.currentTimeMillis()
-                val unchanged = isForegroundStarted &&
+                val unchanged = !force &&
+                    isForegroundStarted &&
                     hasActiveStatsNotif() &&
                     lastSignature == newSig &&
                     !isRefreshStale()
@@ -333,15 +361,12 @@ class StatsForegroundService : Service() {
 
     private fun startForegroundCompat(notification: Notification): Boolean {
         return try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                startForeground(
-                    STATS_NOTIF_ID,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-                )
+            val fgsType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             } else {
-                startForeground(STATS_NOTIF_ID, notification)
+                0
             }
+            ServiceCompat.startForeground(this, STATS_NOTIF_ID, notification, fgsType)
             true
         } catch (e: IllegalStateException) {
             android.util.Log.w("StatsForegroundService", "startForeground failed (IllegalState/NotAllowed)", e)
@@ -442,9 +467,9 @@ class StatsForegroundService : Service() {
         }
 
         internal fun resolveLinkStatusSubtitle(ctx: Context): String? {
-            val paired = runCatching {
-                com.phantom.checker.util.DesktopLinkStore.getPairedDevices(ctx)
-            }.getOrDefault(emptyList())
+            val paired = DesktopLinkStore.pairedDevicesFlow.value.ifEmpty {
+                DesktopLinkStore.peekPairedDevices()
+            }
             if (paired.isEmpty()) return null
             val st = DesktopLinkClient.status.value
             return when (st.connState) {

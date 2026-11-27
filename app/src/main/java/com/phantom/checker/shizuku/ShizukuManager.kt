@@ -5,20 +5,27 @@ import android.content.Context
 import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.IBinder
+import android.os.Looper
 import androidx.core.app.NotificationManagerCompat
 import com.phantom.checker.BuildConfig
 import com.phantom.checker.service.NotificationCollectorService
 import com.phantom.checker.service.StatsForegroundService
 import com.phantom.checker.util.PhantomPrefs
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import rikka.shizuku.Shizuku
 import com.phantom.checker.R
+import java.util.concurrent.atomic.AtomicBoolean
 
 data class ShizukuState(
     val isInstalled: Boolean = false,
@@ -50,8 +57,9 @@ object ShizukuManager {
     private val _state = MutableStateFlow(ShizukuState())
     val state: StateFlow<ShizukuState> = _state.asStateFlow()
 
-    @Volatile
-    private var initialized = false
+    private val initialized = AtomicBoolean(false)
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val connectMutex = Mutex()
 
     @Volatile
     private var appContext: Context? = null
@@ -86,15 +94,17 @@ object ShizukuManager {
             pendingConnect?.complete(svc)
             pendingConnect = null
             appContext?.let { ctx ->
-                if (PhantomPrefs.isShizukuWatchdogEnabled(ctx) &&
-                    PhantomPrefs.isPersistentStatsEnabled(ctx)
-                ) {
-                    try {
-                        svc?.startWatchdog(ctx.packageName, StatsForegroundService::class.java.name)
-                    } catch (_: Exception) {
+                ioScope.launch {
+                    if (PhantomPrefs.isShizukuWatchdogEnabled(ctx) &&
+                        PhantomPrefs.isPersistentStatsEnabled(ctx)
+                    ) {
+                        try {
+                            svc?.startWatchdog(ctx.packageName, StatsForegroundService::class.java.name)
+                        } catch (_: Exception) {
+                        }
                     }
+                    refreshStateSync(ctx)
                 }
-                refreshState(ctx)
             }
         }
 
@@ -109,13 +119,13 @@ object ShizukuManager {
     fun init(ctx: Context) {
         val appCtx = ctx.applicationContext
         appContext = appCtx
-        if (!initialized) {
-            initialized = true
+        if (initialized.compareAndSet(false, true)) {
             try {
                 Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
                 Shizuku.addBinderDeadListener(binderDeadListener)
                 Shizuku.addRequestPermissionResultListener(permissionListener)
             } catch (_: Exception) {
+                initialized.set(false)
             }
         }
         refreshState(appCtx)
@@ -124,6 +134,14 @@ object ShizukuManager {
     fun refreshState(ctx: Context) {
         val appCtx = ctx.applicationContext
         appContext = appCtx
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            ioScope.launch { refreshStateSync(appCtx) }
+        } else {
+            refreshStateSync(appCtx)
+        }
+    }
+
+    private fun refreshStateSync(appCtx: Context) {
         val installed = isShizukuInstalled(appCtx)
         val binderAlive = try {
             installed && Shizuku.pingBinder()
@@ -183,33 +201,49 @@ object ShizukuManager {
         return Shizuku.UserServiceArgs(
             ComponentName(ctx.packageName, ShizukuWatchdogService::class.java.name)
         )
-            .daemon(false)
+            .daemon(true)
             .processNameSuffix("shizuku_watchdog")
             .debuggable(BuildConfig.DEBUG)
             .version(BuildConfig.VERSION_CODE)
     }
 
-    suspend fun ensureConnected(ctx: Context): IShizukuShellService? {
+    suspend fun ensureConnected(ctx: Context): IShizukuShellService? = connectMutex.withLock {
         val appCtx = ctx.applicationContext
-        init(appCtx)
-        if (!_state.value.isReady) return null
+        appContext = appCtx
+        if (initialized.compareAndSet(false, true)) {
+            try {
+                Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
+                Shizuku.addBinderDeadListener(binderDeadListener)
+                Shizuku.addRequestPermissionResultListener(permissionListener)
+            } catch (_: Exception) {
+                initialized.set(false)
+            }
+        }
+        withContext(Dispatchers.IO) { refreshStateSync(appCtx) }
+        if (!_state.value.isReady) return@withLock null
         shellService?.let { existing ->
             try {
-                if (existing.asBinder().pingBinder()) return existing
+                if (existing.asBinder().pingBinder()) return@withLock existing
             } catch (_: Exception) {
                 shellService = null
             }
         }
         val deferred = CompletableDeferred<IShizukuShellService?>()
         pendingConnect = deferred
-        withContext(Dispatchers.Main) {
-            try {
-                Shizuku.bindUserService(userServiceArgs(appCtx), serviceConnection)
-            } catch (_: Exception) {
-                deferred.complete(null)
+        try {
+            withContext(Dispatchers.Main) {
+                try {
+                    Shizuku.bindUserService(userServiceArgs(appCtx), serviceConnection)
+                } catch (_: Exception) {
+                    deferred.complete(null)
+                }
+            }
+            withTimeoutOrNull(4000L) { deferred.await() }
+        } finally {
+            if (pendingConnect === deferred) {
+                pendingConnect = null
             }
         }
-        return withTimeoutOrNull(4000L) { deferred.await() }
     }
 
     suspend fun startWatchdog(ctx: Context): Boolean = withContext(Dispatchers.IO) {
@@ -217,7 +251,7 @@ object ShizukuManager {
         val svc = ensureConnected(appCtx) ?: return@withContext false
         return@withContext try {
             svc.startWatchdog(appCtx.packageName, StatsForegroundService::class.java.name)
-            refreshState(appCtx)
+            refreshStateSync(appCtx)
             true
         } catch (_: Exception) {
             false
@@ -226,14 +260,22 @@ object ShizukuManager {
 
     suspend fun stopWatchdog(ctx: Context): Boolean = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
-        val svc = ensureConnected(appCtx) ?: return@withContext false
-        return@withContext try {
-            svc.stopWatchdog()
-            refreshState(appCtx)
+        val svc = shellService ?: ensureConnected(appCtx)
+        val stopped = try {
+            svc?.stopWatchdog()
             true
         } catch (_: Exception) {
             false
         }
+        withContext(Dispatchers.Main) {
+            try {
+                Shizuku.unbindUserService(userServiceArgs(appCtx), serviceConnection, true)
+            } catch (_: Exception) {
+            }
+        }
+        shellService = null
+        refreshStateSync(appCtx)
+        stopped
     }
 
     suspend fun execCommand(ctx: Context, command: String): ShellResult = withContext(Dispatchers.IO) {
@@ -259,7 +301,7 @@ object ShizukuManager {
         )
         val granted = result.isSuccess &&
             NotificationManagerCompat.getEnabledListenerPackages(appCtx).contains(appCtx.packageName)
-        refreshState(appCtx)
+        refreshStateSync(appCtx)
         granted
     }
 

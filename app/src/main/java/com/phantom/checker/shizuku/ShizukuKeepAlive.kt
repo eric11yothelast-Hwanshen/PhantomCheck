@@ -96,21 +96,11 @@ object ShizukuKeepAlive {
 
     suspend fun healNotificationListener(ctx: Context): ShellResult = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
-        val component = "${appCtx.packageName}/${NotificationCollectorService::class.java.name}"
-        val getRes = ShizukuManager.execCommand(appCtx, "settings get secure enabled_notification_listeners")
-        if (!getRes.isSuccess) return@withContext getRes
-
-        val current = getRes.output.trim().let { if (it == "null") "" else it }
-        val entries = current.split(':').map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
-        if (entries.none { it == component || it == "${appCtx.packageName}/.service.NotificationCollectorService" }) {
-            entries.add(component)
-            val updated = entries.joinToString(":")
-            val putRes = ShizukuManager.execCommand(
-                appCtx,
-                "settings put secure enabled_notification_listeners \"$updated\""
-            )
-            if (!putRes.isSuccess) return@withContext putRes
-        }
+        val safePkg = sanitizePackage(appCtx.packageName)
+            ?: return@withContext ShellResult(1, com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_99cbc2))
+        val component = "$safePkg/${NotificationCollectorService::class.java.name}"
+        val allowRes = ShizukuManager.execCommand(appCtx, "cmd notification allow_listener $component")
+        if (!allowRes.isSuccess) return@withContext allowRes
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
                 NotificationListenerService.requestRebind(
@@ -125,12 +115,16 @@ object ShizukuKeepAlive {
     suspend fun grantSelfRuntimePermissions(ctx: Context): ShellResult = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
         val pkg = appCtx.packageName
+        com.phantom.checker.service.AutoReplyConfig.ensureLoaded(appCtx)
+        val smsAutoReplyEnabled = com.phantom.checker.service.AutoReplyConfig.enabled
         val perms = buildList {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 add("android.permission.POST_NOTIFICATIONS")
             }
-            add("android.permission.RECEIVE_SMS")
-            add("android.permission.SEND_SMS")
+            if (smsAutoReplyEnabled) {
+                add("android.permission.RECEIVE_SMS")
+                add("android.permission.SEND_SMS")
+            }
         }
         var okCount = 0
         perms.forEach { perm ->
@@ -149,7 +143,9 @@ object ShizukuKeepAlive {
         val items = mutableListOf<ShizukuDiagItem>()
 
         val idleRes = ShizukuManager.execCommand(appCtx, "dumpsys deviceidle whitelist")
-        val inWhitelist = idleRes.isSuccess && idleRes.output.contains(pkg)
+        val inWhitelist = idleRes.isSuccess && idleRes.output.lineSequence().any { line ->
+            line.split(',', ' ', '\t').any { token -> token.trim() == pkg }
+        }
         items += ShizukuDiagItem(
             label = com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_f1578c),
             ok = inWhitelist,
@@ -173,7 +169,13 @@ object ShizukuKeepAlive {
         )
 
         val listenerRes = ShizukuManager.execCommand(appCtx, "settings get secure enabled_notification_listeners")
-        val listenerOk = listenerRes.isSuccess && listenerRes.output.contains(pkg)
+        val fullComponent = "$pkg/${NotificationCollectorService::class.java.name}"
+        val shortComponent = "$pkg/.service.NotificationCollectorService"
+        val listenerOk = listenerRes.isSuccess && listenerRes.output.trim()
+            .takeIf { it.isNotEmpty() && it != "null" }
+            ?.split(':')
+            ?.map { it.trim() }
+            ?.any { entry -> entry == fullComponent || entry == shortComponent } == true
         items += ShizukuDiagItem(
             label = com.phantom.checker.PhantomApplication.str(R.string.shizuku_s_a1fe64),
             ok = listenerOk,

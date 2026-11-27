@@ -17,6 +17,7 @@ import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.util.CalendarBridge
 import com.phantom.checker.util.EncryptedByokStore
 import com.phantom.checker.util.PhantomPrefs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.security.MessageDigest
@@ -67,7 +68,7 @@ object ProactiveEngine {
         }
         val since24h = nowMs - 24L * 60L * 60L * 1000L
         val recentImportant = runCatching {
-            db.messageDao().paged(80, 0).filter { it.timestamp >= since24h && (it.riskScore >= 60 || it.isStarred) }
+            db.messageDao().sinceLimited(since24h, 80).filter { it.riskScore >= 60 || it.isStarred }
         }.getOrDefault(emptyList())
 
         val rawSig = buildString {
@@ -253,7 +254,7 @@ object ProactiveEngine {
                             .filter { !it.allDay }
                             .sortedBy { it.beginMs }
                     }.getOrDefault(emptyList())
-                    val conflictingPairs = timedToday.zipWithNext().filter { (a, b) -> b.beginMs < a.endMs }
+                    val conflictingPairs = detectOverlappingEventPairs(timedToday)
                     val conflictLine = if (conflictingPairs.isNotEmpty()) {
                         val titles = conflictingPairs.take(2).joinToString("；") { (a, b) -> "${a.title} 與 ${b.title}" }
                         "\n⚠️ 今日行程撞期提醒：$titles"
@@ -281,7 +282,8 @@ object ProactiveEngine {
             // #424 晚報段落 1：今日回顧一句（純本機統計，零編造）
             val todayStats = runCatching { db.messageDao().statsOverview(dayStartMs) }.getOrNull()
             val doneTodayCount = runCatching {
-                db.todoDao().all().count { it.isDone && it.completedAt != null && it.completedAt in dayStartMs until tomorrowStartMs }
+                db.todoDao().between(dayStartMs, tomorrowStartMs)
+                    .count { it.isDone && it.completedAt != null && it.completedAt in dayStartMs until tomorrowStartMs }
             }.getOrDefault(0)
             val recapText = if (todayStats != null) {
                 "今日共收錄 ${todayStats.today} 則通知（未讀 ${todayStats.unread} 則、高風險 ${todayStats.scam} 則），完成 $doneTodayCount 項待辦。"
@@ -321,7 +323,7 @@ object ProactiveEngine {
         if (PhantomPrefs.BRIEFING_CONTENT_IMPORTANT_NOTIFS in prefsSet) {
             val since24h = nowMs - 24L * 60L * 60L * 1000L
             val highRisk = runCatching {
-                db.messageDao().paged(60, 0).filter { it.timestamp >= since24h && it.riskScore >= 60 }
+                db.messageDao().riskyBetween(since24h, nowMs + 1L, limit = 60).filter { it.riskScore >= 60 }
             }.getOrDefault(emptyList())
             if (highRisk.isNotEmpty()) {
                 facts.add("近 24 小時高風險通知 ${highRisk.size} 則（最高風險 ${highRisk.maxOf { it.riskScore }} 分）")
@@ -535,7 +537,8 @@ object ProactiveEngine {
             notifId = NotifIds.PROACTIVE_INTEL,
             sendNotif = false,
             respectDailyCap = true,
-            nowMs = nowMs
+            nowMs = nowMs,
+            topicMeta = setOf(PhantomPrefs.PROACTIVE_TOPIC_INTEREST, PhantomPrefs.PROACTIVE_TOPIC_REGION)
         ) ?: return@withContext false
 
         if (!isInDndWindow(appCtx, nowMs) && areNotificationsEnabled(appCtx)) {
@@ -605,6 +608,74 @@ object ProactiveEngine {
     const val FEEDBACK_UP_FLOOR_MULTIPLIER = 0.75
     const val ACTIVE_CHAT_QUIET_WINDOW_MS = 15L * 60_000L
 
+    private const val PREFS_PROACTIVE_META = "phantom_proactive_msg_meta"
+    private const val KEY_TOPIC_META_PREFIX = "topic_"
+    private const val MAX_TOPIC_META_ENTRIES = 200
+    private const val RECENT_PROACTIVE_MSG_LIMIT = 100
+
+    /** R5 (#543): 追蹤目前最大 endMs 以正確偵測長短行程重疊（避免 zipWithNext 漏判） */
+    internal fun detectOverlappingEventPairs(
+        sortedEvents: List<CalendarBridge.CalendarEventInstance>
+    ): List<Pair<CalendarBridge.CalendarEventInstance, CalendarBridge.CalendarEventInstance>> {
+        if (sortedEvents.size < 2) return emptyList()
+        val ordered = sortedEvents.sortedWith(compareBy<CalendarBridge.CalendarEventInstance> { it.beginMs }.thenByDescending { it.endMs })
+        val pairs = mutableListOf<Pair<CalendarBridge.CalendarEventInstance, CalendarBridge.CalendarEventInstance>>()
+        var maxEndEvent = ordered.first()
+        for (i in 1 until ordered.size) {
+            val current = ordered[i]
+            if (current.beginMs < maxEndEvent.endMs) {
+                pairs.add(maxEndEvent to current)
+            }
+            if (current.endMs > maxEndEvent.endMs) {
+                maxEndEvent = current
+            }
+        }
+        return pairs
+    }
+
+    private fun inferTopicsFromMilestones(milestoneKeys: List<String>): Set<String> {
+        if (milestoneKeys.isEmpty()) return emptySet()
+        val topics = mutableSetOf<String>()
+        for (key in milestoneKeys) {
+            when {
+                key.startsWith("event:") && key.endsWith(":conflict") -> topics.add(PhantomPrefs.PROACTIVE_TOPIC_CONFLICT)
+                key.startsWith("event:") || key.startsWith("allDay:") || key.startsWith("allDayNote:") ->
+                    topics.add(PhantomPrefs.PROACTIVE_TOPIC_SCHEDULE)
+                key.startsWith("todo:") -> topics.add(PhantomPrefs.PROACTIVE_TOPIC_TODO)
+            }
+        }
+        return topics
+    }
+
+    private fun recordProactiveMessageTopics(ctx: Context, msgId: Long, topics: Set<String>) {
+        if (msgId <= 0L || topics.isEmpty()) return
+        val prefs = ctx.applicationContext.getSharedPreferences(PREFS_PROACTIVE_META, Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+        editor.putString("$KEY_TOPIC_META_PREFIX$msgId", topics.joinToString(","))
+        val allTopicKeys = prefs.all.keys.filter { it.startsWith(KEY_TOPIC_META_PREFIX) }
+        if (allTopicKeys.size > MAX_TOPIC_META_ENTRIES) {
+            allTopicKeys
+                .sortedBy { it.removePrefix(KEY_TOPIC_META_PREFIX).toLongOrNull() ?: 0L }
+                .take(allTopicKeys.size - MAX_TOPIC_META_ENTRIES)
+                .forEach { editor.remove(it) }
+        }
+        editor.apply()
+    }
+
+    private fun getProactiveMessageTopics(ctx: Context, msgId: Long): Set<String>? {
+        val prefs = ctx.applicationContext.getSharedPreferences(PREFS_PROACTIVE_META, Context.MODE_PRIVATE)
+        val raw = prefs.getString("$KEY_TOPIC_META_PREFIX$msgId", null) ?: return null
+        return raw.split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    }
+
+    private fun messageMatchesTopicWithMetadata(ctx: Context, msg: ChatMessageEntity, topic: String): Boolean {
+        val metaTopics = getProactiveMessageTopics(ctx, msg.id)
+        if (metaTopics != null) {
+            return topic in metaTopics
+        }
+        return messageMatchesProactiveTopic(msg.content, topic)
+    }
+
     private fun messageMatchesProactiveTopic(content: String, topic: String): Boolean = when (topic) {
         PhantomPrefs.PROACTIVE_TOPIC_SCHEDULE ->
             content.contains("行程即將開始") || content.contains("今日全天事件") || content.contains("📅")
@@ -633,8 +704,8 @@ object ProactiveEngine {
             .firstOrNull { it.title == PROACTIVE_SESSION_TITLE }
             ?: return@withContext 1.0
         val cutoffMs = nowMs - FEEDBACK_LOOKBACK_DAYS * 24L * 60L * 60L * 1000L
-        val recentMsgs = db.chatDao().messagesForSession(proactiveSession.id)
-            .filter { it.createdAt >= cutoffMs && messageMatchesProactiveTopic(it.content, topic) }
+        val recentMsgs = db.chatDao().recentMessagesForSession(proactiveSession.id, RECENT_PROACTIVE_MSG_LIMIT)
+            .filter { it.createdAt >= cutoffMs && messageMatchesTopicWithMetadata(appCtx, it, topic) }
         if (recentMsgs.isEmpty()) return@withContext 1.0
         var upCount = 0
         var downCount = 0
@@ -663,8 +734,9 @@ object ProactiveEngine {
         val proactiveSession = db.chatDao().allSessions()
             .firstOrNull { it.title == PROACTIVE_SESSION_TITLE }
             ?: return@withContext false
-        val lastTopicMsg = db.chatDao().messagesForSession(proactiveSession.id)
-            .lastOrNull { messageMatchesProactiveTopic(it.content, topic) }
+        // recentMessagesForSession 依 createdAt DESC 排序，取 firstOrNull 即最新一筆
+        val lastTopicMsg = db.chatDao().recentMessagesForSession(proactiveSession.id, RECENT_PROACTIVE_MSG_LIMIT)
+            .firstOrNull { messageMatchesTopicWithMetadata(appCtx, it, topic) }
             ?: return@withContext false
         val baseWindowMin = PhantomPrefs.getProactiveDedupWindowMinutes(appCtx).coerceAtLeast(10)
         val effectiveWaitMs = (baseWindowMin * multiplier * 60_000.0).toLong()
@@ -680,9 +752,7 @@ object ProactiveEngine {
             .filter { it.title != PROACTIVE_SESSION_TITLE }
             .take(5)
         for (session in recentNormalSessions) {
-            val lastUserTs = db.chatDao().messagesForSession(session.id)
-                .lastOrNull { it.role == ChatMessageEntity.ROLE_USER }
-                ?.createdAt ?: continue
+            val lastUserTs = db.chatDao().lastUserMessageTime(session.id) ?: continue
             if (nowMs - lastUserTs in 0L..ACTIVE_CHAT_QUIET_WINDOW_MS) {
                 return true
             }
@@ -713,7 +783,8 @@ object ProactiveEngine {
         nowMs: Long = System.currentTimeMillis(),
         milestoneKeys: List<String> = emptyList(),
         previewOverride: String? = null,
-        bypassActiveChatGuard: Boolean = false
+        bypassActiveChatGuard: Boolean = false,
+        topicMeta: Set<String> = emptySet()
     ): Long? = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
         val dayKey = LocalDate.now(ZoneId.systemDefault()).format(DateTimeFormatter.ISO_LOCAL_DATE)
@@ -731,7 +802,13 @@ object ProactiveEngine {
         val contentHash = shouldAllowProactiveDelivery(appCtx, body, milestoneKeys, dayKey, nowMs)
             ?: return@withContext null
         val msgId = writeAssistantMessage(db, body, nowMs)
-        PhantomPrefs.incrementProactiveDailySentCount(appCtx, dayKey)
+        val resolvedTopics = topicMeta.ifEmpty { inferTopicsFromMilestones(milestoneKeys) }
+        if (resolvedTopics.isNotEmpty()) {
+            recordProactiveMessageTopics(appCtx, msgId, resolvedTopics)
+        }
+        if (respectDailyCap) {
+            PhantomPrefs.incrementProactiveDailySentCount(appCtx, dayKey)
+        }
         PhantomPrefs.recordProactiveContentHash(appCtx, contentHash, nowMs)
         if (milestoneKeys.isNotEmpty()) {
             PhantomPrefs.markProactiveMilestonesDelivered(appCtx, milestoneKeys, dayKey)
@@ -921,6 +998,8 @@ class ProactiveMonitorWorker(
             com.phantom.checker.util.GoalEngine.evaluateMissedGoalPushes(applicationContext)
             HealthObservationPolicy.evaluateAndDeliverIfNeeded(applicationContext)
             Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.w("PhantomProactive", "Monitor worker failed: ${e.javaClass.simpleName}")
             Result.success()

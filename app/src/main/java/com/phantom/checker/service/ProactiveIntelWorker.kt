@@ -20,6 +20,7 @@ import com.phantom.checker.network.FreeWebSearchEngine
 import com.phantom.checker.network.GoogleNewsRssEngine
 import com.phantom.checker.util.AiPurpose
 import com.phantom.checker.util.PhantomPrefs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -107,6 +108,8 @@ object WatchQueryPlanner {
                 added++
             }
             added
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "suggestCandidatesFromMemory failed: ${e.message}", e)
             0
@@ -297,11 +300,20 @@ object DigestComposer {
             if (geoRes.errorMessage != null) {
                 lastError = geoRes.errorMessage
             }
-            val geoItems = geoRes.items.take(3)
+            val rawGeoItems = geoRes.items.take(3)
+            val geoHash = computeGeoDigestHash(rawGeoItems)
+            val geoItems = if (!forceManual && geoHash != null && geoHash == getLastGeoDigestHash(appCtx, regionName)) {
+                emptyList()
+            } else {
+                rawGeoItems
+            }
             if (novelItems.isEmpty() && geoItems.isEmpty()) {
                 val msg = lastError ?: "省 Token 降級模式：近期無新資訊。"
                 PhantomPrefs.recordProactiveIntelRun(appCtx, queriedCount, 0, lastError, nowMs)
                 return@withContext IntelCycleResult(null, emptyList(), null, msg)
+            }
+            if (geoItems.isNotEmpty() && geoHash != null) {
+                saveLastGeoDigestHash(appCtx, regionName, geoHash)
             }
 
             val fullDigest = buildString {
@@ -442,13 +454,23 @@ object DigestComposer {
         if (geoRes.errorMessage != null) {
             lastError = geoRes.errorMessage
         }
-        val geoItems = geoRes.items.take(3)
+        val rawGeoItems = geoRes.items.take(3)
+        val geoHash = computeGeoDigestHash(rawGeoItems)
+        val geoItems = if (!forceManual && geoHash != null && geoHash == getLastGeoDigestHash(appCtx, regionName)) {
+            emptyList()
+        } else {
+            rawGeoItems
+        }
 
         if (novelItems.isEmpty() && geoItems.isEmpty()) {
             val msg = lastError ?: "近期無新資訊（所有查詢主題皆無實質新進展或未通過相關性審查）。"
             PhantomPrefs.recordProactiveIntelRun(appCtx, queriedCount, 0, lastError, nowMs)
             return@withContext IntelCycleResult(null, emptyList(), null, msg)
         }
+
+        var includedNovelCount = 0
+        val includedTopicIds = mutableListOf<Long>()
+        var includedPrimaryLabel: String? = null
 
         val fullDigest = buildString {
             if (novelItems.isNotEmpty()) {
@@ -469,38 +491,46 @@ object DigestComposer {
                     }
                 }.trim()
 
-                val aiComposed = AiClient.generateProactiveText(
+                val aiRawReply = AiClient.generateProactiveText(
                     context = appCtx,
                     systemPrompt = PUSH_SUMMARY_PROMPT,
                     userPrompt = combinedRaw,
                     maxTokens = 320
-                )?.takeIf { it.isNotBlank() && !it.contains("近期無新資訊") }
+                )
+                val aiJudgedNoNewInfo = aiRawReply != null &&
+                    (aiRawReply.contains("近期無新資訊") || aiRawReply.contains("查無新資訊"))
 
-                val primaryLabel = novelItems.first().topic.label
-                val titleLine = if (novelItems.size == 1) {
-                    "📡 **關注情報：$primaryLabel**"
-                } else {
-                    "📡 **關注情報：${novelItems.joinToString("、") { it.topic.label }}**"
-                }
-                val bodyContent = aiComposed ?: buildString {
-                    novelItems.forEach { item ->
-                        appendLine("**${item.topic.label}**")
-                        appendLine(item.rawText.take(180))
-                        appendLine()
+                if (!aiJudgedNoNewInfo) {
+                    val aiComposed = aiRawReply?.takeIf { it.isNotBlank() }
+                    val primaryLabel = novelItems.first().topic.label
+                    includedPrimaryLabel = primaryLabel
+                    includedNovelCount = novelItems.size
+                    includedTopicIds.addAll(novelItems.map { it.topic.id })
+                    val titleLine = if (novelItems.size == 1) {
+                        "📡 **關注情報：$primaryLabel**"
+                    } else {
+                        "📡 **關注情報：${novelItems.joinToString("、") { it.topic.label }}**"
                     }
-                }.trim()
+                    val bodyContent = aiComposed ?: buildString {
+                        novelItems.forEach { item ->
+                            appendLine("**${item.topic.label}**")
+                            appendLine(item.rawText.take(180))
+                            appendLine()
+                        }
+                    }.trim()
 
-                val topDomains = novelItems
-                    .flatMap { it.sources }
-                    .map { FreeWebSearchEngine.extractDisplayDomain(it) }
-                    .filter { it.isNotBlank() }
-                    .distinct()
-                    .take(2)
-                appendLine(titleLine)
-                appendLine(bodyContent)
-                if (topDomains.isNotEmpty() && topDomains.none { bodyContent.contains(it, ignoreCase = true) }) {
-                    appendLine("\n**參考來源**")
-                    topDomains.forEach { domain -> appendLine("- $domain") }
+                    val topDomains = novelItems
+                        .flatMap { it.sources }
+                        .map { FreeWebSearchEngine.extractDisplayDomain(it) }
+                        .filter { it.isNotBlank() }
+                        .distinct()
+                        .take(2)
+                    appendLine(titleLine)
+                    appendLine(bodyContent)
+                    if (topDomains.isNotEmpty() && topDomains.none { bodyContent.contains(it, ignoreCase = true) }) {
+                        appendLine("\n**參考來源**")
+                        topDomains.forEach { domain -> appendLine("- $domain") }
+                    }
                 }
             }
             if (geoItems.isNotEmpty()) {
@@ -512,14 +542,24 @@ object DigestComposer {
             }
         }.trim()
 
-        val totalResults = novelItems.size + geoItems.size
+        if (fullDigest.isBlank()) {
+            val msg = lastError ?: "近期無新資訊（AI 摘要判定無實質新進展）。"
+            PhantomPrefs.recordProactiveIntelRun(appCtx, queriedCount, 0, lastError, nowMs)
+            return@withContext IntelCycleResult(null, emptyList(), null, msg)
+        }
+
+        if (geoItems.isNotEmpty() && geoHash != null) {
+            saveLastGeoDigestHash(appCtx, regionName, geoHash)
+        }
+
+        val totalResults = includedNovelCount + geoItems.size
         PhantomPrefs.recordProactiveIntelRun(appCtx, queriedCount, totalResults, lastError, nowMs)
-        val primaryLabel = novelItems.firstOrNull()?.topic?.label ?: "$regionName 頭條"
+        val primaryLabel = includedPrimaryLabel ?: "$regionName 頭條"
         IntelCycleResult(
             digestMarkdown = fullDigest,
-            queriedTopicIds = novelItems.map { it.topic.id },
+            queriedTopicIds = includedTopicIds,
             primaryTopicLabel = primaryLabel,
-            statusMessage = "已整理 ${novelItems.size} 個關注主題與 ${geoItems.size} 則在地頭條。"
+            statusMessage = "已整理 $includedNovelCount 個關注主題與 ${geoItems.size} 則在地頭條。"
         )
     }
 
@@ -560,6 +600,25 @@ object DigestComposer {
         if (combined.isNotBlank()) return@withContext combined.take(480)
         val cycle = runIntelCycle(appCtx, forceManual = false)
         cycle.digestMarkdown?.take(480)
+    }
+
+    private const val PREFS_GEO_DEDUP = "phantom_proactive_geo_dedup"
+    private const val KEY_GEO_HASH_PREFIX = "last_geo_hash_"
+
+    private fun computeGeoDigestHash(items: List<GoogleNewsRssEngine.NewsRssItem>): String? {
+        if (items.isEmpty()) return null
+        val normalized = items.joinToString("\n") { WatchTopicEngine.normalizeForSimilarity(it.title) }
+        return if (normalized.isBlank()) null else sha256Hex(normalized)
+    }
+
+    private fun getLastGeoDigestHash(ctx: Context, regionName: String): String? {
+        val prefs = ctx.applicationContext.getSharedPreferences(PREFS_GEO_DEDUP, Context.MODE_PRIVATE)
+        return prefs.getString("$KEY_GEO_HASH_PREFIX$regionName", null)
+    }
+
+    private fun saveLastGeoDigestHash(ctx: Context, regionName: String, hash: String) {
+        val prefs = ctx.applicationContext.getSharedPreferences(PREFS_GEO_DEDUP, Context.MODE_PRIVATE)
+        prefs.edit().putString("$KEY_GEO_HASH_PREFIX$regionName", hash).apply()
     }
 
     private fun sha256Hex(input: String): String {
@@ -617,6 +676,8 @@ class ProactiveIntelWorker(
                 )
             }
             Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // #532 Quiet backoff on 429/offline/exception, but ALWAYS log + write lastError for diagnostics
             val errMsg = "${e.javaClass.simpleName}: ${e.message}"
@@ -650,6 +711,10 @@ class WatchTopicMuteReceiver : BroadcastReceiver() {
                 }
                 val nm = appCtx.getSystemService(NotificationManager::class.java)
                 nm?.cancel(notifId)
+                ProactiveIntelScheduler.syncSchedule(appCtx)
+                WatchTopicEngine.syncSchedule(appCtx)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w("WatchTopicMuteReceiver", "Failed muting watch topics: ${e.message}", e)
             } finally {
