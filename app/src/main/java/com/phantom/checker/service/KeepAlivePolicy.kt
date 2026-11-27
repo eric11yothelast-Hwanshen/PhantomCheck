@@ -139,16 +139,36 @@ object KeepAlivePolicy {
         val appCtx = ctx.applicationContext
         cancelWatchdog(appCtx)
         cancelSafetyNet(appCtx)
+        cancelRescue(appCtx)
+        cancelRebindFallback(appCtx)
     }
 
     private fun cancelWatchdog(ctx: Context) {
-        val am = ctx.getSystemService(AlarmManager::class.java) ?: return
-        am.cancel(watchdogPendingIntent(ctx, ACTION_WATCHDOG, REQ_WATCHDOG))
+        cancelPendingAlarm(ctx, ACTION_WATCHDOG, REQ_WATCHDOG)
     }
 
     private fun cancelSafetyNet(ctx: Context) {
+        cancelPendingAlarm(ctx, ACTION_SAFETY_NET, REQ_SAFETY_NET)
+    }
+
+    private fun cancelRescue(ctx: Context) {
+        cancelPendingAlarm(ctx, ACTION_RESCUE, REQ_RESCUE)
+    }
+
+    private fun cancelRebindFallback(ctx: Context) {
+        cancelPendingAlarm(ctx, ACTION_REBIND_FALLBACK, REQ_REBIND)
+    }
+
+    private fun cancelPendingAlarm(ctx: Context, action: String, requestCode: Int) {
         val am = ctx.getSystemService(AlarmManager::class.java) ?: return
-        am.cancel(watchdogPendingIntent(ctx, ACTION_SAFETY_NET, REQ_SAFETY_NET))
+        val pi = PendingIntent.getBroadcast(
+            ctx,
+            requestCode,
+            Intent(ctx, WatchdogReceiver::class.java).apply { this.action = action },
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        ) ?: return
+        am.cancel(pi)
+        pi.cancel()
     }
 
     private fun scheduleElapsedAlarm(am: AlarmManager, triggerAtElapsed: Long, pi: PendingIntent) {

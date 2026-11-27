@@ -99,7 +99,9 @@ object DailySummaryPolicy {
         maxChars: Int = 2400
     ): String {
         val riskyBuckets = com.phantom.checker.util.NotificationFoldUtil.fold(
-            messages.filter { it.riskLabel == "scam" || it.riskLabel == "suspicious" }
+            messages.filter {
+                it.riskLabel == "scam" || it.riskLabel == "warning" || it.riskLabel == "suspicious"
+            }
         ).take(20)
         val unanalyzedBuckets = com.phantom.checker.util.NotificationFoldUtil.fold(
             messages.filter { it.riskLabel.isBlank() }
@@ -138,10 +140,14 @@ object DailySummaryPolicy {
 
             if (riskyBuckets.isNotEmpty()) {
                 appendSection("高風險訊息節錄（已去重）：", riskyBuckets) {
-                    if (it.riskLabel == "scam") "詐騙" else "疑似"
+                    when (it.riskLabel) {
+                        "scam" -> "詐騙"
+                        "warning" -> "警示"
+                        else -> "疑似"
+                    }
                 }
             } else {
-                appendLine("無高風險（scam/suspicious）訊息。")
+                appendLine("無高風險（scam/warning/suspicious）訊息。")
             }
 
             if (unanalyzedBuckets.isNotEmpty() && !truncated) {

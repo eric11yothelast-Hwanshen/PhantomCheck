@@ -18,6 +18,7 @@ import com.phantom.checker.R
 import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.util.EncryptedByokStore
 import com.phantom.checker.util.PhantomPrefs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.OutputStreamWriter
@@ -34,6 +35,7 @@ object CloudExtensionsClient {
 
     private const val GITHUB_WORK_NAME = "phantom_github_monitor"
     private const val CHANNEL_CLOUD_EXT = "cloud_extensions"
+    private const val REPO_ALERT_KEYS_PREFS = "phantom_github_repo_alert_keys"
 
     fun scheduleGitHubPolling(ctx: Context) {
         val appCtx = ctx.applicationContext
@@ -76,6 +78,8 @@ object CloudExtensionsClient {
             } else {
                 false to com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_3b8ff2, code)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             false to com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_1f6021)
         } finally {
@@ -107,11 +111,25 @@ object CloudExtensionsClient {
             } else {
                 false to com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_cf550c, code)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             false to com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_cb2d1b)
         } finally {
             conn?.disconnect()
         }
+    }
+
+    private fun getLastRepoKey(ctx: Context, prefix: String, repo: String): String {
+        val prefs = ctx.applicationContext.getSharedPreferences(REPO_ALERT_KEYS_PREFS, Context.MODE_PRIVATE)
+        return prefs.getString("${prefix}_$repo", "").orEmpty()
+    }
+
+    private fun setLastRepoKey(ctx: Context, prefix: String, repo: String, value: String) {
+        ctx.applicationContext.getSharedPreferences(REPO_ALERT_KEYS_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString("${prefix}_$repo", value)
+            .apply()
     }
 
     internal suspend fun pollGitHubRepos(ctx: Context): Boolean = withContext(Dispatchers.IO) {
@@ -120,33 +138,37 @@ object CloudExtensionsClient {
             .split(',', '\n', ' ')
             .map { it.trim() }
             .filter { it.contains('/') }
+            .distinct()
             .take(5)
         if (pat.isBlank() || repos.isEmpty()) return@withContext true
 
         val alerts = mutableListOf<String>()
         var anySuccess = false
         for (repo in repos) {
-            // 1. 檢查最新 Actions runs 失敗
-            fetchJson(pat, "https://api.github.com/repos/$repo/actions/runs?per_page=3")?.let { body ->
+            // 1. 僅檢查最新一筆 Actions run（runs[0]）是否失敗，避免後續已修復仍對舊失敗重複告警
+            fetchJson(pat, "https://api.github.com/repos/$repo/actions/runs?per_page=1")?.let { body ->
                 anySuccess = true
                 runCatching {
                     val runs = JsonParser.parseString(body).asJsonObject.getAsJsonArray("workflow_runs")
-                    val failed = runs?.firstOrNull { el ->
-                        el.asJsonObject.get("conclusion")?.takeIf { !it.isJsonNull }?.asString == "failure"
-                    }?.asJsonObject
-                    if (failed != null) {
-                        val wfName = failed.get("name")?.asString ?: "Workflow"
-                        val runId = failed.get("id")?.asLong ?: 0L
+                    val latest = if (runs != null && runs.size() > 0) runs[0].asJsonObject else null
+                    val conclusion = latest?.get("conclusion")?.takeIf { !it.isJsonNull }?.asString
+                    if (latest != null && conclusion == "failure") {
+                        val wfName = latest.get("name")?.asString ?: "Workflow"
+                        val runId = latest.get("id")?.asLong ?: 0L
                         val key = "gh_fail_${repo}_$runId"
-                        if (PhantomPrefs.getLastGitHubAlertKey(ctx) != key) {
+                        val prevPerRepo = getLastRepoKey(ctx, "fail", repo)
+                        if (prevPerRepo != key && PhantomPrefs.getLastGitHubAlertKey(ctx) != key) {
+                            setLastRepoKey(ctx, "fail", repo, key)
                             PhantomPrefs.setLastGitHubAlertKey(ctx, key)
                             alerts.add(com.phantom.checker.PhantomApplication.str(R.string.notif_github_s_6bca43, repo, wfName))
+                        } else if (prevPerRepo != key) {
+                            setLastRepoKey(ctx, "fail", repo, key)
                         }
                     }
                 }
             }
-            // 2. 檢查最新開啟的 PR
-            fetchJson(pat, "https://api.github.com/repos/$repo/pulls?state=open&per_page=2")?.let { body ->
+            // 2. 檢查最新開啟的 PR（告警 key 以 repo 為鍵分別持久化）
+            fetchJson(pat, "https://api.github.com/repos/$repo/pulls?state=open&per_page=1")?.let { body ->
                 anySuccess = true
                 runCatching {
                     val prs = JsonParser.parseString(body).asJsonArray
@@ -155,9 +177,13 @@ object CloudExtensionsClient {
                         val prNum = first.get("number")?.asInt ?: 0
                         val title = first.get("title")?.asString?.take(40).orEmpty()
                         val key = "gh_pr_${repo}_$prNum"
-                        if (PhantomPrefs.getLastGitHubPrKey(ctx) != key) {
+                        val prevPerRepo = getLastRepoKey(ctx, "pr", repo)
+                        if (prevPerRepo != key && PhantomPrefs.getLastGitHubPrKey(ctx) != key) {
+                            setLastRepoKey(ctx, "pr", repo, key)
                             PhantomPrefs.setLastGitHubPrKey(ctx, key)
                             alerts.add("🔀 [$repo] PR #$prNum：$title")
+                        } else if (prevPerRepo != key) {
+                            setLastRepoKey(ctx, "pr", repo, key)
                         }
                     }
                 }
@@ -245,6 +271,8 @@ class GitHubMonitorWorker(
                 }
             }
             Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val fails = prefs.getInt("consecutive_failures", 0) + 1
             prefs.edit().putInt("consecutive_failures", fails).apply()

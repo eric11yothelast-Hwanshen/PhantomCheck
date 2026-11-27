@@ -6,11 +6,17 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import androidx.work.workDataOf
 import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.util.PhantomPrefs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -23,8 +29,9 @@ import java.util.concurrent.TimeUnit
 
 /**
  * #337 早晚簡報精準排程器：
- * - 主路徑：AlarmManager.setAlarmClock（AlarmClockInfo label=「幻訊•<助手名>簡報」），準點誤差 ≤2 分鐘。
- * - Fallback 鏈：SecurityException / 不可用時依序降級 setExactAndAllowWhileIdle → setAndAllowWhileIdle。
+ * - 主路徑：檢查 canScheduleExactAlarms() 後使用 AlarmManager.setAlarmClock，準點誤差 ≤2 分鐘。
+ * - Fallback 鏈：無精確鬧鐘權限或 SecurityException 時降級 setAndAllowWhileIdle，不因無權限漏排。
+ * - 鬧鐘觸發後先重排明日鬧鐘，實際投遞交由 WorkManager OneTimeWorkRequest（BriefingDeliveryWorker）執行。
  * - 搭配 15 分鐘零 token 變動偵測 PeriodicWorkRequest（ExistingPeriodicWorkPolicy.UPDATE，無網路限制）。
  * - 錯過 <2h 補發一次，逾時跳過次日。
  */
@@ -34,6 +41,9 @@ object BriefingScheduler {
     const val ACTION_EVENING_BRIEFING = "com.phantom.checker.action.EVENING_BRIEFING"
     const val EXTRA_BRIEFING_MSG_ID = "extra_briefing_msg_id"
     const val TAB_ASSISTANT = "assistant"
+
+    internal const val KEY_IS_MORNING = "briefing_is_morning"
+    internal const val KEY_FORCE = "briefing_force"
 
     private const val REQ_MORNING = 33701
     private const val REQ_EVENING = 33702
@@ -79,6 +89,25 @@ object BriefingScheduler {
         )
     }
 
+    internal fun enqueueDelivery(
+        ctx: Context,
+        isMorning: Boolean,
+        force: Boolean = false,
+        uniqueSuffix: String = "scheduled"
+    ) {
+        val appCtx = ctx.applicationContext
+        val slot = if (isMorning) "morning" else "evening"
+        val workName = "phantom_briefing_deliver_${slot}_$uniqueSuffix"
+        val req = OneTimeWorkRequestBuilder<BriefingDeliveryWorker>()
+            .setInputData(workDataOf(KEY_IS_MORNING to isMorning, KEY_FORCE to force))
+            .build()
+        WorkManager.getInstance(appCtx).enqueueUniqueWork(
+            workName,
+            ExistingWorkPolicy.KEEP,
+            req
+        )
+    }
+
     private fun scheduleSingle(ctx: Context, isMorning: Boolean, enabled: Boolean, hhmm: String) {
         val am = ctx.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
         val pi = buildAlarmPendingIntent(ctx, isMorning)
@@ -96,34 +125,35 @@ object BriefingScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // 主路徑：setAlarmClock → fallback setExactAndAllowWhileIdle → fallback setAndAllowWhileIdle
-        val scheduledWithClock = try {
-            am.setAlarmClock(AlarmManager.AlarmClockInfo(triggerMs, showIntent), pi)
-            true
-        } catch (_: SecurityException) {
-            false
-        } catch (_: Exception) {
-            false
-        }
-        if (scheduledWithClock) return
-
-        val scheduledExact = try {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()) {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMs, pi)
+        // Android 14+ 預設拒絕精確鬧鐘：運行期一律先檢查 canScheduleExactAlarms()
+        val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
+        if (canExact) {
+            val scheduledWithClock = try {
+                am.setAlarmClock(AlarmManager.AlarmClockInfo(triggerMs, showIntent), pi)
                 true
-            } else {
+            } catch (_: SecurityException) {
+                false
+            } catch (_: Exception) {
                 false
             }
-        } catch (_: SecurityException) {
-            false
-        } catch (_: Exception) {
-            false
-        }
-        if (scheduledExact) return
+            if (scheduledWithClock) return
 
+            val scheduledExact = try {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMs, pi)
+                true
+            } catch (_: SecurityException) {
+                false
+            } catch (_: Exception) {
+                false
+            }
+            if (scheduledExact) return
+        }
+
+        // 無精確鬧鐘權限時降級非精確鬧鐘，確保不漏排
         try {
             am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerMs, pi)
         } catch (_: Exception) {
+            runCatching { am.set(AlarmManager.RTC_WAKEUP, triggerMs, pi) }
         }
     }
 
@@ -150,7 +180,7 @@ object BriefingScheduler {
         return next.toInstant().toEpochMilli()
     }
 
-    /** 重開機或恢復後補跑檢查：錯過 <2h 且今日尚未發送則立即補發一次，逾時跳過次日 */
+    /** 重開機或恢復後補跑檢查：錯過 <2h 且今日尚未發送則交由 WorkManager OneTimeWorkRequest 補發一次，逾時跳過次日 */
     fun maybeCatchUp(ctx: Context) {
         val appCtx = ctx.applicationContext
         val now = System.currentTimeMillis()
@@ -164,11 +194,12 @@ object BriefingScheduler {
             val scheduledMs = today.atTime(parseHHmm(hhmm)).atZone(zone).toInstant().toEpochMilli()
             val missedBy = now - scheduledMs
             if (missedBy in 1L..CATCHUP_WINDOW_MS) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    runCatching {
-                        ProactiveEngine.deliverBriefing(appCtx, isMorning = isMorning, force = false)
-                    }
-                }
+                enqueueDelivery(
+                    ctx = appCtx,
+                    isMorning = isMorning,
+                    force = false,
+                    uniqueSuffix = "catchup_$dayKey"
+                )
             }
         }
 
@@ -184,38 +215,70 @@ object BriefingScheduler {
     }
 }
 
+class BriefingDeliveryWorker(
+    appContext: Context,
+    params: WorkerParameters
+) : CoroutineWorker(appContext, params) {
+    override suspend fun doWork(): Result {
+        val isMorning = inputData.getBoolean(BriefingScheduler.KEY_IS_MORNING, true)
+        val force = inputData.getBoolean(BriefingScheduler.KEY_FORCE, false)
+        return try {
+            val delivered = ProactiveEngine.deliverBriefing(applicationContext, isMorning = isMorning, force = force)
+            if (delivered) {
+                runCatching { DiaryPolicy.recordDailyBriefingKey(applicationContext) }
+            }
+            Result.success()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("BriefingDeliveryWorker", "deliverBriefing failed (attempt=$runAttemptCount)", e)
+            if (runAttemptCount < 2) Result.retry() else Result.failure()
+        }
+    }
+}
+
 class BriefingAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        val action = intent.action ?: return
+        if (action !in ALLOWED_ACTIONS) return
         val appCtx = context.applicationContext
-        when (intent.action) {
-            Intent.ACTION_TIME_CHANGED,
-            Intent.ACTION_TIMEZONE_CHANGED -> {
-                BriefingScheduler.rescheduleAll(appCtx)
-            }
-            BriefingScheduler.ACTION_MORNING_BRIEFING -> {
-                val pending = goAsync()
-                CoroutineScope(Dispatchers.IO).launch {
-                    try {
-                        ProactiveEngine.deliverBriefing(appCtx, isMorning = true, force = false)
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                when (action) {
+                    Intent.ACTION_TIME_CHANGED,
+                    Intent.ACTION_TIMEZONE_CHANGED -> {
                         BriefingScheduler.rescheduleAll(appCtx)
-                    } catch (_: Exception) {
-                    } finally {
-                        pending.finish()
+                        BriefingScheduler.maybeCatchUp(appCtx)
+                    }
+                    BriefingScheduler.ACTION_MORNING_BRIEFING -> {
+                        // 先重排明日鬧鐘，確保不漏排；再將重活交給 WorkManager OneTimeWorkRequest
+                        BriefingScheduler.rescheduleAll(appCtx)
+                        val dayKey = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+                        BriefingScheduler.enqueueDelivery(appCtx, isMorning = true, force = false, uniqueSuffix = dayKey)
+                    }
+                    BriefingScheduler.ACTION_EVENING_BRIEFING -> {
+                        BriefingScheduler.rescheduleAll(appCtx)
+                        val dayKey = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE)
+                        BriefingScheduler.enqueueDelivery(appCtx, isMorning = false, force = false, uniqueSuffix = dayKey)
                     }
                 }
-            }
-            BriefingScheduler.ACTION_EVENING_BRIEFING -> {
-                val pending = goAsync()
-                CoroutineScope(Dispatchers.IO).launch {
-                    try {
-                        ProactiveEngine.deliverBriefing(appCtx, isMorning = false, force = false)
-                        BriefingScheduler.rescheduleAll(appCtx)
-                    } catch (_: Exception) {
-                    } finally {
-                        pending.finish()
-                    }
-                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("BriefingAlarmReceiver", "onReceive failed for $action", e)
+            } finally {
+                pending.finish()
             }
         }
+    }
+
+    companion object {
+        private val ALLOWED_ACTIONS = setOf(
+            Intent.ACTION_TIME_CHANGED,
+            Intent.ACTION_TIMEZONE_CHANGED,
+            BriefingScheduler.ACTION_MORNING_BRIEFING,
+            BriefingScheduler.ACTION_EVENING_BRIEFING
+        )
     }
 }

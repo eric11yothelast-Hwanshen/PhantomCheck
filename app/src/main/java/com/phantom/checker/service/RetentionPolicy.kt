@@ -8,6 +8,8 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.phantom.checker.util.PhantomPrefs
+import com.phantom.checker.widget.WidgetUpdater
+import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -56,33 +58,45 @@ class RetentionWorker(
 ) : CoroutineWorker(appContext, workerParams) {
 
     override suspend fun doWork(): Result {
-        val days = RetentionConfig.getRetentionDays(applicationContext)
-        val maxCount = PhantomPrefs.getRetentionMaxCount(applicationContext)
-        if (days <= 0 && maxCount <= 0) {
-            return Result.success()
-        }
-
-        val db = AppDatabaseHolder.db(applicationContext)
-        val dao = db.messageDao()
-        val tagDao = db.tagDao()
-        var deletedRows = 0
-
-        db.withTransaction {
-            if (days > 0) {
-                val cutoff = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(days.toLong())
-                deletedRows += dao.prune(cutoff)
+        return try {
+            val days = RetentionConfig.getRetentionDays(applicationContext)
+            val maxCount = PhantomPrefs.getRetentionMaxCount(applicationContext)
+            if (days <= 0 && maxCount <= 0) {
+                return Result.success()
             }
-            if (maxCount > 0) {
-                deletedRows += dao.deleteOlderThanCount(maxCount)
+
+            val db = AppDatabaseHolder.db(applicationContext)
+            val dao = db.messageDao()
+            var deletedRows = 0
+
+            db.withTransaction {
+                if (days > 0) {
+                    val cutoff = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(days.toLong())
+                    deletedRows += dao.prune(cutoff)
+                }
+                if (maxCount > 0) {
+                    deletedRows += dao.deleteOlderThanCount(maxCount)
+                }
+                // 同一交易內一併清理 message_tags / intel_results / pending_ai_analysis 孤兒紀錄
+                dao.deleteAllMessageOrphans()
+                val intelCutoff = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(72)
+                db.intelDao().pruneCache(intelCutoff)
             }
-            tagDao.deleteOrphanCrossRefs()
-            val intelCutoff = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(72)
-            db.intelDao().pruneCache(intelCutoff)
+
+            if (deletedRows > 0) {
+                runCatching { StatsForegroundService.startOrRefresh(applicationContext, force = true) }
+                runCatching { WidgetUpdater.refreshAllActiveWidgets(applicationContext) }
+            }
+
+            DbMaintenance.runIfThrottledAndNeeded(applicationContext, deletedRows)
+
+            Result.success()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("RetentionWorker", "doWork failed (attempt=$runAttemptCount)", e)
+            if (runAttemptCount < 3) Result.retry() else Result.failure()
         }
-
-        DbMaintenance.runIfThrottledAndNeeded(applicationContext, deletedRows)
-
-        return Result.success()
     }
 }
 

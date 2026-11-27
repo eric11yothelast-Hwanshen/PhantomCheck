@@ -10,9 +10,14 @@ import androidx.work.WorkerParameters
 import com.phantom.checker.data.TaskTemplateEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.util.PhantomPrefs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
+import java.time.Duration
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
@@ -91,17 +96,38 @@ object TaskTemplateEngine {
                 )
             }
             TaskTemplateEntity.QUERY_ANTIFRAUD_DIGEST -> {
-                val recentMsgs = runCatching {
-                    db.messageDao().paged(200, 0).filter { it.timestamp >= weekAgo }
-                }.getOrDefault(emptyList())
-                val scams = recentMsgs.filter { it.riskLabel == "scam" || it.riskScore >= 70 }
-                val warnings = recentMsgs.filter { it.riskLabel == "warning" && it.riskScore < 70 }
+                val endExclusive = nowMs + 1L
+                val stats = try {
+                    db.messageDao().statsBetween(weekAgo, endExclusive)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+                val riskyMsgs = try {
+                    db.messageDao().riskyBetween(weekAgo, endExclusive, limit = 50)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    emptyList()
+                }
+                val scamCount = stats?.scam ?: riskyMsgs.count { it.riskLabel == "scam" }
+                val warningCount = stats?.warning ?: riskyMsgs.count { it.riskLabel == "warning" }
+                val suspiciousCount = stats?.suspicious ?: riskyMsgs.count { it.riskLabel == "suspicious" }
+                val alertCount = warningCount + suspiciousCount
+                val topScams = riskyMsgs.filter { it.riskLabel == "scam" || it.riskScore >= 70 }.take(2)
                 val bullets = buildList {
-                    add("近 7 日攔截高風險詐騙 ${scams.size} 則、待確認警示 ${warnings.size} 則")
-                    scams.take(2).forEach { m ->
+                    add("近 7 日攔截高風險詐騙 ${scamCount} 則、警示 ${warningCount} 則、疑似 ${suspiciousCount} 則")
+                    topScams.forEach { m ->
                         add("🛡️ [${m.appLabel}] ${m.sender.ifBlank { "未知寄件者" }}（${m.riskScore} 分）")
                     }
-                    if (scams.isEmpty()) add("近 7 日無高風險詐騙命中，狀態良好")
+                    if (scamCount == 0 && alertCount == 0) {
+                        add("近 7 日無高風險或疑似詐騙命中，狀態良好")
+                    } else if (topScams.isEmpty()) {
+                        riskyMsgs.take(2).forEach { m ->
+                            add("⚠️ [${m.appLabel}] ${m.sender.ifBlank { "未知寄件者" }}（${m.riskScore} 分）")
+                        }
+                    }
                 }.take(3)
                 AggregationResult(
                     queryKey = queryKey,
@@ -193,14 +219,29 @@ object TaskTemplateScheduler {
             else -> 24L * 60L // daily
         }
         val input = Data.Builder().putLong(KEY_TEMPLATE_ID, template.id).build()
-        val req = PeriodicWorkRequestBuilder<TaskTemplateWorker>(periodMinutes, TimeUnit.MINUTES)
+        val reqBuilder = PeriodicWorkRequestBuilder<TaskTemplateWorker>(periodMinutes, TimeUnit.MINUTES)
             .setInputData(input)
-            .build()
+        if (template.triggerType != TaskTemplateEntity.TRIGGER_INTERVAL) {
+            val initialDelayMin = computeInitialDelayMinutes(template.triggerTime)
+            reqBuilder.setInitialDelay(initialDelayMin, TimeUnit.MINUTES)
+        }
         wm.enqueueUniquePeriodicWork(
             workName(template.id),
             ExistingPeriodicWorkPolicy.UPDATE,
-            req
+            reqBuilder.build()
         )
+    }
+
+    internal fun computeInitialDelayMinutes(
+        hhmm: String,
+        nowZdt: ZonedDateTime = ZonedDateTime.now(ZoneId.systemDefault())
+    ): Long {
+        val targetTime = BriefingScheduler.parseHHmm(hhmm, fallback = LocalTime.of(9, 0))
+        var next = nowZdt.toLocalDate().atTime(targetTime).atZone(nowZdt.zone)
+        if (!next.isAfter(nowZdt)) {
+            next = next.plusDays(1)
+        }
+        return Duration.between(nowZdt, next).toMinutes().coerceAtLeast(1L)
     }
 
     fun cancel(ctx: Context, templateId: Long) {
@@ -209,7 +250,13 @@ object TaskTemplateScheduler {
 
     suspend fun rescheduleAllEnabled(ctx: Context) = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
-        val all = runCatching { AppDatabaseHolder.db(appCtx).taskTemplateDao().all() }.getOrDefault(emptyList())
+        val all = try {
+            AppDatabaseHolder.db(appCtx).taskTemplateDao().all()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
         all.forEach { t -> scheduleOrUpdate(appCtx, t) }
     }
 }
@@ -227,6 +274,8 @@ class TaskTemplateWorker(
             if (!template.isEnabled) return@withContext Result.success()
             TaskTemplateEngine.executeTemplate(applicationContext, template)
             Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.w("PhantomTaskTpl", "TaskTemplateWorker failed: ${e.javaClass.simpleName}")
             Result.success()

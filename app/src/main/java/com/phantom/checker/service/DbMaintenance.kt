@@ -1,11 +1,14 @@
 package com.phantom.checker.service
 
 import android.content.Context
+import android.os.StatFs
+import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -14,7 +17,8 @@ import java.util.concurrent.TimeUnit
 
 /**
  * SQLite 空間維護與儲存空間統計工具（純唯讀政策，不動保留設定與 scam 證據）。
- * - 先執行 PRAGMA wal_checkpoint(TRUNCATE) 清空 -wal，再於交易外執行 VACUUM。
+ * - 先檢查 StatFs 剩餘空間 > DB 大小 × 2.5，再執行 PRAGMA wal_checkpoint(TRUNCATE) 與 VACUUM。
+ * - 背景排程一律套用 requiresDeviceIdle ＋ requiresBatteryNotLow 約束，避免於低電量或忙碌期執行。
  * - 若遇 SQLITE_BUSY / 鎖定例外則靜默放棄，待下次排程或手動重試。
  */
 object DbMaintenance {
@@ -23,6 +27,7 @@ object DbMaintenance {
     internal const val UNIQUE_VACUUM_WORK = "phantom_db_vacuum"
     private const val DB_FILE_NAME = "phantomcheck.db"
     private const val RETENTION_VACUUM_ROW_THRESHOLD = 1000
+    private const val VACUUM_FREE_SPACE_MULTIPLIER = 2.5
     private val THROTTLE_MS = TimeUnit.HOURS.toMillis(24)
 
     data class StorageStats(
@@ -33,8 +38,23 @@ object DbMaintenance {
         val totalBytes: Long get() = dbBytes + backgroundsBytes + cacheBytes
     }
 
+    fun hasEnoughFreeSpaceForVacuum(ctx: Context): Boolean {
+        val appCtx = ctx.applicationContext
+        val dbBytes = measureDatabaseBytes(appCtx)
+        if (dbBytes <= 0L) return true
+        val dbDir = appCtx.getDatabasePath(DB_FILE_NAME).parentFile ?: appCtx.filesDir
+        val availBytes = runCatching {
+            StatFs(dbDir.path).availableBytes
+        }.getOrDefault(0L)
+        return availBytes.toDouble() > dbBytes.toDouble() * VACUUM_FREE_SPACE_MULTIPLIER
+    }
+
     suspend fun checkpointTruncateAndVacuum(ctx: Context): Boolean = withContext(Dispatchers.IO) {
         val appCtx = ctx.applicationContext
+        if (!hasEnoughFreeSpaceForVacuum(appCtx)) {
+            android.util.Log.w("DbMaintenance", "Skip VACUUM: available storage <= 2.5x DB size")
+            return@withContext false
+        }
         try {
             val sqlDb = AppDatabaseHolder.db(appCtx).openHelper.writableDatabase
             sqlDb.query("PRAGMA wal_checkpoint(TRUNCATE)").use { cursor ->
@@ -45,6 +65,8 @@ object DbMaintenance {
             sqlDb.execSQL("VACUUM")
             recordLastVacuumAt(appCtx)
             true
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) {
             // SQLITE_BUSY 或資料庫鎖定時靜默放棄，下次再試
             false
@@ -58,12 +80,21 @@ object DbMaintenance {
         val lastAt = prefs.getLong(KEY_LAST_VACUUM_AT, 0L)
         val now = System.currentTimeMillis()
         if (now - lastAt < THROTTLE_MS) return false
-        return checkpointTruncateAndVacuum(appCtx)
+        if (!hasEnoughFreeSpaceForVacuum(appCtx)) return false
+        // 交由帶 requiresDeviceIdle / requiresBatteryNotLow 約束之 VacuumWorker 於閒置且非低電量時執行
+        enqueueVacuum(appCtx)
+        return true
     }
 
     fun enqueueVacuum(ctx: Context): UUID {
         val appCtx = ctx.applicationContext
-        val request = OneTimeWorkRequestBuilder<VacuumWorker>().build()
+        val constraints = Constraints.Builder()
+            .setRequiresDeviceIdle(true)
+            .setRequiresBatteryNotLow(true)
+            .build()
+        val request = OneTimeWorkRequestBuilder<VacuumWorker>()
+            .setConstraints(constraints)
+            .build()
         WorkManager.getInstance(appCtx).enqueueUniqueWork(
             UNIQUE_VACUUM_WORK,
             ExistingWorkPolicy.KEEP,
@@ -119,7 +150,14 @@ class VacuumWorker(
     workerParams: WorkerParameters
 ) : CoroutineWorker(appContext, workerParams) {
     override suspend fun doWork(): Result {
-        DbMaintenance.checkpointTruncateAndVacuum(applicationContext)
-        return Result.success()
+        return try {
+            DbMaintenance.checkpointTruncateAndVacuum(applicationContext)
+            Result.success()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("VacuumWorker", "doWork failed: ${e.javaClass.simpleName}", e)
+            Result.failure()
+        }
     }
 }

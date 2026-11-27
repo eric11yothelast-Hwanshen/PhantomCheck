@@ -11,6 +11,7 @@ import com.phantom.checker.network.AiClient
 import com.phantom.checker.util.CalendarBridge
 import com.phantom.checker.util.EncryptedByokStore
 import com.phantom.checker.util.PhantomPrefs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.security.MessageDigest
@@ -53,7 +54,7 @@ object CalendarInsightScheduler {
 /**
  * #365 CalendarInsightWorker：
  * 1. 僅讀使用者勾選的本機日曆未來 7 天（CalendarBridge.queryInstances，全程 Dispatchers.IO）；未授權或未勾選誠實跳過。
- * 2. 篩選未來 48 小時即將到來的事件，以「事件標題＋日期」（≤60 字、sanitizeForPrompt）查外部情報（嚴禁參與人、備註、位置）。
+ * 2. 篩選進行中或未來 48 小時即將到來的事件（含全天事件時區邊界擴展），以「事件標題＋日期」（≤60 字、sanitizeForPrompt）查外部情報（嚴禁參與人、備註、位置）。
  * 3. 去重鍵 = eventId|beginMs|intelHash（LruCache + PhantomPrefs 持久化），無新情報零 AI 呼叫。
  * 4. 有新情報才以 AiClient.generateBriefingText 潤飾（失敗降級為零 token 模板），寫入專屬主動訊息聊天室並依開關發通知。
  * 5. 遵守每日主動上限、獨立勿擾時段、areNotificationsEnabled、零 trampoline，永遠回傳 Result.success() 不阻塞。
@@ -74,15 +75,25 @@ class CalendarInsightWorker(
             }
 
             val nowMs = System.currentTimeMillis()
-            val sevenDaysEndMs = nowMs + 7L * 24L * 60L * 60L * 1000L
-            val allEvents = CalendarBridge.queryInstances(appCtx, nowMs, sevenDaysEndMs)
+            // 向前與向後各擴展 24h 查詢區間，確保進行中事件與 UTC 儲存之全天事件皆不被截斷
+            val queryStartMs = nowMs - ALL_DAY_QUERY_PAD_MS
+            val sevenDaysEndMs = nowMs + 7L * 24L * 60L * 60L * 1000L + ALL_DAY_QUERY_PAD_MS
+            val allEvents = CalendarBridge.queryInstances(appCtx, queryStartMs, sevenDaysEndMs)
             if (allEvents.isEmpty()) {
                 return@withContext Result.success()
             }
 
             val upcomingCutoffMs = nowMs + UPCOMING_WINDOW_MS
             val upcomingEvents = allEvents
-                .filter { it.beginMs in nowMs..upcomingCutoffMs }
+                .filter { ev ->
+                    if (ev.allDay) {
+                        val effectiveBegin = ev.beginMs - ALL_DAY_TZ_SLACK_MS
+                        val effectiveEnd = maxOf(ev.endMs, ev.beginMs + ALL_DAY_QUERY_PAD_MS) + ALL_DAY_TZ_SLACK_MS
+                        effectiveEnd >= nowMs && effectiveBegin <= upcomingCutoffMs
+                    } else {
+                        ev.endMs >= nowMs && ev.beginMs <= upcomingCutoffMs
+                    }
+                }
                 .sortedBy { it.beginMs }
                 .take(MAX_EVENTS_PER_CYCLE)
             if (upcomingEvents.isEmpty()) {
@@ -174,6 +185,8 @@ class CalendarInsightWorker(
                 freshInsights.forEach { markSeen(appCtx, it.alertKey) }
             }
             Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.w("PhantomCalInsight", "CalendarInsightWorker failed: ${e.javaClass.simpleName}")
             Result.success()
@@ -182,6 +195,8 @@ class CalendarInsightWorker(
 
     companion object {
         private const val UPCOMING_WINDOW_MS = 48L * 60L * 60L * 1000L
+        private const val ALL_DAY_QUERY_PAD_MS = 24L * 60L * 60L * 1000L
+        private const val ALL_DAY_TZ_SLACK_MS = 12L * 60L * 60L * 1000L
         private const val MAX_EVENTS_PER_CYCLE = 3
         private const val MAX_EXTERNAL_QUERY_CHARS = 60
 

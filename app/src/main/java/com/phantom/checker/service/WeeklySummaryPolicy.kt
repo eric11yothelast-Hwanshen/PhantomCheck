@@ -19,9 +19,7 @@ import com.phantom.checker.network.AiClient
 import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.ui.stripMarkdown
 import com.phantom.checker.util.PhantomPrefs
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -41,27 +39,45 @@ class WeeklySummaryWorker(
         val anchorMs = inputData.getLong(WeeklySummaryPolicy.KEY_ANCHOR_MS, 0L)
             .takeIf { it > 0L }
             ?: WeeklySummaryPolicy.latestScheduledSundayMillis()
-        try {
+        val isCatchUpOnly = inputData.getBoolean(WeeklySummaryPolicy.KEY_CATCHUP_ONLY, false)
+        return try {
             if (AiClient.getActiveProfile(applicationContext) != null) {
-                WeeklySummaryPolicy.generateWeeklySummary(
-                    ctx = applicationContext,
-                    fromSchedule = true,
-                    anchorMs = anchorMs
-                )
+                val shouldRun = if (isCatchUpOnly) {
+                    val anchorWeekKey = WeeklySummaryPolicy.weekKeyFor(anchorMs)
+                    AppDatabaseHolder.db(applicationContext).aiSummaryDao().byDate(anchorWeekKey) == null
+                } else {
+                    true
+                }
+                if (shouldRun) {
+                    WeeklySummaryPolicy.generateWeeklySummary(
+                        ctx = applicationContext,
+                        fromSchedule = true,
+                        anchorMs = anchorMs
+                    )
+                }
             }
+            Result.success()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("WeeklySummaryWorker", "doWork failed (attempt=$runAttemptCount)", e)
+            if (runAttemptCount < 2) Result.retry() else Result.failure()
         } finally {
-            // #246 OneTimeWork 自我重新排程：錨定下一個週日 22:00，避免排程漂移
-            WeeklySummaryPolicy.schedule(applicationContext)
+            // #246 定期排程 OneTimeWork 自我重新排程：錨定下一個週日 22:00，避免排程漂移
+            if (!isCatchUpOnly) {
+                WeeklySummaryPolicy.schedule(applicationContext)
+            }
         }
-        return Result.success()
     }
 }
 
 object WeeklySummaryPolicy {
     private const val UNIQUE_WORK_NAME = "phantom_weekly_ai_summary"
+    private const val CATCHUP_WORK_NAME = "phantom_weekly_ai_summary_catchup"
     private const val WEEKLY_SUMMARY_NOTIF_ID = NotifIds.WEEKLY_SUMMARY
     const val WEEKLY_KEY_OFFSET = 1_000_000_000L
     internal const val KEY_ANCHOR_MS = "weekly_anchor_ms"
+    internal const val KEY_CATCHUP_ONLY = "weekly_catchup_only"
 
     fun schedule(ctx: Context) {
         val appCtx = ctx.applicationContext
@@ -117,33 +133,29 @@ object WeeklySummaryPolicy {
     }
 
     /**
-     * #254 錯過補跑：若最近一次週日 22:00 已過，且該排程錨定週尚無週摘要，立即補跑一次。
+     * #254 錯過補跑：交由 WorkManager 獨立 unique work 檢查最近一次週日 22:00 錨定週是否缺漏並補跑一次。
      */
     fun maybeCatchUp(ctx: Context) {
         val appCtx = ctx.applicationContext
         val anchorMs = latestScheduledSundayMillis()
-        val anchorWeekKey = weekKeyFor(anchorMs)
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                if (AiClient.getActiveProfile(appCtx) == null) return@launch
-                val db = AppDatabaseHolder.db(appCtx)
-                if (db.aiSummaryDao().byDate(anchorWeekKey) != null) return@launch
-                val constraints = Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build()
-                val request = OneTimeWorkRequestBuilder<WeeklySummaryWorker>()
-                    .setInitialDelay(3, TimeUnit.SECONDS)
-                    .setConstraints(constraints)
-                    .setInputData(workDataOf(KEY_ANCHOR_MS to anchorMs))
-                    .build()
-                WorkManager.getInstance(appCtx).enqueueUniqueWork(
-                    UNIQUE_WORK_NAME,
-                    ExistingWorkPolicy.REPLACE,
-                    request
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val request = OneTimeWorkRequestBuilder<WeeklySummaryWorker>()
+            .setInitialDelay(3, TimeUnit.SECONDS)
+            .setConstraints(constraints)
+            .setInputData(
+                workDataOf(
+                    KEY_ANCHOR_MS to anchorMs,
+                    KEY_CATCHUP_ONLY to true
                 )
-            } catch (_: Exception) {
-            }
-        }
+            )
+            .build()
+        WorkManager.getInstance(appCtx).enqueueUniqueWork(
+            CATCHUP_WORK_NAME,
+            ExistingWorkPolicy.KEEP,
+            request
+        )
     }
 
     fun startOfWeekMillis(anchorMs: Long = System.currentTimeMillis()): Long {
@@ -196,26 +208,26 @@ object WeeklySummaryPolicy {
         val weekEndMs = weekStartMs + TimeUnit.DAYS.toMillis(7)
         val prevWeekStartMs = weekStartMs - TimeUnit.DAYS.toMillis(7)
         val db = AppDatabaseHolder.db(appCtx)
-        val weekMessages = db.messageDao().between(weekStartMs, weekEndMs)
+        val dao = db.messageDao()
+        val stats = dao.statsBetween(weekStartMs, weekEndMs)
 
-        if (weekMessages.isEmpty()) {
+        if (stats.total == 0) {
             return Result.failure(IllegalStateException("本週尚無訊息可供摘要"))
         }
 
-        val prevWeekScam = db.messageDao().scamCountBetween(prevWeekStartMs, weekStartMs)
-        val scamCount = weekMessages.count { it.riskLabel == "scam" }
-        val suspiciousCount = weekMessages.count { it.riskLabel == "suspicious" }
-        val safeCount = weekMessages.size - scamCount - suspiciousCount
-        val unreadCount = weekMessages.count { !it.isRead }
+        val prevWeekScam = dao.scamCountBetween(prevWeekStartMs, weekStartMs)
+        val scamCount = stats.scam
+        val warningCount = stats.warning
+        val suspiciousCount = stats.suspicious
+        val safeCount = stats.safe
+        val unanalyzedCount = stats.unanalyzed
+        val unreadCount = stats.unread
 
-        val topApps = weekMessages
-            .groupBy { it.appLabel.ifBlank { it.packageName } }
-            .entries
-            .sortedByDescending { it.value.size }
-            .take(5)
-            .joinToString("、") { "${it.key} ${it.value.size} 則" }
+        val topApps = dao.topAppsBetween(weekStartMs, weekEndMs, limit = 5)
+            .joinToString("、") { "${it.appLabel.ifBlank { it.packageName }} ${it.cnt} 則" }
 
-        val excerptsBlock = DailySummaryPolicy.buildSummaryExcerpts(weekMessages)
+        val riskyMessages = dao.riskyBetween(weekStartMs, weekEndMs, limit = 100)
+        val excerptsBlock = DailySummaryPolicy.buildSummaryExcerpts(riskyMessages)
 
         val scamDelta = scamCount - prevWeekScam
         val trendText = when {
@@ -226,8 +238,8 @@ object WeeklySummaryPolicy {
 
         val prompt = buildString {
             appendLine("請整理「本週至今」訊息週報，包含：1. 本週訊息量與趨勢、2. 風險分布變化、3. 最活躍 App、4. 高風險訊息重點、5. 詐騙提醒與防範建議。")
-            appendLine("本週總訊息數：${weekMessages.size} 則（未讀 $unreadCount 則）")
-            appendLine("風險分布：安全 $safeCount 則、疑似 $suspiciousCount 則、詐騙 $scamCount 則（$trendText）")
+            appendLine("本週總訊息數：${stats.total} 則（未讀 $unreadCount 則）")
+            appendLine("風險分布：安全 $safeCount 則、未分析 $unanalyzedCount 則、警示 $warningCount 則、疑似 $suspiciousCount 則、詐騙 $scamCount 則（$trendText）")
             appendLine("最活躍 App：$topApps")
             append(excerptsBlock)
         }

@@ -2,9 +2,12 @@ package com.phantom.checker.network
 
 import android.util.Log
 import android.util.Xml
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.xmlpull.v1.XmlPullParser
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.io.StringReader
 import java.net.HttpURLConnection
 import java.net.URL
@@ -18,7 +21,7 @@ import java.util.concurrent.TimeUnit
  * #532 主動情報 v3 Google News RSS 引擎（免費、無需 API Key、純 Android XmlPullParser 零新依賴）：
  * - 搜尋 feed：https://news.google.com/rss/search?q=<關鍵詞>&hl=zh-TW&gl=TW&ceid=TW:zh-Hant
  * - 地區 geo feed：https://news.google.com/rss/headlines/section/geo/<地區>?hl=zh-TW&gl=TW&ceid=TW:zh-Hant
- * - 新鮮度過濾 <48h、每主題 top 3–5、URL＋標題 SHA-256 去重、來源網域治理沿用 FreeWebSearchEngine.DOMAIN_QUALITY
+ * - 新鮮度過濾 -2h..48h（容許時鐘偏移）、回應讀取上限 1MB、每主題 top 3–5、URL＋標題 SHA-256 去重、來源網域治理沿用 FreeWebSearchEngine.DOMAIN_QUALITY
  * - 429 / 離線 / 解析失敗誠實回傳錯誤並記錄 Log，絕不靜默吞例外
  */
 object GoogleNewsRssEngine {
@@ -26,6 +29,8 @@ object GoogleNewsRssEngine {
     private const val TAG = "GoogleNewsRssEngine"
     private const val CONNECT_TIMEOUT_MS = 8_000
     private const val READ_TIMEOUT_MS = 10_000
+    private const val MAX_RESPONSE_BYTES = 1024 * 1024 // 1 MB 上限
+    private val MAX_FUTURE_SKEW_MS = TimeUnit.HOURS.toMillis(2)
     private val MAX_AGE_MS = TimeUnit.HOURS.toMillis(48)
     private const val MAX_ITEMS_PER_FEED = 5
     private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"
@@ -97,7 +102,7 @@ object GoogleNewsRssEngine {
                 Log.w(TAG, msg)
                 return@withContext RssFetchResult(errorMessage = msg)
             }
-            val xmlText = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val xmlText = readUtf8Bounded(conn.inputStream, MAX_RESPONSE_BYTES)
             if (xmlText.isBlank() || !xmlText.contains("<rss", ignoreCase = true)) {
                 val msg = "Google News RSS returned non-RSS payload (possible rate limit or block)"
                 Log.w(TAG, msg)
@@ -112,6 +117,8 @@ object GoogleNewsRssEngine {
                 )
                 .take(maxItems.coerceIn(1, 8))
             RssFetchResult(items = parsed)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val msg = "Google News RSS fetch error: ${e.javaClass.simpleName}: ${e.message}"
             Log.w(TAG, msg, e)
@@ -119,6 +126,22 @@ object GoogleNewsRssEngine {
         } finally {
             runCatching { conn?.disconnect() }
         }
+    }
+
+    private fun readUtf8Bounded(input: InputStream, maxBytes: Int): String {
+        val baos = ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        var total = 0
+        input.use { stream ->
+            while (total < maxBytes) {
+                val toRead = minOf(buf.size, maxBytes - total)
+                val n = stream.read(buf, 0, toRead)
+                if (n <= 0) break
+                baos.write(buf, 0, n)
+                total += n
+            }
+        }
+        return baos.toString(Charsets.UTF_8.name())
     }
 
     internal fun parseRssXml(xml: String, nowMs: Long = System.currentTimeMillis()): List<NewsRssItem> {
@@ -174,7 +197,8 @@ object GoogleNewsRssEngine {
                             val cleanLink = link.trim()
                             val cleanSourceName = FreeWebSearchEngine.sanitizeSnippetText(sourceName).take(40)
                             val publishedMs = parseRfc822Date(pubDateRaw.trim())
-                            val isFresh = publishedMs <= 0L || (nowMs - publishedMs) in 0L..MAX_AGE_MS
+                            val ageMs = nowMs - publishedMs
+                            val isFresh = publishedMs <= 0L || ageMs in -MAX_FUTURE_SKEW_MS..MAX_AGE_MS
                             if (cleanTitle.isNotBlank() && isFresh) {
                                 val domainSource = sourceUrl.ifBlank { cleanLink }
                                 val domain = FreeWebSearchEngine.extractDisplayDomain(domainSource)

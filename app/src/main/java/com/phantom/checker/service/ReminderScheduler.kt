@@ -13,28 +13,28 @@ import com.phantom.checker.R
 import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.ui.MessageDetailActivity
 import com.phantom.checker.widget.ReminderWidgetProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
 
 /**
- * 訊息與待辦提醒排程器（使用 AlarmManager.setAndAllowWhileIdle）。
+ * 訊息與待辦提醒排程器（運行期檢查 canScheduleExactAlarms()，拒絕時自動降級非精確鬧鐘）。
  */
 object ReminderScheduler {
     const val CHANNEL_ID = "phantom_message_reminders"
     const val EXTRA_MESSAGE_ID = "extra_reminder_message_id"
     const val EXTRA_TODO_ID = "extra_reminder_todo_id"
-    private const val ACTION_TODO_REMINDER = "com.phantom.checker.ACTION_TODO_REMINDER"
+    const val ACTION_MESSAGE_REMINDER = "com.phantom.checker.ACTION_MESSAGE_REMINDER"
+    const val ACTION_TODO_REMINDER = "com.phantom.checker.ACTION_TODO_REMINDER"
 
     fun schedule(ctx: Context, messageId: Long, triggerAtMillis: Long) {
         val appCtx = ctx.applicationContext
         val am = appCtx.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
         val pi = buildPendingIntent(appCtx, messageId)
-        try {
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
-        } catch (_: SecurityException) {
-            am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
-        }
+        scheduleWakeupAlarm(am, triggerAtMillis, pi)
     }
 
     fun cancel(ctx: Context, messageId: Long) {
@@ -56,10 +56,25 @@ object ReminderScheduler {
         val appCtx = ctx.applicationContext
         val am = appCtx.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
         val pi = buildTodoPendingIntent(appCtx, todoId)
+        scheduleWakeupAlarm(am, triggerAtMillis, pi)
+    }
+
+    private fun scheduleWakeupAlarm(am: AlarmManager, triggerAtMillis: Long, pi: PendingIntent) {
+        val canExact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms()
+        if (canExact) {
+            try {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
+                return
+            } catch (_: SecurityException) {
+            } catch (_: Exception) {
+            }
+        }
         try {
             am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
         } catch (_: SecurityException) {
-            am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
+            runCatching { am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi) }
+        } catch (_: Exception) {
+            runCatching { am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi) }
         }
     }
 
@@ -81,7 +96,7 @@ object ReminderScheduler {
     /**
      * 切換待辦完成狀態：
      * - 寫入 isDone 與 completedAt（取消勾選時清空）
-     * - 若勾選完成且設為每日/每週重複提醒，自動派生下一筆待辦並排程提醒
+     * - 若勾選完成且設為每日/每週重複提醒，以 ZonedDateTime.plusDays/plusWeeks 派生下一筆待辦（DST 不偏移）並排程提醒
      * - 同步刷新桌面小工具
      */
     suspend fun completeTodoWithRecurrence(
@@ -96,16 +111,15 @@ object ReminderScheduler {
         var spawned: com.phantom.checker.data.TodoEntity? = null
         if (done) {
             cancelTodo(appCtx, todo.id)
-            val stepMs = when (todo.repeatRule) {
-                com.phantom.checker.data.TodoEntity.REPEAT_DAILY -> 24L * 60L * 60L * 1000L
-                com.phantom.checker.data.TodoEntity.REPEAT_WEEKLY -> 7L * 24L * 60L * 60L * 1000L
-                else -> 0L
-            }
-            if (stepMs > 0L) {
-                var nextDue = todo.dueAt + stepMs
-                while (nextDue <= now) {
-                    nextDue += stepMs
-                }
+            val isDaily = todo.repeatRule == com.phantom.checker.data.TodoEntity.REPEAT_DAILY
+            val isWeekly = todo.repeatRule == com.phantom.checker.data.TodoEntity.REPEAT_WEEKLY
+            if (isDaily || isWeekly) {
+                val zone = ZoneId.systemDefault()
+                var nextZdt = Instant.ofEpochMilli(todo.dueAt).atZone(zone)
+                do {
+                    nextZdt = if (isDaily) nextZdt.plusDays(1) else nextZdt.plusWeeks(1)
+                } while (nextZdt.toInstant().toEpochMilli() <= now)
+                val nextDue = nextZdt.toInstant().toEpochMilli()
                 val nextTodo = com.phantom.checker.data.TodoEntity(
                     title = todo.title,
                     dueAt = nextDue,
@@ -151,6 +165,7 @@ object ReminderScheduler {
 
     private fun buildPendingIntent(ctx: Context, messageId: Long): PendingIntent {
         val intent = Intent(ctx, ReminderReceiver::class.java).apply {
+            action = ACTION_MESSAGE_REMINDER
             putExtra(EXTRA_MESSAGE_ID, messageId)
         }
         val reqCode = (messageId xor (messageId ushr 32)).toInt()
@@ -263,21 +278,35 @@ object ReminderScheduler {
 
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
+        val action = intent.action
+        if (action !in ALLOWED_ACTIONS) return
         val todoId = intent.getLongExtra(ReminderScheduler.EXTRA_TODO_ID, -1L)
         val messageId = intent.getLongExtra(ReminderScheduler.EXTRA_MESSAGE_ID, -1L)
-        if (todoId <= 0L && messageId <= 0L) return
+        if (action == ReminderScheduler.ACTION_TODO_REMINDER && todoId <= 0L) return
+        if (action == ReminderScheduler.ACTION_MESSAGE_REMINDER && messageId <= 0L) return
         val appCtx = ctx.applicationContext
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                if (todoId > 0L) {
+                if (action == ReminderScheduler.ACTION_TODO_REMINDER) {
                     ReminderScheduler.deliverTodoReminder(appCtx, todoId)
                 } else {
                     ReminderScheduler.deliverReminder(appCtx, messageId)
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("ReminderReceiver", "deliver failed for $action: ${e.javaClass.simpleName}", e)
             } finally {
                 pendingResult.finish()
             }
         }
+    }
+
+    companion object {
+        private val ALLOWED_ACTIONS = setOf(
+            ReminderScheduler.ACTION_MESSAGE_REMINDER,
+            ReminderScheduler.ACTION_TODO_REMINDER
+        )
     }
 }

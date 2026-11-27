@@ -18,10 +18,12 @@ import com.phantom.checker.util.PhantomPrefs
 class WatchdogReceiver : BroadcastReceiver() {
 
     override fun onReceive(ctx: Context, intent: Intent) {
+        val action = intent.action ?: return
+        if (action !in ALLOWED_ACTIONS) return
         val appCtx = ctx.applicationContext
-        val action = intent.action
 
         if (action == AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED) {
+            runCatching { BriefingScheduler.rescheduleAll(appCtx) }
             if (PhantomPrefs.isPersistentStatsEnabled(appCtx)) {
                 KeepAlivePolicy.scheduleWatchdog(appCtx)
                 KeepAlivePolicy.scheduleAlarmClockSafetyNet(appCtx)
@@ -74,5 +76,15 @@ class WatchdogReceiver : BroadcastReceiver() {
             )
         } catch (_: Exception) {
         }
+    }
+
+    companion object {
+        private val ALLOWED_ACTIONS = setOf(
+            AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED,
+            KeepAlivePolicy.ACTION_WATCHDOG,
+            KeepAlivePolicy.ACTION_SAFETY_NET,
+            KeepAlivePolicy.ACTION_RESCUE,
+            KeepAlivePolicy.ACTION_REBIND_FALLBACK
+        )
     }
 }

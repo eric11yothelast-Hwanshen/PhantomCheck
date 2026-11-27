@@ -13,6 +13,7 @@ import androidx.work.WorkerParameters
 import com.phantom.checker.data.DiaryDayEntity
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.util.PhantomPrefs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -39,6 +40,9 @@ object DiaryPolicy {
     private const val DAILY_WORK_NAME = "phantom_diary_daily_0030"
     private const val CATCHUP_WORK_NAME = "phantom_diary_catchup"
     private const val DISLIKE_SUPPRESS_THRESHOLD = 3
+    private const val BRIEFING_DAY_PREFS = "phantom_diary_briefing_days"
+    private const val BRIEFING_DAY_KEY_PREFIX = "briefing_ts_"
+    private const val BRIEFING_DAY_RETENTION_DAYS = 30L
 
     data class TimelineItem(
         val timeLabel: String,
@@ -58,6 +62,30 @@ object DiaryPolicy {
         val annotation: String?,
         val annotationCategory: String?
     )
+
+    /** 記錄每日簡報點閱鍵（以 yyyy-MM-dd 為鍵持久化，避免次日簡報覆蓋前一日紀錄） */
+    fun recordDailyBriefingKey(
+        ctx: Context,
+        dayKey: String = LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE),
+        timestampMs: Long = System.currentTimeMillis()
+    ) {
+        val prefs = ctx.applicationContext.getSharedPreferences(BRIEFING_DAY_PREFS, Context.MODE_PRIVATE)
+        val editor = prefs.edit().putLong("$BRIEFING_DAY_KEY_PREFIX$dayKey", timestampMs)
+        val cutoffKey = LocalDate.now().minusDays(BRIEFING_DAY_RETENTION_DAYS)
+            .format(DateTimeFormatter.ISO_LOCAL_DATE)
+        prefs.all.keys.forEach { key ->
+            if (key.startsWith(BRIEFING_DAY_KEY_PREFIX)) {
+                val datePart = key.removePrefix(BRIEFING_DAY_KEY_PREFIX)
+                if (datePart < cutoffKey) editor.remove(key)
+            }
+        }
+        editor.apply()
+    }
+
+    private fun getDailyBriefingTimestamp(ctx: Context, dayKey: String): Long {
+        val prefs = ctx.applicationContext.getSharedPreferences(BRIEFING_DAY_PREFS, Context.MODE_PRIVATE)
+        return prefs.getLong("$BRIEFING_DAY_KEY_PREFIX$dayKey", 0L)
+    }
 
     fun schedule(ctx: Context) {
         val appCtx = ctx.applicationContext
@@ -111,9 +139,14 @@ object DiaryPolicy {
 
         val rawItems = mutableListOf<Pair<Long, TimelineItem>>()
 
-        // 1. 當日訊息統計（依 appLabel 分組）＋ 防詐警示
-        val allRecentMsgs = runCatching { db.messageDao().paged(600, 0) }.getOrDefault(emptyList())
-        val dayMsgs = allRecentMsgs.filter { it.timestamp in dayStartMs until dayEndMs }
+        // 1. 當日訊息統計（依 [dayStartMs, dayEndMs) DAO 區間查詢，取代 paged(600, 0)）＋ 防詐警示
+        val dayMsgs = try {
+            db.messageDao().between(dayStartMs, dayEndMs)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
         val byApp = dayMsgs.groupBy { it.appLabel.ifBlank { it.packageName } }
             .entries.sortedByDescending { it.value.size }
         if (dayMsgs.isNotEmpty()) {
@@ -144,8 +177,13 @@ object DiaryPolicy {
         }
 
         // 2. 當日新增記事
-        val dayNotes = runCatching { db.noteDao().all() }.getOrDefault(emptyList())
-            .filter { it.createdAt in dayStartMs until dayEndMs }
+        val dayNotes = try {
+            db.noteDao().all().filter { it.createdAt in dayStartMs until dayEndMs }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
         dayNotes.take(8).forEach { note ->
             val preview = note.content.replace("\n", " ").trim().take(42)
             rawItems.add(
@@ -160,8 +198,15 @@ object DiaryPolicy {
         }
 
         // 3. 當日完成待辦
-        val doneTodos = runCatching { db.todoDao().all() }.getOrDefault(emptyList())
-            .filter { it.isDone && it.completedAt != null && it.completedAt in dayStartMs until dayEndMs }
+        val doneTodos = try {
+            db.todoDao().all().filter {
+                it.isDone && it.completedAt != null && it.completedAt in dayStartMs until dayEndMs
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
         doneTodos.take(10).forEach { todo ->
             val ts = todo.completedAt ?: todo.createdAt
             rawItems.add(
@@ -175,12 +220,25 @@ object DiaryPolicy {
             )
         }
 
-        // 4. 當日簡報點閱
+        // 4. 當日簡報點閱（優先讀每日持久化點閱鍵，並自動回填最新簡報時間戳或當日早晚簡報標記）
         val lastBriefingTs = PhantomPrefs.getLastBriefingTimestamp(appCtx)
-        if (lastBriefingTs in dayStartMs until dayEndMs) {
+        var briefingTsForDay = getDailyBriefingTimestamp(appCtx, dayKey)
+        if (briefingTsForDay !in dayStartMs until dayEndMs) {
+            if (lastBriefingTs in dayStartMs until dayEndMs) {
+                briefingTsForDay = lastBriefingTs
+                recordDailyBriefingKey(appCtx, dayKey, lastBriefingTs)
+            } else if (
+                PhantomPrefs.getLastBriefingDay(appCtx, isMorning = true) == dayKey ||
+                PhantomPrefs.getLastBriefingDay(appCtx, isMorning = false) == dayKey
+            ) {
+                briefingTsForDay = dayStartMs
+                recordDailyBriefingKey(appCtx, dayKey, briefingTsForDay)
+            }
+        }
+        if (briefingTsForDay in dayStartMs until dayEndMs) {
             rawItems.add(
-                lastBriefingTs to TimelineItem(
-                    timeLabel = Instant.ofEpochMilli(lastBriefingTs).atZone(zone).format(timeFmt),
+                briefingTsForDay to TimelineItem(
+                    timeLabel = Instant.ofEpochMilli(briefingTsForDay).atZone(zone).format(timeFmt),
                     category = "briefing",
                     icon = "☀️",
                     title = "已產出並檢視個人簡報",
@@ -323,7 +381,7 @@ object DiaryPolicy {
         } else {
             "You are \"$assistantName\". Based strictly on the JSON timeline facts below, write 1–2 brief, warm reflection sentences in English (locale: ${AiClient.resolveLocaleTag()}), starting with \"I noticed today...\" and within 60 words. Strictly forbid adding any facts, assumptions, or emotional speculation not present in the timeline."
         }
-        val generated = runCatching {
+        val generated = try {
             AiClient.generateBriefingText(
                 context = appCtx,
                 systemPrompt = diarySystemPrompt,
@@ -331,7 +389,11 @@ object DiaryPolicy {
                 maxTokens = 140,
                 purpose = com.phantom.checker.util.AiPurpose.DIARY_ANNOTATION
             )
-        }.getOrNull()?.trim()?.takeIf { it.isNotBlank() } ?: return@withContext null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }?.trim()?.takeIf { it.isNotBlank() } ?: return@withContext null
 
         db.diaryDao().updateAnnotation(dayKey, generated, System.currentTimeMillis(), dominantCategory)
         generated
@@ -364,7 +426,10 @@ class DiaryWorker(
                 }
             }
             Result.success()
-        } catch (_: Exception) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("DiaryWorker", "doWork failed (attempt=$runAttemptCount)", e)
             if (runAttemptCount < 3) Result.retry() else Result.success()
         }
     }
