@@ -26,6 +26,9 @@ import com.phantom.checker.util.AiPurpose
 import com.phantom.checker.util.DesktopLinkStore
 import com.phantom.checker.util.PairedDesktop
 import com.phantom.checker.util.PhantomPrefs
+import com.phantom.checker.util.PhantomSettingsBus
+import com.phantom.checker.widget.QuickNoteWidgetProvider
+import com.phantom.checker.widget.TodoTodayWidgetProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -34,6 +37,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -50,6 +54,9 @@ import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLException
 import javax.net.ssl.TrustManager
@@ -95,6 +102,15 @@ object DesktopLinkClient {
     private const val PROBE_COOLDOWN_MS = 15_000L
     private const val TCP_PROBE_TIMEOUT_MS = 8_000
 
+    // 預留通知 ID 區段 1151..1153（避開 NotifIds 1001..1139 與 2000+；NotifIds.kt 不在 R6 單檔範圍內，後續可集中收斂）
+    private const val NOTIF_ID_FIND_PHONE = 1151
+    private const val NOTIF_ID_SEND_PHONE = 1152
+    private const val NOTIF_ID_OPEN_URL = 1153
+
+    private val PURE_OTP_DIGITS_REGEX = Regex("^\\d{4,8}$")
+    private val WHITESPACE_REGEX = Regex("\\s+")
+    private val HEX_COLOR_REGEX = Regex("^#[0-9A-Fa-f]{6}$")
+
     private val gson = Gson()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -111,6 +127,9 @@ object DesktopLinkClient {
     private var multicastLock: android.net.wifi.WifiManager.MulticastLock? = null
     @Volatile
     private var mdnsRestartJob: Job? = null
+
+    private val wsLock = Any()
+    private val sessionSeq = AtomicLong(0L)
 
     @Volatile
     private var activeWs: WebSocket? = null
@@ -268,11 +287,13 @@ object DesktopLinkClient {
         val cleanHost = host.trim().removePrefix("wss://").removePrefix("ws://").substringBefore("/").substringBefore(":")
         val cleanPort = port.coerceIn(1024, 65535)
         if (cleanHost.isBlank()) {
-            _status.value = _status.value.copy(
-                connState = PhoneLinkConnState.DISCONNECTED,
-                lastErrorCode = LinkErrorCode.INVALID_REQUEST,
-                lastErrorDetail = "Empty host"
-            )
+            _status.update {
+                it.copy(
+                    connState = PhoneLinkConnState.DISCONNECTED,
+                    lastErrorCode = LinkErrorCode.INVALID_REQUEST,
+                    lastErrorDetail = "Empty host"
+                )
+            }
             return
         }
         DesktopLinkStore.setLinkEnabled(appCtx, true)
@@ -320,11 +341,13 @@ object DesktopLinkClient {
         val resolvedHost = liveMatch?.host?.takeIf { it.isNotBlank() } ?: desktop.host
         val resolvedPort = (liveMatch?.port ?: desktop.port).coerceIn(1024, 65535)
         if (resolvedHost.isBlank() || desktop.hmacSecret.isBlank()) {
-            _status.value = _status.value.copy(
-                connState = PhoneLinkConnState.DISCONNECTED,
-                lastErrorCode = LinkErrorCode.INVALID_REQUEST,
-                lastErrorDetail = "Missing desktop address or credentials"
-            )
+            _status.update {
+                it.copy(
+                    connState = PhoneLinkConnState.DISCONNECTED,
+                    lastErrorCode = LinkErrorCode.INVALID_REQUEST,
+                    lastErrorDetail = "Missing desktop address or credentials"
+                )
+            }
             return
         }
         if (liveMatch != null && (liveMatch.host != desktop.host || liveMatch.port != desktop.port)) {
@@ -357,14 +380,17 @@ object DesktopLinkClient {
         messagePushJob?.cancel()
         messagePushJob = null
         isSubscribedToMessages = false
+        stopBatteryStatusMonitor()
         closeActiveSocket("Disconnected by user")
-        _status.value = _status.value.copy(
-            connState = PhoneLinkConnState.DISCONNECTED,
-            reconnectRemainingSec = 0,
-            reconnectTotalSec = 0,
-            lastErrorCode = if (clearError) null else _status.value.lastErrorCode,
-            lastErrorDetail = if (clearError) null else _status.value.lastErrorDetail
-        )
+        _status.update { cur ->
+            cur.copy(
+                connState = PhoneLinkConnState.DISCONNECTED,
+                reconnectRemainingSec = 0,
+                reconnectTotalSec = 0,
+                lastErrorCode = if (clearError) null else cur.lastErrorCode,
+                lastErrorDetail = if (clearError) null else cur.lastErrorDetail
+            )
+        }
     }
 
     /**
@@ -392,7 +418,6 @@ object DesktopLinkClient {
 
     @Volatile
     private var lastReceivedClipHash: Int = 0
-    private val PURE_OTP_DIGITS_REGEX = Regex("^\\d{4,8}$")
 
     /**
      * #518 手機端手動/前景推送剪貼簿至已配對電腦（預設關、僅 TLS 配對連線、5000 字上限、OtpDetector 驗證碼保護）。
@@ -482,7 +507,7 @@ object DesktopLinkClient {
         // 手動診斷繞過同目標冷卻
         lastTimeoutTargetKey = null
         lastTimeoutAtMs = 0L
-        _status.value = _status.value.copy(isProbing = true, probeCooldownSec = 0)
+        _status.update { it.copy(isProbing = true, probeCooldownSec = 0) }
 
         probeJob = scope.launch {
             val startedAt = System.currentTimeMillis()
@@ -493,12 +518,14 @@ object DesktopLinkClient {
                 }
                 val elapsed = (System.currentTimeMillis() - startedAt).coerceAtLeast(1L)
                 DesktopLinkStore.recordDiagnostic(appCtx, "PROBE", "TCP_OK", "$cleanHost:$cleanPort (${elapsed}ms)")
-                _status.value = _status.value.copy(
-                    isProbing = false,
-                    probeCooldownSec = 0,
-                    lastErrorCode = if (_status.value.lastErrorCode == LinkErrorCode.TIMEOUT) null else _status.value.lastErrorCode,
-                    lastErrorDetail = if (_status.value.lastErrorCode == LinkErrorCode.TIMEOUT) null else _status.value.lastErrorDetail
-                )
+                _status.update { cur ->
+                    cur.copy(
+                        isProbing = false,
+                        probeCooldownSec = 0,
+                        lastErrorCode = if (cur.lastErrorCode == LinkErrorCode.TIMEOUT) null else cur.lastErrorCode,
+                        lastErrorDetail = if (cur.lastErrorCode == LinkErrorCode.TIMEOUT) null else cur.lastErrorDetail
+                    )
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: java.net.SocketTimeoutException) {
@@ -506,31 +533,37 @@ object DesktopLinkClient {
                 lastTimeoutAtMs = System.currentTimeMillis()
                 val detail = e.message ?: "failed to connect to $cleanHost:$cleanPort after ${TCP_PROBE_TIMEOUT_MS}ms"
                 DesktopLinkStore.recordDiagnostic(appCtx, "TCP", LinkErrorCode.TIMEOUT, detail)
-                _status.value = _status.value.copy(
-                    isProbing = false,
-                    lastErrorCode = LinkErrorCode.TIMEOUT,
-                    lastErrorDetail = detail,
-                    probeCooldownSec = (PROBE_COOLDOWN_MS / 1000L).toInt()
-                )
+                _status.update {
+                    it.copy(
+                        isProbing = false,
+                        lastErrorCode = LinkErrorCode.TIMEOUT,
+                        lastErrorDetail = detail,
+                        probeCooldownSec = (PROBE_COOLDOWN_MS / 1000L).toInt()
+                    )
+                }
             } catch (e: ConnectException) {
                 val detail = e.message ?: "Connection refused"
                 DesktopLinkStore.recordDiagnostic(appCtx, "TCP", "REFUSED", detail)
-                _status.value = _status.value.copy(
-                    isProbing = false,
-                    lastErrorCode = LinkErrorCode.TCP_UNREACHABLE,
-                    lastErrorDetail = detail,
-                    probeCooldownSec = 0
-                )
+                _status.update {
+                    it.copy(
+                        isProbing = false,
+                        lastErrorCode = LinkErrorCode.TCP_UNREACHABLE,
+                        lastErrorDetail = detail,
+                        probeCooldownSec = 0
+                    )
+                }
             } catch (e: Throwable) {
                 val (stage, code) = classifyThrowable(e)
                 val detail = e.message ?: e.javaClass.simpleName
                 DesktopLinkStore.recordDiagnostic(appCtx, stage, code, detail)
-                _status.value = _status.value.copy(
-                    isProbing = false,
-                    lastErrorCode = code,
-                    lastErrorDetail = detail,
-                    probeCooldownSec = 0
-                )
+                _status.update {
+                    it.copy(
+                        isProbing = false,
+                        lastErrorCode = code,
+                        lastErrorDetail = detail,
+                        probeCooldownSec = 0
+                    )
+                }
             }
         }
     }
@@ -547,25 +580,29 @@ object DesktopLinkClient {
 
     private fun openSocket(appCtx: Context, target: ConnectTarget, backoffSec: Int) {
         if (!shouldKeepConnected) return
+        closeActiveSocket("Opening new socket")
+        val mySeq = sessionSeq.incrementAndGet()
         val wssUrl = "wss://${target.host}:${target.port}${LinkProtocol.WS_PATH}"
-        _status.value = _status.value.copy(
-            connState = PhoneLinkConnState.CONNECTING,
-            connectedHostPort = "${target.host}:${target.port}",
-            lastErrorCode = null,
-            lastErrorDetail = null,
-            reconnectRemainingSec = 0,
-            reconnectTotalSec = 0
-        )
+        _status.update {
+            it.copy(
+                connState = PhoneLinkConnState.CONNECTING,
+                connectedHostPort = "${target.host}:${target.port}",
+                lastErrorCode = null,
+                lastErrorDetail = null,
+                reconnectRemainingSec = 0,
+                reconnectTotalSec = 0
+            )
+        }
         DesktopLinkStore.recordDiagnostic(appCtx, "TCP", "CONNECTING", "${target.host}:${target.port}")
 
-        var observedCertFp = ""
+        val observedCertFp = AtomicReference("")
         val trustManager = object : X509TrustManager {
             override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
             override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
                 val cert = chain?.firstOrNull()
                     ?: throw CertificateException("Server presented empty certificate chain")
                 val digest = MessageDigest.getInstance("SHA-256").digest(cert.encoded)
-                observedCertFp = digest.joinToString("") { "%02x".format(it) }
+                observedCertFp.set(digest.joinToString("") { "%02x".format(it) })
             }
             override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
         }
@@ -583,31 +620,45 @@ object DesktopLinkClient {
         }.getOrElse { err ->
             val msg = err.message ?: err.javaClass.simpleName
             DesktopLinkStore.recordDiagnostic(appCtx, "TLS", LinkErrorCode.TLS_ERROR, msg)
-            _status.value = _status.value.copy(
-                connState = PhoneLinkConnState.DISCONNECTED,
-                lastErrorCode = LinkErrorCode.TLS_ERROR,
-                lastErrorDetail = msg
-            )
+            _status.update {
+                it.copy(
+                    connState = PhoneLinkConnState.DISCONNECTED,
+                    lastErrorCode = LinkErrorCode.TLS_ERROR,
+                    lastErrorDetail = msg
+                )
+            }
             shouldKeepConnected = false
             return
         }
 
-        activeClient = client
         val request = Request.Builder().url(wssUrl).build()
         var sessionAuthed = false
         var activeDesktopId = target.desktopId.orEmpty()
         var activeDesktopName = target.desktopName
+        val terminalHandled = AtomicBoolean(false)
 
-        val ws = client.newWebSocket(request, object : WebSocketListener() {
+        val listener = object : WebSocketListener() {
+            private fun isCurrentSession(webSocket: WebSocket): Boolean {
+                if (sessionSeq.get() != mySeq) return false
+                val cur = activeWs
+                return cur == null || cur === webSocket
+            }
+
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (!isCurrentSession(webSocket)) {
+                    runCatching { webSocket.close(1000, "Superseded") }
+                    return
+                }
                 lastTimeoutTargetKey = null
                 lastTimeoutAtMs = 0L
-                DesktopLinkStore.recordDiagnostic(appCtx, "TLS", "OPEN", "fp=${observedCertFp.take(8)}…")
+                DesktopLinkStore.recordDiagnostic(appCtx, "TLS", "OPEN", "fp=${observedCertFp.get().take(8)}…")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                if (!isCurrentSession(webSocket)) return
                 val env = runCatching { gson.fromJson(text, LinkEnvelope::class.java) }.getOrNull() ?: return
                 scope.launch {
+                    if (!isCurrentSession(webSocket)) return@launch
                     try {
                         when (env.type) {
                             LinkMsgType.HELLO -> {
@@ -625,20 +676,46 @@ object DesktopLinkClient {
                                         DesktopLinkStore.removePairedDevice(appCtx, it)
                                     }
                                     shouldKeepConnected = false
-                                    _status.value = _status.value.copy(
-                                        connState = PhoneLinkConnState.DISCONNECTED,
-                                        lastErrorCode = LinkErrorCode.VERSION_MISMATCH,
-                                        lastErrorDetail = "desktop=${hello.protocolVersion}, phone=${LinkProtocol.PROTOCOL_VERSION}"
-                                    )
+                                    _status.update {
+                                        it.copy(
+                                            connState = PhoneLinkConnState.DISCONNECTED,
+                                            lastErrorCode = LinkErrorCode.VERSION_MISMATCH,
+                                            lastErrorDetail = "desktop=${hello.protocolVersion}, phone=${LinkProtocol.PROTOCOL_VERSION}"
+                                        )
+                                    }
                                     webSocket.close(1008, "Version mismatch")
                                     return@launch
                                 }
 
-                                val actualFp = observedCertFp.ifBlank { hello.certFingerprint }.lowercase()
-                                val expected = target.expectedFingerprint.lowercase()
-                                val fpMatches = expected.isBlank() ||
-                                    actualFp == expected ||
-                                    (expected.length >= 8 && actualFp.startsWith(expected))
+                                // 僅採信 TLS 實測憑證 SHA-256 指紋，移除 hello.certFingerprint 回退；未取得實測憑證即斷線
+                                val actualFp = observedCertFp.get().trim().lowercase()
+                                if (actualFp.length != 64) {
+                                    DesktopLinkStore.recordDiagnostic(
+                                        appCtx,
+                                        "TLS",
+                                        LinkErrorCode.TLS_ERROR,
+                                        "missing_observed_cert_fp"
+                                    )
+                                    shouldKeepConnected = false
+                                    _status.update {
+                                        it.copy(
+                                            connState = PhoneLinkConnState.DISCONNECTED,
+                                            lastErrorCode = LinkErrorCode.TLS_ERROR,
+                                            lastErrorDetail = "Missing observed TLS certificate fingerprint"
+                                        )
+                                    }
+                                    webSocket.close(1008, "Missing TLS certificate fingerprint")
+                                    return@launch
+                                }
+
+                                val expected = target.expectedFingerprint.trim().lowercase()
+                                val isPairedConnection = target.pairCode == null
+                                // 已配對連線強制完整 64 字元 SHA-256 比對（移除 8 字元前綴匹配 MITM 風險）
+                                val fpMatches = if (isPairedConnection) {
+                                    expected.length == 64 && actualFp == expected
+                                } else {
+                                    expected.isBlank() || (expected.length == 64 && actualFp == expected)
+                                }
                                 if (!fpMatches) {
                                     DesktopLinkStore.recordDiagnostic(
                                         appCtx,
@@ -648,11 +725,13 @@ object DesktopLinkClient {
                                     )
                                     DesktopLinkStore.recordUnknownAttempt(appCtx, target.host, "fingerprint_mismatch")
                                     shouldKeepConnected = false
-                                    _status.value = _status.value.copy(
-                                        connState = PhoneLinkConnState.DISCONNECTED,
-                                        lastErrorCode = LinkErrorCode.FINGERPRINT_MISMATCH,
-                                        lastErrorDetail = "expected=${expected.take(8)}…, actual=${actualFp.take(8)}…"
-                                    )
+                                    _status.update {
+                                        it.copy(
+                                            connState = PhoneLinkConnState.DISCONNECTED,
+                                            lastErrorCode = LinkErrorCode.FINGERPRINT_MISMATCH,
+                                            lastErrorDetail = "expected=${expected.take(8)}…, actual=${actualFp.take(8)}…"
+                                        )
+                                    }
                                     webSocket.close(1008, "Fingerprint mismatch")
                                     return@launch
                                 }
@@ -700,10 +779,28 @@ object DesktopLinkClient {
                                 val resp = runCatching { gson.fromJson(env.payloadJson, PairResponsePayload::class.java) }.getOrNull()
                                     ?: return@launch
                                 if (resp.ok) {
+                                    val finalFp = observedCertFp.get().trim().lowercase()
+                                    if (finalFp.length != 64) {
+                                        DesktopLinkStore.recordDiagnostic(
+                                            appCtx,
+                                            "TLS",
+                                            LinkErrorCode.TLS_ERROR,
+                                            "missing_observed_cert_fp_on_pair"
+                                        )
+                                        shouldKeepConnected = false
+                                        _status.update {
+                                            it.copy(
+                                                connState = PhoneLinkConnState.DISCONNECTED,
+                                                lastErrorCode = LinkErrorCode.TLS_ERROR,
+                                                lastErrorDetail = "Missing observed TLS certificate fingerprint"
+                                            )
+                                        }
+                                        webSocket.close(1008, "Missing TLS certificate fingerprint")
+                                        return@launch
+                                    }
                                     val now = System.currentTimeMillis()
                                     val finalDesktopId = activeDesktopId.ifBlank { UUID.randomUUID().toString() }
                                     val finalName = resp.deviceName.ifBlank { activeDesktopName }
-                                    val finalFp = observedCertFp.ifBlank { resp.certFingerprint }.lowercase()
                                     val paired = PairedDesktop(
                                         instanceId = finalDesktopId,
                                         name = finalName,
@@ -729,22 +826,26 @@ object DesktopLinkClient {
                                         hmacSecret = resp.hmacSecret,
                                         pairCode = null
                                     )
-                                    _status.value = PhoneLinkStatus(
-                                        connState = PhoneLinkConnState.CONNECTED,
-                                        connectedDesktopId = finalDesktopId,
-                                        connectedDesktopName = finalName,
-                                        connectedHostPort = "${target.host}:${target.port}"
-                                    )
+                                    _status.update {
+                                        PhoneLinkStatus(
+                                            connState = PhoneLinkConnState.CONNECTED,
+                                            connectedDesktopId = finalDesktopId,
+                                            connectedDesktopName = finalName,
+                                            connectedHostPort = "${target.host}:${target.port}"
+                                        )
+                                    }
                                     startBatteryStatusMonitor(appCtx, webSocket)
                                 } else {
                                     val errCode = resp.errorCode.ifBlank { LinkErrorCode.AUTH_FAILED }
                                     DesktopLinkStore.recordDiagnostic(appCtx, "HANDSHAKE", errCode, resp.errorMessage)
                                     shouldKeepConnected = false
-                                    _status.value = _status.value.copy(
-                                        connState = PhoneLinkConnState.DISCONNECTED,
-                                        lastErrorCode = errCode,
-                                        lastErrorDetail = resp.errorMessage
-                                    )
+                                    _status.update {
+                                        it.copy(
+                                            connState = PhoneLinkConnState.DISCONNECTED,
+                                            lastErrorCode = errCode,
+                                            lastErrorDetail = resp.errorMessage
+                                        )
+                                    }
                                     webSocket.close(1008, errCode)
                                 }
                             }
@@ -764,12 +865,14 @@ object DesktopLinkClient {
                                     sessionAuthed = true
                                     connectedAtMs = now
                                     currentTargetDesktopId = finalDesktopId
-                                    _status.value = PhoneLinkStatus(
-                                        connState = PhoneLinkConnState.CONNECTED,
-                                        connectedDesktopId = finalDesktopId,
-                                        connectedDesktopName = finalName,
-                                        connectedHostPort = "${target.host}:${target.port}"
-                                    )
+                                    _status.update {
+                                        PhoneLinkStatus(
+                                            connState = PhoneLinkConnState.CONNECTED,
+                                            connectedDesktopId = finalDesktopId,
+                                            connectedDesktopName = finalName,
+                                            connectedHostPort = "${target.host}:${target.port}"
+                                        )
+                                    }
                                     startBatteryStatusMonitor(appCtx, webSocket)
                                 } else {
                                     val errCode = resp.errorCode.ifBlank { LinkErrorCode.AUTH_FAILED }
@@ -780,11 +883,13 @@ object DesktopLinkClient {
                                         }
                                     }
                                     shouldKeepConnected = false
-                                    _status.value = _status.value.copy(
-                                        connState = PhoneLinkConnState.DISCONNECTED,
-                                        lastErrorCode = errCode,
-                                        lastErrorDetail = resp.errorMessage
-                                    )
+                                    _status.update {
+                                        it.copy(
+                                            connState = PhoneLinkConnState.DISCONNECTED,
+                                            lastErrorCode = errCode,
+                                            lastErrorDetail = resp.errorMessage
+                                        )
+                                    }
                                     webSocket.close(1008, errCode)
                                 }
                             }
@@ -796,10 +901,12 @@ object DesktopLinkClient {
                                 }
                                 DesktopLinkStore.recordDiagnostic(appCtx, "PROTOCOL", "UNPAIRED", "Removed by desktop")
                                 disconnect(clearError = false)
-                                _status.value = _status.value.copy(
-                                    lastErrorCode = LinkErrorCode.AUTH_FAILED,
-                                    lastErrorDetail = "Unpaired by desktop"
-                                )
+                                _status.update {
+                                    it.copy(
+                                        lastErrorCode = LinkErrorCode.AUTH_FAILED,
+                                        lastErrorDetail = "Unpaired by desktop"
+                                    )
+                                }
                             }
 
                             LinkMsgType.PING -> {
@@ -830,31 +937,44 @@ object DesktopLinkClient {
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                if (activeWs === webSocket) {
-                    activeWs = null
-                    messagePushJob?.cancel()
-                    messagePushJob = null
-                    isSubscribedToMessages = false
-                    stopBatteryStatusMonitor()
+                if (!isCurrentSession(webSocket) || !terminalHandled.compareAndSet(false, true)) return
+                synchronized(wsLock) {
+                    if (sessionSeq.get() != mySeq) return
+                    if (activeWs === webSocket) {
+                        activeWs = null
+                    }
                 }
+                messagePushJob?.cancel()
+                messagePushJob = null
+                isSubscribedToMessages = false
+                stopBatteryStatusMonitor()
                 DesktopLinkStore.recordDiagnostic(appCtx, "TCP", "CLOSED", "code=$code $reason")
                 val maxCap = if (isScreenOff) SCREEN_OFF_BACKOFF_CAP_SEC else SCREEN_ON_BACKOFF_CAP_SEC
                 val nextTarget = activeTarget
                 if (shouldKeepConnected && nextTarget != null && nextTarget.hmacSecret != null) {
-                    scheduleReconnect(appCtx, nextTarget, if (sessionAuthed) 1 else (backoffSec * 2).coerceAtMost(maxCap))
+                    scheduleReconnect(
+                        appCtx,
+                        nextTarget,
+                        if (sessionAuthed) 1 else (backoffSec * 2).coerceAtMost(maxCap),
+                        expectedSeq = mySeq
+                    )
                 } else {
-                    _status.value = _status.value.copy(connState = PhoneLinkConnState.DISCONNECTED)
+                    _status.update { it.copy(connState = PhoneLinkConnState.DISCONNECTED) }
                 }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                if (activeWs === webSocket) {
-                    activeWs = null
-                    messagePushJob?.cancel()
-                    messagePushJob = null
-                    isSubscribedToMessages = false
-                    stopBatteryStatusMonitor()
+                if (!isCurrentSession(webSocket) || !terminalHandled.compareAndSet(false, true)) return
+                synchronized(wsLock) {
+                    if (sessionSeq.get() != mySeq) return
+                    if (activeWs === webSocket) {
+                        activeWs = null
+                    }
                 }
+                messagePushJob?.cancel()
+                messagePushJob = null
+                isSubscribedToMessages = false
+                stopBatteryStatusMonitor()
                 val (stage, code) = classifyThrowable(t)
                 val diagCode = if (t is ConnectException || t.cause is ConnectException) "REFUSED" else code
                 val detail = t.message ?: t.javaClass.simpleName
@@ -872,25 +992,45 @@ object DesktopLinkClient {
                     code != LinkErrorCode.FINGERPRINT_MISMATCH &&
                     code != LinkErrorCode.VERSION_MISMATCH
 
-                _status.value = _status.value.copy(
-                    connState = if (canAutoRetry) PhoneLinkConnState.RECONNECTING else PhoneLinkConnState.DISCONNECTED,
-                    lastErrorCode = code,
-                    lastErrorDetail = detail,
-                    probeCooldownSec = if (code == LinkErrorCode.TIMEOUT) (PROBE_COOLDOWN_MS / 1000L).toInt() else 0
-                )
+                _status.update {
+                    it.copy(
+                        connState = if (canAutoRetry) PhoneLinkConnState.RECONNECTING else PhoneLinkConnState.DISCONNECTED,
+                        lastErrorCode = code,
+                        lastErrorDetail = detail,
+                        probeCooldownSec = if (code == LinkErrorCode.TIMEOUT) (PROBE_COOLDOWN_MS / 1000L).toInt() else 0
+                    )
+                }
 
                 if (canAutoRetry && nextTarget != null) {
                     val maxCap = if (isScreenOff) SCREEN_OFF_BACKOFF_CAP_SEC else SCREEN_ON_BACKOFF_CAP_SEC
-                    scheduleReconnect(appCtx, nextTarget, if (sessionAuthed) 1 else (backoffSec * 2).coerceAtMost(maxCap))
+                    scheduleReconnect(
+                        appCtx,
+                        nextTarget,
+                        if (sessionAuthed) 1 else (backoffSec * 2).coerceAtMost(maxCap),
+                        expectedSeq = mySeq
+                    )
                 } else {
                     shouldKeepConnected = false
                 }
             }
-        })
-        activeWs = ws
+        }
+
+        synchronized(wsLock) {
+            if (sessionSeq.get() != mySeq) {
+                runCatching { client.dispatcher.executorService.shutdown() }
+                return
+            }
+            activeClient = client
+            activeWs = client.newWebSocket(request, listener)
+        }
     }
 
-    private fun scheduleReconnect(appCtx: Context, target: ConnectTarget, delaySec: Int) {
+    private fun scheduleReconnect(
+        appCtx: Context,
+        target: ConnectTarget,
+        delaySec: Int,
+        expectedSeq: Long = sessionSeq.get()
+    ) {
         reconnectJob?.cancel()
         val maxCap = if (isScreenOff) SCREEN_OFF_BACKOFF_CAP_SEC else SCREEN_ON_BACKOFF_CAP_SEC
         val targetKey = "${target.host}:${target.port}"
@@ -904,39 +1044,49 @@ object DesktopLinkClient {
         reconnectJob = scope.launch {
             if (isScreenOff) {
                 // #489 熄屏時不做每秒 UI 倒數喚醒，整段退避睡眠（亮屏由 ACTION_SCREEN_ON 立即中斷並重連）
-                _status.value = _status.value.copy(
-                    connState = PhoneLinkConnState.RECONNECTING,
-                    reconnectRemainingSec = capped,
-                    reconnectTotalSec = capped
-                )
+                if (!shouldKeepConnected || sessionSeq.get() != expectedSeq) return@launch
+                _status.update {
+                    it.copy(
+                        connState = PhoneLinkConnState.RECONNECTING,
+                        reconnectRemainingSec = capped,
+                        reconnectTotalSec = capped
+                    )
+                }
                 delay(capped * 1000L)
             } else {
                 for (rem in capped downTo 1) {
-                    if (!shouldKeepConnected) return@launch
+                    if (!shouldKeepConnected || sessionSeq.get() != expectedSeq) return@launch
                     if (isScreenOff) {
                         delay(rem * 1000L)
                         break
                     }
-                    _status.value = _status.value.copy(
-                        connState = PhoneLinkConnState.RECONNECTING,
-                        reconnectRemainingSec = rem,
-                        reconnectTotalSec = capped
-                    )
+                    _status.update {
+                        it.copy(
+                            connState = PhoneLinkConnState.RECONNECTING,
+                            reconnectRemainingSec = rem,
+                            reconnectTotalSec = capped
+                        )
+                    }
                     delay(1000L)
                 }
             }
-            if (shouldKeepConnected) {
+            if (shouldKeepConnected && sessionSeq.get() == expectedSeq) {
                 openSocket(appCtx, target, capped)
             }
         }
     }
 
     private fun closeActiveSocket(reason: String) {
-        val ws = activeWs
-        activeWs = null
+        sessionSeq.incrementAndGet()
+        val ws: WebSocket?
+        val cli: OkHttpClient?
+        synchronized(wsLock) {
+            ws = activeWs
+            activeWs = null
+            cli = activeClient
+            activeClient = null
+        }
         runCatching { ws?.close(1000, reason) }
-        val cli = activeClient
-        activeClient = null
         runCatching { cli?.dispatcher?.executorService?.shutdown() }
     }
 
@@ -992,7 +1142,7 @@ object DesktopLinkClient {
                         id = m.id,
                         packageName = m.packageName,
                         sender = m.sender,
-                        preview = m.content.replace(Regex("\\s+"), " ").trim().take(200),
+                        preview = m.content.replace(WHITESPACE_REGEX, " ").trim().take(200),
                         timestamp = m.timestamp,
                         riskLabel = m.riskLabel,
                         isStarred = m.isStarred,
@@ -1045,8 +1195,10 @@ object DesktopLinkClient {
 
             LinkMsgType.STATS_SNAPSHOT -> {
                 val startOfDay = NotificationCollectorService.startOfTodayMillis()
+                val nowEnd = System.currentTimeMillis() + 1L
                 val snap = db.messageDao().statsSnapshot(startOfDay)
                 val suspicious = runCatching { db.messageDao().suspiciousCount() }.getOrDefault(0)
+                val warning = runCatching { db.messageDao().warningCount() }.getOrDefault(0)
                 val cal = java.util.Calendar.getInstance().apply {
                     set(java.util.Calendar.HOUR_OF_DAY, 0)
                     set(java.util.Calendar.MINUTE, 0)
@@ -1078,34 +1230,29 @@ object DesktopLinkClient {
                 }
                 val hourMap = runCatching { db.messageDao().countByHourSince(startOfDay).associate { it.hour to it.cnt } }.getOrDefault(emptyMap())
                 val hourlyCounts = (0..23).map { h -> HourCountDto(hour = h, count = hourMap[h] ?: 0) }
-                // #498 Active apps today & Weekly Top 5 with resolved display labels
-                val recentForStats = runCatching { db.messageDao().paged(600, 0) }.getOrDefault(emptyList())
-                val activeAppsToday = recentForStats
-                    .filter { it.timestamp >= startOfDay && it.packageName.isNotBlank() }
-                    .groupBy { it.packageName }
-                    .map { (pkg, list) ->
-                        val sampleLabel = list.firstOrNull { it.appLabel.isNotBlank() }?.appLabel.orEmpty()
+                // #498 / R6: 改由 Room 區間聚合查詢今日活躍 App 與週排行，避免 paged(600, 0) 截斷失真
+                val activeAppsToday = runCatching {
+                    db.messageDao().topAppsBetween(startOfDay, nowEnd, limit = 12)
+                }.getOrDefault(emptyList())
+                    .filter { it.packageName.isNotBlank() }
+                    .map { row ->
                         ActiveAppStatDto(
-                            packageName = pkg,
-                            appLabel = resolveAppDisplayLabel(appCtx, pkg, sampleLabel),
-                            count = list.size
+                            packageName = row.packageName,
+                            appLabel = resolveAppDisplayLabel(appCtx, row.packageName, row.appLabel),
+                            count = row.cnt
                         )
                     }
-                    .sortedByDescending { it.count }
-                    .take(12)
-                val weeklyTopApps = recentForStats
-                    .filter { it.timestamp >= sevenDaysAgo && it.packageName.isNotBlank() }
-                    .groupBy { it.packageName }
-                    .map { (pkg, list) ->
-                        val sampleLabel = list.firstOrNull { it.appLabel.isNotBlank() }?.appLabel.orEmpty()
+                val weeklyTopApps = runCatching {
+                    db.messageDao().topAppsBetween(sevenDaysAgo, nowEnd, limit = 5)
+                }.getOrDefault(emptyList())
+                    .filter { it.packageName.isNotBlank() }
+                    .map { row ->
                         ActiveAppStatDto(
-                            packageName = pkg,
-                            appLabel = resolveAppDisplayLabel(appCtx, pkg, sampleLabel),
-                            count = list.size
+                            packageName = row.packageName,
+                            appLabel = resolveAppDisplayLabel(appCtx, row.packageName, row.appLabel),
+                            count = row.cnt
                         )
                     }
-                    .sortedByDescending { it.count }
-                    .take(5)
                 sendEnvelope(
                     ws,
                     LinkMsgType.STATS_SNAPSHOT_RES,
@@ -1122,7 +1269,8 @@ object DesktopLinkClient {
                         hourlyCounts = hourlyCounts,
                         dailyCounts30 = dailyCounts30,
                         activeAppsToday = activeAppsToday,
-                        weeklyTopApps = weeklyTopApps
+                        weeklyTopApps = weeklyTopApps,
+                        warning = warning
                     )
                 )
             }
@@ -1234,6 +1382,7 @@ object DesktopLinkClient {
                     return
                 }
                 val spawned = ReminderScheduler.completeTodoWithRecurrence(appCtx, todo, req.done)
+                runCatching { TodoTodayWidgetProvider.refreshNow(appCtx) }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.TODOS_TOGGLE, true, "id=${todo.id},done=${req.done}")
                 sendEnvelope(
                     ws,
@@ -1289,8 +1438,12 @@ object DesktopLinkClient {
                     dao = db.aiRuleDao(),
                     ruleText = text,
                     sender = req.sender.trim().ifBlank { null },
-                    packageName = req.packageName.trim().ifBlank { null }
+                    packageName = req.packageName.trim().ifBlank { null },
+                    onCacheInvalidate = { NotificationCollectorService.invalidateRuleCaches() }
                 )
+                if (res.status == WhitelistRuleHelper.Status.INSERTED || res.status == WhitelistRuleHelper.Status.REACTIVATED) {
+                    PhantomSettingsBus.notifyChanged()
+                }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.WHITELIST_ADD, res.isSuccess, res.status.name)
                 val dto = res.rule?.let { RuleItemDto(it.id, it.kind, it.ruleText, it.sender.orEmpty(), it.packageName.orEmpty(), it.isEnabled) }
                 sendEnvelope(ws, LinkMsgType.WHITELIST_ADD_RES, env.reqId, RuleMutateRes(ok = res.isSuccess, message = res.message, item = dto))
@@ -1304,6 +1457,8 @@ object DesktopLinkClient {
                     return
                 }
                 db.aiRuleDao().deleteById(req.id)
+                NotificationCollectorService.invalidateRuleCaches()
+                PhantomSettingsBus.notifyChanged()
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.WHITELIST_REMOVE, true, "id=${req.id}")
                 sendEnvelope(ws, LinkMsgType.WHITELIST_REMOVE_RES, env.reqId, RuleMutateRes(ok = true, message = "Removed"))
             }
@@ -1321,15 +1476,20 @@ object DesktopLinkClient {
                     sendEnvelope(ws, LinkMsgType.TAGS_ADD_RES, env.reqId, TagMutateRes(ok = false, message = "Empty tag name"))
                     return
                 }
-                val dup = db.tagDao().all().firstOrNull { it.name.equals(name, ignoreCase = true) }
+                val existingTags = db.tagDao().all()
+                val dup = existingTags.firstOrNull { it.name.equals(name, ignoreCase = true) }
                 if (dup != null) {
                     DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.TAGS_ADD, true, "duplicate:$name")
                     sendEnvelope(ws, LinkMsgType.TAGS_ADD_RES, env.reqId, TagMutateRes(ok = true, message = "Already exists", item = TagItemDto(dup.id, dup.name, dup.colorHex)))
                     return
                 }
-                val id = db.tagDao().insert(TagEntity(name = name, colorHex = req.colorHex.ifBlank { "#6EA8FE" }))
+                val nextSortOrder = (existingTags.maxOfOrNull { it.sortOrder } ?: -1) + 1
+                val color = req.colorHex.ifBlank { "#6EA8FE" }
+                val id = db.tagDao().insert(TagEntity(name = name, colorHex = color, sortOrder = nextSortOrder))
+                NotificationCollectorService.invalidateRuleCaches()
+                PhantomSettingsBus.notifyChanged()
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.TAGS_ADD, true, name)
-                sendEnvelope(ws, LinkMsgType.TAGS_ADD_RES, env.reqId, TagMutateRes(ok = true, message = "Created", item = TagItemDto(id, name, req.colorHex.ifBlank { "#6EA8FE" })))
+                sendEnvelope(ws, LinkMsgType.TAGS_ADD_RES, env.reqId, TagMutateRes(ok = true, message = "Created", item = TagItemDto(id, name, color)))
             }
 
             LinkMsgType.TAGS_REMOVE -> {
@@ -1339,8 +1499,9 @@ object DesktopLinkClient {
                     sendEnvelope(ws, LinkMsgType.TAGS_REMOVE_RES, env.reqId, TagMutateRes(ok = false, message = "Invalid id"))
                     return
                 }
-                db.tagDao().deleteCrossRefsByTag(req.id)
-                db.tagDao().deleteById(req.id)
+                db.tagDao().deleteTagWithOrphans(req.id)
+                NotificationCollectorService.invalidateRuleCaches()
+                PhantomSettingsBus.notifyChanged()
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.TAGS_REMOVE, true, "id=${req.id}")
                 sendEnvelope(ws, LinkMsgType.TAGS_REMOVE_RES, env.reqId, TagMutateRes(ok = true, message = "Removed"))
             }
@@ -1408,6 +1569,7 @@ object DesktopLinkClient {
                 if (dueAt > now) {
                     ReminderScheduler.scheduleTodo(appCtx, id, dueAt)
                 }
+                runCatching { TodoTodayWidgetProvider.refreshNow(appCtx) }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.TODOS_ADD, true, "id=$id")
                 sendEnvelope(
                     ws,
@@ -1447,6 +1609,7 @@ object DesktopLinkClient {
                 if (!updated.isDone && updated.dueAt > System.currentTimeMillis()) {
                     ReminderScheduler.scheduleTodo(appCtx, updated.id, updated.dueAt)
                 }
+                runCatching { TodoTodayWidgetProvider.refreshNow(appCtx) }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.TODOS_EDIT, true, "id=${updated.id}")
                 sendEnvelope(
                     ws,
@@ -1478,6 +1641,7 @@ object DesktopLinkClient {
                 }
                 ReminderScheduler.cancelTodo(appCtx, req.id)
                 db.todoDao().deleteById(req.id)
+                runCatching { TodoTodayWidgetProvider.refreshNow(appCtx) }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.TODOS_DELETE, true, "id=${req.id}")
                 sendEnvelope(ws, LinkMsgType.TODOS_DELETE_RES, env.reqId, TodoMutateRes(ok = true, deletedId = req.id))
             }
@@ -1537,7 +1701,7 @@ object DesktopLinkClient {
                     return
                 }
                 val now = System.currentTimeMillis()
-                val colorHex = req.colorHex.trim().takeIf { it.matches(Regex("^#[0-9A-Fa-f]{6}$")) }
+                val colorHex = req.colorHex.trim().takeIf { HEX_COLOR_REGEX.matches(it) }
                 val note = NoteEntity(
                     content = content,
                     colorHex = colorHex,
@@ -1549,6 +1713,7 @@ object DesktopLinkClient {
                     updatedAt = now
                 )
                 val id = db.noteDao().insert(note)
+                runCatching { QuickNoteWidgetProvider.refreshNow(appCtx) }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.NOTE_ADD, true, "id=$id")
                 sendEnvelope(
                     ws,
@@ -1572,14 +1737,14 @@ object DesktopLinkClient {
 
             LinkMsgType.NOTE_EDIT -> {
                 val req = runCatching { gson.fromJson(env.payloadJson, NoteEditReq::class.java) }.getOrNull()
-                val existing = if (req != null && req.id > 0L) db.noteDao().all().firstOrNull { it.id == req.id } else null
+                val existing = if (req != null && req.id > 0L) db.noteDao().byId(req.id) else null
                 if (req == null || existing == null) {
                     DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.NOTE_EDIT, false, "not_found")
                     sendEnvelope(ws, LinkMsgType.NOTE_EDIT_RES, env.reqId, NoteMutateRes(ok = false, errorMessage = "Note not found"))
                     return
                 }
                 val newContent = req.content.trim().ifBlank { existing.content }
-                val newColor = req.colorHex.trim().takeIf { it.matches(Regex("^#[0-9A-Fa-f]{6}$")) }
+                val newColor = req.colorHex.trim().takeIf { HEX_COLOR_REGEX.matches(it) }
                 val updated = existing.copy(
                     content = newContent,
                     pinned = req.pinned,
@@ -1587,6 +1752,7 @@ object DesktopLinkClient {
                     updatedAt = System.currentTimeMillis()
                 )
                 db.noteDao().update(updated)
+                runCatching { QuickNoteWidgetProvider.refreshNow(appCtx) }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.NOTE_EDIT, true, "id=${updated.id}")
                 sendEnvelope(
                     ws,
@@ -1616,13 +1782,14 @@ object DesktopLinkClient {
                     return
                 }
                 db.noteDao().deleteById(req.id)
+                runCatching { QuickNoteWidgetProvider.refreshNow(appCtx) }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.NOTE_DELETE, true, "id=${req.id}")
                 sendEnvelope(ws, LinkMsgType.NOTE_DELETE_RES, env.reqId, NoteMutateRes(ok = true, deletedId = req.id))
             }
 
             LinkMsgType.NOTE_PIN_TOGGLE -> {
                 val req = runCatching { gson.fromJson(env.payloadJson, NotePinToggleReq::class.java) }.getOrNull()
-                val existing = if (req != null && req.id > 0L) db.noteDao().all().firstOrNull { it.id == req.id } else null
+                val existing = if (req != null && req.id > 0L) db.noteDao().byId(req.id) else null
                 if (req == null || existing == null) {
                     DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.NOTE_PIN_TOGGLE, false, "not_found")
                     sendEnvelope(ws, LinkMsgType.NOTE_PIN_TOGGLE_RES, env.reqId, NoteMutateRes(ok = false, errorMessage = "Note not found"))
@@ -1630,6 +1797,7 @@ object DesktopLinkClient {
                 }
                 val updated = existing.copy(pinned = req.pinned, updatedAt = System.currentTimeMillis())
                 db.noteDao().update(updated)
+                runCatching { QuickNoteWidgetProvider.refreshNow(appCtx) }
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.NOTE_PIN_TOGGLE, true, "id=${updated.id},pin=${updated.pinned}")
                 sendEnvelope(
                     ws,
@@ -1707,9 +1875,12 @@ object DesktopLinkClient {
                     sendEnvelope(ws, LinkMsgType.MUTED_APPS_TOGGLE_RES, env.reqId, MutedAppToggleRes(ok = false, errorMessage = "Invalid packageName"))
                     return
                 }
-                PhantomPrefs.setAppMuted(appCtx, req.packageName.trim(), req.muted)
-                DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.MUTED_APPS_TOGGLE, true, "${req.packageName}=${req.muted}")
-                sendEnvelope(ws, LinkMsgType.MUTED_APPS_TOGGLE_RES, env.reqId, MutedAppToggleRes(ok = true, packageName = req.packageName.trim(), muted = req.muted))
+                val pkg = req.packageName.trim()
+                PhantomPrefs.setAppMuted(appCtx, pkg, req.muted)
+                NotificationCollectorService.invalidateRuleCaches()
+                PhantomSettingsBus.notifyChanged()
+                DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.MUTED_APPS_TOGGLE, true, "$pkg=${req.muted}")
+                sendEnvelope(ws, LinkMsgType.MUTED_APPS_TOGGLE_RES, env.reqId, MutedAppToggleRes(ok = true, packageName = pkg, muted = req.muted))
             }
 
             LinkMsgType.MESSAGES_CONVERSATION -> {
@@ -1734,7 +1905,7 @@ object DesktopLinkClient {
                         id = m.id,
                         packageName = m.packageName,
                         sender = m.sender,
-                        preview = m.content.replace(Regex("\\s+"), " ").trim().take(200),
+                        preview = m.content.replace(WHITESPACE_REGEX, " ").trim().take(200),
                         timestamp = m.timestamp,
                         riskLabel = m.riskLabel,
                         isStarred = m.isStarred,
@@ -1823,15 +1994,16 @@ object DesktopLinkClient {
                         delay(3_000L)
                         runCatching { ringtone?.stop() }
                     }
+                    // TODO(R17): 多語系硬編碼字串抽離至 strings.xml
                     val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
                     val notif = androidx.core.app.NotificationCompat.Builder(appCtx, ProactiveEngine.CHANNEL_ASSISTANT_BRIEFING)
-                        .setSmallIcon(com.phantom.checker.R.drawable.ic_launcher_foreground)
+                        .setSmallIcon(com.phantom.checker.R.drawable.ic_stat_phantom)
                         .setContentTitle("PhantomCheck")
                         .setContentText("Find My Phone")
                         .setAutoCancel(true)
                         .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
                         .build()
-                    nm?.notify(1151, notif)
+                    nm?.notify(NOTIF_ID_FIND_PHONE, notif)
                     true
                 }.getOrDefault(false)
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.FIND_PHONE_RING, ok, "")
@@ -1845,13 +2017,13 @@ object DesktopLinkClient {
                 val ok = if (body.isBlank()) false else runCatching {
                     val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
                     val notif = androidx.core.app.NotificationCompat.Builder(appCtx, ProactiveEngine.CHANNEL_ASSISTANT_BRIEFING)
-                        .setSmallIcon(com.phantom.checker.R.drawable.ic_launcher_foreground)
+                        .setSmallIcon(com.phantom.checker.R.drawable.ic_stat_phantom)
                         .setContentTitle(title)
                         .setContentText(body)
                         .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(body))
                         .setAutoCancel(true)
                         .build()
-                    nm?.notify(1152, notif)
+                    nm?.notify(NOTIF_ID_SEND_PHONE, notif)
                     true
                 }.getOrDefault(false)
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.SEND_PHONE_NOTIF, ok, "len=${body.length}")
@@ -1862,15 +2034,39 @@ object DesktopLinkClient {
                 val req = runCatching { gson.fromJson(env.payloadJson, OpenUrlReq::class.java) }.getOrNull() ?: OpenUrlReq()
                 val url = req.url.trim().take(2048)
                 val validScheme = url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)
+                var openMode = "invalid_url"
                 val ok = if (!validScheme) false else runCatching {
-                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     }
-                    appCtx.startActivity(intent)
-                    true
+                    if (isAppInForeground(appCtx)) {
+                        appCtx.startActivity(intent)
+                        openMode = "opened"
+                        true
+                    } else {
+                        val pi = android.app.PendingIntent.getActivity(
+                            appCtx,
+                            NOTIF_ID_OPEN_URL,
+                            intent,
+                            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+                        )
+                        val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+                        val notif = androidx.core.app.NotificationCompat.Builder(appCtx, ProactiveEngine.CHANNEL_ASSISTANT_BRIEFING)
+                            .setSmallIcon(com.phantom.checker.R.drawable.ic_stat_phantom)
+                            .setContentTitle(appCtx.getString(com.phantom.checker.R.string.link_hub_title))
+                            .setContentText(url)
+                            .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(url))
+                            .setContentIntent(pi)
+                            .setAutoCancel(true)
+                            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                            .build()
+                        nm?.notify(NOTIF_ID_OPEN_URL, notif)
+                        openMode = "notified"
+                        nm != null
+                    }
                 }.getOrDefault(false)
-                DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.OPEN_URL_ON_PEER, ok, if (validScheme) "http_ok" else "blocked_scheme")
-                sendEnvelope(ws, LinkMsgType.OPEN_URL_ON_PEER_RES, env.reqId, CrossEndActionRes(ok = ok, message = if (ok) "opened" else "invalid_url"))
+                DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.OPEN_URL_ON_PEER, ok, if (validScheme) "http_$openMode" else "blocked_scheme")
+                sendEnvelope(ws, LinkMsgType.OPEN_URL_ON_PEER_RES, env.reqId, CrossEndActionRes(ok = ok, message = if (ok) openMode else "invalid_url"))
             }
 
             LinkMsgType.GROUP_REPORTS_LIST -> {
@@ -1900,6 +2096,9 @@ object DesktopLinkClient {
                         dao.updateStatus(id, com.phantom.checker.data.WatchTopicEntity.STATUS_MUTED)
                         mutedCount++
                     }
+                    if (mutedCount > 0) {
+                        WatchTopicEngine.syncSchedule(appCtx)
+                    }
                 }.onFailure { err ->
                     android.util.Log.w("DesktopLinkClient", "WATCH_TOPIC_MUTE failed: ${err.message}", err)
                 }
@@ -1914,6 +2113,15 @@ object DesktopLinkClient {
         }
     }
 
+    private fun isAppInForeground(appCtx: Context): Boolean = runCatching {
+        val am = appCtx.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager ?: return false
+        val myPid = android.os.Process.myPid()
+        am.runningAppProcesses?.any { proc ->
+            proc.pid == myPid &&
+                proc.importance == android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+        } == true
+    }.getOrDefault(false)
+
     private fun ensureMessagePushLoop(appCtx: Context) {
         if (messagePushJob?.isActive == true) return
         messagePushJob = scope.launch {
@@ -1922,17 +2130,15 @@ object DesktopLinkClient {
                 delay(if (isScreenOff) MSG_PUSH_INTERVAL_SCREEN_OFF_MS else MSG_PUSH_INTERVAL_INTERACTIVE_MS)
                 val ws = activeWs ?: break
                 if (!isSubscribedToMessages) break
-                val recent = runCatching { db.messageDao().paged(20, 0) }.getOrDefault(emptyList())
-                if (recent.isEmpty()) continue
-                val newItems = recent.filter { it.id > lastPushedCursor }.sortedBy { it.id }
+                val newItems = runCatching { db.messageDao().afterIdCursor(lastPushedCursor, 50) }.getOrDefault(emptyList())
                 if (newItems.isEmpty()) continue
-                val nextCursor = newItems.maxOf { it.id }
+                val nextCursor = newItems.last().id
                 val dtos = newItems.map { m ->
                     MessageSummaryDto(
                         id = m.id,
                         packageName = m.packageName,
                         sender = m.sender,
-                        preview = m.content.replace(Regex("\\s+"), " ").trim().take(200),
+                        preview = m.content.replace(WHITESPACE_REGEX, " ").trim().take(200),
                         timestamp = m.timestamp,
                         riskLabel = m.riskLabel,
                         isStarred = m.isStarred,
@@ -1983,10 +2189,9 @@ object DesktopLinkClient {
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     private fun pruneExpiredDiscovered(nowMs: Long = System.currentTimeMillis()) {
-        val current = _discoveredDesktops.value
-        val fresh = current.filter { nowMs - it.discoveredAtMs <= MDNS_TTL_MS }
-        if (fresh.size != current.size) {
-            _discoveredDesktops.value = fresh
+        _discoveredDesktops.update { current ->
+            val fresh = current.filter { nowMs - it.discoveredAtMs <= MDNS_TTL_MS }
+            if (fresh.size != current.size) fresh else current
         }
     }
 
@@ -2025,7 +2230,7 @@ object DesktopLinkClient {
 
     private fun handleNetworkChanged(appCtx: Context, event: String) {
         DesktopLinkStore.recordDiagnostic(appCtx, "NET", "NETWORK_$event", "Clearing stale mDNS cache")
-        _discoveredDesktops.value = emptyList()
+        _discoveredDesktops.update { emptyList() }
         synchronized(this) {
             if (discoveryRequested && !isScreenOff) {
                 pauseDiscoveryForScreenOff()
@@ -2037,7 +2242,7 @@ object DesktopLinkClient {
     @Synchronized
     fun rescanNow(ctx: Context) {
         val appCtx = ctx.applicationContext
-        _discoveredDesktops.value = emptyList()
+        _discoveredDesktops.update { emptyList() }
         discoveryRequested = true
         discoveryAppCtx = appCtx
         ensureScreenReceiverRegistered(appCtx)
@@ -2117,8 +2322,9 @@ object DesktopLinkClient {
                             protocolVersion = ver,
                             discoveredAtMs = now
                         )
-                        _discoveredDesktops.value = _discoveredDesktops.value
-                            .filter { now - it.discoveredAtMs <= MDNS_TTL_MS && it.serviceName != item.serviceName } + item
+                        _discoveredDesktops.update { list ->
+                            list.filter { now - it.discoveredAtMs <= MDNS_TTL_MS && it.serviceName != item.serviceName } + item
+                        }
                     }
                     synchronized(resolveLock) { isResolvingService = false }
                     drainResolveQueue(appCtx, mgr)
@@ -2156,7 +2362,7 @@ object DesktopLinkClient {
     }
 
     @Synchronized
-    private fun startDiscoveryInternal(appCtx: Context) {
+    private fun startDiscoveryInternal(appCtx: Context, startRestartLoop: Boolean = true) {
         if (discoveryListener != null) return
         acquireMulticastLock(appCtx)
         runCatching {
@@ -2170,7 +2376,9 @@ object DesktopLinkClient {
                     enqueueServiceResolve(appCtx, mgr, serviceInfo, attempt = 0)
                 }
                 override fun onServiceLost(serviceInfo: NsdServiceInfo) {
-                    _discoveredDesktops.value = _discoveredDesktops.value.filterNot { it.serviceName == serviceInfo.serviceName }
+                    _discoveredDesktops.update { list ->
+                        list.filterNot { it.serviceName == serviceInfo.serviceName }
+                    }
                 }
                 override fun onDiscoveryStopped(serviceType: String) {
                     _isScanningLan.value = false
@@ -2178,7 +2386,7 @@ object DesktopLinkClient {
                 override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
                     _isScanningLan.value = false
                     DesktopLinkStore.recordDiagnostic(appCtx, "mDNS", "DISCOVERY_START_FAILED", "code=$errorCode")
-                    pauseDiscoveryForScreenOff()
+                    stopDiscoveryListenerOnly()
                 }
                 override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
                     _isScanningLan.value = false
@@ -2196,19 +2404,20 @@ object DesktopLinkClient {
                     pruneExpiredDiscovered()
                 }
             }
-            // #516 OEM 省電防卡死：每 35 秒若仍未發現任何電腦且螢幕開啟，安全重啟 discoverServices
-            mdnsRestartJob?.cancel()
-            mdnsRestartJob = scope.launch {
-                while (discoveryRequested && !isScreenOff) {
-                    delay(35_000L)
-                    if (discoveryRequested && !isScreenOff && _discoveredDesktops.value.isEmpty()) {
-                        DesktopLinkStore.recordDiagnostic(appCtx, "mDNS", "PERIODIC_RESTART", "refreshing listener")
-                        pauseDiscoveryForScreenOff()
-                        delay(350L)
-                        if (discoveryRequested && !isScreenOff) {
-                            startDiscoveryInternal(appCtx)
+            // #516 / R6 OEM 省電防卡死：每 35 秒若仍未發現任何電腦且螢幕開啟，僅停止監聽器後重啟（不取消自身 mdnsRestartJob）
+            if (startRestartLoop) {
+                mdnsRestartJob?.cancel()
+                mdnsRestartJob = scope.launch {
+                    while (discoveryRequested && !isScreenOff) {
+                        delay(35_000L)
+                        if (discoveryRequested && !isScreenOff && _discoveredDesktops.value.isEmpty()) {
+                            DesktopLinkStore.recordDiagnostic(appCtx, "mDNS", "PERIODIC_RESTART", "refreshing listener")
+                            stopDiscoveryListenerOnly()
+                            delay(350L)
+                            if (discoveryRequested && !isScreenOff) {
+                                startDiscoveryInternal(appCtx, startRestartLoop = false)
+                            }
                         }
-                        break
                     }
                 }
             }
@@ -2220,11 +2429,9 @@ object DesktopLinkClient {
     }
 
     @Synchronized
-    private fun pauseDiscoveryForScreenOff() {
+    private fun stopDiscoveryListenerOnly() {
         mdnsTtlSweepJob?.cancel()
         mdnsTtlSweepJob = null
-        mdnsRestartJob?.cancel()
-        mdnsRestartJob = null
         _isScanningLan.value = false
         val mgr = nsdManager
         val listener = discoveryListener
@@ -2241,6 +2448,13 @@ object DesktopLinkClient {
                 }
         }
         releaseMulticastLock()
+    }
+
+    @Synchronized
+    private fun pauseDiscoveryForScreenOff() {
+        mdnsRestartJob?.cancel()
+        mdnsRestartJob = null
+        stopDiscoveryListenerOnly()
     }
 
     @Synchronized
