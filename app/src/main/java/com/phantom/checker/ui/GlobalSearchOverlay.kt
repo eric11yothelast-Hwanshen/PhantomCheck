@@ -315,7 +315,6 @@ internal fun PhantomGlobalSearchOverlay(
                                         )
                                         IconButton(
                                             onClick = { UiLayoutPrefs.removeRecentSearch(appCtx, term) },
-                                            modifier = Modifier.size(28.dp),
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Close,

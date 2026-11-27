@@ -103,10 +103,7 @@ object DesktopLinkClient {
     private const val TCP_PROBE_TIMEOUT_MS = 8_000
 
     // 預留通知 ID 區段 1151..1153（避開 NotifIds 1001..1139 與 2000+；NotifIds.kt 不在 R6 單檔範圍內，後續可集中收斂）
-    private const val NOTIF_ID_FIND_PHONE = 1151
-    private const val NOTIF_ID_SEND_PHONE = 1152
-    private const val NOTIF_ID_OPEN_URL = 1153
-
+            
     private val PURE_OTP_DIGITS_REGEX = Regex("^\\d{4,8}$")
     private val WHITESPACE_REGEX = Regex("\\s+")
     private val HEX_COLOR_REGEX = Regex("^#[0-9A-Fa-f]{6}$")
@@ -2002,7 +1999,7 @@ object DesktopLinkClient {
                         .setAutoCancel(true)
                         .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
                         .build()
-                    nm?.notify(NOTIF_ID_FIND_PHONE, notif)
+                    nm?.notify(NotifIds.DESKTOP_FIND_PHONE, notif)
                     true
                 }.getOrDefault(false)
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.FIND_PHONE_RING, ok, "")
@@ -2022,7 +2019,7 @@ object DesktopLinkClient {
                         .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(body))
                         .setAutoCancel(true)
                         .build()
-                    nm?.notify(NOTIF_ID_SEND_PHONE, notif)
+                    nm?.notify(NotifIds.DESKTOP_SEND_PHONE, notif)
                     true
                 }.getOrDefault(false)
                 DesktopLinkStore.recordAuditLog(appCtx, desktopId, LinkMsgType.SEND_PHONE_NOTIF, ok, "len=${body.length}")
@@ -2045,7 +2042,7 @@ object DesktopLinkClient {
                     } else {
                         val pi = android.app.PendingIntent.getActivity(
                             appCtx,
-                            NOTIF_ID_OPEN_URL,
+                            NotifIds.DESKTOP_OPEN_URL,
                             intent,
                             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
                         )
@@ -2059,7 +2056,7 @@ object DesktopLinkClient {
                             .setAutoCancel(true)
                             .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
                             .build()
-                        nm?.notify(NOTIF_ID_OPEN_URL, notif)
+                        nm?.notify(NotifIds.DESKTOP_OPEN_URL, notif)
                         openMode = "notified"
                         nm != null
                     }

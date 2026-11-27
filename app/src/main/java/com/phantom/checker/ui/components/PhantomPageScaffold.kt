@@ -497,7 +497,6 @@ fun PhantomInlineBanner(
             if (onDismiss != null) {
                 IconButton(
                     onClick = onDismiss,
-                    modifier = Modifier.size(36.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Close,

@@ -275,8 +275,7 @@ internal fun NoteCardItem(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             IconButton(
-                                onClick = { onTogglePin(note) },
-                                modifier = Modifier.size(24.dp)
+                                onClick = { onTogglePin(note) }
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Star,
@@ -286,8 +285,7 @@ internal fun NoteCardItem(
                                 )
                             }
                             IconButton(
-                                onClick = { onEdit(note) },
-                                modifier = Modifier.size(24.dp)
+                                onClick = { onEdit(note) }
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Edit,
@@ -297,8 +295,7 @@ internal fun NoteCardItem(
                                 )
                             }
                             IconButton(
-                                onClick = { onDelete(note) },
-                                modifier = Modifier.size(24.dp)
+                                onClick = { onDelete(note) }
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,
