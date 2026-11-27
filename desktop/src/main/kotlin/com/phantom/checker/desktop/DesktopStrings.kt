@@ -197,6 +197,7 @@ object DesktopStrings {
     fun riskLabelText(raw: String): String = when (raw.lowercase()) {
         "scam" -> t("詐騙", "SCAM")
         "suspicious" -> t("可疑", "SUSPICIOUS")
+        "warning" -> t("警示", "WARNING")
         else -> t("安全", "SAFE")
     }
 

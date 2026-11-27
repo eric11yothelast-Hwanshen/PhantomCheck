@@ -223,10 +223,10 @@ fun DesktopHomePage(
 
             // Row B: 4 KPI Cards (clickable to jump to Messages)
             val kpis = listOf(
-                Triple(DesktopStrings.t("總訊息", "Total"), (stats?.total ?: recentMessages.size).toString(), tokens.accentText),
-                Triple(DesktopStrings.t("今日", "Today"), (stats?.today ?: 0).toString(), tokens.success),
-                Triple(DesktopStrings.t("未讀", "Unread"), (stats?.unread ?: recentMessages.count { !it.isRead }).toString(), tokens.warning),
-                Triple(DesktopStrings.t("詐騙", "Scam"), (stats?.scam ?: 0).toString(), tokens.error)
+                Triple(DesktopStrings.statsTotal, (stats?.total ?: recentMessages.size).toString(), tokens.accentText),
+                Triple(DesktopStrings.statsToday, (stats?.today ?: 0).toString(), tokens.success),
+                Triple(DesktopStrings.statsUnread, (stats?.unread ?: recentMessages.count { !it.isRead }).toString(), tokens.warning),
+                Triple(DesktopStrings.statsScam, (stats?.scam ?: 0).toString(), tokens.error)
             )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 kpis.forEach { (label, value, color) ->
@@ -309,12 +309,11 @@ fun DesktopHomePage(
     }
 
     if (showQrDialog) {
-        val (_, bgBottom) = DesktopPalette.bgGradientColors(settings.bgTheme)
         DesktopQrPairingDialog(
             uiState = uiState,
             server = server,
             accentColor = accentColor,
-            containerColor = if (settings.lightTheme) tokens.dialogContainer else bgBottom,
+            containerColor = tokens.dialogContainer,
             animationsEnabled = settings.animationsEnabled,
             onDismiss = { showQrDialog = false }
         )

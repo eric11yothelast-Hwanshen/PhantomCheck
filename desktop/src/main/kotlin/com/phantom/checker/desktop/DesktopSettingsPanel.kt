@@ -33,6 +33,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -45,8 +46,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private enum class SettingsSubTab { CONNECTION, SYSTEM, CUSTOMIZE, ABOUT }
+private val SETTINGS_TIME_FMT = ThreadLocal.withInitial { java.text.SimpleDateFormat("MM/dd HH:mm:ss", java.util.Locale.getDefault()) }
 
 /**
  * #468 / #478 / #488 桌面端設定中心（連線配對＋系統設定＋介面自訂與深淺/動畫＋關於頁）。
@@ -153,7 +156,7 @@ fun DesktopSettingsCenter(
         }
     }
 
-    val timeFmt = remember { java.text.SimpleDateFormat("MM/dd HH:mm:ss", java.util.Locale.getDefault()) }
+    val timeFmt = SETTINGS_TIME_FMT.get()
 
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // #520 Bilingual Settings Search Bar
@@ -242,7 +245,7 @@ fun DesktopSettingsCenter(
                                         DesktopStrings.statusServerStopped
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = if (uiState.connState == LinkConnState.ERROR) DesktopPalette.GlassError else tokens.textPrimary
+                                color = if (uiState.connState == LinkConnState.ERROR) tokens.error else tokens.textPrimary
                             )
                             if (uiState.certFingerprint.isNotBlank()) {
                                 Text(
@@ -261,7 +264,7 @@ fun DesktopSettingsCenter(
                                     DesktopStrings.mdnsFailedLabel
                                 },
                                 style = MaterialTheme.typography.labelSmall,
-                                color = if (mdnsStatus.isAdvertising) DesktopPalette.GlassSuccess else DesktopPalette.GlassWarning
+                                color = if (mdnsStatus.isAdvertising) tokens.success else tokens.warning
                             )
                             if (uiState.localIps.isNotEmpty()) {
                                 Text(
@@ -320,17 +323,17 @@ fun DesktopSettingsCenter(
                                 Text(DesktopStrings.firewallNonWindows, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
                             } else {
                                 if (!fw.error.isNullOrBlank()) {
-                                    Text(fw.error, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.GlassError)
+                                    Text(fw.error, style = MaterialTheme.typography.bodySmall, color = tokens.error)
                                 } else {
                                     Text(
                                         text = if (fw.portRulePresent) DesktopStrings.firewallPortRuleOk(fw.port) else DesktopStrings.firewallPortRuleMissing(fw.port),
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = if (fw.portRulePresent) DesktopPalette.GlassSuccess else DesktopPalette.GlassError
+                                        color = if (fw.portRulePresent) tokens.success else tokens.error
                                     )
                                     Text(
                                         text = if (fw.programRulePresent) DesktopStrings.firewallProgRuleOk else DesktopStrings.firewallProgRuleMissing,
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (fw.programRulePresent) DesktopPalette.GlassSuccess else tokens.textMuted
+                                        color = if (fw.programRulePresent) tokens.success else tokens.textMuted
                                     )
                                     if (fw.profiles.isNotEmpty()) {
                                         val profText = fw.profiles.joinToString("  |  ") { p ->
@@ -348,7 +351,7 @@ fun DesktopSettingsCenter(
                                         Text(
                                             text = DesktopStrings.firewallPublicWarning,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = DesktopPalette.GlassWarning
+                                            color = tokens.warning
                                         )
                                     }
                                 }
@@ -412,7 +415,7 @@ fun DesktopSettingsCenter(
                                     text = if (remSec > 0L) pairCodePair.first else "------",
                                     style = MaterialTheme.typography.headlineSmall,
                                     fontFamily = FontFamily.Monospace,
-                                    color = if (remSec > 0L) accentColor else DesktopPalette.GlassError
+                                    color = if (remSec > 0L) accentColor else tokens.error
                                 )
                                 Text(
                                     text = if (remSec > 0L) {
@@ -421,7 +424,7 @@ fun DesktopSettingsCenter(
                                         DesktopStrings.pairCodeExpired
                                     },
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = if (remSec > 0L) tokens.textSecondary else DesktopPalette.GlassError
+                                    color = if (remSec > 0L) tokens.textSecondary else tokens.error
                                 )
                                 Spacer(Modifier.weight(1f))
                                 SpringOutlinedButton(
@@ -432,12 +435,11 @@ fun DesktopSettingsCenter(
                         }
                     }
                     if (showQrDialog) {
-                        val (_, bgBottom) = DesktopPalette.bgGradientColors(settings.bgTheme)
                         DesktopQrPairingDialog(
                             uiState = uiState,
                             server = server,
                             accentColor = accentColor,
-                            containerColor = bgBottom,
+                            containerColor = tokens.dialogContainer,
                             animationsEnabled = settings.animationsEnabled,
                             onDismiss = { showQrDialog = false }
                         )
@@ -452,7 +454,7 @@ fun DesktopSettingsCenter(
                                     SpringOutlinedButton(
                                         onClick = { server.clearAllPairings() },
                                         animationsEnabled = settings.animationsEnabled
-                                    ) { Text(DesktopStrings.unpairBtn, color = DesktopPalette.GlassError) }
+                                    ) { Text(DesktopStrings.unpairBtn, color = tokens.error) }
                                 }
                             }
                             if (uiState.pairedPhones.isEmpty()) {
@@ -466,7 +468,7 @@ fun DesktopSettingsCenter(
                                             Text(
                                                 text = "${if (isOnline) "● " else ""}${phone.name}",
                                                 style = MaterialTheme.typography.bodyMedium,
-                                                color = if (isOnline) DesktopPalette.GlassSuccess else tokens.textPrimary
+                                                color = if (isOnline) tokens.success else tokens.textPrimary
                                             )
                                             Text(
                                                 text = "${phone.instanceId.take(8)}… · ${timeFmt.format(java.util.Date(phone.lastSeenAt))}",
@@ -478,7 +480,7 @@ fun DesktopSettingsCenter(
                                         SpringOutlinedButton(
                                             onClick = { server.revokePhone(phone.instanceId) },
                                             animationsEnabled = settings.animationsEnabled
-                                        ) { Text(DesktopStrings.remove, color = DesktopPalette.GlassError) }
+                                        ) { Text(DesktopStrings.remove, color = tokens.error) }
                                     }
                                 }
                             }
@@ -505,7 +507,7 @@ fun DesktopSettingsCenter(
                                         text = "${timeFmt.format(java.util.Date(entry.timestamp))} · $mark ${entry.event} ${entry.detail}".trim(),
                                         style = MaterialTheme.typography.labelSmall,
                                         fontFamily = FontFamily.Monospace,
-                                        color = if (entry.ok) tokens.textSecondary else DesktopPalette.GlassError
+                                        color = if (entry.ok) tokens.textSecondary else tokens.error
                                     )
                                 }
                             }
@@ -582,7 +584,7 @@ fun DesktopSettingsCenter(
                                             val badgeColor = when (trackStatus) {
                                                 DesktopSettingsStore.AutoStartStatus.ENABLED -> tokens.success
                                                 DesktopSettingsStore.AutoStartStatus.DISABLED_BY_TASK_MANAGER,
-                                                DesktopSettingsStore.AutoStartStatus.PATH_MISMATCH -> DesktopPalette.GlassWarning
+                                                DesktopSettingsStore.AutoStartStatus.PATH_MISMATCH -> tokens.warning
                                                 DesktopSettingsStore.AutoStartStatus.ERROR -> tokens.error
                                                 else -> tokens.textMuted
                                             }
@@ -607,12 +609,12 @@ fun DesktopSettingsCenter(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(DesktopPalette.GlassWarning.copy(alpha = 0.14f))
-                                        .border(1.dp, DesktopPalette.GlassWarning.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
+                                        .background(tokens.warning.copy(alpha = 0.14f))
+                                        .border(1.dp, tokens.warning.copy(alpha = 0.45f), RoundedCornerShape(10.dp))
                                         .padding(12.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text(DesktopStrings.autoStartDisabledByTaskMgrTitle, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = DesktopPalette.GlassWarning)
+                                    Text(DesktopStrings.autoStartDisabledByTaskMgrTitle, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = tokens.warning)
                                     Text(DesktopStrings.autoStartDisabledByTaskMgrDesc, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         SpringOutlinedButton(
@@ -637,12 +639,12 @@ fun DesktopSettingsCenter(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
-                                        .background(DesktopPalette.GlassWarning.copy(alpha = 0.14f))
+                                        .background(tokens.warning.copy(alpha = 0.14f))
                                         .padding(10.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(DesktopStrings.autoStartPathMismatchDesc, style = MaterialTheme.typography.bodySmall, color = DesktopPalette.GlassWarning, modifier = Modifier.weight(1f))
+                                    Text(DesktopStrings.autoStartPathMismatchDesc, style = MaterialTheme.typography.bodySmall, color = tokens.warning, modifier = Modifier.weight(1f))
                                     TextButton(onClick = {
                                         scope.launch {
                                             val res = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -711,16 +713,35 @@ fun DesktopSettingsCenter(
                                 )
                             }
                             if (settings.toastEnabled) {
+                                // #529 / #550 Local slider draft states (persist to disk only on onValueChangeFinished)
+                                var toastDurationDraft by remember(settings.toastDurationSec) {
+                                    mutableFloatStateOf(settings.toastDurationSec.coerceIn(3, 20).toFloat())
+                                }
+                                var toastScrimDraft by remember(settings.toastBgScrimAlpha) {
+                                    mutableFloatStateOf(settings.toastBgScrimAlpha.coerceIn(0.30f, 0.90f))
+                                }
+                                var toastWidthDraft by remember(settings.toastWidthDp) {
+                                    mutableFloatStateOf(settings.toastWidthDp.coerceIn(280, 480).toFloat())
+                                }
+                                var toastHeightDraft by remember(settings.toastHeightDp) {
+                                    mutableFloatStateOf(settings.toastHeightDp.coerceIn(84, 180).toFloat())
+                                }
+                                var toastVolumeDraft by remember(settings.toastSoundVolume) {
+                                    mutableFloatStateOf(settings.toastSoundVolume.coerceIn(0f, 1f))
+                                }
+
                                 // #529 Duration slider 3..20s (backward-compatible with legacy 3|5|8 values)
                                 Text(
-                                    DesktopStrings.toastDurationSliderLabel(settings.toastDurationSec.coerceIn(3, 20)),
+                                    DesktopStrings.toastDurationSliderLabel(toastDurationDraft.roundToInt().coerceIn(3, 20)),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = tokens.textMuted
                                 )
                                 Slider(
-                                    value = settings.toastDurationSec.coerceIn(3, 20).toFloat(),
-                                    onValueChange = { v ->
-                                        DesktopSettingsStore.update { it.copy(toastDurationSec = v.toInt().coerceIn(3, 20)) }
+                                    value = toastDurationDraft,
+                                    onValueChange = { v -> toastDurationDraft = v.coerceIn(3f, 20f) },
+                                    onValueChangeFinished = {
+                                        val committed = toastDurationDraft.roundToInt().coerceIn(3, 20)
+                                        DesktopSettingsStore.update { it.copy(toastDurationSec = committed) }
                                     },
                                     valueRange = 3f..20f,
                                     steps = 16
@@ -734,23 +755,20 @@ fun DesktopSettingsCenter(
                                     if (path.isBlank()) null else runCatching {
                                         val file = java.io.File(path)
                                         if (file.exists() && file.isFile && file.length() <= 5L * 1024L * 1024L) {
-                                            org.jetbrains.skia.Image.makeFromEncoded(file.readBytes()).toComposeImageBitmap()
+                                            org.jetbrains.skia.Image.makeFromEncoded(file.readBytes()).use { it.toComposeImageBitmap() }
                                         } else null
                                     }.onFailure { err ->
                                         DesktopDiagnostics.warn("ToastPreview", "Failed decoding preview bg: ${err.message}")
                                     }.getOrNull()
                                 }
                                 val previewTextColor = remember(settings.toastTextColorHex, tokens.textPrimary) {
-                                    val hex = settings.toastTextColorHex.trim().removePrefix("#")
-                                    if (hex.length == 6) {
-                                        runCatching { Color(0xFF000000.toInt() or hex.toInt(16)) }.getOrNull() ?: tokens.textPrimary
-                                    } else tokens.textPrimary
+                                    DesktopPalette.parseHexColor(settings.toastTextColorHex) ?: tokens.textPrimary
                                 }
-                                val previewScrim = settings.toastBgScrimAlpha.coerceIn(0.30f, 0.90f)
+                                val previewScrim = toastScrimDraft.coerceIn(0.30f, 0.90f)
                                 Box(
                                     modifier = Modifier
-                                        .width((settings.toastWidthDp.coerceIn(280, 480) * 0.72f).dp)
-                                        .height((settings.toastHeightDp.coerceIn(84, 180) * 0.78f).dp)
+                                        .width((toastWidthDraft.roundToInt().coerceIn(280, 480) * 0.72f).dp)
+                                        .height((toastHeightDraft.roundToInt().coerceIn(84, 180) * 0.78f).dp)
                                         .clip(RoundedCornerShape(12.dp))
                                         .background(tokens.popupBg)
                                         .border(1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
@@ -802,7 +820,7 @@ fun DesktopSettingsCenter(
                                                 .padding(horizontal = 4.dp, vertical = 1.dp)
                                         ) {
                                             Text(
-                                                text = "${settings.toastDurationSec.coerceIn(3, 20)}s",
+                                                text = "${toastDurationDraft.roundToInt().coerceIn(3, 20)}s",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = previewTextColor.copy(alpha = 0.9f)
                                             )
@@ -871,14 +889,16 @@ fun DesktopSettingsCenter(
 
                                 // #529 Scrim opacity slider (0.30..0.90)
                                 Text(
-                                    "${DesktopStrings.toastScrimLabel}: ${(settings.toastBgScrimAlpha.coerceIn(0.30f, 0.90f) * 100).toInt()}%",
+                                    "${DesktopStrings.toastScrimLabel}: ${(toastScrimDraft.coerceIn(0.30f, 0.90f) * 100).roundToInt()}%",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = tokens.textMuted
                                 )
                                 Slider(
-                                    value = settings.toastBgScrimAlpha.coerceIn(0.30f, 0.90f),
-                                    onValueChange = { v ->
-                                        DesktopSettingsStore.update { it.copy(toastBgScrimAlpha = v.coerceIn(0.30f, 0.90f)) }
+                                    value = toastScrimDraft,
+                                    onValueChange = { v -> toastScrimDraft = v.coerceIn(0.30f, 0.90f) },
+                                    onValueChangeFinished = {
+                                        val committed = toastScrimDraft.coerceIn(0.30f, 0.90f)
+                                        DesktopSettingsStore.update { it.copy(toastBgScrimAlpha = committed) }
                                     },
                                     valueRange = 0.30f..0.90f
                                 )
@@ -919,17 +939,25 @@ fun DesktopSettingsCenter(
                                     }
                                 }
 
-                                Text("${DesktopStrings.toastSizeLabel}: ${settings.toastWidthDp} × ${settings.toastHeightDp}", style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                Text("${DesktopStrings.toastSizeLabel}: ${toastWidthDraft.roundToInt()} × ${toastHeightDraft.roundToInt()}", style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                                     Slider(
-                                        value = settings.toastWidthDp.toFloat(),
-                                        onValueChange = { v -> DesktopSettingsStore.update { it.copy(toastWidthDp = v.toInt().coerceIn(280, 480)) } },
+                                        value = toastWidthDraft,
+                                        onValueChange = { v -> toastWidthDraft = v.coerceIn(280f, 480f) },
+                                        onValueChangeFinished = {
+                                            val committed = toastWidthDraft.roundToInt().coerceIn(280, 480)
+                                            DesktopSettingsStore.update { it.copy(toastWidthDp = committed) }
+                                        },
                                         valueRange = 280f..480f,
                                         modifier = Modifier.weight(1f)
                                     )
                                     Slider(
-                                        value = settings.toastHeightDp.toFloat(),
-                                        onValueChange = { v -> DesktopSettingsStore.update { it.copy(toastHeightDp = v.toInt().coerceIn(84, 180)) } },
+                                        value = toastHeightDraft,
+                                        onValueChange = { v -> toastHeightDraft = v.coerceIn(84f, 180f) },
+                                        onValueChangeFinished = {
+                                            val committed = toastHeightDraft.roundToInt().coerceIn(84, 180)
+                                            DesktopSettingsStore.update { it.copy(toastHeightDp = committed) }
+                                        },
                                         valueRange = 84f..180f,
                                         modifier = Modifier.weight(1f)
                                     )
@@ -970,10 +998,14 @@ fun DesktopSettingsCenter(
                                         )
                                     }
                                 }
-                                Text("${DesktopStrings.toastSoundVolumeLabel}: ${(settings.toastSoundVolume * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
+                                Text("${DesktopStrings.toastSoundVolumeLabel}: ${(toastVolumeDraft * 100).roundToInt()}%", style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
                                 Slider(
-                                    value = settings.toastSoundVolume,
-                                    onValueChange = { v -> DesktopSettingsStore.update { it.copy(toastSoundVolume = v.coerceIn(0f, 1f)) } },
+                                    value = toastVolumeDraft,
+                                    onValueChange = { v -> toastVolumeDraft = v.coerceIn(0f, 1f) },
+                                    onValueChangeFinished = {
+                                        val committed = toastVolumeDraft.coerceIn(0f, 1f)
+                                        DesktopSettingsStore.update { it.copy(toastSoundVolume = committed) }
+                                    },
                                     valueRange = 0f..1f
                                 )
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1361,7 +1393,7 @@ fun DesktopSettingsCenter(
                                 ) { Text(DesktopStrings.todoSave) }
                             }
                             if (hexInvalid) {
-                                Text(DesktopStrings.custCustomHexInvalid, style = MaterialTheme.typography.labelSmall, color = DesktopPalette.GlassError)
+                                Text(DesktopStrings.custCustomHexInvalid, style = MaterialTheme.typography.labelSmall, color = tokens.error)
                             }
                         }
                     }
@@ -1564,26 +1596,40 @@ fun DesktopSettingsCenter(
                                 }
                             }
                             HorizontalDivider(color = tokens.border)
-                            // #488 Surface Opacity Slider (0.55..0.96)
+                            // #488 / #550 Surface Opacity Slider (0.55..0.96, persist on finish)
+                            var surfaceOpacityDraft by remember(settings.surfaceOpacity) {
+                                mutableFloatStateOf(settings.surfaceOpacity.coerceIn(0.55f, 0.96f))
+                            }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text(DesktopStrings.custSurfaceOpacityTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary, modifier = Modifier.weight(1f))
-                                Text("${(settings.surfaceOpacity * 100f).toInt()}%", style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace, color = accentColor)
+                                Text("${(surfaceOpacityDraft * 100f).roundToInt()}%", style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace, color = accentColor)
                             }
                             Slider(
-                                value = settings.surfaceOpacity,
-                                onValueChange = { v -> DesktopSettingsStore.update { it.copy(surfaceOpacity = v.coerceIn(0.55f, 0.96f)) } },
+                                value = surfaceOpacityDraft,
+                                onValueChange = { v -> surfaceOpacityDraft = v.coerceIn(0.55f, 0.96f) },
+                                onValueChangeFinished = {
+                                    val committed = surfaceOpacityDraft.coerceIn(0.55f, 0.96f)
+                                    DesktopSettingsStore.update { it.copy(surfaceOpacity = committed) }
+                                },
                                 valueRange = 0.55f..0.96f,
                                 modifier = Modifier.fillMaxWidth()
                             )
                             HorizontalDivider(color = tokens.border)
-                            // #488 Background Dim / Scrim Depth Slider (0.15..0.85)
+                            // #488 / #550 Background Dim / Scrim Depth Slider (0.15..0.85, persist on finish)
+                            var bgScrimDraft by remember(settings.bgScrimAlpha) {
+                                mutableFloatStateOf(settings.bgScrimAlpha.coerceIn(0.15f, 0.85f))
+                            }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text(DesktopStrings.custBgScrimTitle, style = MaterialTheme.typography.titleSmall, color = tokens.textPrimary, modifier = Modifier.weight(1f))
-                                Text("${(settings.bgScrimAlpha * 100f).toInt()}%", style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace, color = accentColor)
+                                Text("${(bgScrimDraft * 100f).roundToInt()}%", style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace, color = accentColor)
                             }
                             Slider(
-                                value = settings.bgScrimAlpha,
-                                onValueChange = { v -> DesktopSettingsStore.update { it.copy(bgScrimAlpha = v.coerceIn(0.15f, 0.85f)) } },
+                                value = bgScrimDraft,
+                                onValueChange = { v -> bgScrimDraft = v.coerceIn(0.15f, 0.85f) },
+                                onValueChangeFinished = {
+                                    val committed = bgScrimDraft.coerceIn(0.15f, 0.85f)
+                                    DesktopSettingsStore.update { it.copy(bgScrimAlpha = committed) }
+                                },
                                 valueRange = 0.15f..0.85f,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -1739,7 +1785,7 @@ fun DesktopSettingsCenter(
                             if (loadingReleases) {
                                 Text(DesktopStrings.aboutLoadingNotes, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
                             } else if (!releasesError.isNullOrBlank()) {
-                                Text(releasesError.orEmpty(), style = MaterialTheme.typography.bodySmall, color = DesktopPalette.GlassError)
+                                Text(releasesError.orEmpty(), style = MaterialTheme.typography.bodySmall, color = tokens.error)
                             } else if (recentReleases.isEmpty()) {
                                 Text(DesktopStrings.updateNoNotes, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
                             } else {

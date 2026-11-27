@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.NetworkInterface
+import java.util.concurrent.atomic.AtomicLong
 import javax.jmdns.JmDNS
 import javax.jmdns.ServiceInfo
 
@@ -18,36 +19,36 @@ data class MdnsBroadcastStatus(
 )
 
 /**
- * #476 桌面端 JmDNS 3.6.5 區網廣播（_phantomcheck._tcp.local.）：
+ * #476 / #550 桌面端 JmDNS 3.6.5 區網廣播（_phantomcheck._tcp.local.）：
  * - TXT 記錄帶 fn=<電腦名稱>、fp=<憑證指紋前8碼>、v=2
  * - 支援列出所有 site-local IPv4 位址供多網卡環境選擇
+ * - 以 generation 計數器與 lifecycleLock 防止重複 start()/stop() 競態洩漏 JmDNS 實例
  */
 class DesktopMdnsBroadcaster {
 
     private val _status = MutableStateFlow(MdnsBroadcastStatus())
     val status: StateFlow<MdnsBroadcastStatus> = _status.asStateFlow()
 
+    private val lifecycleLock = Any()
+    private val generation = AtomicLong(0L)
+
     @Volatile
     private var jmdns: JmDNS? = null
 
-    @Volatile
-    private var stopped = false
-
     private val serviceType = "${LinkProtocol.MDNS_SERVICE_TYPE}local."
-    private val nonHostCharsRegex = Regex("[^A-Za-z0-9_-]")
 
     fun start(port: Int, fingerprint: String, desktopName: String) {
         stop()
-        stopped = false
+        val myGen = generation.incrementAndGet()
         Thread {
             runCatching {
                 val bindAddr = findPreferredSiteLocalIpv4()
                 val instance = if (bindAddr != null) JmDNS.create(bindAddr) else JmDNS.create()
-                if (stopped) {
+                if (generation.get() != myGen) {
                     runCatching { instance.close() }
                     return@runCatching
                 }
-                val cleanHost = desktopName.replace(nonHostCharsRegex, "").take(16).ifBlank { "PC" }
+                val cleanHost = desktopName.replace(NON_HOST_CHARS_REGEX, "").take(16).ifBlank { "PC" }
                 val svcName = "PhantomCheck-$cleanHost"
                 val txtProps = mapOf(
                     "fn" to desktopName.take(28),
@@ -56,7 +57,22 @@ class DesktopMdnsBroadcaster {
                 )
                 val info = ServiceInfo.create(serviceType, svcName, port, 0, 0, true, txtProps)
                 instance.registerService(info)
-                jmdns = instance
+                val stale = synchronized(lifecycleLock) {
+                    if (generation.get() != myGen) {
+                        true
+                    } else {
+                        val prev = jmdns
+                        jmdns = instance
+                        if (prev != null && prev !== instance) {
+                            runCatching { prev.unregisterAllServices(); prev.close() }
+                        }
+                        false
+                    }
+                }
+                if (stale) {
+                    runCatching { instance.unregisterAllServices(); instance.close() }
+                    return@runCatching
+                }
                 val ipText = bindAddr?.hostAddress ?: listSiteLocalIpv4Addresses().firstOrNull().orEmpty()
                 _status.value = MdnsBroadcastStatus(
                     isAdvertising = true,
@@ -66,6 +82,7 @@ class DesktopMdnsBroadcaster {
                 )
                 DesktopDiagnostics.info("mDNS", "Registered persistent $svcName ($serviceType) on $ipText:$port (v=${LinkProtocol.PROTOCOL_VERSION}, fp=${fingerprint.take(8)})")
             }.onFailure { err ->
+                if (generation.get() != myGen) return@onFailure
                 val msg = err.message ?: err.javaClass.simpleName
                 DesktopDiagnostics.warn("mDNS", "Broadcast registration failed: $msg")
                 _status.value = MdnsBroadcastStatus(
@@ -83,9 +100,12 @@ class DesktopMdnsBroadcaster {
     }
 
     fun stop() {
-        stopped = true
-        val inst = jmdns
-        jmdns = null
+        val inst = synchronized(lifecycleLock) {
+            generation.incrementAndGet()
+            val cur = jmdns
+            jmdns = null
+            cur
+        }
         _status.value = _status.value.copy(isAdvertising = false)
         if (inst != null) {
             Thread {
@@ -104,6 +124,7 @@ class DesktopMdnsBroadcaster {
     }
 
     companion object {
+        private val NON_HOST_CHARS_REGEX = Regex("[^A-Za-z0-9_-]")
         fun listSiteLocalIpv4Addresses(): List<String> {
             return runCatching {
                 val result = mutableListOf<String>()

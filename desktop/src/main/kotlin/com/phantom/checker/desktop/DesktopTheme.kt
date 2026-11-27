@@ -29,7 +29,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -78,7 +77,8 @@ data class DesktopThemeTokens(
     val selectedBg: Color,
     val disabledAlpha: Float,
     val isLight: Boolean,
-    val isHighContrast: Boolean
+    val isHighContrast: Boolean,
+    val cardCornerDp: Dp = 16.dp
 ) {
     companion object {
         val Default = from(DesktopSettings())
@@ -189,7 +189,8 @@ data class DesktopThemeTokens(
                     selectedBg = accent.copy(alpha = if (hc) 0.22f else 0.14f),
                     disabledAlpha = if (hc) 0.55f else 0.38f,
                     isLight = true,
-                    isHighContrast = hc
+                    isHighContrast = hc,
+                    cardCornerDp = settings.messageCardCornerDp.dp
                 )
             }
             val surfBase = if (hc) Color(0xFF0F1626) else Color(0xFF182032)
@@ -222,7 +223,8 @@ data class DesktopThemeTokens(
                 selectedBg = accent.copy(alpha = if (hc) 0.28f else 0.18f),
                 disabledAlpha = if (hc) 0.55f else 0.38f,
                 isLight = false,
-                isHighContrast = hc
+                isHighContrast = hc,
+                cardCornerDp = settings.messageCardCornerDp.dp
             )
         }
     }
@@ -264,7 +266,8 @@ fun ProvideDesktopTheme(
         settings.bgTheme,
         settings.lightTheme,
         settings.accentPreset,
-        settings.customAccentHex
+        settings.customAccentHex,
+        settings.messageCardCornerDp
     ) { DesktopThemeTokens.from(settings) }
     val motion = remember(settings.animationMode) { DesktopMotionProfile(settings.animationMode) }
     androidx.compose.runtime.CompositionLocalProvider(
@@ -395,7 +398,7 @@ object DesktopPalette {
         return runCatching {
             val file = File(path)
             if (!file.exists() || !file.isFile) return null
-            SkiaImage.makeFromEncoded(file.readBytes()).toComposeImageBitmap()
+            SkiaImage.makeFromEncoded(file.readBytes()).use { it.toComposeImageBitmap() }
         }.getOrNull()
     }
 }
@@ -416,10 +419,9 @@ fun GlassCard(
     cornerDp: Dp? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val s by DesktopSettingsStore.state.collectAsState()
     val tokens = LocalDesktopTokens.current
     val resolvedBg = containerColor ?: tokens.surface
-    val resolvedCorner = cornerDp ?: s.messageCardCornerDp.dp
+    val resolvedCorner = cornerDp ?: tokens.cardCornerDp
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(resolvedCorner),
@@ -439,10 +441,11 @@ fun SpringButton(
     containerColor: Color? = null,
     content: @Composable RowScope.() -> Unit
 ) {
+    val motion = LocalDesktopMotion.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (animationsEnabled && pressed && enabled) 0.97f else 1f,
+        targetValue = if (animationsEnabled && motion.allowPressScale && pressed && enabled) 0.97f else 1f,
         animationSpec = DesktopSpringFloat,
         label = "btn_scale"
     )
@@ -469,10 +472,11 @@ fun SpringOutlinedButton(
     content: @Composable RowScope.() -> Unit
 ) {
     val tokens = LocalDesktopTokens.current
+    val motion = LocalDesktopMotion.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (animationsEnabled && pressed && enabled) 0.97f else 1f,
+        targetValue = if (animationsEnabled && motion.allowPressScale && pressed && enabled) 0.97f else 1f,
         animationSpec = DesktopSpringFloat,
         label = "outlined_btn_scale"
     )

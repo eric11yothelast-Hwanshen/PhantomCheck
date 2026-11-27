@@ -210,8 +210,10 @@ fun DesktopStatsCharts(
                 }
                 val scam = stats.scam.coerceAtLeast(0)
                 val susp = stats.suspicious.coerceAtLeast(0)
-                val safe = (stats.total - scam - susp).coerceAtLeast(0)
-                val sum = (safe + susp + scam).coerceAtLeast(1).toFloat()
+                val warn = stats.warning.coerceAtLeast(0)
+                val safe = (stats.total - scam - susp - warn).coerceAtLeast(0)
+                val sum = (safe + warn + susp + scam).coerceAtLeast(1).toFloat()
+                val warnColor = tokens.warning.copy(alpha = 0.72f)
 
                 Canvas(
                     modifier = Modifier
@@ -220,18 +222,22 @@ fun DesktopStatsCharts(
                         .clip(RoundedCornerShape(8.dp))
                 ) {
                     val wSafe = size.width * (safe / sum)
+                    val wWarn = size.width * (warn / sum)
                     val wSusp = size.width * (susp / sum)
                     val wScam = size.width * (scam / sum)
                     drawRect(tokens.success, Offset(0f, 0f), Size(wSafe, size.height))
-                    drawRect(tokens.warning, Offset(wSafe, 0f), Size(wSusp, size.height))
-                    drawRect(tokens.error, Offset(wSafe + wSusp, 0f), Size(wScam, size.height))
+                    drawRect(warnColor, Offset(wSafe, 0f), Size(wWarn, size.height))
+                    drawRect(tokens.warning, Offset(wSafe + wWarn, 0f), Size(wSusp, size.height))
+                    drawRect(tokens.error, Offset(wSafe + wWarn + wSusp, 0f), Size(wScam, size.height))
                 }
 
                 val safePct = ((safe * 100f) / sum).toInt()
+                val warnPct = ((warn * 100f) / sum).toInt()
                 val suspPct = ((susp * 100f) / sum).toInt()
                 val scamPct = ((scam * 100f) / sum).toInt()
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     RiskLegendDot(tokens.success, "${DesktopStrings.riskLabelText("safe")}: $safe ($safePct%)")
+                    RiskLegendDot(warnColor, "${DesktopStrings.riskLabelText("warning")}: $warn ($warnPct%)")
                     RiskLegendDot(tokens.warning, "${DesktopStrings.riskLabelText("suspicious")}: $susp ($suspPct%)")
                     RiskLegendDot(tokens.error, "${DesktopStrings.riskLabelText("scam")}: $scam ($scamPct%)")
                 }

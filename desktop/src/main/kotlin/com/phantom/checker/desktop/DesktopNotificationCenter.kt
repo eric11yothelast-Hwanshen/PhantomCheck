@@ -59,6 +59,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
@@ -90,6 +91,10 @@ import java.awt.Rectangle
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -186,17 +191,20 @@ object DesktopNotificationBus {
         _latestFloatingBubble.value = null
     }
 
-    fun clearFloatingBadge() {
-        _floatingUnreadBadge.value = 0
-    }
-
+    private val busLock = Any()
     private val toastMinuteWindow = ArrayDeque<Long>()
     private val floatingMinuteWindow = ArrayDeque<Long>()
     private var aggWindowStartMs: Long = 0L
     private var aggCount: Int = 0
     private var aggLastEvent: MirrorNotificationEvent? = null
 
-    private fun allowUnderPerMinuteCap(window: ArrayDeque<Long>, maxPerMin: Int, nowMs: Long): Boolean {
+    fun clearFloatingBadge() {
+        synchronized(busLock) {
+            _floatingUnreadBadge.value = 0
+        }
+    }
+
+    private fun allowUnderPerMinuteCapLocked(window: ArrayDeque<Long>, maxPerMin: Int, nowMs: Long): Boolean {
         if (maxPerMin <= 0) return true
         while (window.isNotEmpty() && nowMs - window.first() > 60_000L) {
             window.removeFirst()
@@ -226,16 +234,32 @@ object DesktopNotificationBus {
         )
 
         val dndOrPaused = settings.isEffectiveDndNow() || isPausedNow(nowMs)
+        val toastAllowedByStar = !settings.toastOnlyStarred || msg.isStarred
+        val floatingAllowedByStar = !settings.floatingOnlyStarred || msg.isStarred
 
-        // A. In-app top banner
-        if (!dndOrPaused && settings.bannerEnabled && (settings.mirrorMode == MirrorDisplayMode.BANNER || settings.mirrorMode == MirrorDisplayMode.BOTH || settings.mirrorMode == MirrorDisplayMode.COMBO)) {
-            _latestBanner.value = event
+        // Non-blocking fullscreen check (returns cached state and refreshes asynchronously if stale)
+        val isFullscreen = if (!dndOrPaused && toastAllowedByStar && settings.toastEnabled &&
+            (settings.mirrorMode == MirrorDisplayMode.TOAST || settings.mirrorMode == MirrorDisplayMode.BOTH || settings.mirrorMode == MirrorDisplayMode.COMBO)
+        ) {
+            DesktopFullscreenDetector.isFullscreenAppActive()
+        } else {
+            false
         }
 
-        // B. Bottom-right desktop toast (suppressed in DND/paused or fullscreen, respects #513 frequency & aggregation)
-        val toastAllowedByStar = !settings.toastOnlyStarred || msg.isStarred
-        if (!dndOrPaused && toastAllowedByStar && settings.toastEnabled && (settings.mirrorMode == MirrorDisplayMode.TOAST || settings.mirrorMode == MirrorDisplayMode.BOTH || settings.mirrorMode == MirrorDisplayMode.COMBO)) {
-            if (!DesktopFullscreenDetector.isFullscreenAppActive()) {
+        var shouldPlaySound = false
+
+        synchronized(busLock) {
+            // A. In-app top banner
+            if (!dndOrPaused && settings.bannerEnabled &&
+                (settings.mirrorMode == MirrorDisplayMode.BANNER || settings.mirrorMode == MirrorDisplayMode.BOTH || settings.mirrorMode == MirrorDisplayMode.COMBO)
+            ) {
+                _latestBanner.value = event
+            }
+
+            // B. Bottom-right desktop toast (suppressed in DND/paused or fullscreen, respects #513 frequency & aggregation)
+            if (!dndOrPaused && !isFullscreen && toastAllowedByStar && settings.toastEnabled &&
+                (settings.mirrorMode == MirrorDisplayMode.TOAST || settings.mirrorMode == MirrorDisplayMode.BOTH || settings.mirrorMode == MirrorDisplayMode.COMBO)
+            ) {
                 val aggMin = settings.toastAggregateMinutes.coerceIn(0, 15)
                 if (aggMin > 0) {
                     val aggMs = aggMin * 60_000L
@@ -243,9 +267,9 @@ object DesktopNotificationBus {
                         aggWindowStartMs = nowMs
                         aggCount = 1
                         aggLastEvent = event
-                        if (allowUnderPerMinuteCap(toastMinuteWindow, settings.toastMaxPerMinute, nowMs)) {
+                        if (allowUnderPerMinuteCapLocked(toastMinuteWindow, settings.toastMaxPerMinute, nowMs)) {
                             _latestToast.value = event
-                            if (settings.notificationSoundEnabled) DesktopSoundPlayer.play(settings)
+                            shouldPlaySound = settings.notificationSoundEnabled
                         }
                     } else if (nowMs - aggWindowStartMs >= aggMs) {
                         val total = aggCount + 1
@@ -256,32 +280,36 @@ object DesktopNotificationBus {
                             sender = DesktopStrings.toastAggregatedTitle,
                             preview = DesktopStrings.toastAggregatedBody(total)
                         )
-                        if (allowUnderPerMinuteCap(toastMinuteWindow, settings.toastMaxPerMinute, nowMs)) {
+                        if (allowUnderPerMinuteCapLocked(toastMinuteWindow, settings.toastMaxPerMinute, nowMs)) {
                             _latestToast.value = summaryEvent
-                            if (settings.notificationSoundEnabled) DesktopSoundPlayer.play(settings)
+                            shouldPlaySound = settings.notificationSoundEnabled
                         }
                     } else {
                         aggCount++
                         aggLastEvent = event
                     }
-                } else if (allowUnderPerMinuteCap(toastMinuteWindow, settings.toastMaxPerMinute, nowMs)) {
+                } else if (allowUnderPerMinuteCapLocked(toastMinuteWindow, settings.toastMaxPerMinute, nowMs)) {
                     _latestToast.value = event
-                    if (settings.notificationSoundEnabled) DesktopSoundPlayer.play(settings)
+                    shouldPlaySound = settings.notificationSoundEnabled
+                }
+            }
+
+            // C. Floating assistant bubble or badge-only in DND/paused (separate #513 frequency controls)
+            if (settings.floatingAssistantEnabled) {
+                if (dndOrPaused) {
+                    _floatingUnreadBadge.value = (_floatingUnreadBadge.value + 1).coerceAtMost(99)
+                } else if (floatingAllowedByStar && allowUnderPerMinuteCapLocked(floatingMinuteWindow, settings.floatingMaxPerMinute, nowMs)) {
+                    _latestFloatingBubble.value = event
+                    _floatingUnreadBadge.value = (_floatingUnreadBadge.value + 1).coerceAtMost(99)
+                } else {
+                    _floatingUnreadBadge.value = (_floatingUnreadBadge.value + 1).coerceAtMost(99)
                 }
             }
         }
 
-        // C. Floating assistant bubble or badge-only in DND/paused (separate #513 frequency controls)
-        val floatingAllowedByStar = !settings.floatingOnlyStarred || msg.isStarred
-        if (settings.floatingAssistantEnabled) {
-            if (dndOrPaused) {
-                _floatingUnreadBadge.value = (_floatingUnreadBadge.value + 1).coerceAtMost(99)
-            } else if (floatingAllowedByStar && allowUnderPerMinuteCap(floatingMinuteWindow, settings.floatingMaxPerMinute, nowMs)) {
-                _latestFloatingBubble.value = event
-                _floatingUnreadBadge.value = (_floatingUnreadBadge.value + 1).coerceAtMost(99)
-            } else {
-                _floatingUnreadBadge.value = (_floatingUnreadBadge.value + 1).coerceAtMost(99)
-            }
+        // Perform external side effects outside busLock
+        if (shouldPlaySound) {
+            DesktopSoundPlayer.play(settings)
         }
 
         // Native OS tray notification
@@ -309,7 +337,9 @@ object DesktopNotificationBus {
             conversationKey = "",
             timestamp = nowMs
         )
-        _latestToast.value = testEvent
+        synchronized(busLock) {
+            _latestToast.value = testEvent
+        }
         if (settings.notificationSoundEnabled) {
             DesktopSoundPlayer.play(settings)
         }
@@ -332,7 +362,13 @@ object DesktopSoundPlayer {
                     if (!file.exists() || !file.isFile) return@runCatching false
                     val audioIn = javax.sound.sampled.AudioSystem.getAudioInputStream(file)
                     val clip = javax.sound.sampled.AudioSystem.getClip()
-                    clip.open(audioIn)
+                    try {
+                        clip.open(audioIn)
+                    } catch (e: Throwable) {
+                        runCatching { clip.close() }
+                        runCatching { audioIn.close() }
+                        throw e
+                    }
                     if (clip.isControlSupported(javax.sound.sampled.FloatControl.Type.MASTER_GAIN)) {
                         val gain = clip.getControl(javax.sound.sampled.FloatControl.Type.MASTER_GAIN) as javax.sound.sampled.FloatControl
                         val vol = settings.toastSoundVolume.coerceIn(0.01f, 1f)
@@ -361,8 +397,10 @@ object DesktopSoundPlayer {
 }
 
 /**
- * #497 / #515 前景全螢幕偵測器（Windows 使用 SHQueryUserNotificationState 並快取 2 秒；非 Windows 退回 GraphicsDevice；
- * Toast 路徑於彈出前按需檢查；懸浮球自動隱藏路徑於啟用時每 15 秒低頻檢查一次）。
+ * #497 / #515 / #550 前景全螢幕偵測器：
+ * - Windows 透過 PowerShell SHQueryUserNotificationState 查詢，採用非同步管線（關閉 stdin、daemon 讀取執行緒有界排空、3 秒逾時強制終止）
+ * - isFullscreenAppActive() 永不阻塞呼叫端：立即回傳快取結果，若超過快取效期則於背景單執行緒非同步刷新
+ * - 懸浮球自動隱藏迴圈透過 refreshFullscreenState() 於 Dispatchers.IO 執行有界更新
  */
 object DesktopFullscreenDetector {
     @Volatile
@@ -371,11 +409,58 @@ object DesktopFullscreenDetector {
     @Volatile
     private var lastResult: Boolean = false
 
-    private const val CACHE_MS = 2_000L
+    private val refreshInFlight = AtomicBoolean(false)
 
+    private val detectorExecutor = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "phantom-fullscreen-detector").apply { isDaemon = true }
+    }
+
+    private const val CACHE_MS = 2_000L
+    private const val PS_TIMEOUT_SECONDS = 3L
+    private const val MAX_OUTPUT_CHARS = 16 * 1024
+
+    private val WINDOWS_QUNS_SCRIPT = """
+        Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class QunsHelper { [DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int state); }' -ErrorAction SilentlyContinue
+        ${'$'}s = 0; [void][QunsHelper]::SHQueryUserNotificationState([ref]${'$'}s); Write-Output ${'$'}s
+    """.trimIndent()
+
+    /**
+     * Non-blocking check: returns cached fullscreen state immediately and schedules an async refresh
+     * on a background daemon thread if the cache has expired.
+     */
     fun isFullscreenAppActive(): Boolean {
         val now = System.currentTimeMillis()
+        if (now - lastCheckMs >= CACHE_MS && refreshInFlight.compareAndSet(false, true)) {
+            runCatching {
+                detectorExecutor.execute {
+                    try {
+                        refreshFullscreenStateInternal()
+                    } finally {
+                        refreshInFlight.set(false)
+                    }
+                }
+            }.onFailure {
+                refreshInFlight.set(false)
+            }
+        }
+        return lastResult
+    }
+
+    /**
+     * Bounded blocking check intended for Dispatchers.IO callers (e.g. 15s floating orb poll).
+     */
+    fun refreshFullscreenState(): Boolean {
+        val now = System.currentTimeMillis()
         if (now - lastCheckMs < CACHE_MS) return lastResult
+        if (!refreshInFlight.compareAndSet(false, true)) return lastResult
+        return try {
+            refreshFullscreenStateInternal()
+        } finally {
+            refreshInFlight.set(false)
+        }
+    }
+
+    private fun refreshFullscreenStateInternal(): Boolean {
         val detected = runCatching {
             if (DesktopSettingsStore.isWindowsOs()) {
                 queryWindowsNotificationStateBusy()
@@ -384,23 +469,55 @@ object DesktopFullscreenDetector {
                 ge.screenDevices.any { it.fullScreenWindow != null }
             }
         }.getOrDefault(false)
-        lastCheckMs = now
         lastResult = detected
+        lastCheckMs = System.currentTimeMillis()
         return detected
     }
 
     private fun queryWindowsNotificationStateBusy(): Boolean {
         // SHQueryUserNotificationState: QUNS_BUSY(2), QUNS_RUNNING_D3D_FULL_SCREEN(3), QUNS_PRESENTATION_MODE(4)
-        val psScript = """
-            Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class QunsHelper { [DllImport("shell32.dll")] public static extern int SHQueryUserNotificationState(out int state); }' -ErrorAction SilentlyContinue
-            ${'$'}s = 0; [void][QunsHelper]::SHQueryUserNotificationState([ref]${'$'}s); Write-Output ${'$'}s
-        """.trimIndent()
-        val proc = ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psScript)
+        val proc = ProcessBuilder(
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle", "Hidden",
+            "-Command", WINDOWS_QUNS_SCRIPT
+        )
             .redirectErrorStream(true)
             .start()
-        val out = proc.inputStream.bufferedReader().readText().trim()
-        proc.waitFor()
-        val state = out.lineSequence().lastOrNull()?.trim()?.toIntOrNull() ?: return false
+        // Close stdin immediately so PowerShell never waits on input
+        runCatching { proc.outputStream.close() }
+        val outputRef = AtomicReference("")
+        val readerThread = Thread({
+            val sb = StringBuilder()
+            runCatching {
+                proc.inputStream.bufferedReader().use { reader ->
+                    val buf = CharArray(1024)
+                    while (true) {
+                        val read = reader.read(buf)
+                        if (read < 0) break
+                        if (sb.length < MAX_OUTPUT_CHARS) {
+                            val remain = MAX_OUTPUT_CHARS - sb.length
+                            sb.append(buf, 0, minOf(read, remain))
+                        }
+                    }
+                }
+            }
+            outputRef.set(sb.toString().trim())
+        }, "phantom-ps-quns-reader").apply {
+            isDaemon = true
+            start()
+        }
+        val finished = proc.waitFor(PS_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        if (!finished) {
+            proc.destroyForcibly()
+            runCatching { proc.waitFor(1, TimeUnit.SECONDS) }
+            runCatching { proc.inputStream.close() }
+            runCatching { readerThread.join(500L) }
+            return false
+        }
+        runCatching { readerThread.join(1_000L) }
+        val state = outputRef.get().lineSequence().lastOrNull()?.trim()?.toIntOrNull() ?: return false
         return state in setOf(2, 3, 4)
     }
 }
@@ -410,21 +527,24 @@ internal fun primaryWorkAreaBounds(): Rectangle = runCatching {
 }.getOrDefault(Rectangle(0, 0, 1920, 1040))
 
 /**
- * #528 唯一 AWT 螢幕像素 ↔ Compose dp 換算層（依螢幕 GraphicsConfiguration.defaultTransform.scaleX 換算，
- * 解決 Windows 125%/150% 及多螢幕不同 DPI 下懸浮球拖曳漂移與彈窗錯位）。
+ * #528 / #550 AWT 邏輯座標 ↔ Compose Desktop WindowPosition 轉換層：
+ * 在 Java 9+ / Compose Desktop (HiDPI) 環境下，AWT 的 GraphicsConfiguration.bounds、
+ * GraphicsEnvironment.maximumWindowBounds、Toolkit.getScreenInsets、MouseInfo.getPointerInfo().location
+ * 以及 Compose WindowPosition(x.dp, y.dp) / DpSize(w.dp, h.dp) 皆已統一採用 AWT 使用者空間邏輯座標（1:1 對應 Compose dp）。
+ * 不可再重複乘除以 GraphicsConfiguration.defaultTransform.scaleX，否則在 Windows 125%/150% DPI 下會導致懸浮球與彈窗錯位。
  */
 internal object DesktopScreenMetrics {
-    fun displayDensityAt(xPx: Int, yPx: Int): Float = runCatching {
+    fun displayDensityAt(xLogical: Int, yLogical: Int): Float = runCatching {
         val ge = GraphicsEnvironment.getLocalGraphicsEnvironment()
         val devices = ge.screenDevices
         val matched = devices.firstOrNull { dev ->
-            runCatching { dev.defaultConfiguration.bounds.contains(xPx, yPx) }.getOrDefault(false)
+            runCatching { dev.defaultConfiguration.bounds.contains(xLogical, yLogical) }.getOrDefault(false)
         } ?: devices.minByOrNull { dev ->
             val b = dev.defaultConfiguration.bounds
             val cx = b.x + b.width / 2
             val cy = b.y + b.height / 2
-            val dx = (xPx - cx).toLong()
-            val dy = (yPx - cy).toLong()
+            val dx = (xLogical - cx).toLong()
+            val dy = (yLogical - cy).toLong()
             dx * dx + dy * dy
         } ?: ge.defaultScreenDevice
         val sx = matched.defaultConfiguration.defaultTransform.scaleX.toFloat()
@@ -435,14 +555,8 @@ internal object DesktopScreenMetrics {
         1.0f
     }
 
-    fun pxToDp(px: Int, density: Float): androidx.compose.ui.unit.Dp =
-        (px.toFloat() / density.coerceAtLeast(0.5f)).dp
-
-    fun dpToPx(dpVal: Int, density: Float): Int =
-        (dpVal.toFloat() * density.coerceAtLeast(0.5f)).roundToInt()
-
-    fun toWindowPosition(xPx: Int, yPx: Int, density: Float = displayDensityAt(xPx, yPx)): WindowPosition =
-        WindowPosition(pxToDp(xPx, density), pxToDp(yPx, density))
+    fun toWindowPosition(xLogical: Int, yLogical: Int): WindowPosition =
+        WindowPosition(xLogical.dp, yLogical.dp)
 }
 
 /**
@@ -486,25 +600,15 @@ fun DesktopToastOverlayWindow(
     val toastEvent by DesktopNotificationBus.latestToast.collectAsState()
     val current = toastEvent ?: return
 
-    val tokens = remember(settings.surfaceOpacity, settings.bgScrimAlpha, settings.highContrastText, settings.bgTheme) {
-        DesktopThemeTokens.from(settings)
-    }
-    val accentColor = remember(settings.accentPreset, settings.customAccentHex) {
-        DesktopPalette.resolveAccentColor(settings.accentPreset, settings.customAccentHex)
-    }
-
     val hoverSource = remember { MutableInteractionSource() }
     val isHovered by hoverSource.collectIsHoveredAsState()
 
     val bounds = remember(current.seq) { primaryWorkAreaBounds() }
-    val toastDensity = remember(bounds) { DesktopScreenMetrics.displayDensityAt(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2) }
     val toastW = settings.toastWidthDp.coerceIn(280, 480)
     val toastH = settings.toastHeightDp.coerceIn(84, 180)
-    val toastWPx = DesktopScreenMetrics.dpToPx(toastW, toastDensity)
-    val toastHPx = DesktopScreenMetrics.dpToPx(toastH, toastDensity)
-    val marginPx = DesktopScreenMetrics.dpToPx(18, toastDensity)
-    val toastXPx = (bounds.x + bounds.width - toastWPx - marginPx).coerceAtLeast(bounds.x)
-    val toastYPx = (bounds.y + bounds.height - toastHPx - marginPx).coerceAtLeast(bounds.y)
+    val marginDp = 18
+    val toastX = (bounds.x + bounds.width - toastW - marginDp).coerceAtLeast(bounds.x)
+    val toastY = (bounds.y + bounds.height - toastH - marginDp).coerceAtLeast(bounds.y)
 
     var visible by remember(current.seq) { mutableStateOf(false) }
 
@@ -528,12 +632,12 @@ fun DesktopToastOverlayWindow(
     }
 
     val toastWindowState = rememberWindowState(
-        position = DesktopScreenMetrics.toWindowPosition(toastXPx, toastYPx, toastDensity),
+        position = DesktopScreenMetrics.toWindowPosition(toastX, toastY),
         size = DpSize(toastW.dp, toastH.dp)
     )
-    LaunchedEffect(toastW, toastH, toastXPx, toastYPx, toastDensity) {
+    LaunchedEffect(toastW, toastH, toastX, toastY) {
         toastWindowState.size = DpSize(toastW.dp, toastH.dp)
-        toastWindowState.position = DesktopScreenMetrics.toWindowPosition(toastXPx, toastYPx, toastDensity)
+        toastWindowState.position = DesktopScreenMetrics.toWindowPosition(toastX, toastY)
     }
 
     val customToastBgBitmap = remember(settings.toastBgImagePath) {
@@ -547,19 +651,12 @@ fun DesktopToastOverlayWindow(
                 DesktopDiagnostics.warn("ToastBg", "Background image exceeds 5MB, falling back to solid color: $path")
                 null
             } else {
-                org.jetbrains.skia.Image.makeFromEncoded(file.readBytes()).toComposeImageBitmap()
+                org.jetbrains.skia.Image.makeFromEncoded(file.readBytes()).use { it.toComposeImageBitmap() }
             }
         }.onFailure { err ->
             DesktopDiagnostics.warn("ToastBg", "Failed decoding toast background image ($path): ${err.javaClass.simpleName}: ${err.message}")
         }.getOrNull()
     }
-    val customTextColor = remember(settings.toastTextColorHex, tokens.textPrimary) {
-        val hex = settings.toastTextColorHex.trim().removePrefix("#")
-        if (hex.length == 6) {
-            runCatching { Color(0xFF000000.toInt() or hex.toInt(16)) }.getOrNull() ?: tokens.textPrimary
-        } else tokens.textPrimary
-    }
-    val toastBgColor = tokens.popupBg
     val scrimAlpha = settings.toastBgScrimAlpha.coerceIn(0.30f, 0.90f)
 
     Window(
@@ -573,7 +670,13 @@ fun DesktopToastOverlayWindow(
         title = DesktopStrings.appTitle
     ) {
         ProvideDesktopTheme(settings) {
+            val tokens = LocalDesktopTokens.current
             val motion = LocalDesktopMotion.current
+            val accentColor = tokens.accent
+            val customTextColor = remember(settings.toastTextColorHex, tokens.textPrimary) {
+                DesktopPalette.parseHexColor(settings.toastTextColorHex) ?: tokens.textPrimary
+            }
+            val toastBgColor = tokens.popupBg
             MaterialTheme(
                 colorScheme = darkColorScheme(
                     surface = tokens.surface,
@@ -596,7 +699,7 @@ fun DesktopToastOverlayWindow(
                         val appColor = DesktopAppLabels.resolveColor(current.packageName)
                         val riskColor = when (current.riskLabel.lowercase()) {
                             "scam" -> tokens.error
-                            "suspicious" -> tokens.warning
+                            "suspicious", "warning" -> tokens.warning
                             else -> tokens.success
                         }
                         Box(
@@ -763,9 +866,15 @@ private fun mergeChatBubblesDedup(existing: List<ChatBubbleDto>, incoming: List<
     return result.sortedBy { it.createdAt }.takeLast(60)
 }
 
+private class OrbDragState(
+    var x: Int,
+    var y: Int,
+    var isDragging: Boolean = false
+)
+
 /**
- * #497 C / #514 / #515：懸浮助手球（AWT MouseInfo 固定抓取點螢幕座標拖曳、多螢幕 DPI 零漂移、鬆手 8px 邊距 spring 吸附、
- * 半圓 180° 快捷扇形選單、與手機雙向同步 AI 對話、Enter 送出 / Shift+Enter 換行、全螢幕自動隱藏）。
+ * #497 C / #514 / #515 / #550：懸浮助手球（AWT 邏輯座標固定抓取點拖曳、125%/150% 高 DPI 精準定位、拖曳零重組、鬆手 8dp 邊距 spring 吸附、
+ * 半圓 180° 快捷扇形選單、與手機雙向同步 AI 對話、Enter 送出 / Shift+Enter 換行、非同步全螢幕自動隱藏）。
  */
 @Composable
 fun DesktopFloatingAssistantWindow(
@@ -779,12 +888,19 @@ fun DesktopFloatingAssistantWindow(
 
     val gson = remember { Gson() }
     val scope = rememberCoroutineScope()
-    val tokens = remember(settings.surfaceOpacity, settings.bgScrimAlpha, settings.highContrastText, settings.bgTheme, settings.lightTheme) {
+    val tokens = remember(
+        settings.surfaceOpacity,
+        settings.bgScrimAlpha,
+        settings.highContrastText,
+        settings.bgTheme,
+        settings.lightTheme,
+        settings.accentPreset,
+        settings.customAccentHex,
+        settings.messageCardCornerDp
+    ) {
         DesktopThemeTokens.from(settings)
     }
-    val accentColor = remember(settings.accentPreset, settings.customAccentHex) {
-        DesktopPalette.resolveAccentColor(settings.accentPreset, settings.customAccentHex)
-    }
+    val accentColor = tokens.accent
 
     val serverState by server.state.collectAsState()
     val phoneStatus by DesktopDeviceStatusHolder.status.collectAsState()
@@ -797,7 +913,7 @@ fun DesktopFloatingAssistantWindow(
             return@LaunchedEffect
         }
         while (true) {
-            val fs = withContext(Dispatchers.IO) { DesktopFullscreenDetector.isFullscreenAppActive() }
+            val fs = withContext(Dispatchers.IO) { DesktopFullscreenDetector.refreshFullscreenState() }
             if (fs != isFullscreenHidden) {
                 isFullscreenHidden = fs
                 if (fs && settings.floatingFullscreenMode == FullscreenHideMode.HIDE_WITH_HINT) {
@@ -810,11 +926,8 @@ fun DesktopFloatingAssistantWindow(
     if (isFullscreenHidden) return
 
     val initialBounds = remember { primaryWorkAreaBounds() }
-    val initialDensity = remember(initialBounds) {
-        DesktopScreenMetrics.displayDensityAt(initialBounds.x + initialBounds.width / 2, initialBounds.y + initialBounds.height / 2)
-    }
     val orbSize = settings.floatingOrbSizeDp.coerceIn(28, 56)
-    val initialOrbWinPx = DesktopScreenMetrics.dpToPx(orbSize + 18, initialDensity)
+    val orbWinDp = orbSize + 18
 
     var orbX by remember {
         mutableIntStateOf(
@@ -822,10 +935,10 @@ fun DesktopFloatingAssistantWindow(
                 clampToAllMonitors(
                     settings.floatingOrbX,
                     settings.floatingOrbY.takeIf { it != Int.MIN_VALUE } ?: initialBounds.y,
-                    initialOrbWinPx,
-                    initialOrbWinPx
+                    orbWinDp,
+                    orbWinDp
                 ).first
-            } else initialBounds.x + initialBounds.width - initialOrbWinPx - DesktopScreenMetrics.dpToPx(8, initialDensity)
+            } else initialBounds.x + initialBounds.width - orbWinDp - 8
         )
     }
     var orbY by remember {
@@ -834,15 +947,19 @@ fun DesktopFloatingAssistantWindow(
                 clampToAllMonitors(
                     settings.floatingOrbX.takeIf { it != Int.MIN_VALUE } ?: initialBounds.x,
                     settings.floatingOrbY,
-                    initialOrbWinPx,
-                    initialOrbWinPx
+                    orbWinDp,
+                    orbWinDp
                 ).second
-            } else initialBounds.y + initialBounds.height - initialOrbWinPx - DesktopScreenMetrics.dpToPx(102, initialDensity)
+            } else initialBounds.y + initialBounds.height - orbWinDp - 102
         )
     }
-    val orbDensity = remember(orbX, orbY) { DesktopScreenMetrics.displayDensityAt(orbX, orbY) }
-    val orbWinPx = DesktopScreenMetrics.dpToPx(orbSize + 18, orbDensity)
-    val activeMonitor = remember(orbX, orbY, orbWinPx) { workAreaContaining(orbX + orbWinPx / 2, orbY + orbWinPx / 2) }
+    // Non-observable drag coordinate holder so dragging/snapping updates WindowPosition directly with zero recomposition
+    val dragState = remember { OrbDragState(orbX, orbY) }
+    if (!dragState.isDragging) {
+        dragState.x = orbX
+        dragState.y = orbY
+    }
+    val activeMonitor = remember(orbX, orbY, orbWinDp) { workAreaContaining(orbX + orbWinDp / 2, orbY + orbWinDp / 2) }
 
     var aiExpanded by remember { mutableStateOf(false) }
     var radialOpen by remember { mutableStateOf(false) }
@@ -937,8 +1054,8 @@ fun DesktopFloatingAssistantWindow(
         DesktopNotificationBus.clearFloatingBubble()
     }
 
-    val isOnRightHalf = orbX + orbWinPx / 2 > activeMonitor.x + activeMonitor.width / 2
-    val isOnBottomHalf = orbY + orbWinPx / 2 > activeMonitor.y + activeMonitor.height / 2
+    val isOnRightHalf = orbX + orbWinDp / 2 > activeMonitor.x + activeMonitor.width / 2
+    val isOnBottomHalf = orbY + orbWinDp / 2 > activeMonitor.y + activeMonitor.height / 2
 
     val radialItems = remember(settings.floatingMenuOrder) {
         val parsed = settings.floatingMenuOrder.split(",").map { it.trim() }.filter { it.isNotBlank() }
@@ -979,113 +1096,123 @@ fun DesktopFloatingAssistantWindow(
         }
     }
 
-    // #528 Primary Orb Window geometry: strictly invariant during hover & bubble!
-    // Only click-driven aiExpanded / radialOpen resize this window.
+    // #528 / #550 Primary Orb Window geometry in AWT logical coordinates (= Compose dp):
+    // Strictly invariant during hover & bubble; only click-driven aiExpanded / radialOpen resize this window.
     val winWDp: Int
     val winHDp: Int
-    val winXPx: Int
-    val winYPx: Int
+    val winX: Int
+    val winY: Int
     when {
         aiExpanded -> {
             winWDp = 400
             winHDp = 500
-            val wPx = DesktopScreenMetrics.dpToPx(winWDp, orbDensity)
-            val hPx = DesktopScreenMetrics.dpToPx(winHDp, orbDensity)
-            winXPx = (if (isOnRightHalf) orbX + orbWinPx - wPx else orbX)
-                .coerceIn(activeMonitor.x, (activeMonitor.x + activeMonitor.width - wPx).coerceAtLeast(activeMonitor.x))
-            winYPx = (if (isOnBottomHalf) orbY + orbWinPx - hPx else orbY)
-                .coerceIn(activeMonitor.y, (activeMonitor.y + activeMonitor.height - hPx).coerceAtLeast(activeMonitor.y))
+            winX = (if (isOnRightHalf) orbX + orbWinDp - winWDp else orbX)
+                .coerceIn(activeMonitor.x, (activeMonitor.x + activeMonitor.width - winWDp).coerceAtLeast(activeMonitor.x))
+            winY = (if (isOnBottomHalf) orbY + orbWinDp - winHDp else orbY)
+                .coerceIn(activeMonitor.y, (activeMonitor.y + activeMonitor.height - winHDp).coerceAtLeast(activeMonitor.y))
         }
         radialOpen -> {
             winWDp = 240
             winHDp = 260
-            val wPx = DesktopScreenMetrics.dpToPx(winWDp, orbDensity)
-            val hPx = DesktopScreenMetrics.dpToPx(winHDp, orbDensity)
-            winXPx = (if (isOnRightHalf) orbX + orbWinPx - wPx else orbX)
-                .coerceIn(activeMonitor.x, (activeMonitor.x + activeMonitor.width - wPx).coerceAtLeast(activeMonitor.x))
-            winYPx = (orbY + orbWinPx / 2 - hPx / 2)
-                .coerceIn(activeMonitor.y, (activeMonitor.y + activeMonitor.height - hPx).coerceAtLeast(activeMonitor.y))
+            winX = (if (isOnRightHalf) orbX + orbWinDp - winWDp else orbX)
+                .coerceIn(activeMonitor.x, (activeMonitor.x + activeMonitor.width - winWDp).coerceAtLeast(activeMonitor.x))
+            winY = (orbY + orbWinDp / 2 - winHDp / 2)
+                .coerceIn(activeMonitor.y, (activeMonitor.y + activeMonitor.height - winHDp).coerceAtLeast(activeMonitor.y))
         }
         else -> {
-            winWDp = orbSize + 18
-            winHDp = orbSize + 18
-            val clamped = clampToAllMonitors(orbX, orbY, orbWinPx, orbWinPx)
-            winXPx = clamped.first
-            winYPx = clamped.second
+            winWDp = orbWinDp
+            winHDp = orbWinDp
+            val clamped = clampToAllMonitors(orbX, orbY, orbWinDp, orbWinDp)
+            winX = clamped.first
+            winY = clamped.second
         }
     }
 
     val floatingState = rememberWindowState(
-        position = DesktopScreenMetrics.toWindowPosition(winXPx, winYPx, orbDensity),
+        position = DesktopScreenMetrics.toWindowPosition(winX, winY),
         size = DpSize(winWDp.dp, winHDp.dp)
     )
-    LaunchedEffect(winXPx, winYPx, winWDp, winHDp, orbDensity) {
-        floatingState.position = DesktopScreenMetrics.toWindowPosition(winXPx, winYPx, orbDensity)
+    LaunchedEffect(winX, winY, winWDp, winHDp) {
+        if (!dragState.isDragging) {
+            floatingState.position = DesktopScreenMetrics.toWindowPosition(winX, winY)
+        }
         floatingState.size = DpSize(winWDp.dp, winHDp.dp)
     }
 
     var snapJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     fun finishDragAndSnap() {
-        val curDensity = DesktopScreenMetrics.displayDensityAt(orbX, orbY)
-        val curOrbPx = DesktopScreenMetrics.dpToPx(orbSize + 18, curDensity)
-        val mon = workAreaContaining(orbX + curOrbPx / 2, orbY + curOrbPx / 2)
-        val monDensity = DesktopScreenMetrics.displayDensityAt(mon.x + mon.width / 2, mon.y + mon.height / 2)
-        val monOrbPx = DesktopScreenMetrics.dpToPx(orbSize + 18, monDensity)
-        val marginPx = DesktopScreenMetrics.dpToPx(8, monDensity)
-        val maxX = (mon.x + mon.width - monOrbPx - marginPx).coerceAtLeast(mon.x + marginPx)
-        val maxY = (mon.y + mon.height - monOrbPx - marginPx).coerceAtLeast(mon.y + marginPx)
+        val curX = dragState.x
+        val curY = dragState.y
+        val mon = workAreaContaining(curX + orbWinDp / 2, curY + orbWinDp / 2)
+        val marginDp = 8
+        val maxX = (mon.x + mon.width - orbWinDp - marginDp).coerceAtLeast(mon.x + marginDp)
+        val maxY = (mon.y + mon.height - orbWinDp - marginDp).coerceAtLeast(mon.y + marginDp)
         if (!settings.floatingSnapToEdge) {
-            orbX = orbX.coerceIn(mon.x + marginPx, maxX)
-            orbY = orbY.coerceIn(mon.y + marginPx, maxY)
-            floatingState.position = DesktopScreenMetrics.toWindowPosition(orbX, orbY, monDensity)
-            DesktopSettingsStore.update { it.copy(floatingOrbX = orbX, floatingOrbY = orbY) }
+            val finalX = curX.coerceIn(mon.x + marginDp, maxX)
+            val finalY = curY.coerceIn(mon.y + marginDp, maxY)
+            dragState.x = finalX
+            dragState.y = finalY
+            dragState.isDragging = false
+            floatingState.position = DesktopScreenMetrics.toWindowPosition(finalX, finalY)
+            orbX = finalX
+            orbY = finalY
+            DesktopSettingsStore.update { it.copy(floatingOrbX = finalX, floatingOrbY = finalY) }
             return
         }
-        val leftDist = (orbX - (mon.x + marginPx)).coerceAtLeast(0)
-        val rightDist = (maxX - orbX).coerceAtLeast(0)
-        val topDist = (orbY - (mon.y + marginPx)).coerceAtLeast(0)
-        val bottomDist = (maxY - orbY).coerceAtLeast(0)
+        val leftDist = (curX - (mon.x + marginDp)).coerceAtLeast(0)
+        val rightDist = (maxX - curX).coerceAtLeast(0)
+        val topDist = (curY - (mon.y + marginDp)).coerceAtLeast(0)
+        val bottomDist = (maxY - curY).coerceAtLeast(0)
         val minDist = minOf(leftDist, rightDist, topDist, bottomDist)
         val targetX = when (minDist) {
-            leftDist -> mon.x + marginPx
+            leftDist -> mon.x + marginDp
             rightDist -> maxX
-            else -> orbX.coerceIn(mon.x + marginPx, maxX)
+            else -> curX.coerceIn(mon.x + marginDp, maxX)
         }
         val targetY = when (minDist) {
-            topDist -> mon.y + marginPx
+            topDist -> mon.y + marginDp
             bottomDist -> maxY
-            else -> orbY.coerceIn(mon.y + marginPx, maxY)
+            else -> curY.coerceIn(mon.y + marginDp, maxY)
         }
         snapJob?.cancel()
-        if (!settings.animationsEnabled) {
+        if (!settings.animationsEnabled || settings.animationMode == AnimationMode.POWER_SAVER) {
+            dragState.x = targetX
+            dragState.y = targetY
+            dragState.isDragging = false
+            floatingState.position = DesktopScreenMetrics.toWindowPosition(targetX, targetY)
             orbX = targetX
             orbY = targetY
-            floatingState.position = DesktopScreenMetrics.toWindowPosition(orbX, orbY, monDensity)
-            DesktopSettingsStore.update { it.copy(floatingOrbX = orbX, floatingOrbY = orbY) }
+            DesktopSettingsStore.update { it.copy(floatingOrbX = targetX, floatingOrbY = targetY) }
         } else {
-            val startX = orbX.toFloat()
-            val startY = orbY.toFloat()
+            val startX = curX.toFloat()
+            val startY = curY.toFloat()
             snapJob = scope.launch {
-                val anim = androidx.compose.animation.core.Animatable(0f)
-                anim.animateTo(
-                    targetValue = 1f,
-                    animationSpec = androidx.compose.animation.core.spring(
-                        dampingRatio = 0.75f,
-                        stiffness = 380f
-                    )
-                ) {
-                    val p = value
-                    val nx = (startX + (targetX - startX) * p).toInt()
-                    val ny = (startY + (targetY - startY) * p).toInt()
-                    orbX = nx
-                    orbY = ny
-                    floatingState.position = DesktopScreenMetrics.toWindowPosition(nx, ny, monDensity)
+                try {
+                    val anim = androidx.compose.animation.core.Animatable(0f)
+                    anim.animateTo(
+                        targetValue = 1f,
+                        animationSpec = androidx.compose.animation.core.spring(
+                            dampingRatio = 0.75f,
+                            stiffness = 380f
+                        )
+                    ) {
+                        val p = value
+                        val nx = (startX + (targetX - startX) * p).roundToInt()
+                        val ny = (startY + (targetY - startY) * p).roundToInt()
+                        dragState.x = nx
+                        dragState.y = ny
+                        floatingState.position = DesktopScreenMetrics.toWindowPosition(nx, ny)
+                    }
+                    dragState.x = targetX
+                    dragState.y = targetY
+                    floatingState.position = DesktopScreenMetrics.toWindowPosition(targetX, targetY)
+                    orbX = targetX
+                    orbY = targetY
+                    DesktopSettingsStore.update { it.copy(floatingOrbX = targetX, floatingOrbY = targetY) }
+                } finally {
+                    dragState.isDragging = false
                 }
-                orbX = targetX
-                orbY = targetY
-                floatingState.position = DesktopScreenMetrics.toWindowPosition(targetX, targetY, monDensity)
-                DesktopSettingsStore.update { it.copy(floatingOrbX = orbX, floatingOrbY = orbY) }
             }
         }
     }
@@ -1102,13 +1229,14 @@ fun DesktopFloatingAssistantWindow(
         alwaysOnTop = true,
         title = DesktopStrings.floatingAssistantTitle
     ) {
-        MaterialTheme(
-            colorScheme = darkColorScheme(
-                surface = tokens.surface,
-                primary = accentColor,
-                onSurface = tokens.textPrimary
-            )
-        ) {
+        ProvideDesktopTheme(settings) {
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    surface = tokens.surface,
+                    primary = accentColor,
+                    onSurface = tokens.textPrimary
+                )
+            ) {
             if (aiExpanded) {
                 // #515 Upgraded AI Chat Popup (bidirectional sync, Enter/Shift+Enter, quick commands, copy, font size)
                 Column(
@@ -1131,10 +1259,10 @@ fun DesktopFloatingAssistantWindow(
                                 Text(
                                     text = DesktopStrings.syncedWithPhoneChip,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = DesktopPalette.GlassSuccess,
+                                    color = tokens.success,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(6.dp))
-                                        .background(DesktopPalette.GlassSuccess.copy(alpha = 0.14f))
+                                        .background(tokens.success.copy(alpha = 0.14f))
                                         .padding(horizontal = 5.dp, vertical = 2.dp)
                                 )
                             }
@@ -1262,10 +1390,11 @@ fun DesktopFloatingAssistantWindow(
                     }
                 }
             } else if (radialOpen) {
-                // #515 Semi-circular 180-deg radial fan-out menu with spring(0.62f, 380f) & i*24ms stagger
-                val radiusPx = 86f
-                val centerX = if (isOnRightHalf) (winWDp - orbSize / 2 - 14) else (orbSize / 2 + 14)
-                val centerY = winHDp / 2
+                // #515 / #550 Semi-circular 180-deg radial fan-out menu (DPI-aware IntOffset scaling)
+                val composeDensity = LocalDensity.current.density
+                val radiusDp = 86f
+                val centerXDp = if (isOnRightHalf) (winWDp - orbSize / 2f - 14f) else (orbSize / 2f + 14f)
+                val centerYDp = winHDp / 2f
                 Box(modifier = Modifier.fillMaxSize()) {
                     radialItems.forEachIndexed { idx, actionKey ->
                         val progress = remember(radialOpen, idx) { androidx.compose.animation.core.Animatable(if (settings.animationsEnabled) 0f else 1f) }
@@ -1285,9 +1414,6 @@ fun DesktopFloatingAssistantWindow(
                         // Left semicircle [90°, 270°] if orb is on right half; right semicircle [-90°, 90°] if on left half
                         val angleDeg = if (isOnRightHalf) (105.0 + frac * 150.0) else (-75.0 + frac * 150.0)
                         val rad = angleDeg * PI / 180.0
-                        val p = progress.value
-                        val dx = (cos(rad) * radiusPx * p).roundToInt()
-                        val dy = (sin(rad) * radiusPx * p).roundToInt()
                         val label = when (actionKey) {
                             "ai" -> DesktopStrings.radialAi
                             "main" -> DesktopStrings.radialMain
@@ -1301,8 +1427,17 @@ fun DesktopFloatingAssistantWindow(
                         }
                         Box(
                             modifier = Modifier
-                                .offset { IntOffset(centerX + dx - 30, centerY + dy - 16) }
+                                .offset {
+                                    val p = progress.value
+                                    val dxDp = (cos(rad) * radiusDp * p).toFloat()
+                                    val dyDp = (sin(rad) * radiusDp * p).toFloat()
+                                    IntOffset(
+                                        ((centerXDp + dxDp - 30f) * composeDensity).roundToInt(),
+                                        ((centerYDp + dyDp - 16f) * composeDensity).roundToInt()
+                                    )
+                                }
                                 .graphicsLayer {
+                                    val p = progress.value
                                     alpha = p.coerceIn(0f, 1f)
                                     scaleX = 0.7f + 0.3f * p
                                     scaleY = 0.7f + 0.3f * p
@@ -1320,7 +1455,12 @@ fun DesktopFloatingAssistantWindow(
                     // Center close orb
                     Box(
                         modifier = Modifier
-                            .offset { IntOffset(centerX - orbSize / 2, centerY - orbSize / 2) }
+                            .offset {
+                                IntOffset(
+                                    ((centerXDp - orbSize / 2f) * composeDensity).roundToInt(),
+                                    ((centerYDp - orbSize / 2f) * composeDensity).roundToInt()
+                                )
+                            }
                             .size(orbSize.dp)
                             .clip(CircleShape)
                             .background(popupBgColor)
@@ -1332,7 +1472,7 @@ fun DesktopFloatingAssistantWindow(
                     }
                 }
             } else {
-                // #528 Orb-only fixed-size window (geometry NEVER changes on hover/bubble -> zero jitter)
+                // #528 / #550 Orb-only fixed-size window (geometry invariant during hover/bubble; zero-recomposition drag)
                 val idleAlpha = if (orbHovered || bubbleEvent != null) 1f else settings.floatingOrbOpacity.coerceIn(0.35f, 1f)
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -1351,13 +1491,14 @@ fun DesktopFloatingAssistantWindow(
                                 detectDragGestures(
                                     onDragStart = {
                                         snapJob?.cancel()
+                                        dragState.isDragging = true
                                         val pt = runCatching { java.awt.MouseInfo.getPointerInfo()?.location }.getOrNull()
                                         if (pt != null) {
                                             dragStartPointerX = pt.x
                                             dragStartPointerY = pt.y
                                         }
-                                        dragStartOrbX = orbX
-                                        dragStartOrbY = orbY
+                                        dragStartOrbX = dragState.x
+                                        dragStartOrbY = dragState.y
                                     },
                                     onDragEnd = { finishDragAndSnap() },
                                     onDragCancel = { finishDragAndSnap() },
@@ -1366,13 +1507,11 @@ fun DesktopFloatingAssistantWindow(
                                         val pt = runCatching { java.awt.MouseInfo.getPointerInfo()?.location }.getOrNull() ?: return@detectDragGestures
                                         val rawX = dragStartOrbX + (pt.x - dragStartPointerX)
                                         val rawY = dragStartOrbY + (pt.y - dragStartPointerY)
-                                        val dragDensity = DesktopScreenMetrics.displayDensityAt(rawX, rawY)
-                                        val dragOrbPx = DesktopScreenMetrics.dpToPx(orbSize + 18, dragDensity)
-                                        val clamped = clampToAllMonitors(rawX, rawY, dragOrbPx, dragOrbPx)
-                                        orbX = clamped.first
-                                        orbY = clamped.second
-                                        // #528 Synchronous position update (zero 1-frame LaunchedEffect lag, zero 14ms throttle)
-                                        floatingState.position = DesktopScreenMetrics.toWindowPosition(clamped.first, clamped.second, dragDensity)
+                                        val clamped = clampToAllMonitors(rawX, rawY, orbWinDp, orbWinDp)
+                                        dragState.x = clamped.first
+                                        dragState.y = clamped.second
+                                        // Direct WindowPosition update without mutating Compose state -> zero recomposition while dragging
+                                        floatingState.position = DesktopScreenMetrics.toWindowPosition(clamped.first, clamped.second)
                                     }
                                 )
                             }
@@ -1402,7 +1541,7 @@ fun DesktopFloatingAssistantWindow(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .clip(CircleShape)
-                                    .background(DesktopPalette.GlassError)
+                                    .background(tokens.error)
                                     .padding(horizontal = 5.dp, vertical = 1.dp)
                             ) {
                                 Text(
@@ -1417,31 +1556,27 @@ fun DesktopFloatingAssistantWindow(
                 }
             }
         }
+        }
     }
 
-    // #528 Independent second Window for Hover Card (6 customizable actions) & Notification Bubble.
-    // Rationale: JetBrains/compose-multiplatform#1401 transparent windows intercept mouse events, so
-    // keeping a permanently enlarged orb window is invalid; a separate companion window keeps the orb
-    // window geometry 100% invariant during hover and eliminates the resize->unhover->shrink loop.
+    // #528 / #550 Independent second Window for Hover Card (6 customizable actions) & Notification Bubble.
     val currentBubble = bubbleEvent
-    if (!aiExpanded && !radialOpen && (currentBubble != null || orbHovered)) {
+    if (!aiExpanded && !radialOpen && !dragState.isDragging && (currentBubble != null || orbHovered)) {
         val isBubbleMode = currentBubble != null
         val auxWDp = if (isBubbleMode) 280 else 192
         val auxHDp = if (isBubbleMode) maxOf(orbSize + 24, 108) else 68
-        val auxWPx = DesktopScreenMetrics.dpToPx(auxWDp, orbDensity)
-        val auxHPx = DesktopScreenMetrics.dpToPx(auxHDp, orbDensity)
-        val gapPx = DesktopScreenMetrics.dpToPx(8, orbDensity)
-        val auxXPx = (if (isOnRightHalf) orbX - auxWPx - gapPx else orbX + orbWinPx + gapPx)
-            .coerceIn(activeMonitor.x, (activeMonitor.x + activeMonitor.width - auxWPx).coerceAtLeast(activeMonitor.x))
-        val auxYPx = (if (isOnBottomHalf) orbY + orbWinPx - auxHPx else orbY)
-            .coerceIn(activeMonitor.y, (activeMonitor.y + activeMonitor.height - auxHPx).coerceAtLeast(activeMonitor.y))
+        val gapDp = 8
+        val auxX = (if (isOnRightHalf) orbX - auxWDp - gapDp else orbX + orbWinDp + gapDp)
+            .coerceIn(activeMonitor.x, (activeMonitor.x + activeMonitor.width - auxWDp).coerceAtLeast(activeMonitor.x))
+        val auxY = (if (isOnBottomHalf) orbY + orbWinDp - auxHDp else orbY)
+            .coerceIn(activeMonitor.y, (activeMonitor.y + activeMonitor.height - auxHDp).coerceAtLeast(activeMonitor.y))
 
         val auxState = rememberWindowState(
-            position = DesktopScreenMetrics.toWindowPosition(auxXPx, auxYPx, orbDensity),
+            position = DesktopScreenMetrics.toWindowPosition(auxX, auxY),
             size = DpSize(auxWDp.dp, auxHDp.dp)
         )
-        LaunchedEffect(auxXPx, auxYPx, auxWDp, auxHDp, orbDensity) {
-            auxState.position = DesktopScreenMetrics.toWindowPosition(auxXPx, auxYPx, orbDensity)
+        LaunchedEffect(auxX, auxY, auxWDp, auxHDp) {
+            auxState.position = DesktopScreenMetrics.toWindowPosition(auxX, auxY)
             auxState.size = DpSize(auxWDp.dp, auxHDp.dp)
         }
 
@@ -1455,115 +1590,118 @@ fun DesktopFloatingAssistantWindow(
             alwaysOnTop = true,
             title = DesktopStrings.floatingAssistantTitle
         ) {
-            MaterialTheme(
-                colorScheme = darkColorScheme(
-                    surface = tokens.surface,
-                    primary = accentColor,
-                    onSurface = tokens.textPrimary
-                )
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxSize().padding(4.dp),
-                    contentAlignment = if (isOnBottomHalf) Alignment.BottomCenter else Alignment.TopCenter
+            ProvideDesktopTheme(settings) {
+                MaterialTheme(
+                    colorScheme = darkColorScheme(
+                        surface = tokens.surface,
+                        primary = accentColor,
+                        onSurface = tokens.textPrimary
+                    )
                 ) {
-                    if (currentBubble != null) {
-                        val displayText = when (settings.floatingBubbleContent) {
-                            FloatingBubbleContent.APP_ONLY -> currentBubble.appLabel
-                            FloatingBubbleContent.SENDER_PREVIEW -> "${currentBubble.sender}: ${currentBubble.preview.take(48)}"
-                            FloatingBubbleContent.FULL_PREVIEW -> "${currentBubble.appLabel} · ${currentBubble.sender}\n${currentBubble.preview.take(settings.previewLength)}"
-                        }
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(popupBgColor)
-                                .border(1.dp, accentColor.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
-                                .hoverable(bubbleHoverSource)
-                                .clickable {
-                                    DesktopNotificationBus.clearFloatingBubble()
-                                    DesktopNotificationBus.clearFloatingBadge()
-                                    onOpenConversation(currentBubble)
-                                }
-                                .padding(horizontal = 12.dp, vertical = 9.dp)
-                        ) {
-                            Text(
-                                text = displayText,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = tokens.textPrimary,
-                                maxLines = 3,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    } else {
-                        // #528 6 Customizable Hover Actions (184dp glass card)
-                        val (hoverTitle, hoverSub) = when (settings.floatingHoverAction) {
-                            FloatingHoverAction.CONNECTION_BATTERY -> {
-                                val battStr = phoneStatus?.let { st ->
-                                    val ch = if (st.isCharging) " ⚡" else ""
-                                    "${st.batteryLevel}%$ch"
-                                } ?: "--"
-                                val connStr = if (serverState.connectedPhones.isNotEmpty()) {
-                                    "${serverState.pairedDeviceName.ifBlank { "Phone" }} · $battStr"
-                                } else {
-                                    DesktopStrings.t("未連線", "Disconnected")
-                                }
-                                connStr to ""
+                    Box(
+                        modifier = Modifier.fillMaxSize().padding(4.dp),
+                        contentAlignment = if (isOnBottomHalf) Alignment.BottomCenter else Alignment.TopCenter
+                    ) {
+                        if (currentBubble != null) {
+                            val displayText = when (settings.floatingBubbleContent) {
+                                FloatingBubbleContent.APP_ONLY -> currentBubble.appLabel
+                                FloatingBubbleContent.SENDER_PREVIEW -> "${currentBubble.sender}: ${currentBubble.preview.take(48)}"
+                                FloatingBubbleContent.FULL_PREVIEW -> "${currentBubble.appLabel} · ${currentBubble.sender}\n${currentBubble.preview.take(settings.previewLength)}"
                             }
-                            FloatingHoverAction.LATEST_MESSAGE -> {
-                                val msg = hoverLatestMsg
-                                if (msg != null) {
-                                    val app = DesktopAppLabels.resolveLabel(msg.packageName, msg.appLabel)
-                                    val sender = resolveMessageTitle(msg.sender, msg.packageName, app)
-                                    "$app · $sender" to msg.preview.take(48)
-                                } else {
-                                    DesktopStrings.floatingHoverNoMessage to ""
-                                }
-                            }
-                            FloatingHoverAction.TODAY_STATS -> {
-                                val st = hoverStats
-                                DesktopStrings.floatingHoverActionName(FloatingHoverAction.TODAY_STATS) to
-                                    DesktopStrings.floatingHoverStatsLine(st?.today ?: 0, st?.unread ?: 0, st?.scam ?: 0)
-                            }
-                            FloatingHoverAction.LATEST_INTEL_REPORT -> {
-                                DesktopStrings.floatingHoverActionName(FloatingHoverAction.LATEST_INTEL_REPORT) to
-                                    (hoverIntelSummary?.take(56) ?: DesktopStrings.floatingHoverNoIntel)
-                            }
-                            FloatingHoverAction.CLOCK_DATE -> {
-                                val now = java.util.Date()
-                                val timeSdf = if (settings.use24HourTime) TOAST_TIME_24_FMT.get() else TOAST_TIME_12_FMT.get()
-                                timeSdf.format(now) to HOVER_DATE_FMT.get().format(now)
-                            }
-                            FloatingHoverAction.CUSTOM_TEXT -> {
-                                settings.floatingHoverCustomText.trim().take(40).ifBlank {
-                                    DesktopStrings.appTitle
-                                } to ""
-                            }
-                        }
-                        Column(
-                            modifier = Modifier
-                                .width(184.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(popupBgColor)
-                                .border(1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 10.dp, vertical = 7.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            Text(
-                                text = hoverTitle,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = tokens.textPrimary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (hoverSub.isNotBlank()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(popupBgColor)
+                                    .border(1.dp, accentColor.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                                    .hoverable(bubbleHoverSource)
+                                    .clickable {
+                                        DesktopNotificationBus.clearFloatingBubble()
+                                        DesktopNotificationBus.clearFloatingBadge()
+                                        onOpenConversation(currentBubble)
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 9.dp)
+                            ) {
                                 Text(
-                                    text = hoverSub,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = tokens.textSecondary,
-                                    maxLines = 2,
+                                    text = displayText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = tokens.textPrimary,
+                                    maxLines = 3,
                                     overflow = TextOverflow.Ellipsis
                                 )
+                            }
+                        } else {
+                            // #528 6 Customizable Hover Actions (184dp glass card)
+                            val (hoverTitle, hoverSub) = when (settings.floatingHoverAction) {
+                                FloatingHoverAction.CONNECTION_BATTERY -> {
+                                    val battStr = phoneStatus?.let { st ->
+                                        val ch = if (st.isCharging) " ⚡" else ""
+                                        "${st.batteryLevel}%$ch"
+                                    } ?: "--"
+                                    val connStr = if (serverState.connectedPhones.isNotEmpty()) {
+                                        "${serverState.pairedDeviceName.ifBlank { "Phone" }} · $battStr"
+                                    } else {
+                                        DesktopStrings.t("未連線", "Disconnected")
+                                    }
+                                    connStr to ""
+                                }
+                                FloatingHoverAction.LATEST_MESSAGE -> {
+                                    val msg = hoverLatestMsg
+                                    if (msg != null) {
+                                        val app = DesktopAppLabels.resolveLabel(msg.packageName, msg.appLabel)
+                                        val sender = resolveMessageTitle(msg.sender, msg.packageName, app)
+                                        "$app · $sender" to msg.preview.take(48)
+                                    } else {
+                                        DesktopStrings.floatingHoverNoMessage to ""
+                                    }
+                                }
+                                FloatingHoverAction.TODAY_STATS -> {
+                                    val st = hoverStats
+                                    val totalRisk = (st?.scam ?: 0) + (st?.suspicious ?: 0) + (st?.warning ?: 0)
+                                    DesktopStrings.floatingHoverActionName(FloatingHoverAction.TODAY_STATS) to
+                                        DesktopStrings.floatingHoverStatsLine(st?.today ?: 0, st?.unread ?: 0, totalRisk)
+                                }
+                                FloatingHoverAction.LATEST_INTEL_REPORT -> {
+                                    DesktopStrings.floatingHoverActionName(FloatingHoverAction.LATEST_INTEL_REPORT) to
+                                        (hoverIntelSummary?.take(56) ?: DesktopStrings.floatingHoverNoIntel)
+                                }
+                                FloatingHoverAction.CLOCK_DATE -> {
+                                    val now = java.util.Date()
+                                    val timeSdf = if (settings.use24HourTime) TOAST_TIME_24_FMT.get() else TOAST_TIME_12_FMT.get()
+                                    timeSdf.format(now) to HOVER_DATE_FMT.get().format(now)
+                                }
+                                FloatingHoverAction.CUSTOM_TEXT -> {
+                                    settings.floatingHoverCustomText.trim().take(40).ifBlank {
+                                        DesktopStrings.appTitle
+                                    } to ""
+                                }
+                            }
+                            Column(
+                                modifier = Modifier
+                                    .width(184.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(popupBgColor)
+                                    .border(1.dp, accentColor.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = hoverTitle,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = tokens.textPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (hoverSub.isNotBlank()) {
+                                    Text(
+                                        text = hoverSub,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = tokens.textSecondary,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
                     }

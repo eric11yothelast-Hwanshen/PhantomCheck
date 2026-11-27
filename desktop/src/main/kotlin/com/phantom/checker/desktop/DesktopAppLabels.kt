@@ -1,7 +1,6 @@
 package com.phantom.checker.desktop
 
 import androidx.compose.ui.graphics.Color
-import kotlin.math.abs
 
 /**
  * #494 / #498 桌面端共用 App 顯示名稱與色彩映射（優先採用手機端傳來的 appLabel，未連線或舊版手機則以常見套件表 fallback）。
@@ -9,6 +8,8 @@ import kotlin.math.abs
 object DesktopAppLabels {
 
     private data class AppMeta(val zh: String, val en: String, val colorHex: Long)
+
+    private val GENERIC_PACKAGE_SEGMENTS = setOf("com", "org", "net", "android", "app", "apps", "mobile", "client")
 
     private val knownApps: Map<String, AppMeta> = mapOf(
         "jp.naver.line.android" to AppMeta("LINE", "LINE", 0xFF06C755),
@@ -70,7 +71,7 @@ object DesktopAppLabels {
         val meta = knownApps[packageName]
         if (meta != null) return DesktopStrings.t(meta.zh, meta.en)
         if (packageName.isBlank()) return DesktopStrings.t("未知應用", "Unknown App")
-        val segments = packageName.split('.').filter { it.isNotBlank() && it !in setOf("com", "org", "net", "android", "app", "apps", "mobile", "client") }
+        val segments = packageName.split('.').filter { it.isNotBlank() && it !in GENERIC_PACKAGE_SEGMENTS }
         val candidate = segments.lastOrNull() ?: packageName.substringAfterLast('.')
         return candidate.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
     }
@@ -79,7 +80,7 @@ object DesktopAppLabels {
         val parsed = parseHexColorOrNull(colorHex)
         if (parsed != null) return parsed
         knownApps[packageName]?.let { return Color(it.colorHex) }
-        val idx = abs(packageName.hashCode()) % fallbackPalette.size
+        val idx = (packageName.hashCode() and 0x7FFFFFFF) % fallbackPalette.size
         return fallbackPalette[idx]
     }
 

@@ -111,9 +111,11 @@ internal fun DesktopRulesPage(
                             OutlinedTextField(value = newRuleSender, onValueChange = onNewRuleSenderChange, label = { Text(DesktopStrings.whitelistSenderHint) }, modifier = Modifier.weight(1f), singleLine = true)
                             OutlinedTextField(value = newRulePkg, onValueChange = onNewRulePkgChange, label = { Text(DesktopStrings.whitelistPkgHint) }, modifier = Modifier.weight(1f), singleLine = true)
                             SpringButton(onClick = {
-                                if (newRuleSender.isNotBlank()) {
+                                val sender = newRuleSender.trim()
+                                val pkg = newRulePkg.trim()
+                                if (sender.isNotBlank()) {
                                     scope.launch {
-                                        if (sendOrNotify(LinkMsgType.WHITELIST_ADD, WhitelistAddReq(sender = newRuleSender, packageName = newRulePkg, ruleText = newRuleSender))) {
+                                        if (sendOrNotify(LinkMsgType.WHITELIST_ADD, WhitelistAddReq(sender = sender, packageName = pkg, ruleText = sender))) {
                                             onNewRuleSenderChange("")
                                             onNewRulePkgChange("")
                                         }
@@ -162,9 +164,10 @@ internal fun DesktopRulesPage(
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             OutlinedTextField(value = newTagName, onValueChange = onNewTagNameChange, label = { Text(DesktopStrings.tagNameHint) }, modifier = Modifier.weight(1f), singleLine = true)
                             SpringButton(onClick = {
-                                if (newTagName.isNotBlank()) {
+                                val tag = newTagName.trim()
+                                if (tag.isNotBlank()) {
                                     scope.launch {
-                                        if (sendOrNotify(LinkMsgType.TAGS_ADD, TagAddReq(name = newTagName))) onNewTagNameChange("")
+                                        if (sendOrNotify(LinkMsgType.TAGS_ADD, TagAddReq(name = tag))) onNewTagNameChange("")
                                     }
                                 }
                             }, animationsEnabled = settings.animationsEnabled) { Text(DesktopStrings.add) }
@@ -189,6 +192,7 @@ internal fun DesktopRulesPage(
     }
 
     val renderMutedAppsCard: @Composable (Modifier) -> Unit = { cardMod ->
+        val mutedCount = androidx.compose.runtime.remember(mutedApps) { mutedApps.count { it.muted } }
         GlassCard(modifier = cardMod) {
             Column(modifier = Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -201,7 +205,7 @@ internal fun DesktopRulesPage(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(DesktopIcons.Bell, contentDescription = null, tint = tokens.accentText, modifier = Modifier.size(18.dp))
                         Text(DesktopStrings.mutedAppsTitle, style = MaterialTheme.typography.titleMedium, color = tokens.textPrimary)
-                        renderCountBadge(mutedApps.count { it.muted })
+                        renderCountBadge(mutedCount)
                     }
                     Text(if (settings.rulesCollapseMuted) "▸" else "▾", color = tokens.textMuted)
                 }

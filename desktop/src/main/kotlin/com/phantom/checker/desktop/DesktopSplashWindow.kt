@@ -58,7 +58,7 @@ internal class DesktopSplashWindow private constructor(
         fun showIfEligible(startMinimized: Boolean): DesktopSplashWindow? {
             if (startMinimized) return null
             return runCatching {
-                var created: DesktopSplashWindow? = null
+                val createdRef = java.util.concurrent.atomic.AtomicReference<DesktopSplashWindow?>(null)
                 val initTask = Runnable {
                     val jw = JWindow().apply {
                         isAlwaysOnTop = true
@@ -135,12 +135,12 @@ internal class DesktopSplashWindow private constructor(
                     jw.isVisible = true
 
                     val timer = Timer(SAFETY_TIMEOUT_MS) {
-                        created?.dismiss()
+                        createdRef.get()?.dismiss()
                     }.apply {
                         isRepeats = false
-                        start()
                     }
-                    created = DesktopSplashWindow(jw, timer)
+                    createdRef.set(DesktopSplashWindow(jw, timer))
+                    timer.start()
                 }
 
                 if (SwingUtilities.isEventDispatchThread()) {
@@ -148,7 +148,7 @@ internal class DesktopSplashWindow private constructor(
                 } else {
                     SwingUtilities.invokeAndWait(initTask)
                 }
-                created
+                createdRef.get()
             }.onFailure { err ->
                 DesktopDiagnostics.warn("Splash", "Splash creation failed (graceful fallback): ${err.javaClass.simpleName}: ${err.message}")
             }.getOrNull()

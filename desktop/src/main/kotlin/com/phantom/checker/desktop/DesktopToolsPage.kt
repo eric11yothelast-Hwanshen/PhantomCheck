@@ -285,7 +285,7 @@ fun DesktopToolsPage(
                 SpringButton(
                     enabled = isConnected,
                     animationsEnabled = settings.animationsEnabled,
-                    containerColor = DesktopPalette.GlassWarning,
+                    containerColor = tokens.warning,
                     onClick = {
                         scope.launch {
                             val ok = server.sendCommand(LinkMsgType.FIND_PHONE_RING, UUID.randomUUID().toString(), emptyMap<String, String>())
@@ -310,7 +310,12 @@ fun DesktopToolsPage(
                         containerColor = accentColor,
                         onClick = {
                             val url = openUrlInput.trim()
-                            if (!url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)) {
+                            val validHttpUrl = runCatching {
+                                val uri = java.net.URI(url)
+                                val scheme = uri.scheme?.lowercase()
+                                (scheme == "http" || scheme == "https") && !uri.host.isNullOrBlank()
+                            }.getOrDefault(false)
+                            if (!validHttpUrl) {
                                 onFeedback(DesktopStrings.openUrlInvalid)
                             } else {
                                 scope.launch {

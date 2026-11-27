@@ -90,7 +90,7 @@ private data class AppGroupSummary(
 
 private fun riskSemanticColor(riskLabel: String, tokens: DesktopThemeTokens): Color = when (riskLabel.lowercase()) {
     "scam" -> tokens.error
-    "suspicious" -> tokens.warning
+    "suspicious", "warning" -> tokens.warning
     else -> tokens.success
 }
 
@@ -177,6 +177,7 @@ internal fun DesktopMessagesPage(
                 val highestRisk = when {
                     sortedConvs.any { it.highestRisk.equals("scam", ignoreCase = true) } -> "scam"
                     sortedConvs.any { it.highestRisk.equals("suspicious", ignoreCase = true) } -> "suspicious"
+                    sortedConvs.any { it.highestRisk.equals("warning", ignoreCase = true) } -> "warning"
                     else -> "safe"
                 }
                 AppGroupSummary(
@@ -966,7 +967,11 @@ internal fun DesktopMessagesPage(
                                                 Text(
                                                     text = "${DesktopStrings.riskLabelText(item.riskLabel)} · ${formatRelativeConvTime(item.timestamp, settings.use24HourTime)}",
                                                     style = MaterialTheme.typography.labelSmall,
-                                                    color = if (item.riskLabel.equals("scam", ignoreCase = true)) tokens.error else tokens.textMuted
+                                                    color = when (item.riskLabel.lowercase()) {
+                                                        "scam" -> tokens.error
+                                                        "suspicious", "warning" -> tokens.warning
+                                                        else -> tokens.textMuted
+                                                    }
                                                 )
                                             }
                                             Spacer(Modifier.height(3.dp))

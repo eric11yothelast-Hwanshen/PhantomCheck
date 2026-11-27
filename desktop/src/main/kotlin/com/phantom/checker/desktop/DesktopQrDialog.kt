@@ -83,6 +83,13 @@ fun DesktopQrPairingDialog(
         }
     }
 
+    LaunchedEffect(copiedNotice) {
+        if (copiedNotice) {
+            delay(3_000L)
+            copiedNotice = false
+        }
+    }
+
     val remSec = ((pairCodePair.second - nowMs) / 1000L).coerceAtLeast(0L)
     val isExpired = remSec <= 0L
 

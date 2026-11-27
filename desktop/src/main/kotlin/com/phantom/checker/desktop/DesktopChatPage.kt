@@ -158,7 +158,7 @@ internal fun DesktopChatPage(
                     ).forEach { prompt ->
                         FilterChip(selected = false, onClick = { onSendChatMessage(prompt) }, label = { Text(prompt) })
                     }
-                    val latestMsg = messages.maxByOrNull { it.timestamp }
+                    val latestMsg = remember(messages) { messages.maxByOrNull { it.timestamp } }
                     if (latestMsg != null) {
                         FilterChip(
                             selected = false,

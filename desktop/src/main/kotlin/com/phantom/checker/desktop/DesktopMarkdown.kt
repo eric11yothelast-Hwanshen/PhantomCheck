@@ -47,8 +47,11 @@ fun DesktopMarkdownText(
                         2 -> MaterialTheme.typography.titleSmall
                         else -> MaterialTheme.typography.bodyMedium
                     }
+                    val rendered = androidx.compose.runtime.remember(block.text, accentColor, tokens.codeBg) {
+                        renderInlineMarkdown(block.text, accentColor, tokens.codeBg)
+                    }
                     Text(
-                        text = renderInlineMarkdown(block.text, accentColor, tokens.codeBg),
+                        text = rendered,
                         style = style,
                         fontWeight = FontWeight.Bold,
                         color = if (block.level <= 2) accentColor else resolvedText
@@ -72,9 +75,12 @@ fun DesktopMarkdownText(
                     }
                 }
                 is MdBlock.Bullet -> {
+                    val rendered = androidx.compose.runtime.remember(block.text, accentColor, tokens.codeBg) {
+                        renderInlineMarkdown(block.text, accentColor, tokens.codeBg)
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(block.marker, style = MaterialTheme.typography.bodyMedium, color = accentColor, fontWeight = FontWeight.Bold)
-                        Text(renderInlineMarkdown(block.text, accentColor, tokens.codeBg), style = MaterialTheme.typography.bodyMedium, color = resolvedText)
+                        Text(rendered, style = MaterialTheme.typography.bodyMedium, color = resolvedText)
                     }
                 }
                 is MdBlock.Table -> {
@@ -94,8 +100,11 @@ fun DesktopMarkdownText(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 cells.forEach { cell ->
+                                    val rendered = androidx.compose.runtime.remember(cell, accentColor, tokens.codeBg) {
+                                        renderInlineMarkdown(cell, accentColor, tokens.codeBg)
+                                    }
                                     Text(
-                                        text = renderInlineMarkdown(cell, accentColor, tokens.codeBg),
+                                        text = rendered,
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = if (rowIdx == 0) FontWeight.SemiBold else FontWeight.Normal,
                                         color = resolvedText,
@@ -107,8 +116,11 @@ fun DesktopMarkdownText(
                     }
                 }
                 is MdBlock.Paragraph -> {
+                    val rendered = androidx.compose.runtime.remember(block.text, accentColor, tokens.codeBg) {
+                        renderInlineMarkdown(block.text, accentColor, tokens.codeBg)
+                    }
                     Text(
-                        text = renderInlineMarkdown(block.text, accentColor, tokens.codeBg),
+                        text = rendered,
                         style = MaterialTheme.typography.bodyMedium,
                         color = resolvedText
                     )
