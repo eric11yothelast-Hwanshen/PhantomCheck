@@ -46,7 +46,17 @@ compose.desktop {
             packageVersion = desktopVersion
             description = "PhantomCheck Desktop - Encrypted LAN Link & Message Manager"
             vendor = "PhantomCheck"
-            includeAllModules = true
+            // 改以顯式精簡執行期模組取代 includeAllModules = true（可執行 :desktop:suggestRuntimeModules 複核）
+            modules(
+                "java.desktop",
+                "java.instrument",
+                "java.logging",
+                "java.management",
+                "java.naming",
+                "java.prefs",
+                "jdk.crypto.ec",
+                "jdk.unsupported"
+            )
             windows {
                 iconFile.set(project.file("src/main/resources/icon.ico"))
                 menuGroup = "PhantomCheck"

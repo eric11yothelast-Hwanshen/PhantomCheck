@@ -7,6 +7,23 @@
     public static ** valueOf(java.lang.String);
 }
 
+# Gson @SerializedName 欄位保活（確保 R8 full mode 下所有 @SerializedName 欄位與泛型簽章不被裁剪）
+-keepclassmembers class * {
+    @com.google.gson.annotations.SerializedName <fields>;
+}
+
+# Retrofit 介面與 HTTP 註解方法保活（R8 full mode 下避免動態代理介面或 suspend Continuation 遭裁剪）
+-keep,allowobfuscation,allowshrinking interface retrofit2.Call
+-keep,allowobfuscation,allowshrinking class retrofit2.Response
+-keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
+-if interface * { @retrofit2.http.* <methods>; }
+-keep,allowobfuscation interface <1> {
+    @retrofit2.http.* <methods>;
+}
+-keepclassmembers,allowshrinking,allowobfuscation interface * {
+    @retrofit2.http.* <methods>;
+}
+
 # 專案 Gson 模型欄位保留（AiClient / IntelClient 未標 @SerializedName 之欄位與建構子）
 -keep class com.phantom.checker.network.** {
     <init>(...);

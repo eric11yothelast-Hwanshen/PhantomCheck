@@ -9,8 +9,9 @@ on:
 jobs:
   opencode:
     if: |
-      contains(github.event.comment.body, '/opencode') ||
-      contains(github.event.comment.body, '/oc')
+      contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association) &&
+      (contains(github.event.comment.body, '/opencode') ||
+      contains(github.event.comment.body, '/oc'))
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -19,12 +20,12 @@ jobs:
       issues: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 1
 
       - name: Run OpenCode
-        uses: anomalyco/opencode/github@latest
+        uses: anomalyco/opencode/github@77fc88c8ade8e5a620ebbe1197f3a572d29ae91a # github-v1.2.19 (latest)
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
         with:

@@ -23,7 +23,6 @@ android {
         versionCode = 59
         versionName = "5.1.0"
 
-        buildConfigField("String", "MISTRAL_API_KEY", "\"${localProps.getProperty("mistral.apiKey", "")}\"")
         buildConfigField("String", "MISTRAL_BASE_URL", "\"${localProps.getProperty("mistral.baseUrl", "")}\"")
     }
 
@@ -57,7 +56,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            buildConfigField("String", "MISTRAL_API_KEY", "\"${localProps.getProperty("mistral.apiKey", "")}\"")
+        }
         release {
+            // Release 建置一律禁止注入開發機 local.properties 之 API key
+            buildConfigField("String", "MISTRAL_API_KEY", "\"\"")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -67,6 +71,18 @@ android {
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }
+        }
+    }
+
+    gradle.taskGraph.whenReady {
+        val requiresReleaseSigning = allTasks.any { task ->
+            task.project == project && task.name in setOf("assembleRelease", "bundleRelease", "packageRelease")
+        }
+        if (requiresReleaseSigning && !hasReleaseSigning) {
+            throw GradleException(
+                "Release signing config is missing. Provide PHANTOM_KEYSTORE_FILE, PHANTOM_KEYSTORE_PASSWORD, " +
+                    "PHANTOM_KEY_ALIAS, and PHANTOM_KEY_PASSWORD (or keystore.* in local.properties) before running assembleRelease."
+            )
         }
     }
 

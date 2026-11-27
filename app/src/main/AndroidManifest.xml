@@ -42,6 +42,8 @@
 
     <application
         android:name=".PhantomApplication"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
         android:label="@string/chat_s_8dd976"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"

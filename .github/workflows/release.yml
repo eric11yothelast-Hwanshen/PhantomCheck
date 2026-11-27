@@ -27,14 +27,37 @@ jobs:
       - name: Decode keystore
         env:
           PHANTOM_KEYSTORE_BASE64: ${{ secrets.PHANTOM_KEYSTORE_BASE64 }}
-        run: echo "$PHANTOM_KEYSTORE_BASE64" | base64 -d > "$HOME/phantom-release.jks"
+          PHANTOM_KEYSTORE_PASSWORD: ${{ secrets.PHANTOM_KEYSTORE_PASSWORD }}
+          PHANTOM_KEY_ALIAS: ${{ secrets.PHANTOM_KEY_ALIAS }}
+          PHANTOM_KEY_PASSWORD: ${{ secrets.PHANTOM_KEY_PASSWORD }}
+        run: |
+          if [ -z "$PHANTOM_KEYSTORE_BASE64" ]; then
+            echo "::error::Missing required secret PHANTOM_KEYSTORE_BASE64; refusing to create empty keystore."
+            exit 1
+          fi
+          if [ -z "$PHANTOM_KEYSTORE_PASSWORD" ] || [ -z "$PHANTOM_KEY_ALIAS" ] || [ -z "$PHANTOM_KEY_PASSWORD" ]; then
+            echo "::error::Missing required signing secret(s): PHANTOM_KEYSTORE_PASSWORD, PHANTOM_KEY_ALIAS, or PHANTOM_KEY_PASSWORD."
+            exit 1
+          fi
+          printf '%s' "$PHANTOM_KEYSTORE_BASE64" | base64 -d > "$HOME/phantom-release.jks"
+          if [ ! -s "$HOME/phantom-release.jks" ]; then
+            rm -f "$HOME/phantom-release.jks"
+            echo "::error::Decoded keystore is empty (0 bytes)."
+            exit 1
+          fi
 
-      - name: Build Debug and Release APKs
+      - name: Build Release APK
         env:
           PHANTOM_KEYSTORE_PASSWORD: ${{ secrets.PHANTOM_KEYSTORE_PASSWORD }}
           PHANTOM_KEY_ALIAS: ${{ secrets.PHANTOM_KEY_ALIAS }}
           PHANTOM_KEY_PASSWORD: ${{ secrets.PHANTOM_KEY_PASSWORD }}
-        run: PHANTOM_KEYSTORE_FILE="$HOME/phantom-release.jks" ./gradlew :app:assembleDebug :app:assembleRelease --no-daemon
+        run: PHANTOM_KEYSTORE_FILE="$HOME/phantom-release.jks" ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Generate Release APK SHA-256
+        run: |
+          cd app/build/outputs/apk/release
+          sha256sum app-release.apk > app-release.apk.sha256
+          sha256sum -c app-release.apk.sha256
 
       - name: Extract CHANGELOG section
         env:
@@ -65,7 +88,7 @@ jobs:
         with:
           files: |
             app/build/outputs/apk/release/app-release.apk
-            app/build/outputs/apk/debug/app-debug.apk
+            app/build/outputs/apk/release/app-release.apk.sha256
           body_path: changelog_section.md
           generate_release_notes: true
 
@@ -105,8 +128,29 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$ver" "desktop\packaging\windows\PhantomCheckDesktop.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Generate Desktop Installer SHA-256
+        shell: pwsh
+        run: |
+          $installers = Get-ChildItem -Path "desktop/build/compose/binaries/main/inno" -Filter "*-setup.exe" -File
+          if (-not $installers -or $installers.Count -eq 0) {
+            Write-Error "No *-setup.exe installer found to hash."
+            exit 1
+          }
+          foreach ($f in $installers) {
+            $hash = (Get-FileHash -Path $f.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $shaFile = "$($f.FullName).sha256"
+            [System.IO.File]::WriteAllText($shaFile, "$hash  $($f.Name)`n", [System.Text.UTF8Encoding]::new($false))
+            $recorded = (Get-Content -Path $shaFile -Raw).Trim().Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)[0]
+            if ($recorded -ne $hash) {
+              Write-Error "SHA-256 self-check failed for $($f.Name)"
+              exit 1
+            }
+            Write-Host "Verified $($f.Name).sha256: $hash"
+          }
+
       - name: Attach Desktop Installer (setup.exe) to GitHub Release
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           files: |
             desktop/build/compose/binaries/main/inno/*-setup.exe
+            desktop/build/compose/binaries/main/inno/*-setup.exe.sha256
