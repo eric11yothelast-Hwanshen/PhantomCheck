@@ -2,6 +2,7 @@ package com.phantom.checker.ui
 
 import android.content.Context
 import com.phantom.checker.service.HeartbeatPolicy
+import com.phantom.checker.service.KeepAlivePolicy
 import com.phantom.checker.service.StatsForegroundService
 import com.phantom.checker.util.PhantomPrefs
 import com.phantom.checker.util.PhantomSettingsBus
@@ -205,6 +206,7 @@ object SettingsCatalog {
         "notif_swipe_delete",
         "notif_digit_variance",
         "notif_reply_proxy",
+        "appearance_high_contrast",
         "appearance_glass_effect",
         "appearance_haptic",
         "intel_enabled",
@@ -314,9 +316,11 @@ object SettingsCatalog {
                 PhantomPrefs.setPersistentStatsEnabled(appCtx, enabled)
                 if (enabled) {
                     HeartbeatPolicy.schedule(appCtx)
+                    KeepAlivePolicy.scheduleAll(appCtx)
                     StatsForegroundService.startOrRefresh(appCtx)
                 } else {
                     StatsForegroundService.stop(appCtx)
+                    KeepAlivePolicy.cancelAll(appCtx)
                 }
             }
             "quick_ai_risk" -> PhantomPrefs.setAiRiskEnabled(appCtx, enabled)
@@ -681,7 +685,7 @@ object SettingsCatalog {
             unit = "字"
         ),
         NumericSettingSpec(
-            id = "home_card_layout",
+            id = "personal_home_card_layout",
             title = com.phantom.checker.PhantomApplication.str(R.string.catalog_personal_home_card_layout_title),
             min = 0,
             max = 1,
@@ -690,7 +694,7 @@ object SettingsCatalog {
             valueLabels = listOf(com.phantom.checker.PhantomApplication.str(R.string.catalog_layout_list), com.phantom.checker.PhantomApplication.str(R.string.catalog_layout_stack))
         ),
         NumericSettingSpec(
-            id = "notes_card_layout",
+            id = "personal_notes_card_layout",
             title = com.phantom.checker.PhantomApplication.str(R.string.catalog_personal_notes_card_layout_title),
             min = 0,
             max = 1,
@@ -748,20 +752,29 @@ object SettingsCatalog {
         )
     )
 
-    fun findNumericSpec(id: String): NumericSettingSpec? = NUMERIC_SPECS.firstOrNull { it.id == id }
+    private fun normalizeNumericId(id: String): String = when (id) {
+        "home_card_layout" -> "personal_home_card_layout"
+        "notes_card_layout" -> "personal_notes_card_layout"
+        else -> id
+    }
+
+    fun findNumericSpec(id: String): NumericSettingSpec? {
+        val canonicalId = normalizeNumericId(id)
+        return NUMERIC_SPECS.firstOrNull { it.id == canonicalId }
+    }
 
     fun getNumericValue(ctx: Context, id: String): Int? {
         val appCtx = ctx.applicationContext
-        return when (id) {
+        return when (normalizeNumericId(id)) {
             "ai_chat_rag_limit" -> PhantomPrefs.getChatRagMessageLimit(appCtx)
             "ai_daily_limit" -> PhantomPrefs.getDailyAiLimit(appCtx)
             "notif_throttle" -> PhantomPrefs.getSameKeyThrottleSeconds(appCtx)
             "ai_min_trigger_length" -> PhantomPrefs.getAiMinTriggerLength(appCtx)
-            "home_card_layout" -> when (PhantomPrefs.getHomeCardLayoutMode(appCtx)) {
+            "personal_home_card_layout" -> when (PhantomPrefs.getHomeCardLayoutMode(appCtx)) {
                 PhantomPrefs.HomeCardLayoutMode.LIST -> 0
                 PhantomPrefs.HomeCardLayoutMode.CENTER -> 1
             }
-            "notes_card_layout" -> when (PhantomPrefs.getNoteCardLayoutMode(appCtx)) {
+            "personal_notes_card_layout" -> when (PhantomPrefs.getNoteCardLayoutMode(appCtx)) {
                 PhantomPrefs.NoteCardLayoutMode.LIST -> 0
                 PhantomPrefs.NoteCardLayoutMode.CENTER -> 1
             }
@@ -780,20 +793,22 @@ object SettingsCatalog {
      * 回傳 Triple(before, after, wasClamped)，若 id 不在可調整清單則回傳 null。
      */
     fun applyNumericSetting(ctx: Context, id: String, rawValue: Int): Triple<Int, Int, Boolean>? {
-        val spec = findNumericSpec(id) ?: return null
+        val canonicalId = normalizeNumericId(id)
+        val spec = findNumericSpec(canonicalId) ?: return null
         val appCtx = ctx.applicationContext
-        val before = getNumericValue(appCtx, id) ?: return null
+        val before = getNumericValue(appCtx, canonicalId) ?: return null
         val (target, wasClamped) = spec.clampAndSnap(rawValue)
-        when (id) {
+        var actualTarget = target
+        when (canonicalId) {
             "ai_chat_rag_limit" -> PhantomPrefs.setChatRagMessageLimit(appCtx, target)
             "ai_daily_limit" -> PhantomPrefs.setDailyAiLimit(appCtx, target)
             "notif_throttle" -> PhantomPrefs.setSameKeyThrottleSeconds(appCtx, target)
             "ai_min_trigger_length" -> PhantomPrefs.setAiMinTriggerLength(appCtx, target)
-            "home_card_layout" -> PhantomPrefs.setHomeCardLayoutMode(
+            "personal_home_card_layout" -> PhantomPrefs.setHomeCardLayoutMode(
                 appCtx,
                 if (target == 1) PhantomPrefs.HomeCardLayoutMode.CENTER else PhantomPrefs.HomeCardLayoutMode.LIST
             )
-            "notes_card_layout" -> PhantomPrefs.setNoteCardLayoutMode(
+            "personal_notes_card_layout" -> PhantomPrefs.setNoteCardLayoutMode(
                 appCtx,
                 if (target == 1) PhantomPrefs.NoteCardLayoutMode.CENTER else PhantomPrefs.NoteCardLayoutMode.LIST
             )
@@ -803,6 +818,7 @@ object SettingsCatalog {
             "proactive_daily_cap" -> PhantomPrefs.setProactiveDailyCap(appCtx, target)
             "calendar_insight_interval_minutes" -> {
                 val snapped = listOf(30, 60, 120, 180).minByOrNull { kotlin.math.abs(it - target) } ?: 60
+                actualTarget = snapped
                 PhantomPrefs.setCalendarInsightIntervalMinutes(appCtx, snapped)
                 com.phantom.checker.service.CalendarInsightScheduler.scheduleOrUpdate(appCtx)
             }
@@ -810,7 +826,7 @@ object SettingsCatalog {
             else -> return null
         }
         PhantomSettingsBus.notifyChanged()
-        return Triple(before, target, wasClamped)
+        return Triple(before, actualTarget, wasClamped)
     }
 
     /** 供 ChatScreen system prompt 動態產生可調整數值設定清單（含範圍與目前值） */

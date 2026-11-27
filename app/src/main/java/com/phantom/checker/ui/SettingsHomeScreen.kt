@@ -47,6 +47,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -79,6 +80,8 @@ import com.phantom.checker.ui.components.phantomPopIn
 import com.phantom.checker.util.PhantomSettingsBus
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class SettingsHomeSummaries(
     val quickSummary: String,
@@ -121,8 +124,8 @@ internal fun SettingsHomeScreen(
     onReportTourBounds: (String, Rect) -> Unit = { _, _ -> },
     onShowMessage: (String) -> Unit,
 ) {
-    val resCtx = LocalContext.current
     val ctx = LocalContext.current
+    val resCtx = ctx
     val appCtx = ctx.applicationContext
     val horizPad = auroraHorizontalPadding()
     val layoutVer = UiLayoutPrefs.version
@@ -148,7 +151,12 @@ internal fun SettingsHomeScreen(
             aiItems + localMatchedItems.filterNot { it.id in aiSet }
         }
     }
-    val isAiConfigured = remember(settingsBusVer) { AiClient.getActiveProfile(appCtx) != null }
+    var isAiConfigured by remember { mutableStateOf(false) }
+    LaunchedEffect(settingsBusVer) {
+        isAiConfigured = withContext(Dispatchers.IO) {
+            AiClient.getActiveProfile(appCtx) != null
+        }
+    }
 
     PhantomPageScaffold(
         title = stringResource(R.string.common_settings),
@@ -581,8 +589,8 @@ private fun PinnedSettingTile(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    val resCtx = LocalContext.current
     val ctx = LocalContext.current
+    val resCtx = ctx
     val appCtx = ctx.applicationContext
     val isToggle = remember(item.id) { SettingsCatalog.isToggleable(item.id) }
     var checked by remember(item.id, settingsBusVer) {
@@ -668,8 +676,8 @@ private fun SettingsSearchResultRow(
     settingsBusVer: Long,
     onClick: () -> Unit,
 ) {
-    val resCtx = LocalContext.current
     val ctx = LocalContext.current
+    val resCtx = ctx
     val appCtx = ctx.applicationContext
     val category = remember(item.id) { SettingsCategoryRegistry.categoryFor(item.id) }
     val isFolded = remember(item.id) { SettingsCategoryRegistry.isFoldedByDefault(item.id) }

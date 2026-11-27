@@ -51,7 +51,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.focus.onFocusChanged
 import com.phantom.checker.ui.components.AuroraCenteredContent
 import com.phantom.checker.ui.components.AuroraTokens
 import com.phantom.checker.ui.components.PhantomPageScaffold
@@ -157,7 +157,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import kotlin.math.roundToInt
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -169,7 +168,6 @@ import com.phantom.checker.network.AiClient
 import com.phantom.checker.network.ApiKeySource
 import com.phantom.checker.network.IntelClient
 import com.phantom.checker.service.AppDatabaseHolder
-import com.phantom.checker.service.HeartbeatPolicy
 import com.phantom.checker.service.RetentionConfig
 import com.phantom.checker.service.RetentionPolicy
 import com.phantom.checker.service.StatsForegroundService
@@ -341,8 +339,8 @@ fun FilterSettingsScreen(
     initialHighlightCardKey: String? = null,
     initialHighlightSettingId: String? = null
 ) {
-    val resCtx = LocalContext.current
     val ctx = LocalContext.current
+    val resCtx = ctx
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -520,6 +518,11 @@ fun FilterSettingsScreen(
         mutableIntStateOf(if (PhantomPrefs.isSettingsTourCompleted(appCtx)) 0 else 1)
     }
     val cardBounds = remember { mutableStateMapOf<String, Rect>() }
+    fun updateCardBounds(key: String, rect: Rect) {
+        if (cardBounds[key] != rect) {
+            cardBounds[key] = rect
+        }
+    }
     val listState = rememberLazyListState()
     val whitelistBringIntoViewRequester = remember { BringIntoViewRequester() }
 
@@ -680,7 +683,9 @@ fun FilterSettingsScreen(
                 noteCardLayoutMode = PhantomPrefs.getNoteCardLayoutMode(appCtx)
                 visibleStatsCards = PhantomPrefs.getVisibleStatsCards(appCtx)
                 hapticEnabled = PhantomPrefs.isHapticFeedbackEnabled(appCtx)
-                ShizukuManager.refreshState(appCtx)
+                scope.launch(Dispatchers.IO) {
+                    ShizukuManager.refreshState(appCtx)
+                }
             }
         }
         lifecycleOwner?.lifecycle?.addObserver(observer)
@@ -689,12 +694,16 @@ fun FilterSettingsScreen(
 
     LaunchedEffect(Unit) {
         isLoadingRules = true
-        withContext(Dispatchers.IO) {
-            val db = AppDatabaseHolder.db(appCtx)
-            rules = db.filterDao().all()
-            appGroups = db.messageDao().groupByApp()
+        try {
+            val (loadedRules, loadedGroups) = withContext(Dispatchers.IO) {
+                val db = AppDatabaseHolder.db(appCtx)
+                db.filterDao().all() to db.messageDao().groupByApp()
+            }
+            rules = loadedRules
+            appGroups = loadedGroups
+        } finally {
+            isLoadingRules = false
         }
-        isLoadingRules = false
     }
 
     if (showAppPickerDialog) {
@@ -734,8 +743,11 @@ fun FilterSettingsScreen(
                 if (isExporting) return@ExportCsvDialog
                 scope.launch {
                     isExporting = true
-                    val result = MessageExporter.exportToDownloads(appCtx, pkg, daysBack)
-                    isExporting = false
+                    val result = try {
+                        MessageExporter.exportToDownloads(appCtx, pkg, daysBack)
+                    } finally {
+                        isExporting = false
+                    }
                     result.onSuccess { fileName ->
                         snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_11c369, fileName))
                     }.onFailure { err ->
@@ -759,11 +771,12 @@ fun FilterSettingsScreen(
                             withContext(Dispatchers.IO) {
                                 val db = AppDatabaseHolder.db(appCtx)
                                 db.withTransaction {
-                                    db.tagDao().deleteCrossRefsForReadMessages()
                                     db.messageDao().deleteReadMessages()
+                                    db.messageDao().deleteAllMessageOrphans()
                                 }
                                 DbMaintenance.enqueueVacuum(appCtx)
                                 StatsForegroundService.startOrRefresh(appCtx)
+                                com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx, immediate = true)
                             }
                             showClearReadConfirm = false
                             snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_4fd207))
@@ -796,9 +809,11 @@ fun FilterSettingsScreen(
                                 db.withTransaction {
                                     db.tagDao().deleteAllCrossRefs()
                                     db.messageDao().deleteAll()
+                                    db.messageDao().deleteAllMessageOrphans()
                                 }
                                 DbMaintenance.enqueueVacuum(appCtx)
                                 StatsForegroundService.startOrRefresh(appCtx)
+                                com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx, immediate = true)
                             }
                             showDeleteAllConfirm = false
                             snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_5fa0a6))
@@ -853,34 +868,44 @@ fun FilterSettingsScreen(
                         if (isImportingPresets) return@Button
                         scope.launch {
                             isImportingPresets = true
-                            val (added, skipped, updatedRules) = withContext(Dispatchers.IO) {
-                                val dao = AppDatabaseHolder.db(appCtx).filterDao()
-                                val currentRules = dao.all()
-                                val existingSet = currentRules
-                                    .filter { it.packageName == null }
-                                    .map { it.keyword.lowercase() }
-                                    .toSet()
-                                var addedCount = 0
-                                var skippedCount = 0
-                                for (kw in PresetKeywords.keywords) {
-                                    if (kw.lowercase() in existingSet) {
-                                        skippedCount++
-                                    } else {
-                                        dao.insert(
-                                            FilterRule(
-                                                keyword = kw,
-                                                isActive = true,
-                                                packageName = null,
-                                                action = FilterRule.ACTION_FILTER
-                                            )
-                                        )
-                                        addedCount++
+                            val (added, skipped, updatedRules) = try {
+                                withContext(Dispatchers.IO) {
+                                    val db = AppDatabaseHolder.db(appCtx)
+                                    val dao = db.filterDao()
+                                    val result = db.withTransaction {
+                                        val currentRules = dao.all()
+                                        val existingSet = currentRules
+                                            .filter { it.packageName == null }
+                                            .map { it.keyword.lowercase() }
+                                            .toSet()
+                                        var addedCount = 0
+                                        var skippedCount = 0
+                                        for (kw in PresetKeywords.keywords) {
+                                            if (kw.lowercase() in existingSet) {
+                                                skippedCount++
+                                            } else {
+                                                dao.insert(
+                                                    FilterRule(
+                                                        keyword = kw,
+                                                        isActive = true,
+                                                        packageName = null,
+                                                        action = FilterRule.ACTION_FILTER
+                                                    )
+                                                )
+                                                addedCount++
+                                            }
+                                        }
+                                        Triple(addedCount, skippedCount, dao.all())
                                     }
+                                    if (result.first > 0) {
+                                        com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                    }
+                                    result
                                 }
-                                Triple(addedCount, skippedCount, dao.all())
+                            } finally {
+                                isImportingPresets = false
                             }
                             rules = updatedRules
-                            isImportingPresets = false
                             showPresetDialog = false
                             val msg = if (added > 0) {
                                 resCtx.getString(R.string.settings_s_ce0699, added, skipped)
@@ -918,14 +943,17 @@ fun FilterSettingsScreen(
                 if (isSavingAvatar) return@AssistantAvatarCropDialog
                 scope.launch {
                     isSavingAvatar = true
-                    val res = AssistantAvatarHelper.saveAvatarFromUri(
-                        ctx = appCtx,
-                        uri = cropUri,
-                        zoomScale = zoomScale,
-                        offsetXNorm = offsetXNorm,
-                        offsetYNorm = offsetYNorm
-                    )
-                    isSavingAvatar = false
+                    val res = try {
+                        AssistantAvatarHelper.saveAvatarFromUri(
+                            ctx = appCtx,
+                            uri = cropUri,
+                            zoomScale = zoomScale,
+                            offsetXNorm = offsetXNorm,
+                            offsetYNorm = offsetYNorm
+                        )
+                    } finally {
+                        isSavingAvatar = false
+                    }
                     res.onSuccess {
                         assistantHasAvatar = true
                         assistantAvatarBitmap = AssistantAvatarHelper.loadAvatarBitmap(appCtx)
@@ -1049,15 +1077,18 @@ fun FilterSettingsScreen(
         if (q.isEmpty() || isAiSearching) return
         scope.launch {
             isAiSearching = true
-            val catalogText = SettingsCatalog.buildAiSearchCatalogText()
-            val allowedIds = SettingsCatalog.ITEMS.map { it.id }.toSet()
-            val result = AiClient.searchSettings(
-                query = q,
-                catalogText = catalogText,
-                allowedIds = allowedIds,
-                context = appCtx
-            )
-            isAiSearching = false
+            val result = try {
+                val catalogText = SettingsCatalog.buildAiSearchCatalogText()
+                val allowedIds = SettingsCatalog.ITEMS.map { it.id }.toSet()
+                AiClient.searchSettings(
+                    query = q,
+                    catalogText = catalogText,
+                    allowedIds = allowedIds,
+                    context = appCtx
+                )
+            } finally {
+                isAiSearching = false
+            }
             result.onSuccess { ids ->
                 val matchedItems = ids.mapNotNull { id -> SettingsCatalog.findById(id) }
                 if (matchedItems.isEmpty()) {
@@ -1075,6 +1106,25 @@ fun FilterSettingsScreen(
     }
 
     val shizukuReady = ShizukuManager.state.collectAsState().value.isReady
+    var aiProfileSummaryInfo by remember {
+        mutableStateOf(0 to resCtx.getString(R.string.settings_s_79aacc))
+    }
+    var appVersionName by remember { mutableStateOf("") }
+    LaunchedEffect(settingsVersion) {
+        aiProfileSummaryInfo = withContext(Dispatchers.IO) {
+            val count = AiClient.getProfiles(appCtx).size
+            val model = AiClient.getActiveProfile(appCtx)?.model?.takeIf { it.isNotBlank() }
+                ?: resCtx.getString(R.string.settings_s_79aacc)
+            count to model
+        }
+    }
+    LaunchedEffect(Unit) {
+        appVersionName = withContext(Dispatchers.IO) {
+            runCatching {
+                appCtx.packageManager.getPackageInfo(appCtx.packageName, 0).versionName ?: ""
+            }.getOrDefault("")
+        }
+    }
     val homeSummaries = remember(
         tokenSaverEnabled,
         aiRiskEnabled,
@@ -1090,10 +1140,13 @@ fun FilterSettingsScreen(
         retentionDays,
         mutedApps,
         batteryWhitelisted,
-        shizukuReady
+        listenerEnabled,
+        shizukuReady,
+        aiProfileSummaryInfo,
+        appVersionName,
+        settingsVersion
     ) {
-        val profileCount = AiClient.getProfiles(appCtx).size
-        val activeModel = AiClient.getActiveProfile(appCtx)?.model?.takeIf { it.isNotBlank() } ?: resCtx.getString(R.string.settings_s_79aacc)
+        val (profileCount, activeModel) = aiProfileSummaryInfo
         val quietSummary = if (quietHoursEnabled) {
             resCtx.getString(R.string.settings_s_461b79).format(
                 quietStartMinute / 60, quietStartMinute % 60,
@@ -1105,19 +1158,15 @@ fun FilterSettingsScreen(
         val displayAssistantName = assistantName.ifBlank { resCtx.getString(R.string.chat_s_8dd976) }
         val themeLabel = ThemePreferences.getThemeMode(appCtx).label
         val layoutLabel = if (homeCardLayoutMode == PhantomPrefs.HomeCardLayoutMode.CENTER) resCtx.getString(R.string.catalog_layout_stack) else resCtx.getString(R.string.settings_s_0c69cd)
-        val notifAccessGranted = androidx.core.app.NotificationManagerCompat
-            .getEnabledListenerPackages(appCtx).contains(appCtx.packageName)
         val pendingPermCount = listOf(
-            notifAccessGranted,
+            listenerEnabled,
             batteryWhitelisted
         ).count { !it }
         val permSummary = buildString {
             append(if (pendingPermCount > 0) resCtx.getString(R.string.settings_s_02d540, pendingPermCount) else resCtx.getString(R.string.settings_s_ace3a4))
             if (shizukuReady) append(resCtx.getString(R.string.settings_s_f4d8a0))
         }
-        val versionName = runCatching {
-            ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: ""
-        }.getOrDefault("")
+        val versionName = appVersionName
         SettingsHomeSummaries(
             quickSummary = resCtx.getString(R.string.settings_s_d185c0, if (tokenSaverEnabled) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81), if (aiRiskEnabled) resCtx.getString(R.string.settings_s_99529c) else resCtx.getString(R.string.settings_s_c56d81)),
             aiSummary = resCtx.getString(R.string.settings_s_360eec, profileCount, activeModel, todayAiUsage, dailyAiLimit),
@@ -1183,7 +1232,7 @@ fun FilterSettingsScreen(
                         onSelectSettingItem = { item -> navigateToSettingItem(item) },
                         onReplayTour = { tourStepIndex = 1 },
                         onReportTourBounds = { key, rect ->
-                            cardBounds[key] = rect
+                            updateCardBounds(key, rect)
                         },
                         onShowMessage = { msg ->
                             scope.launch { snackbarHostState.showSnackbar(msg) }
@@ -1360,7 +1409,7 @@ fun FilterSettingsScreen(
                                 },
                                 glassState = glassState,
                                 modifier = Modifier.onGloballyPositioned { coords ->
-                                    cardBounds["quick"] = coords.boundsInRoot()
+                                    updateCardBounds("quick", coords.boundsInRoot())
                                 }
                             ) {
                     SettingSwitchRow(
@@ -1369,7 +1418,7 @@ fun FilterSettingsScreen(
                         checked = tokenSaverEnabled,
                         onCheckedChange = { checked ->
                             tokenSaverEnabled = checked
-                            PhantomPrefs.setTokenSaverEnabled(appCtx, checked)
+                            SettingsCatalog.applyBooleanSetting(appCtx, "quick_token_saver", checked)
                         }
                     )
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -1380,14 +1429,13 @@ fun FilterSettingsScreen(
                         checked = persistentStats,
                         onCheckedChange = { checked ->
                             persistentStats = checked
-                            PhantomPrefs.setPersistentStatsEnabled(appCtx, checked)
-                            if (checked) {
-                                HeartbeatPolicy.schedule(appCtx)
-                                StatsForegroundService.startOrRefresh(appCtx)
-                            } else {
-                                StatsForegroundService.stop(appCtx)
+                            SettingsCatalog.applyBooleanSetting(appCtx, "quick_persistent_notif", checked)
+                            scope.launch {
+                                kotlinx.coroutines.delay(350L)
+                                fgServiceRunning = withContext(Dispatchers.IO) {
+                                    isStatsForegroundServiceRunning(appCtx)
+                                }
                             }
-                            fgServiceRunning = isStatsForegroundServiceRunning(appCtx)
                         }
                     )
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -1473,7 +1521,7 @@ fun FilterSettingsScreen(
                         },
                         glassState = glassState,
                         modifier = Modifier.onGloballyPositioned { coords ->
-                            cardBounds["hub"] = coords.boundsInRoot()
+                            updateCardBounds("hub", coords.boundsInRoot())
                         }
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1542,7 +1590,7 @@ fun FilterSettingsScreen(
                         },
                         glassState = glassState,
                         modifier = Modifier.onGloballyPositioned { coords ->
-                            cardBounds["personalization"] = coords.boundsInRoot()
+                            updateCardBounds("personalization", coords.boundsInRoot())
                         }
                     ) {
                         Text(stringResource(R.string.settings_s_e49b0f), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
@@ -1748,21 +1796,23 @@ fun FilterSettingsScreen(
 
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             BackgroundLayer.entries.forEach { layer ->
-                                val hasBg = remember(bgUiVersion, layer) {
-                                    PhantomPrefs.hasBackgroundImage(appCtx, layer) &&
-                                        BackgroundImageHelper.backgroundFile(appCtx, layer).exists()
-                                }
-                                var thumb by remember(bgUiVersion, layer, hasBg) {
-                                    mutableStateOf<ImageBitmap?>(null)
-                                }
-                                LaunchedEffect(bgUiVersion, layer, hasBg) {
-                                    thumb = if (hasBg) {
-                                        BackgroundImageHelper.loadPreviewThumbnail(
-                                            BackgroundImageHelper.backgroundFile(appCtx, layer)
-                                        )
-                                    } else {
-                                        null
+                                var hasBg by remember(layer) { mutableStateOf(false) }
+                                var thumb by remember(layer) { mutableStateOf<ImageBitmap?>(null) }
+                                LaunchedEffect(bgUiVersion, layer) {
+                                    val (exists, preview) = withContext(Dispatchers.IO) {
+                                        val ok = PhantomPrefs.hasBackgroundImage(appCtx, layer) &&
+                                            BackgroundImageHelper.backgroundFile(appCtx, layer).exists()
+                                        val bmp = if (ok) {
+                                            BackgroundImageHelper.loadPreviewThumbnail(
+                                                BackgroundImageHelper.backgroundFile(appCtx, layer)
+                                            )
+                                        } else {
+                                            null
+                                        }
+                                        ok to bmp
                                     }
+                                    hasBg = exists
+                                    thumb = preview
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -1812,11 +1862,15 @@ fun FilterSettingsScreen(
                                     if (hasBg) {
                                         TextButton(
                                             onClick = {
-                                                BackgroundImageHelper.removeBackground(appCtx, layer)
-                                                ThemePreferences.bumpBackgroundVersion()
-                                                bgUiVersion = ThemePreferences.getBackgroundVersion()
-                                                bgStatusMsg = resCtx.getString(R.string.settings_s_244bee, layer.label)
-                                                bgPickerFailed = false
+                                                scope.launch {
+                                                    withContext(Dispatchers.IO) {
+                                                        BackgroundImageHelper.removeBackground(appCtx, layer)
+                                                    }
+                                                    ThemePreferences.bumpBackgroundVersion()
+                                                    bgUiVersion = ThemePreferences.getBackgroundVersion()
+                                                    bgStatusMsg = resCtx.getString(R.string.settings_s_244bee, layer.label)
+                                                    bgPickerFailed = false
+                                                }
                                             }
                                         ) {
                                             Text(resCtx.getString(R.string.chat_s_2f752c))
@@ -1826,20 +1880,23 @@ fun FilterSettingsScreen(
                             }
 
                             // #392 夥伴（助手）頁頭部橫幅背景
-                            val hasPartnerHeaderBg = remember(bgUiVersion) {
-                                BackgroundImageHelper.resolveAssistantHeaderBackgroundFile(appCtx) != null
-                            }
-                            var partnerHeaderThumb by remember(bgUiVersion, hasPartnerHeaderBg) {
-                                mutableStateOf<ImageBitmap?>(null)
-                            }
-                            LaunchedEffect(bgUiVersion, hasPartnerHeaderBg) {
-                                partnerHeaderThumb = if (hasPartnerHeaderBg) {
-                                    BackgroundImageHelper.loadPreviewThumbnail(
-                                        BackgroundImageHelper.assistantHeaderBackgroundFile(appCtx)
-                                    )
-                                } else {
-                                    null
+                            var hasPartnerHeaderBg by remember { mutableStateOf(false) }
+                            var partnerHeaderThumb by remember { mutableStateOf<ImageBitmap?>(null) }
+                            LaunchedEffect(bgUiVersion) {
+                                val (exists, preview) = withContext(Dispatchers.IO) {
+                                    val file = BackgroundImageHelper.resolveAssistantHeaderBackgroundFile(appCtx)
+                                    val ok = file != null
+                                    val bmp = if (ok) {
+                                        BackgroundImageHelper.loadPreviewThumbnail(
+                                            BackgroundImageHelper.assistantHeaderBackgroundFile(appCtx)
+                                        )
+                                    } else {
+                                        null
+                                    }
+                                    ok to bmp
                                 }
+                                hasPartnerHeaderBg = exists
+                                partnerHeaderThumb = preview
                             }
                             val partnerHeaderPicker = rememberLauncherForActivityResult(
                                 ActivityResultContracts.PickVisualMedia()
@@ -1978,8 +2035,10 @@ fun FilterSettingsScreen(
                             Slider(
                                 value = effectiveScrim.toFloat(),
                                 onValueChange = { v ->
-                                    val pct = v.roundToInt().coerceIn(0, 100)
-                                    scrimPref = pct
+                                    scrimPref = v.roundToInt().coerceIn(0, 100)
+                                },
+                                onValueChangeFinished = {
+                                    val pct = scrimPref.coerceIn(0, 100)
                                     ThemePreferences.setBackgroundScrimPercent(appCtx, pct)
                                 },
                                 valueRange = 0f..100f
@@ -1996,9 +2055,10 @@ fun FilterSettingsScreen(
                         Slider(
                             value = glassStrength.toFloat(),
                             onValueChange = { v ->
-                                val pct = v.roundToInt().coerceIn(0, 100)
-                                glassStrength = pct
-                                ThemePreferences.setGlassStrengthPercent(appCtx, pct)
+                                glassStrength = v.roundToInt().coerceIn(0, 100)
+                            },
+                            onValueChangeFinished = {
+                                ThemePreferences.setGlassStrengthPercent(appCtx, glassStrength.coerceIn(0, 100))
                             },
                             valueRange = 0f..100f
                         )
@@ -2048,9 +2108,10 @@ fun FilterSettingsScreen(
                         Slider(
                             value = chatFontScale,
                             onValueChange = { v ->
-                                val stepped = ((v * 20f).roundToInt() / 20f).coerceIn(0.85f, 1.30f)
-                                chatFontScale = stepped
-                                PhantomPrefs.setChatFontScale(appCtx, stepped)
+                                chatFontScale = ((v * 20f).roundToInt() / 20f).coerceIn(0.85f, 1.30f)
+                            },
+                            onValueChangeFinished = {
+                                PhantomPrefs.setChatFontScale(appCtx, chatFontScale)
                                 PhantomSettingsBus.notifyChanged()
                             },
                             valueRange = 0.85f..1.30f,
@@ -2064,9 +2125,10 @@ fun FilterSettingsScreen(
                         Slider(
                             value = msgFontScale,
                             onValueChange = { v ->
-                                val stepped = ((v * 20f).roundToInt() / 20f).coerceIn(0.85f, 1.30f)
-                                msgFontScale = stepped
-                                PhantomPrefs.setMessagesFontScale(appCtx, stepped)
+                                msgFontScale = ((v * 20f).roundToInt() / 20f).coerceIn(0.85f, 1.30f)
+                            },
+                            onValueChangeFinished = {
+                                PhantomPrefs.setMessagesFontScale(appCtx, msgFontScale)
                                 PhantomSettingsBus.notifyChanged()
                             },
                             valueRange = 0.85f..1.30f,
@@ -2080,9 +2142,10 @@ fun FilterSettingsScreen(
                         Slider(
                             value = bubbleCornerDp.toFloat(),
                             onValueChange = { v ->
-                                val dpVal = v.roundToInt().coerceIn(8, 24)
-                                bubbleCornerDp = dpVal
-                                PhantomPrefs.setChatBubbleCornerDp(appCtx, dpVal)
+                                bubbleCornerDp = v.roundToInt().coerceIn(8, 24)
+                            },
+                            onValueChangeFinished = {
+                                PhantomPrefs.setChatBubbleCornerDp(appCtx, bubbleCornerDp)
                                 PhantomSettingsBus.notifyChanged()
                             },
                             valueRange = 8f..24f,
@@ -2096,9 +2159,10 @@ fun FilterSettingsScreen(
                         Slider(
                             value = bubbleWidthPct.toFloat(),
                             onValueChange = { v ->
-                                val pctVal = v.roundToInt().coerceIn(70, 95)
-                                bubbleWidthPct = pctVal
-                                PhantomPrefs.setChatBubbleWidthPercent(appCtx, pctVal)
+                                bubbleWidthPct = v.roundToInt().coerceIn(70, 95)
+                            },
+                            onValueChangeFinished = {
+                                PhantomPrefs.setChatBubbleWidthPercent(appCtx, bubbleWidthPct)
                                 PhantomSettingsBus.notifyChanged()
                             },
                             valueRange = 70f..95f
@@ -2166,9 +2230,10 @@ fun FilterSettingsScreen(
                             Slider(
                                 value = cardBgAlpha.coerceIn(15, 100).toFloat(),
                                 onValueChange = { v ->
-                                    val pct = v.roundToInt().coerceIn(15, 100)
-                                    cardBgAlpha = pct
-                                    ThemePreferences.setCardBgAlphaPercent(appCtx, pct)
+                                    cardBgAlpha = v.roundToInt().coerceIn(15, 100)
+                                },
+                                onValueChangeFinished = {
+                                    ThemePreferences.setCardBgAlphaPercent(appCtx, cardBgAlpha.coerceIn(15, 100))
                                 },
                                 valueRange = 15f..100f
                             )
@@ -2190,7 +2255,7 @@ fun FilterSettingsScreen(
                         },
                         glassState = glassState,
                         modifier = Modifier.onGloballyPositioned { coords ->
-                            cardBounds["stats"] = coords.boundsInRoot()
+                            updateCardBounds("stats", coords.boundsInRoot())
                         }
                     ) {
                         Text(
@@ -2235,7 +2300,7 @@ fun FilterSettingsScreen(
                     },
                     glassState = glassState,
                     modifier = Modifier.onGloballyPositioned { coords ->
-                        cardBounds["ai"] = coords.boundsInRoot()
+                        updateCardBounds("ai", coords.boundsInRoot())
                     }
                 ) {
                     OutlinedButton(
@@ -2276,20 +2341,27 @@ fun FilterSettingsScreen(
                                 tagDispatchTesting = true
                                 tagDispatchResult = null
                                 scope.launch {
-                                    val allTags = withContext(Dispatchers.IO) {
-                                        AppDatabaseHolder.db(appCtx).tagDao().all()
-                                    }
-                                    val res = AiClient.testAutoTagDispatch(allTags, appCtx)
-                                    tagDispatchTesting = false
-                                    res.onSuccess { analysis ->
-                                        val tagMap = allTags.associateBy { it.id }
-                                        val tagNames = analysis.tagIds.mapNotNull { tagMap[it]?.name }
-                                        val tagStr = if (tagNames.isEmpty()) resCtx.getString(R.string.settings_s_9751b8) else tagNames.joinToString("、")
-                                        tagDispatchResult = true to resCtx.getString(R.string.settings_s_56bcf6, analysis.riskLabel, analysis.riskScore, tagStr, analysis.riskReason)
-                                    }.onFailure { err ->
-                                        PhantomPrefs.refundTodayAiUsage(appCtx)
-                                        todayAiUsage = PhantomPrefs.getTodayAiUsage(appCtx)
-                                        tagDispatchResult = false to (err.message ?: resCtx.getString(R.string.settings_s_6d8218))
+                                    var succeeded = false
+                                    try {
+                                        val allTags = withContext(Dispatchers.IO) {
+                                            AppDatabaseHolder.db(appCtx).tagDao().all()
+                                        }
+                                        val res = AiClient.testAutoTagDispatch(allTags, appCtx)
+                                        res.onSuccess { analysis ->
+                                            succeeded = true
+                                            val tagMap = allTags.associateBy { it.id }
+                                            val tagNames = analysis.tagIds.mapNotNull { tagMap[it]?.name }
+                                            val tagStr = if (tagNames.isEmpty()) resCtx.getString(R.string.settings_s_9751b8) else tagNames.joinToString("、")
+                                            tagDispatchResult = true to resCtx.getString(R.string.settings_s_56bcf6, analysis.riskLabel, analysis.riskScore, tagStr, analysis.riskReason)
+                                        }.onFailure { err ->
+                                            tagDispatchResult = false to (err.message ?: resCtx.getString(R.string.settings_s_6d8218))
+                                        }
+                                    } finally {
+                                        if (!succeeded) {
+                                            PhantomPrefs.refundTodayAiUsage(appCtx)
+                                            todayAiUsage = PhantomPrefs.getTodayAiUsage(appCtx)
+                                        }
+                                        tagDispatchTesting = false
                                     }
                                 }
                             },
@@ -2347,16 +2419,27 @@ fun FilterSettingsScreen(
                     )
                     if (dualModelRoutingEnabled) {
                         Spacer(Modifier.height(6.dp))
+                        LaunchedEffect(dualModelRoutingModel) {
+                            kotlinx.coroutines.delay(400L)
+                            if (PhantomPrefs.getDualModelRoutingModel(appCtx) != dualModelRoutingModel) {
+                                PhantomPrefs.setDualModelRoutingModel(appCtx, dualModelRoutingModel)
+                            }
+                        }
                         OutlinedTextField(
                             value = dualModelRoutingModel,
                             onValueChange = { next ->
                                 dualModelRoutingModel = next
-                                PhantomPrefs.setDualModelRoutingModel(appCtx, next)
                             },
                             label = { Text(stringResource(R.string.settings_s_0dae5f)) },
                             placeholder = { Text(PhantomPrefs.DEFAULT_DUAL_MODEL_ROUTING_MODEL) },
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onFocusChanged { focus ->
+                                    if (!focus.isFocused && PhantomPrefs.getDualModelRoutingModel(appCtx) != dualModelRoutingModel) {
+                                        PhantomPrefs.setDualModelRoutingModel(appCtx, dualModelRoutingModel)
+                                    }
+                                }
                         )
                     }
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -2387,6 +2470,7 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
                     var showAddQuickCommandDialog by remember { mutableStateOf(false) }
+                    var pendingDeleteQuickCommand by remember { mutableStateOf<PhantomPrefs.QuickChatCommand?>(null) }
                     Text(
                         text = stringResource(R.string.settings_s_41d9b9),
                         style = MaterialTheme.typography.bodyMedium,
@@ -2525,8 +2609,7 @@ fun FilterSettingsScreen(
                                         )
                                         IconButton(
                                             onClick = {
-                                                PhantomPrefs.deleteQuickChatCommand(appCtx, cmd.id)
-                                                quickChatCommands = PhantomPrefs.getQuickChatCommands(appCtx)
+                                                pendingDeleteQuickCommand = cmd
                                             }
                                         ) {
                                             Icon(
@@ -2540,6 +2623,46 @@ fun FilterSettingsScreen(
                             }
                         }
                     }                        }
+                    }
+
+                    pendingDeleteQuickCommand?.let { targetCmd ->
+                        AlertDialog(
+                            onDismissRequest = { pendingDeleteQuickCommand = null },
+                            title = { Text(stringResource(R.string.settings_s_b9ec94)) },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(
+                                        text = targetCmd.label,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    if (targetCmd.prompt.isNotBlank()) {
+                                        Text(
+                                            text = targetCmd.prompt,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        PhantomPrefs.deleteQuickChatCommand(appCtx, targetCmd.id)
+                                        quickChatCommands = PhantomPrefs.getQuickChatCommands(appCtx)
+                                        pendingDeleteQuickCommand = null
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Text(stringResource(R.string.common_confirm_delete))
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { pendingDeleteQuickCommand = null }) {
+                                    Text(stringResource(R.string.common_cancel))
+                                }
+                            }
+                        )
                     }
 
                     if (showAddQuickCommandDialog) {
@@ -2661,8 +2784,10 @@ fun FilterSettingsScreen(
                                 .coerceIn(PhantomPrefs.MIN_CHAT_RAG_MESSAGE_LIMIT, PhantomPrefs.MAX_CHAT_RAG_MESSAGE_LIMIT)
                             if (stepped != chatRagLimit) {
                                 chatRagLimit = stepped
-                                PhantomPrefs.setChatRagMessageLimit(appCtx, stepped)
                             }
+                        },
+                        onValueChangeFinished = {
+                            PhantomPrefs.setChatRagMessageLimit(appCtx, chatRagLimit)
                         },
                         valueRange = PhantomPrefs.MIN_CHAT_RAG_MESSAGE_LIMIT.toFloat()..PhantomPrefs.MAX_CHAT_RAG_MESSAGE_LIMIT.toFloat(),
                         steps = 74
@@ -2685,8 +2810,10 @@ fun FilterSettingsScreen(
                             val stepped = raw.roundToInt().coerceIn(1, 30)
                             if (stepped != aiMinTriggerLength) {
                                 aiMinTriggerLength = stepped
-                                PhantomPrefs.setAiMinTriggerLength(appCtx, stepped)
                             }
+                        },
+                        onValueChangeFinished = {
+                            PhantomPrefs.setAiMinTriggerLength(appCtx, aiMinTriggerLength)
                         },
                         valueRange = 1f..30f,
                         steps = 28
@@ -2808,7 +2935,7 @@ fun FilterSettingsScreen(
                     },
                     glassState = glassState,
                     modifier = Modifier.onGloballyPositioned { coords ->
-                        cardBounds["memory_assistant"] = coords.boundsInRoot()
+                        updateCardBounds("memory_assistant", coords.boundsInRoot())
                     }
                 ) {
                     // (1) 記憶擷取與確認卡說明
@@ -3274,9 +3401,11 @@ fun FilterSettingsScreen(
                             )
                             if (stepped != memoryNormalTopK) {
                                 memoryNormalTopK = stepped
-                                PhantomPrefs.setMemoryNormalTopK(appCtx, stepped)
-                                PhantomSettingsBus.notifyChanged()
                             }
+                        },
+                        onValueChangeFinished = {
+                            PhantomPrefs.setMemoryNormalTopK(appCtx, memoryNormalTopK)
+                            PhantomSettingsBus.notifyChanged()
                         },
                         valueRange = PhantomPrefs.MIN_MEMORY_NORMAL_TOP_K.toFloat()..PhantomPrefs.MAX_MEMORY_NORMAL_TOP_K.toFloat(),
                         steps = (PhantomPrefs.MAX_MEMORY_NORMAL_TOP_K - PhantomPrefs.MIN_MEMORY_NORMAL_TOP_K - 1).coerceAtLeast(0)
@@ -3297,9 +3426,11 @@ fun FilterSettingsScreen(
                             )
                             if (stepped != memoryNormalPerItemChars) {
                                 memoryNormalPerItemChars = stepped
-                                PhantomPrefs.setMemoryNormalPerItemChars(appCtx, stepped)
-                                PhantomSettingsBus.notifyChanged()
                             }
+                        },
+                        onValueChangeFinished = {
+                            PhantomPrefs.setMemoryNormalPerItemChars(appCtx, memoryNormalPerItemChars)
+                            PhantomSettingsBus.notifyChanged()
                         },
                         valueRange = PhantomPrefs.MIN_MEMORY_NORMAL_PER_ITEM_CHARS.toFloat()..PhantomPrefs.MAX_MEMORY_NORMAL_PER_ITEM_CHARS.toFloat(),
                         steps = 8
@@ -3320,9 +3451,11 @@ fun FilterSettingsScreen(
                             )
                             if (stepped != memorySaverTopK) {
                                 memorySaverTopK = stepped
-                                PhantomPrefs.setMemorySaverTopK(appCtx, stepped)
-                                PhantomSettingsBus.notifyChanged()
                             }
+                        },
+                        onValueChangeFinished = {
+                            PhantomPrefs.setMemorySaverTopK(appCtx, memorySaverTopK)
+                            PhantomSettingsBus.notifyChanged()
                         },
                         valueRange = PhantomPrefs.MIN_MEMORY_SAVER_TOP_K.toFloat()..PhantomPrefs.MAX_MEMORY_SAVER_TOP_K.toFloat(),
                         steps = (PhantomPrefs.MAX_MEMORY_SAVER_TOP_K - PhantomPrefs.MIN_MEMORY_SAVER_TOP_K - 1).coerceAtLeast(0)
@@ -3384,10 +3517,12 @@ fun FilterSettingsScreen(
                                     OutlinedButton(
                                         enabled = !isSavingAvatar,
                                         onClick = {
-                                            AssistantAvatarHelper.removeAvatar(appCtx)
-                                            assistantHasAvatar = false
-                                            assistantAvatarBitmap = null
                                             scope.launch {
+                                                withContext(Dispatchers.IO) {
+                                                    AssistantAvatarHelper.removeAvatar(appCtx)
+                                                }
+                                                assistantHasAvatar = false
+                                                assistantAvatarBitmap = null
                                                 snackbarHostState.showSnackbar(resCtx.getString(R.string.settings_s_9baf41))
                                             }
                                         }
@@ -3400,6 +3535,13 @@ fun FilterSettingsScreen(
                     }
 
                     Spacer(Modifier.height(10.dp))
+                    LaunchedEffect(assistantName) {
+                        kotlinx.coroutines.delay(400L)
+                        if (PhantomPrefs.getAssistantName(appCtx) != assistantName) {
+                            PhantomPrefs.setAssistantName(appCtx, assistantName)
+                            PhantomSettingsBus.notifyChanged()
+                        }
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -3408,15 +3550,19 @@ fun FilterSettingsScreen(
                         OutlinedTextField(
                             value = assistantName,
                             onValueChange = { next ->
-                                val clamped = next.take(PhantomPrefs.MAX_ASSISTANT_NAME_LENGTH)
-                                assistantName = clamped
-                                PhantomPrefs.setAssistantName(appCtx, clamped)
-                                PhantomSettingsBus.notifyChanged()
+                                assistantName = next.take(PhantomPrefs.MAX_ASSISTANT_NAME_LENGTH)
                             },
                             label = { Text(stringResource(R.string.settings_s_c1d4a5)) },
                             placeholder = { Text(PhantomPrefs.DEFAULT_ASSISTANT_NAME) },
                             singleLine = true,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .onFocusChanged { focus ->
+                                    if (!focus.isFocused && PhantomPrefs.getAssistantName(appCtx) != assistantName) {
+                                        PhantomPrefs.setAssistantName(appCtx, assistantName)
+                                        PhantomSettingsBus.notifyChanged()
+                                    }
+                                }
                         )
                         if (assistantName != PhantomPrefs.DEFAULT_ASSISTANT_NAME) {
                             TextButton(
@@ -3464,13 +3610,17 @@ fun FilterSettingsScreen(
                         )
                     }
                     Spacer(Modifier.height(6.dp))
+                    LaunchedEffect(assistantCustomPersonality) {
+                        kotlinx.coroutines.delay(400L)
+                        if (PhantomPrefs.getAssistantCustomPersonality(appCtx) != assistantCustomPersonality) {
+                            PhantomPrefs.setAssistantCustomPersonality(appCtx, assistantCustomPersonality)
+                            PhantomSettingsBus.notifyChanged()
+                        }
+                    }
                     OutlinedTextField(
                         value = assistantCustomPersonality,
                         onValueChange = { next ->
-                            val clamped = next.take(PhantomPrefs.MAX_ASSISTANT_CUSTOM_PERSONALITY_CHARS)
-                            assistantCustomPersonality = clamped
-                            PhantomPrefs.setAssistantCustomPersonality(appCtx, clamped)
-                            PhantomSettingsBus.notifyChanged()
+                            assistantCustomPersonality = next.take(PhantomPrefs.MAX_ASSISTANT_CUSTOM_PERSONALITY_CHARS)
                         },
                         label = {
                             Text(
@@ -3483,7 +3633,14 @@ fun FilterSettingsScreen(
                         },
                         placeholder = { Text(stringResource(R.string.settings_s_e1b2a2)) },
                         maxLines = 3,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { focus ->
+                                if (!focus.isFocused && PhantomPrefs.getAssistantCustomPersonality(appCtx) != assistantCustomPersonality) {
+                                    PhantomPrefs.setAssistantCustomPersonality(appCtx, assistantCustomPersonality)
+                                    PhantomSettingsBus.notifyChanged()
+                                }
+                            }
                     )
 
                     Spacer(Modifier.height(8.dp))
@@ -3560,7 +3717,7 @@ fun FilterSettingsScreen(
                     },
                     glassState = glassState,
                     modifier = Modifier.onGloballyPositioned { coords ->
-                        cardBounds["notif"] = coords.boundsInRoot()
+                        updateCardBounds("notif", coords.boundsInRoot())
                     }
                 ) {
                     // 過濾規則新增
@@ -3659,6 +3816,7 @@ fun FilterSettingsScreen(
                         )
                     }
                     Spacer(Modifier.height(8.dp))
+                    var pendingDeleteFilterRule by remember { mutableStateOf<FilterRule?>(null) }
                     if (isLoadingRules) {
                         CircularProgressIndicator()
                     } else if (rules.isEmpty()) {
@@ -3678,16 +3836,49 @@ fun FilterSettingsScreen(
                                     }
                                 },
                                 onDelete = {
-                                    scope.launch {
-                                        withContext(Dispatchers.IO) {
-                                            AppDatabaseHolder.db(appCtx).filterDao().delete(rule)
-                                            com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
-                                        }
-                                        rules = rules.filterNot { it.id == rule.id }
-                                    }
+                                    pendingDeleteFilterRule = rule
                                 }
                             )
                         }
+                    }
+                    pendingDeleteFilterRule?.let { targetRule ->
+                        AlertDialog(
+                            onDismissRequest = { pendingDeleteFilterRule = null },
+                            title = { Text(stringResource(R.string.notes_s_a287b5)) },
+                            text = {
+                                Text(
+                                    text = if (targetRule.packageName.isNullOrBlank()) {
+                                        targetRule.keyword
+                                    } else {
+                                        "${targetRule.keyword} (${targetRule.packageName})"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        val ruleToDelete = targetRule
+                                        pendingDeleteFilterRule = null
+                                        scope.launch {
+                                            withContext(Dispatchers.IO) {
+                                                AppDatabaseHolder.db(appCtx).filterDao().delete(ruleToDelete)
+                                                com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches()
+                                            }
+                                            rules = rules.filterNot { it.id == ruleToDelete.id }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Text(stringResource(R.string.common_confirm_delete))
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { pendingDeleteFilterRule = null }) {
+                                    Text(stringResource(R.string.common_cancel))
+                                }
+                            }
+                        )
                     }
 
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -3928,7 +4119,7 @@ fun FilterSettingsScreen(
                                         },
                                         quietStartMinute / 60,
                                         quietStartMinute % 60,
-                                        true
+                                        use24HourFormat
                                     ).show()
                                 },
                                 modifier = Modifier.weight(1f)
@@ -3952,7 +4143,7 @@ fun FilterSettingsScreen(
                                         },
                                         quietEndMinute / 60,
                                         quietEndMinute % 60,
-                                        true
+                                        use24HourFormat
                                     ).show()
                                 },
                                 modifier = Modifier.weight(1f)
@@ -3971,9 +4162,8 @@ fun FilterSettingsScreen(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     var replyProxyEnabled by remember { mutableStateOf(PhantomPrefs.isReplyProxyEnabled(appCtx)) }
                     var replyProxyTimeout by remember { mutableStateOf(PhantomPrefs.getReplyProxyTimeoutMinutes(appCtx)) }
-                    val replyProxyBusVer by PhantomSettingsBus.version.collectAsState()
-                    LaunchedEffect(replyProxyBusVer) {
-                        if (replyProxyBusVer > 0L) {
+                    LaunchedEffect(settingsVersion) {
+                        if (settingsVersion > 0L) {
                             replyProxyEnabled = PhantomPrefs.isReplyProxyEnabled(appCtx)
                             replyProxyTimeout = PhantomPrefs.getReplyProxyTimeoutMinutes(appCtx)
                         }
@@ -4105,7 +4295,7 @@ fun FilterSettingsScreen(
                     },
                     glassState = glassState,
                     modifier = Modifier.onGloballyPositioned { coords ->
-                        cardBounds["data"] = coords.boundsInRoot()
+                        updateCardBounds("data", coords.boundsInRoot())
                     }
                 ) {
                     // App 靜音清單
@@ -4127,19 +4317,28 @@ fun FilterSettingsScreen(
                             Text(stringResource(R.string.settings_s_6c291d))
                         }
                     }
+                    var mutedAppLabels by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+                    LaunchedEffect(mutedApps) {
+                        mutedAppLabels = if (mutedApps.isEmpty()) {
+                            emptyMap()
+                        } else {
+                            withContext(Dispatchers.IO) {
+                                val pm = appCtx.packageManager
+                                mutedApps.associateWith { pkg ->
+                                    try {
+                                        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+                                    } catch (_: Exception) {
+                                        pkg
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if (mutedApps.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         mutedApps.forEach { pkg ->
                             val mode = MuteMode.fromPref(muteModes[pkg])
-                            val appLabel = remember(pkg) {
-                                try {
-                                    ctx.packageManager.getApplicationLabel(
-                                        ctx.packageManager.getApplicationInfo(pkg, 0)
-                                    ).toString()
-                                } catch (_: Exception) {
-                                    pkg
-                                }
-                            }
+                            val appLabel = mutedAppLabels[pkg] ?: pkg
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -4201,7 +4400,7 @@ fun FilterSettingsScreen(
                             .pressableScale()
                             .bringIntoViewRequester(whitelistBringIntoViewRequester)
                             .onGloballyPositioned { coords ->
-                                cardBounds["whitelist"] = coords.boundsInRoot()
+                                updateCardBounds("whitelist", coords.boundsInRoot())
                             }
                     ) {
                         Text(stringResource(R.string.settings_s_c51dc4, whitelistCount))
@@ -4287,20 +4486,24 @@ fun FilterSettingsScreen(
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = {
+                            if (isVacuuming) return@OutlinedButton
                             scope.launch {
                                 isVacuuming = true
-                                val (beforeBytes, afterBytes, updatedStats) = withContext(Dispatchers.IO) {
-                                    val before = DbMaintenance.measureDatabaseBytes(appCtx)
-                                    DbMaintenance.enqueueVacuum(appCtx)
-                                    WorkManager.getInstance(appCtx)
-                                        .getWorkInfosForUniqueWorkFlow(DbMaintenance.UNIQUE_VACUUM_WORK)
-                                        .first { infos -> infos.isEmpty() || infos.all { it.state.isFinished } }
-                                    val after = DbMaintenance.measureDatabaseBytes(appCtx)
-                                    val refreshed = DbMaintenance.measureStorageStats(appCtx)
-                                    Triple(before, after, refreshed)
+                                val (beforeBytes, afterBytes, updatedStats) = try {
+                                    withContext(Dispatchers.IO) {
+                                        val before = DbMaintenance.measureDatabaseBytes(appCtx)
+                                        DbMaintenance.enqueueVacuum(appCtx)
+                                        WorkManager.getInstance(appCtx)
+                                            .getWorkInfosForUniqueWorkFlow(DbMaintenance.UNIQUE_VACUUM_WORK)
+                                            .first { infos -> infos.isEmpty() || infos.all { it.state.isFinished } }
+                                        val after = DbMaintenance.measureDatabaseBytes(appCtx)
+                                        val refreshed = DbMaintenance.measureStorageStats(appCtx)
+                                        Triple(before, after, refreshed)
+                                    }
+                                } finally {
+                                    isVacuuming = false
                                 }
                                 storageStats = updatedStats
-                                isVacuuming = false
                                 snackbarHostState.showSnackbar(
                                     resCtx.getString(R.string.settings_s_7767a6, Formatter.formatShortFileSize(appCtx, beforeBytes), Formatter.formatShortFileSize(appCtx, afterBytes))
                                 )
@@ -4375,7 +4578,7 @@ fun FilterSettingsScreen(
                     },
                     glassState = glassState,
                     modifier = Modifier.onGloballyPositioned { coords ->
-                        cardBounds["appearance"] = coords.boundsInRoot()
+                        updateCardBounds("appearance", coords.boundsInRoot())
                     }
                 ) {
                     Text(stringResource(R.string.settings_s_5285ae), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
@@ -4619,7 +4822,12 @@ fun FilterSettingsScreen(
                         OutlinedButton(
                             onClick = {
                                 StatsForegroundService.startOrRefresh(appCtx)
-                                fgServiceRunning = isStatsForegroundServiceRunning(appCtx)
+                                scope.launch {
+                                    kotlinx.coroutines.delay(350L)
+                                    fgServiceRunning = withContext(Dispatchers.IO) {
+                                        isStatsForegroundServiceRunning(appCtx)
+                                    }
+                                }
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -4742,13 +4950,13 @@ fun FilterSettingsScreen(
             // D4：各分類頁尾「進階設定」折疊區（預設收合；搜尋命中自動展開；含長按釘選）
             if (advancedItemsInCat.isNotEmpty()) {
                 item(key = "cat_advanced_${currentCategory.id}") {
-                    val settingsBusVer by PhantomSettingsBus.version.collectAsState()
+                    val settingsBusVer = settingsVersion
                     SettingsAdvancedSection(
                         expanded = isAdvancedExpanded,
                         onToggle = { advancedExpandedMap[currentCategory] = !isAdvancedExpanded },
                         count = advancedItemsInCat.size,
                         modifier = Modifier.onGloballyPositioned { coords ->
-                            cardBounds["advanced"] = coords.boundsInRoot()
+                            updateCardBounds("advanced", coords.boundsInRoot())
                         }
                     ) {
                         if (currentCategory == SettingsCategory.PERMISSIONS) {
@@ -4872,8 +5080,8 @@ private fun FraudIntelCard(
     highlighted: Boolean = false,
     onShowMessage: (String) -> Unit
 ) {
-    val resCtx = LocalContext.current
     val ctx = LocalContext.current
+    val resCtx = ctx
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
 
@@ -4889,12 +5097,25 @@ private fun FraudIntelCard(
     var phishTankEnabled by remember { mutableStateOf(PhantomPrefs.isIntelPhishTankEnabled(appCtx)) }
     var chainabuseEnabled by remember { mutableStateOf(PhantomPrefs.isIntelChainabuseEnabled(appCtx)) }
 
-    var sbKeySource by remember { mutableStateOf(IntelClient.getSafeBrowsingKeySource(appCtx)) }
+    var sbKeySource by remember { mutableStateOf(ApiKeySource.NONE) }
     var sbKeyInput by remember { mutableStateOf("") }
-    var ptKeyConfigured by remember { mutableStateOf(IntelClient.getPhishTankAppKey(appCtx) != null) }
+    var ptKeyConfigured by remember { mutableStateOf(false) }
     var ptKeyInput by remember { mutableStateOf("") }
-    var caKeyConfigured by remember { mutableStateOf(IntelClient.isChainabuseKeyConfigured(appCtx)) }
+    var caKeyConfigured by remember { mutableStateOf(false) }
     var caKeyInput by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        val (sb, pt, ca) = withContext(Dispatchers.IO) {
+            Triple(
+                IntelClient.getSafeBrowsingKeySource(appCtx),
+                IntelClient.getPhishTankAppKey(appCtx) != null,
+                IntelClient.isChainabuseKeyConfigured(appCtx)
+            )
+        }
+        sbKeySource = sb
+        ptKeyConfigured = pt
+        caKeyConfigured = ca
+    }
 
     val testResults = remember { mutableStateMapOf<IntelClient.IntelProvider, IntelClient.ProviderTestResult>() }
     var testingProvider by remember { mutableStateOf<IntelClient.IntelProvider?>(null) }
@@ -4951,16 +5172,25 @@ private fun FraudIntelCard(
                 onValueChange = { sbKeyInput = it },
                 hasSavedKey = sbKeySource == ApiKeySource.ENCRYPTED_PREFS,
                 onSave = {
-                    IntelClient.setSafeBrowsingApiKey(appCtx, sbKeyInput)
+                    val keyToSave = sbKeyInput
                     sbKeyInput = ""
-                    sbKeySource = IntelClient.getSafeBrowsingKeySource(appCtx)
-                    onShowMessage(resCtx.getString(R.string.settings_s_f478e4))
+                    scope.launch {
+                        sbKeySource = withContext(Dispatchers.IO) {
+                            IntelClient.setSafeBrowsingApiKey(appCtx, keyToSave)
+                            IntelClient.getSafeBrowsingKeySource(appCtx)
+                        }
+                        onShowMessage(resCtx.getString(R.string.settings_s_f478e4))
+                    }
                 },
                 onClear = {
-                    IntelClient.setSafeBrowsingApiKey(appCtx, "")
                     sbKeyInput = ""
-                    sbKeySource = IntelClient.getSafeBrowsingKeySource(appCtx)
-                    onShowMessage(resCtx.getString(R.string.settings_s_14faa5))
+                    scope.launch {
+                        sbKeySource = withContext(Dispatchers.IO) {
+                            IntelClient.setSafeBrowsingApiKey(appCtx, "")
+                            IntelClient.getSafeBrowsingKeySource(appCtx)
+                        }
+                        onShowMessage(resCtx.getString(R.string.settings_s_14faa5))
+                    }
                 }
             )
 
@@ -4987,16 +5217,25 @@ private fun FraudIntelCard(
                 onValueChange = { ptKeyInput = it },
                 hasSavedKey = ptKeyConfigured,
                 onSave = {
-                    IntelClient.setPhishTankAppKey(appCtx, ptKeyInput)
+                    val keyToSave = ptKeyInput
                     ptKeyInput = ""
-                    ptKeyConfigured = IntelClient.getPhishTankAppKey(appCtx) != null
-                    onShowMessage(resCtx.getString(R.string.settings_s_a9d4a5))
+                    scope.launch {
+                        ptKeyConfigured = withContext(Dispatchers.IO) {
+                            IntelClient.setPhishTankAppKey(appCtx, keyToSave)
+                            IntelClient.getPhishTankAppKey(appCtx) != null
+                        }
+                        onShowMessage(resCtx.getString(R.string.settings_s_a9d4a5))
+                    }
                 },
                 onClear = {
-                    IntelClient.setPhishTankAppKey(appCtx, "")
                     ptKeyInput = ""
-                    ptKeyConfigured = false
-                    onShowMessage(resCtx.getString(R.string.settings_s_0cf0bb))
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            IntelClient.setPhishTankAppKey(appCtx, "")
+                        }
+                        ptKeyConfigured = false
+                        onShowMessage(resCtx.getString(R.string.settings_s_0cf0bb))
+                    }
                 }
             )
 
@@ -5023,16 +5262,25 @@ private fun FraudIntelCard(
                 onValueChange = { caKeyInput = it },
                 hasSavedKey = caKeyConfigured,
                 onSave = {
-                    IntelClient.setChainabuseApiKey(appCtx, caKeyInput)
+                    val keyToSave = caKeyInput
                     caKeyInput = ""
-                    caKeyConfigured = IntelClient.isChainabuseKeyConfigured(appCtx)
-                    onShowMessage(resCtx.getString(R.string.settings_s_25c0f3))
+                    scope.launch {
+                        caKeyConfigured = withContext(Dispatchers.IO) {
+                            IntelClient.setChainabuseApiKey(appCtx, keyToSave)
+                            IntelClient.isChainabuseKeyConfigured(appCtx)
+                        }
+                        onShowMessage(resCtx.getString(R.string.settings_s_25c0f3))
+                    }
                 },
                 onClear = {
-                    IntelClient.setChainabuseApiKey(appCtx, "")
                     caKeyInput = ""
-                    caKeyConfigured = false
-                    onShowMessage(resCtx.getString(R.string.settings_s_fadb22))
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            IntelClient.setChainabuseApiKey(appCtx, "")
+                        }
+                        caKeyConfigured = false
+                        onShowMessage(resCtx.getString(R.string.settings_s_fadb22))
+                    }
                 }
             )
 
@@ -5071,9 +5319,12 @@ private fun FraudIntelCard(
                         onClick = {
                             scope.launch {
                                 testingProvider = provider
-                                val res = IntelClient.testProvider(appCtx, provider)
-                                testResults[provider] = res
-                                testingProvider = null
+                                try {
+                                    val res = IntelClient.testProvider(appCtx, provider)
+                                    testResults[provider] = res
+                                } finally {
+                                    testingProvider = null
+                                }
                             }
                         }
                     ) {
@@ -5160,8 +5411,8 @@ private fun ShizukuAdvancedCard(
     highlighted: Boolean = false,
     onShowMessage: (String) -> Unit
 ) {
-    val resCtx = LocalContext.current
     val ctx = LocalContext.current
+    val resCtx = ctx
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
     val shizukuState by ShizukuManager.state.collectAsState()
@@ -5171,7 +5422,9 @@ private fun ShizukuAdvancedCard(
     var isBusy by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        ShizukuManager.init(appCtx)
+        withContext(Dispatchers.IO) {
+            ShizukuManager.init(appCtx)
+        }
     }
 
     val statusText = when {
@@ -5217,8 +5470,12 @@ private fun ShizukuAdvancedCard(
             }
             OutlinedButton(
                 onClick = {
-                    ShizukuManager.refreshState(appCtx)
-                    suspendedApps = PhantomPrefs.getShizukuSuspendedApps(appCtx)
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            ShizukuManager.refreshState(appCtx)
+                        }
+                        suspendedApps = PhantomPrefs.getShizukuSuspendedApps(appCtx)
+                    }
                 },
                 modifier = Modifier.weight(1f)
             ) {
@@ -5233,9 +5490,12 @@ private fun ShizukuAdvancedCard(
                 onClick = {
                     scope.launch {
                         isBusy = true
-                        val res = ShizukuKeepAlive.applyKeepAliveEnhancements(appCtx)
+                        val res = try {
+                            ShizukuKeepAlive.applyKeepAliveEnhancements(appCtx)
+                        } finally {
+                            isBusy = false
+                        }
                         diagItems = res
-                        isBusy = false
                         val okCount = res.count { it.ok }
                         onShowMessage(resCtx.getString(R.string.settings_s_042209, okCount, res.size))
                     }
@@ -5251,8 +5511,11 @@ private fun ShizukuAdvancedCard(
                 onClick = {
                     scope.launch {
                         isBusy = true
-                        diagItems = ShizukuKeepAlive.runDiagnostics(appCtx)
-                        isBusy = false
+                        try {
+                            diagItems = ShizukuKeepAlive.runDiagnostics(appCtx)
+                        } finally {
+                            isBusy = false
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -5647,32 +5910,35 @@ private fun AboutSettingsCard(
     modifier: Modifier = Modifier,
     highlighted: Boolean = false
 ) {
-    val resCtx = LocalContext.current
     val ctx = LocalContext.current
+    val resCtx = ctx
     val appCtx = ctx.applicationContext
     val repoUrl = "https://github.com/eric11yothelast-Hwanshen/PhantomCheck"
-    val versionDisplay = remember(appCtx) {
-        try {
-            val pm = appCtx.packageManager
-            val pkgInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                pm.getPackageInfo(
-                    appCtx.packageName,
-                    android.content.pm.PackageManager.PackageInfoFlags.of(0)
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                pm.getPackageInfo(appCtx.packageName, 0)
+    var versionDisplay by remember { mutableStateOf("—") }
+    LaunchedEffect(appCtx) {
+        versionDisplay = withContext(Dispatchers.IO) {
+            try {
+                val pm = appCtx.packageManager
+                val pkgInfo = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    pm.getPackageInfo(
+                        appCtx.packageName,
+                        android.content.pm.PackageManager.PackageInfoFlags.of(0)
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    pm.getPackageInfo(appCtx.packageName, 0)
+                }
+                val verName = pkgInfo.versionName.orEmpty()
+                val verCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    pkgInfo.longVersionCode
+                } else {
+                    @Suppress("DEPRECATION")
+                    pkgInfo.versionCode.toLong()
+                }
+                if (verName.isNotBlank()) "$verName ($verCode)" else "($verCode)"
+            } catch (_: Exception) {
+                "—"
             }
-            val verName = pkgInfo.versionName.orEmpty()
-            val verCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                pkgInfo.longVersionCode
-            } else {
-                @Suppress("DEPRECATION")
-                pkgInfo.versionCode.toLong()
-            }
-            if (verName.isNotBlank()) "$verName ($verCode)" else "($verCode)"
-        } catch (_: Exception) {
-            "—"
         }
     }
 
@@ -5681,6 +5947,7 @@ private fun AboutSettingsCard(
     var updateResult by remember { mutableStateOf<UpdateCheckResult?>(null) }
     var activeDownloadId by remember { mutableStateOf(PhantomPrefs.getActiveApkDownloadId(appCtx).takeIf { it > 0L }) }
     var downloadedApkFile by remember { mutableStateOf<File?>(null) }
+    var isReadyApkValid by remember { mutableStateOf(false) }
     var isDownloading by remember { mutableStateOf(false) }
     var downloadProgressPct by remember { mutableStateOf<Int?>(null) }
     var downloadStatusText by remember { mutableStateOf<String?>(null) }
@@ -5688,32 +5955,45 @@ private fun AboutSettingsCard(
     var showUnknownSourceDialog by remember { mutableStateOf(false) }
     var pendingInstallAfterUnknownSourceGrant by remember { mutableStateOf(false) }
 
+    LaunchedEffect(downloadedApkFile, isDownloading) {
+        val f = downloadedApkFile
+        isReadyApkValid = if (f != null && !isDownloading) {
+            withContext(Dispatchers.IO) { f.exists() && f.length() > 0L }
+        } else {
+            false
+        }
+    }
+
     fun attemptInstall(file: File, isAutoTrigger: Boolean = false) {
-        if (!file.exists() || file.length() <= 0L) {
-            downloadedApkFile = null
-            isDownloading = false
-            isDownloadError = true
-            PhantomPrefs.clearActiveApkDownload(appCtx)
-            downloadStatusText = resCtx.getString(R.string.settings_s_039d16)
-            return
-        }
-        if (!AppUpdateHelper.canRequestPackageInstallsCompat(ctx)) {
-            pendingInstallAfterUnknownSourceGrant = true
-            showUnknownSourceDialog = true
-            isDownloadError = false
-            downloadStatusText = resCtx.getString(R.string.settings_s_5feb09)
-            return
-        }
-        pendingInstallAfterUnknownSourceGrant = false
-        if (isAutoTrigger) {
-            PhantomPrefs.setActiveApkAutoInstallLaunched(appCtx, true)
-        }
-        AppUpdateHelper.launchApkInstaller(ctx, file).onSuccess {
-            isDownloadError = false
-            downloadStatusText = resCtx.getString(R.string.settings_s_26343c)
-        }.onFailure { err ->
-            isDownloadError = true
-            downloadStatusText = err.message ?: resCtx.getString(R.string.settings_s_2fda8a)
+        scope.launch {
+            val fileValid = withContext(Dispatchers.IO) { file.exists() && file.length() > 0L }
+            if (!fileValid) {
+                downloadedApkFile = null
+                isReadyApkValid = false
+                isDownloading = false
+                isDownloadError = true
+                PhantomPrefs.clearActiveApkDownload(appCtx)
+                downloadStatusText = resCtx.getString(R.string.settings_s_039d16)
+                return@launch
+            }
+            if (!AppUpdateHelper.canRequestPackageInstallsCompat(ctx)) {
+                pendingInstallAfterUnknownSourceGrant = true
+                showUnknownSourceDialog = true
+                isDownloadError = false
+                downloadStatusText = resCtx.getString(R.string.settings_s_5feb09)
+                return@launch
+            }
+            pendingInstallAfterUnknownSourceGrant = false
+            if (isAutoTrigger) {
+                PhantomPrefs.setActiveApkAutoInstallLaunched(appCtx, true)
+            }
+            AppUpdateHelper.launchApkInstaller(ctx, file).onSuccess {
+                isDownloadError = false
+                downloadStatusText = resCtx.getString(R.string.settings_s_26343c)
+            }.onFailure { err ->
+                isDownloadError = true
+                downloadStatusText = err.message ?: resCtx.getString(R.string.settings_s_2fda8a)
+            }
         }
     }
 
@@ -5770,8 +6050,11 @@ private fun AboutSettingsCard(
             syncDownloadState(persistedVer, allowAutoInstall = false)
             if (updateResult == null && !isCheckingUpdate) {
                 isCheckingUpdate = true
-                updateResult = AppUpdateHelper.checkLatestRelease(appCtx)
-                isCheckingUpdate = false
+                try {
+                    updateResult = AppUpdateHelper.checkLatestRelease(appCtx)
+                } finally {
+                    isCheckingUpdate = false
+                }
             }
         }
     }
@@ -5826,7 +6109,7 @@ private fun AboutSettingsCard(
                 }
             }
             val filter = IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-            ContextCompat.registerReceiver(ctx, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+            ContextCompat.registerReceiver(ctx, receiver, filter, ContextCompat.RECEIVER_EXPORTED)
             onDispose {
                 try {
                     ctx.unregisterReceiver(receiver)
@@ -5847,10 +6130,12 @@ private fun AboutSettingsCard(
                     scope.launch {
                         syncDownloadState(targetVer, allowAutoInstall = false)
                         val ready = downloadedApkFile
+                        val readyValid = ready != null && withContext(Dispatchers.IO) {
+                            ready.exists() && ready.length() > 0L
+                        }
                         if (pendingInstallAfterUnknownSourceGrant &&
                             ready != null &&
-                            ready.exists() &&
-                            ready.length() > 0L &&
+                            readyValid &&
                             AppUpdateHelper.canRequestPackageInstallsCompat(ctx)
                         ) {
                             attemptInstall(ready, isAutoTrigger = true)
@@ -6025,8 +6310,11 @@ private fun AboutSettingsCard(
                         isDownloadError = false
                     }
                     scope.launch {
-                        updateResult = AppUpdateHelper.checkLatestRelease(ctx)
-                        isCheckingUpdate = false
+                        try {
+                            updateResult = AppUpdateHelper.checkLatestRelease(ctx)
+                        } finally {
+                            isCheckingUpdate = false
+                        }
                     }
                 }
             },
@@ -6075,7 +6363,7 @@ private fun AboutSettingsCard(
                 Spacer(Modifier.height(8.dp))
                 if (res.apkDownloadUrl != null) {
                     val readyFile = downloadedApkFile
-                    if (readyFile != null && readyFile.exists() && readyFile.length() > 0L && !isDownloading) {
+                    if (readyFile != null && isReadyApkValid && !isDownloading) {
                         Button(
                             onClick = { attemptInstall(readyFile, isAutoTrigger = false) },
                             modifier = Modifier.fillMaxWidth()
@@ -6092,7 +6380,8 @@ private fun AboutSettingsCard(
                                             AppUpdateHelper.enqueueApkDownload(
                                                 ctx = appCtx,
                                                 version = res.latestVersion,
-                                                downloadUrl = res.apkDownloadUrl
+                                                downloadUrl = res.apkDownloadUrl,
+                                                sha256DownloadUrl = res.sha256DownloadUrl
                                             )
                                         }
                                         if (enqueued != null) {
