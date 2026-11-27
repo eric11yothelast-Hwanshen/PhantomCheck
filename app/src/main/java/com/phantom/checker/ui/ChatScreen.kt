@@ -8,26 +8,16 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.util.Base64
+import android.net.Uri
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.rememberSplineBasedDecay
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -69,17 +59,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
@@ -122,6 +111,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -131,6 +121,7 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -139,18 +130,15 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
-import android.net.Uri
-import android.provider.Settings
-import com.google.gson.JsonParser
+import com.phantom.checker.R
 import com.phantom.checker.data.AiRuleEntity
-import com.phantom.checker.data.WhitelistRuleHelper
 import com.phantom.checker.data.ChatMessageEntity
 import com.phantom.checker.data.ChatSessionEntity
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.data.MessageTagCrossRef
-import com.phantom.checker.data.TagEntity
 import com.phantom.checker.data.TodoEntity
 import com.phantom.checker.data.UserTagRuleEntity
+import com.phantom.checker.data.WhitelistRuleHelper
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.network.AiProviderProfile
 import com.phantom.checker.network.ChatMessage
@@ -158,12 +146,11 @@ import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.NotificationCollectorService
 import com.phantom.checker.service.ReminderScheduler
 import com.phantom.checker.service.StatsForegroundService
-import androidx.compose.ui.graphics.ImageBitmap
+import com.phantom.checker.ui.chat.*
 import com.phantom.checker.util.AssistantAvatarCircle
 import com.phantom.checker.util.AssistantAvatarHelper
 import com.phantom.checker.util.ClientTimeParser
 import com.phantom.checker.util.NaturalTimeParseResult
-import com.phantom.checker.util.NotificationFoldUtil
 import com.phantom.checker.util.OtpDetector
 import com.phantom.checker.util.PhantomPrefs
 import com.phantom.checker.util.PhantomSettingsBus
@@ -172,25 +159,8 @@ import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.time.DateTimeException
-import java.time.DayOfWeek
-import java.time.Instant
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.LocalTime
-import java.time.OffsetDateTime
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-import java.time.temporal.TemporalAdjusters
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 import kotlin.math.roundToInt
-
-import com.phantom.checker.ui.chat.*
-import com.phantom.checker.R
-import androidx.compose.ui.res.stringResource
 /** 自製 Sparkle 圖示（無需額外 material-icons-extended 依賴） */
 val AutoAwesomeIcon: ImageVector by lazy {
     ImageVector.Builder(
@@ -235,6 +205,29 @@ val AutoAwesomeIcon: ImageVector by lazy {
     }.build()
 }
 
+private data class PendingCrossAppAction(
+    val sessionId: Long,
+    val proposal: com.phantom.checker.util.CrossAppActionProposal
+)
+
+private data class ChatSessionsLoadResult(
+    val sessions: List<ChatSessionEntity>,
+    val suggestionChips: List<String>,
+    val profiles: List<AiProviderProfile>,
+    val activeProfile: AiProviderProfile?,
+    val externalSearchConfigured: Boolean,
+    val briefingChannelBlocked: Boolean,
+    val hasHcData: Boolean
+)
+
+private data class ChatResumeRefreshResult(
+    val profiles: List<AiProviderProfile>,
+    val activeProfile: AiProviderProfile?,
+    val externalSearchConfigured: Boolean,
+    val briefingChannelBlocked: Boolean,
+    val avatar: ImageBitmap?
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatAssistantTab(
@@ -266,14 +259,15 @@ fun ChatAssistantTab(
     var deleteSessionConfirm by remember { mutableStateOf<ChatSessionEntity?>(null) }
     var showClearAllSessionsConfirm by remember { mutableStateOf(false) }
     var suggestionChips by remember { mutableStateOf(listOf<String>()) }
-    var profiles by remember { mutableStateOf(AiClient.getProfiles(appCtx)) }
-    var activeProfile by remember { mutableStateOf(AiClient.getProfileForPurpose(appCtx, com.phantom.checker.util.AiPurpose.CHAT)) }
+    var profiles by remember { mutableStateOf<List<AiProviderProfile>>(emptyList()) }
+    var activeProfile by remember { mutableStateOf<AiProviderProfile?>(null) }
+    var externalSearchConfigured by remember { mutableStateOf(false) }
     var webSearchEnabled by remember { mutableStateOf(false) }
-    val webSearchSupported = remember(activeProfile) {
-        (activeProfile != null && activeProfile!!.apiKey.isNotBlank()) ||
-            com.phantom.checker.util.EncryptedByokStore.isExternalSearchConfigured(appCtx)
+    val webSearchSupported = remember(activeProfile, externalSearchConfigured) {
+        (activeProfile != null && activeProfile!!.apiKey.isNotBlank()) || externalSearchConfigured
     }
-    var hasApiKey by remember { mutableStateOf(activeProfile != null) }
+    var hasApiKey by remember { mutableStateOf(true) }
+    var cachedHasHcData by remember { mutableStateOf<Boolean?>(null) }
     var showSuggestions by remember { mutableStateOf(PhantomPrefs.isChatSuggestionsEnabled(appCtx)) }
     var assistantName by remember { mutableStateOf(PhantomPrefs.getAssistantName(appCtx)) }
     var assistantAvatar by remember { mutableStateOf<ImageBitmap?>(null) }
@@ -308,7 +302,7 @@ fun ChatAssistantTab(
     var pendingMemoryWriteQueue by remember { mutableStateOf<List<PendingMemoryWriteState>>(emptyList()) }
     var pendingMemoryDeleteQueue by remember { mutableStateOf<List<PendingMemoryDeleteState>>(emptyList()) }
     var pendingAliasCandidate by remember { mutableStateOf<com.phantom.checker.util.ContactBridge.AliasCandidate?>(null) }
-    var pendingCrossAppQueue by remember { mutableStateOf<List<com.phantom.checker.util.CrossAppActionProposal>>(emptyList()) }
+    var pendingCrossAppQueue by remember { mutableStateOf<List<PendingCrossAppAction>>(emptyList()) }
     var showTodoListSheet by remember { mutableStateOf(false) }
     val rawTodoListItems by remember(appCtx) {
         AppDatabaseHolder.db(appCtx).todoDao().observeAll()
@@ -333,7 +327,7 @@ fun ChatAssistantTab(
     var dismissedCapsuleIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var continuityAnchorText by remember { mutableStateOf(PhantomPrefs.getActiveChatContinuityAnchor(appCtx)) }
     var pendingCapsulesEnabled by remember { mutableStateOf(PhantomPrefs.isChatPendingCapsulesEnabled(appCtx)) }
-    var briefingChannelBlocked by remember { mutableStateOf(com.phantom.checker.service.ProactiveEngine.isBriefingChannelBlocked(appCtx)) }
+    var briefingChannelBlocked by remember { mutableStateOf(false) }
     var briefingChannelGuideDismissed by remember { mutableStateOf(PhantomPrefs.isBriefingChannelGuideDismissed(appCtx)) }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -341,7 +335,7 @@ fun ChatAssistantTab(
     ) { uri ->
         if (uri != null) {
             scope.launch {
-                when (val result = withContext(Dispatchers.IO) { encodeImageUriToDataUri(appCtx, uri) }) {
+                when (val result = encodeImageUriToDataUri(appCtx, uri)) {
                     is ImageEncodeResult.Success -> pendingImageAttachment = result.attachment
                     is ImageEncodeResult.Failure -> onShowMessage(result.reason)
                 }
@@ -349,8 +343,16 @@ fun ChatAssistantTab(
         }
     }
 
+    suspend fun refreshSessionsOnly() {
+        val allSessions = withContext(Dispatchers.IO) {
+            AppDatabaseHolder.db(appCtx).chatDao().allSessions()
+        }
+        sessions = allSessions
+    }
+
     suspend fun loadSessionsAndSuggestions() {
-        withContext(Dispatchers.IO) {
+        val knownHcData = cachedHasHcData
+        val loadResult = withContext(Dispatchers.IO) {
             val db = AppDatabaseHolder.db(appCtx)
             val allSessions = db.chatDao().allSessions()
             val nowMs = System.currentTimeMillis()
@@ -369,13 +371,24 @@ fun ChatAssistantTab(
                     val timed = com.phantom.checker.util.CalendarBridge.queryInstances(appCtx, startOfDay, endOfDay)
                         .filter { !it.allDay }
                         .sortedBy { it.beginMs }
-                    timed.zipWithNext().any { (a, b) -> b.beginMs < a.endMs }
+                    var maxEndMs = Long.MIN_VALUE
+                    var conflict = false
+                    for (ev in timed) {
+                        if (ev.beginMs < maxEndMs) {
+                            conflict = true
+                            break
+                        }
+                        if (ev.endMs > maxEndMs) {
+                            maxEndMs = ev.endMs
+                        }
+                    }
+                    conflict
                 }.getOrDefault(false)
             } else false
             if (hasTodayConflict) {
                 dynamicChips.add(resCtx.getString(R.string.chat_s_c586bf))
             }
-            val hasHcData = runCatching {
+            val hasHcData = knownHcData ?: runCatching {
                 com.phantom.checker.util.HealthConnectBridge.hasAnyReadPermission(appCtx) &&
                     com.phantom.checker.util.HealthConnectBridge.readLast7DaysTrend(appCtx).any {
                         it.sleepHours > 0f || it.steps > 0L || it.avgHeartRateBpm > 0L || it.distanceMeters > 0.0 || it.caloriesKcal > 0.0
@@ -412,14 +425,28 @@ fun ChatAssistantTab(
                 dynamicChips.add(c)
             }
 
-            sessions = allSessions
-            suggestionChips = dynamicChips.take(4)
             val loadedProfiles = AiClient.getProfiles(appCtx)
             val loadedActive = AiClient.getProfileForPurpose(appCtx, com.phantom.checker.util.AiPurpose.CHAT)
-            profiles = loadedProfiles
-            activeProfile = loadedActive
-            hasApiKey = loadedActive != null
+            val extSearch = com.phantom.checker.util.EncryptedByokStore.isExternalSearchConfigured(appCtx)
+            val channelBlocked = com.phantom.checker.service.ProactiveEngine.isBriefingChannelBlocked(appCtx)
+            ChatSessionsLoadResult(
+                sessions = allSessions,
+                suggestionChips = dynamicChips.take(4),
+                profiles = loadedProfiles,
+                activeProfile = loadedActive,
+                externalSearchConfigured = extSearch,
+                briefingChannelBlocked = channelBlocked,
+                hasHcData = hasHcData
+            )
         }
+        sessions = loadResult.sessions
+        suggestionChips = loadResult.suggestionChips
+        profiles = loadResult.profiles
+        activeProfile = loadResult.activeProfile
+        externalSearchConfigured = loadResult.externalSearchConfigured
+        hasApiKey = loadResult.activeProfile != null
+        briefingChannelBlocked = loadResult.briefingChannelBlocked
+        cachedHasHcData = loadResult.hasHcData
     }
 
     suspend fun loadMessages(sessionId: Long?) {
@@ -442,15 +469,30 @@ fun ChatAssistantTab(
                 showSuggestions = PhantomPrefs.isChatSuggestionsEnabled(appCtx)
                 assistantName = PhantomPrefs.getAssistantName(appCtx)
                 tokenSaverEnabled = PhantomPrefs.isTokenSaverEnabled(appCtx)
-                briefingChannelBlocked = com.phantom.checker.service.ProactiveEngine.isBriefingChannelBlocked(appCtx)
                 briefingChannelGuideDismissed = PhantomPrefs.isBriefingChannelGuideDismissed(appCtx)
-                scope.launch {
-                    assistantAvatar = AssistantAvatarHelper.loadAvatarBitmap(appCtx)
-                }
                 quickCommands = PhantomPrefs.getQuickChatCommands(appCtx)
-                profiles = AiClient.getProfiles(appCtx)
-                activeProfile = AiClient.getProfileForPurpose(appCtx, com.phantom.checker.util.AiPurpose.CHAT)
-                hasApiKey = activeProfile != null
+                scope.launch {
+                    val resumeResult = withContext(Dispatchers.IO) {
+                        val loadedProfiles = AiClient.getProfiles(appCtx)
+                        val loadedActive = AiClient.getProfileForPurpose(appCtx, com.phantom.checker.util.AiPurpose.CHAT)
+                        val extSearch = com.phantom.checker.util.EncryptedByokStore.isExternalSearchConfigured(appCtx)
+                        val channelBlocked = com.phantom.checker.service.ProactiveEngine.isBriefingChannelBlocked(appCtx)
+                        val loadedAvatar = AssistantAvatarHelper.loadAvatarBitmap(appCtx)
+                        ChatResumeRefreshResult(
+                            profiles = loadedProfiles,
+                            activeProfile = loadedActive,
+                            externalSearchConfigured = extSearch,
+                            briefingChannelBlocked = channelBlocked,
+                            avatar = loadedAvatar
+                        )
+                    }
+                    profiles = resumeResult.profiles
+                    activeProfile = resumeResult.activeProfile
+                    externalSearchConfigured = resumeResult.externalSearchConfigured
+                    hasApiKey = resumeResult.activeProfile != null
+                    briefingChannelBlocked = resumeResult.briefingChannelBlocked
+                    assistantAvatar = resumeResult.avatar
+                }
             }
         }
         lifecycleOwner?.lifecycle?.addObserver(observer)
@@ -465,6 +507,7 @@ fun ChatAssistantTab(
             val latest = sessions.firstOrNull()
             if (latest != null) {
                 currentSessionId = latest.id
+                isViewingProactiveRoom = latest.title == com.phantom.checker.service.ProactiveEngine.PROACTIVE_SESSION_TITLE
                 loadMessages(latest.id)
             }
         }
@@ -515,19 +558,20 @@ fun ChatAssistantTab(
 
         scope.launch {
             isSending = true
+            try {
             val db = AppDatabaseHolder.db(appCtx)
-            val sessionId = withContext(Dispatchers.IO) {
-                val existingId = currentSessionId
-                if (existingId != null) {
-                    existingId
-                } else {
+            val existingId = currentSessionId
+            val sessionId = if (existingId != null) {
+                existingId
+            } else {
+                val createdId = withContext(Dispatchers.IO) {
                     val title = displayUserText.take(20).ifBlank { resCtx.getString(R.string.chat_s_a7975c) }
-                    val newId = db.chatDao().insertSession(
+                    db.chatDao().insertSession(
                         ChatSessionEntity(title = title, createdAt = System.currentTimeMillis())
                     )
-                    currentSessionId = newId
-                    newId
                 }
+                currentSessionId = createdId
+                createdId
             }
 
             if (!isRetry) {
@@ -546,7 +590,7 @@ fun ChatAssistantTab(
                     }
                 }
                 loadMessages(sessionId)
-                loadSessionsAndSuggestions()
+                refreshSessionsOnly()
                 com.phantom.checker.util.GoalEngine.detectGoalCandidate(appCtx, displayUserText)?.let { cand ->
                     pendingGoalCandidate = sessionId to cand
                 }
@@ -620,7 +664,6 @@ fun ChatAssistantTab(
                         )
                     }
                     loadMessages(sessionId)
-                    isSending = false
                     return@launch
                 }
             }
@@ -654,7 +697,6 @@ fun ChatAssistantTab(
                 }
             )
 
-            isSending = false
             result.onSuccess { outcome ->
                 val reply = outcome.replyText
                 val thinkingText = outcome.thinkingText
@@ -1078,19 +1120,21 @@ fun ChatAssistantTab(
                 }
                 loadMessages(sessionId)
                 if (parsed.ruleProposals.isNotEmpty()) {
-                    pendingRuleQueue = parsed.ruleProposals.map { PendingRuleInsertion(sessionId, it) }
+                    pendingRuleQueue = pendingRuleQueue.filterNot { it.sessionId == sessionId } +
+                        parsed.ruleProposals.map { PendingRuleInsertion(sessionId, it) }
                 }
                 if (resolvedTagRuleInsertions.isNotEmpty()) {
-                    pendingTagRuleQueue = resolvedTagRuleInsertions
+                    pendingTagRuleQueue = pendingTagRuleQueue.filterNot { it.sessionId == sessionId } + resolvedTagRuleInsertions
                 }
                 if (parsed.quickCommandProposals.isNotEmpty()) {
-                    pendingQuickCommandQueue = parsed.quickCommandProposals.map {
-                        PendingQuickCommandAddition(
-                            sessionId = sessionId,
-                            proposal = it,
-                            defaultMode = it.mode ?: PhantomPrefs.getQuickCommandDefaultMode(appCtx)
-                        )
-                    }
+                    pendingQuickCommandQueue = pendingQuickCommandQueue.filterNot { it.sessionId == sessionId } +
+                        parsed.quickCommandProposals.map {
+                            PendingQuickCommandAddition(
+                                sessionId = sessionId,
+                                proposal = it,
+                                defaultMode = it.mode ?: PhantomPrefs.getQuickCommandDefaultMode(appCtx)
+                            )
+                        }
                 }
                 if (dedupedWhitelistItems.isNotEmpty()) {
                     pendingWhitelist = PendingWhitelistAction(
@@ -1099,13 +1143,13 @@ fun ChatAssistantTab(
                     )
                 }
                 if (resolvedAdjustStates.isNotEmpty()) {
-                    pendingSettingAdjustQueue = resolvedAdjustStates
+                    pendingSettingAdjustQueue = pendingSettingAdjustQueue.filterNot { it.sessionId == sessionId } + resolvedAdjustStates
                 }
                 if (resolvedMsgActions.isNotEmpty()) {
-                    pendingMsgActionQueue = resolvedMsgActions
+                    pendingMsgActionQueue = pendingMsgActionQueue.filterNot { it.sessionId == sessionId } + resolvedMsgActions
                 }
                 if (resolvedTodoInsertions.isNotEmpty()) {
-                    pendingTodoQueue = resolvedTodoInsertions
+                    pendingTodoQueue = pendingTodoQueue.filterNot { it.sessionId == sessionId } + resolvedTodoInsertions
                 }
 
                 // #160 擴充動作解析與執行（唯讀直接執行，mutating 一律進確認卡佇列）
@@ -1115,6 +1159,7 @@ fun ChatAssistantTab(
                 val resolvedMemoryWrites = mutableListOf<PendingMemoryWriteState>()
                 val resolvedMemoryDeletes = mutableListOf<PendingMemoryDeleteState>()
                 val resolvedCalendarAdds = mutableListOf<PendingCalendarAddition>()
+                var needsUsageGuideFromExtended = false
 
                 if (ragBuild.needsUsagePermissionPrompt) {
                     showUsagePermissionGuideCard = true
@@ -1684,7 +1729,7 @@ fun ChatAssistantTab(
                                     top = uq.top
                                 )
                                 if (!usageRes.granted) {
-                                    showUsagePermissionGuideCard = true
+                                    needsUsageGuideFromExtended = true
                                 }
                                 immediateExtraReplies.add(usageRes.markdownTable)
                             }
@@ -1779,8 +1824,11 @@ fun ChatAssistantTab(
                     }
                 }
 
+                if (needsUsageGuideFromExtended) {
+                    showUsagePermissionGuideCard = true
+                }
                 if (resolvedCalendarAdds.isNotEmpty()) {
-                    pendingCalendarQueue = resolvedCalendarAdds
+                    pendingCalendarQueue = pendingCalendarQueue.filterNot { it.sessionId == sessionId } + resolvedCalendarAdds
                 }
 
                 if (immediateExtraReplies.isNotEmpty()) {
@@ -1845,7 +1893,8 @@ fun ChatAssistantTab(
                     pendingSettingCandidates = null
                 }
                 if (parsed.crossAppActions.isNotEmpty()) {
-                    pendingCrossAppQueue = pendingCrossAppQueue + parsed.crossAppActions
+                    pendingCrossAppQueue = pendingCrossAppQueue.filterNot { it.sessionId == sessionId } +
+                        parsed.crossAppActions.map { PendingCrossAppAction(sessionId, it) }
                 }
                 pendingOpenSettingItem?.let { targetItem ->
                     val targetIntent = when (targetItem.page) {
@@ -1863,6 +1912,14 @@ fun ChatAssistantTab(
                 lastError = err.message ?: resCtx.getString(R.string.chat_s_360c9b)
                 lastFailedQuery = query
             }
+            } catch (ce: kotlinx.coroutines.CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                lastError = e.message ?: resCtx.getString(R.string.chat_s_360c9b)
+                lastFailedQuery = query
+            } finally {
+                isSending = false
+            }
         }
     }
 
@@ -1877,10 +1934,12 @@ fun ChatAssistantTab(
                         scope.launch {
                             withContext(Dispatchers.IO) {
                                 AppDatabaseHolder.db(appCtx).chatDao().deleteSessionWithMessages(target.id)
+                                PhantomPrefs.clearChatRagSessionCache(appCtx, target.id)
                             }
                             if (currentSessionId == target.id) {
                                 currentSessionId = null
                                 messages = emptyList()
+                                isViewingProactiveRoom = false
                             }
                             deleteSessionConfirm = null
                             loadSessionsAndSuggestions()
@@ -1915,9 +1974,15 @@ fun ChatAssistantTab(
                         }
                         scope.launch {
                             withContext(Dispatchers.IO) {
-                                AppDatabaseHolder.db(appCtx).chatDao().clearAllNonProactiveSessions(
-                                    com.phantom.checker.service.ProactiveEngine.PROACTIVE_SESSION_TITLE
-                                )
+                                val chatDao = AppDatabaseHolder.db(appCtx).chatDao()
+                                val proactiveTitle = com.phantom.checker.service.ProactiveEngine.PROACTIVE_SESSION_TITLE
+                                val nonProactiveIds = chatDao.allSessions()
+                                    .filter { it.title != proactiveTitle }
+                                    .map { it.id }
+                                chatDao.clearAllNonProactiveSessions(proactiveTitle)
+                                nonProactiveIds.forEach { sid ->
+                                    PhantomPrefs.clearChatRagSessionCache(appCtx, sid)
+                                }
                             }
                             if (!isViewingProactiveRoom) {
                                 currentSessionId = null
@@ -2048,16 +2113,17 @@ fun ChatAssistantTab(
         )
     }
 
-    pendingRuleQueue.firstOrNull()?.let { pending ->
+    val sessionPendingRules = pendingRuleQueue.filter { it.sessionId == currentSessionId }
+    sessionPendingRules.firstOrNull()?.let { pending ->
         val proposal = pending.proposal
-        val remainingCount = pendingRuleQueue.size
+        val remainingCount = sessionPendingRules.size
         val kindLabel = when (proposal.kind) {
             AiRuleEntity.KIND_WHITELIST -> resCtx.getString(R.string.chat_s_eedcf6)
             "memo" -> resCtx.getString(R.string.chat_s_987cbd)
             else -> resCtx.getString(R.string.chat_s_63084e)
         }
         AlertDialog(
-            onDismissRequest = { pendingRuleQueue = pendingRuleQueue.drop(1) },
+            onDismissRequest = { pendingRuleQueue = pendingRuleQueue.filterNot { it === pending } },
             title = {
                 Text(if (remainingCount > 1) stringResource(R.string.chat_s_ff3a24, remainingCount) else stringResource(R.string.chat_s_c888ee))
             },
@@ -2085,7 +2151,7 @@ fun ChatAssistantTab(
             confirmButton = {
                 Button(onClick = {
                     val sid = pending.sessionId
-                    pendingRuleQueue = pendingRuleQueue.drop(1)
+                    pendingRuleQueue = pendingRuleQueue.filterNot { it === pending }
                     scope.launch {
                         val verifiedOk = withContext(Dispatchers.IO) {
                             val db = AppDatabaseHolder.db(appCtx)
@@ -2200,16 +2266,17 @@ fun ChatAssistantTab(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingRuleQueue = pendingRuleQueue.drop(1) }) {
+                TextButton(onClick = { pendingRuleQueue = pendingRuleQueue.filterNot { it === pending } }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             }
         )
     }
 
-    pendingTagRuleQueue.firstOrNull()?.let { pending ->
+    val sessionPendingTagRules = pendingTagRuleQueue.filter { it.sessionId == currentSessionId }
+    sessionPendingTagRules.firstOrNull()?.let { pending ->
         val p = pending.proposal
-        val remaining = pendingTagRuleQueue.size
+        val remaining = sessionPendingTagRules.size
         var selectedTagId by remember(pending) { mutableStateOf(pending.resolvedTagId) }
         val previewConditions = buildList {
             p.appLabel?.let { add("App：$it") }
@@ -2220,7 +2287,7 @@ fun ChatAssistantTab(
             com.phantom.checker.util.TagRuleEngine.semanticLabel(p.semanticCategory)?.let { add(resCtx.getString(R.string.chat_s_7a9b5b, it)) }
         }.joinToString(" ＋ ").ifBlank { p.description }
         AlertDialog(
-            onDismissRequest = { pendingTagRuleQueue = pendingTagRuleQueue.drop(1) },
+            onDismissRequest = { pendingTagRuleQueue = pendingTagRuleQueue.filterNot { it === pending } },
             title = {
                 Text(if (remaining > 1) stringResource(R.string.chat_s_aac697, remaining) else stringResource(R.string.chat_s_ed2da5))
             },
@@ -2268,7 +2335,7 @@ fun ChatAssistantTab(
                         val sid = pending.sessionId
                         val tagId = selectedTagId ?: return@Button
                         val tagName = pending.availableTags.firstOrNull { it.id == tagId }?.name ?: p.tagName
-                        pendingTagRuleQueue = pendingTagRuleQueue.drop(1)
+                        pendingTagRuleQueue = pendingTagRuleQueue.filterNot { it === pending }
                         scope.launch {
                             val verifiedOk = withContext(Dispatchers.IO) {
                                 val db = AppDatabaseHolder.db(appCtx)
@@ -2314,7 +2381,7 @@ fun ChatAssistantTab(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingTagRuleQueue = pendingTagRuleQueue.drop(1) }) {
+                TextButton(onClick = { pendingTagRuleQueue = pendingTagRuleQueue.filterNot { it === pending } }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             }
@@ -2402,6 +2469,8 @@ fun ChatAssistantTab(
                                             scope.launch {
                                                 withContext(Dispatchers.IO) {
                                                     ReminderScheduler.completeTodoWithRecurrence(appCtx, todo, checked)
+                                                    com.phantom.checker.widget.TodoTodayWidgetProvider.refreshNow(appCtx)
+                                                    com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx, immediate = true)
                                                 }
                                             }
                                         }
@@ -2432,6 +2501,8 @@ fun ChatAssistantTab(
                                                     ReminderScheduler.cancelTodo(appCtx, todo.id)
                                                     AppDatabaseHolder.db(appCtx).todoDao().deleteById(todo.id)
                                                     ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                                                    com.phantom.checker.widget.TodoTodayWidgetProvider.refreshNow(appCtx)
+                                                    com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx, immediate = true)
                                                 }
                                             }
                                         }
@@ -2641,6 +2712,7 @@ fun ChatAssistantTab(
                         currentSessionId = null
                         messages = emptyList()
                         lastError = null
+                        isViewingProactiveRoom = false
                     },
                     modifier = Modifier.size(48.dp)
                 ) {
@@ -2825,7 +2897,7 @@ fun ChatAssistantTab(
                         text = stringResource(R.string.chat_s_a1aa92),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.warning
                     )
                     Text(
                         text = stringResource(R.string.chat_s_5d28a0),
@@ -3058,16 +3130,18 @@ fun ChatAssistantTab(
         }
 
         // 對話內容區
-        val chatLayoutVer by PhantomSettingsBus.version.collectAsState()
-        val chatFontScale = remember(chatLayoutVer) { PhantomPrefs.getChatFontScale(appCtx) }
-        val bubbleCornerDp = remember(chatLayoutVer) { PhantomPrefs.getChatBubbleCornerDp(appCtx) }
-        val bubbleWidthPct = remember(chatLayoutVer) { PhantomPrefs.getChatBubbleWidthPercent(appCtx) }
+        val chatFontScale = remember(settingsVersion) { PhantomPrefs.getChatFontScale(appCtx) }
+        val bubbleCornerDp = remember(settingsVersion) { PhantomPrefs.getChatBubbleCornerDp(appCtx) }
+        val bubbleWidthPct = remember(settingsVersion) { PhantomPrefs.getChatBubbleWidthPercent(appCtx) }
         val baseDensity = LocalDensity.current
         val chatDensity = remember(baseDensity, chatFontScale) {
             androidx.compose.ui.unit.Density(
                 density = baseDensity.density,
                 fontScale = baseDensity.fontScale * chatFontScale
             )
+        }
+        val lastBriefingMsgId = remember(messages, settingsVersion) {
+            PhantomPrefs.getLastBriefingMessageId(appCtx)
         }
         BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
             val userBubbleMaxWidth = maxWidth * (bubbleWidthPct / 100f)
@@ -3079,7 +3153,7 @@ fun ChatAssistantTab(
                     description = stringResource(R.string.chat_s_c39ab1, assistantName)
                 )
             } else {
-                val showBubbleTimestamp = remember(chatLayoutVer) {
+                val showBubbleTimestamp = remember(settingsVersion) {
                     PhantomPrefs.isChatTimestampEnabled(appCtx)
                 }
                 androidx.compose.runtime.key(currentSessionId) {
@@ -3146,7 +3220,7 @@ fun ChatAssistantTab(
                                 }
                             } else {
                                 val isBriefingMsg = msg.id > 0L && (
-                                    msg.id == PhantomPrefs.getLastBriefingMessageId(appCtx) ||
+                                    msg.id == lastBriefingMsgId ||
                                         ((msg.content.startsWith("**☀️ ") || msg.content.startsWith("**🌙 ")) &&
                                             msg.content.contains(stringResource(R.string.chat_s_8aa9b3)))
                                 )
@@ -3639,6 +3713,8 @@ fun ChatAssistantTab(
                                                             createdAt = System.currentTimeMillis()
                                                         )
                                                     )
+                                                    StatsForegroundService.startOrRefresh(appCtx, force = true)
+                                                    com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx, immediate = true)
                                                     lines
                                                 }
                                                 loadMessages(sid)
@@ -3756,7 +3832,7 @@ fun ChatAssistantTab(
                                     Text(
                                         text = stringResource(R.string.chat_s_5348df, spec.min, spec.max, spec.formatValue(adjState.proposedValue)),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.error
+                                        color = MaterialTheme.colorScheme.warning
                                     )
                                 }
                                 Spacer(Modifier.height(6.dp))
@@ -3806,7 +3882,7 @@ fun ChatAssistantTab(
                                     OutlinedButton(
                                         onClick = {
                                             val sid = adjState.sessionId
-                                            pendingSettingAdjustQueue = pendingSettingAdjustQueue.drop(1)
+                                            pendingSettingAdjustQueue = pendingSettingAdjustQueue.filterNot { it === adjState }
                                             scope.launch {
                                                 withContext(Dispatchers.IO) {
                                                     AppDatabaseHolder.db(appCtx).chatDao().insertMessage(
@@ -3829,7 +3905,7 @@ fun ChatAssistantTab(
                                         onClick = {
                                             val sid = adjState.sessionId
                                             val targetVal = draftValue
-                                            pendingSettingAdjustQueue = pendingSettingAdjustQueue.drop(1)
+                                            pendingSettingAdjustQueue = pendingSettingAdjustQueue.filterNot { it === adjState }
                                             val applied = SettingsCatalog.applyNumericSetting(appCtx, spec.id, targetVal)
                                             if (applied != null) {
                                                 val (beforeVal, afterVal, clamped) = applied
@@ -4075,7 +4151,7 @@ fun ChatAssistantTab(
                                         Text(
                                             text = stringResource(R.string.chat_s_267c1b),
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.error
+                                            color = MaterialTheme.colorScheme.warning
                                         )
                                         Spacer(Modifier.height(4.dp))
                                     }
@@ -4093,7 +4169,7 @@ fun ChatAssistantTab(
                                     Text(
                                         text = stringResource(R.string.chat_s_1ce96d, scamMsgs.size),
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.error
+                                        color = MaterialTheme.colorScheme.warning
                                     )
                                 }
 
@@ -4105,7 +4181,7 @@ fun ChatAssistantTab(
                                     OutlinedButton(
                                         onClick = {
                                             val sid = actState.sessionId
-                                            pendingMsgActionQueue = pendingMsgActionQueue.drop(1)
+                                            pendingMsgActionQueue = pendingMsgActionQueue.filterNot { it === actState }
                                             scope.launch {
                                                 try {
                                                     withContext(Dispatchers.IO) {
@@ -4138,7 +4214,7 @@ fun ChatAssistantTab(
                                         enabled = canConfirm,
                                         onClick = {
                                             val sid = actState.sessionId
-                                            pendingMsgActionQueue = pendingMsgActionQueue.drop(1)
+                                            pendingMsgActionQueue = pendingMsgActionQueue.filterNot { it === actState }
                                             scope.launch {
                                                 val reportText: String = try {
                                                     when (actState.action) {
@@ -4146,14 +4222,17 @@ fun ChatAssistantTab(
                                                             if (primaryMsg == null) {
                                                                 resCtx.getString(R.string.chat_s_8cd4d0)
                                                             } else {
-                                                                when (val res = NotificationCollectorService.sendReplyToNotification(
-                                                                    context = appCtx,
-                                                                    packageName = primaryMsg.packageName,
-                                                                    sender = primaryMsg.sender,
-                                                                    contentSnippet = primaryMsg.content,
-                                                                    replyText = draftReply,
-                                                                    conversationKey = primaryMsg.conversationKey
-                                                                )) {
+                                                                val res = withContext(Dispatchers.IO) {
+                                                                    NotificationCollectorService.sendReplyToNotification(
+                                                                        context = appCtx,
+                                                                        packageName = primaryMsg.packageName,
+                                                                        sender = primaryMsg.sender,
+                                                                        contentSnippet = primaryMsg.content,
+                                                                        replyText = draftReply,
+                                                                        conversationKey = primaryMsg.conversationKey
+                                                                    )
+                                                                }
+                                                                when (res) {
                                                                     is NotificationCollectorService.Companion.ReplySendResult.Success -> {
                                                                         val convKey = primaryMsg.conversationKey.ifBlank { primaryMsg.sender }
                                                                         withContext(Dispatchers.IO) {
@@ -4173,15 +4252,16 @@ fun ChatAssistantTab(
                                                                                     isOwn = true
                                                                                 )
                                                                             )
+                                                                            com.phantom.checker.service.ReplyProxyManager.startOrRefreshSession(
+                                                                                ctx = appCtx,
+                                                                                packageName = primaryMsg.packageName,
+                                                                                appLabel = primaryMsg.appLabel,
+                                                                                sender = primaryMsg.sender,
+                                                                                originalSnippet = primaryMsg.content,
+                                                                                initialReplyText = draftReply,
+                                                                                conversationKey = convKey
+                                                                            )
                                                                         }
-                                                                        com.phantom.checker.service.ReplyProxyManager.startOrRefreshSession(
-                                                                            ctx = appCtx,
-                                                                            packageName = primaryMsg.packageName,
-                                                                            appLabel = primaryMsg.appLabel,
-                                                                            sender = primaryMsg.sender,
-                                                                            originalSnippet = primaryMsg.content,
-                                                                            initialReplyText = draftReply
-                                                                        )
                                                                         resCtx.getString(R.string.chat_s_ec2456, primaryMsg.sender.ifBlank { primaryMsg.appLabel }, draftReply)
                                                                     }
                                                                     is NotificationCollectorService.Companion.ReplySendResult.Unavailable ->
@@ -4221,9 +4301,11 @@ fun ChatAssistantTab(
                                                         "delete_message" -> {
                                                             withContext(Dispatchers.IO) {
                                                                 AppDatabaseHolder.db(appCtx).messageDao()
-                                                                    .deleteByIds(safeDeleteMsgs.map { it.id })
+                                                                    .deleteByIdsWithOrphans(safeDeleteMsgs.map { it.id })
+                                                                com.phantom.checker.widget.WidgetUpdater.refreshAllActiveWidgets(appCtx)
                                                             }
                                                             StatsForegroundService.startOrRefresh(appCtx, force = true)
+                                                            com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx, immediate = true)
                                                             if (scamMsgs.isNotEmpty()) {
                                                                 resCtx.getString(R.string.chat_s_d3abf6, safeDeleteMsgs.size, scamMsgs.size)
                                                             } else {
@@ -4297,7 +4379,7 @@ fun ChatAssistantTab(
                         }
                     }
 
-                    pendingQuickCommandQueue.firstOrNull()?.takeIf { it.sessionId == currentSessionId }?.let { pending ->
+                    pendingQuickCommandQueue.firstOrNull { it.sessionId == currentSessionId }?.let { pending ->
                         item(key = "pending_quick_command_card_${pending.proposal.label}_${pending.proposal.prompt}") {
                             var selectedMode by remember(pending) { mutableStateOf(pending.defaultMode) }
                             PhantomGlassCard(
@@ -4346,14 +4428,14 @@ fun ChatAssistantTab(
                                                 pending.proposal.prompt,
                                                 selectedMode
                                             )
-                                            pendingQuickCommandQueue = pendingQuickCommandQueue.drop(1)
+                                            pendingQuickCommandQueue = pendingQuickCommandQueue.filterNot { it === pending }
                                             onShowMessage(resCtx.getString(R.string.chat_s_964319, pending.proposal.label))
                                         }
                                     ) {
                                         Text(stringResource(R.string.common_confirm_add))
                                     }
                                     OutlinedButton(
-                                        onClick = { pendingQuickCommandQueue = pendingQuickCommandQueue.drop(1) }
+                                        onClick = { pendingQuickCommandQueue = pendingQuickCommandQueue.filterNot { it === pending } }
                                     ) {
                                         Text(stringResource(R.string.common_cancel))
                                     }
@@ -4470,13 +4552,13 @@ fun ChatAssistantTab(
                                     Spacer(Modifier.height(6.dp))
                                     Surface(
                                         shape = RoundedCornerShape(10.dp),
-                                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
+                                        color = MaterialTheme.colorScheme.warningContainer.copy(alpha = 0.75f),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
                                             text = stringResource(R.string.detail_s_93ec95, com.phantom.checker.util.CalendarBridge.formatConflictSummary(pendingCal.conflicts)),
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            color = MaterialTheme.colorScheme.onWarningContainer,
                                             modifier = Modifier.padding(8.dp)
                                         )
                                     }
@@ -4708,6 +4790,8 @@ fun ChatAssistantTab(
                                                     if (ok) {
                                                         ReminderScheduler.scheduleTodo(appCtx, todoId, pendingTodo.dueAt)
                                                         ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                                                        com.phantom.checker.widget.TodoTodayWidgetProvider.refreshNow(appCtx)
+                                                        com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx, immediate = true)
                                                     }
                                                     db.chatDao().insertMessage(
                                                         ChatMessageEntity(
@@ -4942,6 +5026,10 @@ fun ChatAssistantTab(
                                                         is PendingExtendedAction.TodoDone -> {
                                                             val spawned = ReminderScheduler.completeTodoWithRecurrence(appCtx, ext.todo, true)
                                                             val verified = db.todoDao().byId(ext.todo.id)
+                                                            if (verified?.isDone == true) {
+                                                                com.phantom.checker.widget.TodoTodayWidgetProvider.refreshNow(appCtx)
+                                                                com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx, immediate = true)
+                                                            }
                                                             if (verified?.isDone != true) {
                                                                 resCtx.getString(R.string.chat_s_8986db, ext.todo.title)
                                                             } else if (spawned != null) {
@@ -4956,6 +5044,8 @@ fun ChatAssistantTab(
                                                             if (!stillExists) {
                                                                 ReminderScheduler.cancelTodo(appCtx, ext.todo.id)
                                                                 ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                                                                com.phantom.checker.widget.TodoTodayWidgetProvider.refreshNow(appCtx)
+                                                                com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx, immediate = true)
                                                                 resCtx.getString(R.string.chat_s_24bc12, ext.todo.title)
                                                             } else {
                                                                 resCtx.getString(R.string.chat_s_6fd8e5, ext.todo.title)
@@ -4974,6 +5064,8 @@ fun ChatAssistantTab(
                                                                     ReminderScheduler.scheduleTodo(appCtx, updated.id, updated.dueAt)
                                                                 }
                                                                 ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                                                                com.phantom.checker.widget.TodoTodayWidgetProvider.refreshNow(appCtx)
+                                                                com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx, immediate = true)
                                                                 val newTimeStr = PhantomPrefs.formatMessageTime(appCtx, updated.dueAt, includeDate = true)
                                                                 resCtx.getString(R.string.chat_s_a5b305, updated.title, newTimeStr)
                                                             } else {
@@ -4984,12 +5076,14 @@ fun ChatAssistantTab(
                                                             val isCurrentlyVip = ext.sender in PhantomPrefs.getVipSenders(appCtx, ext.packageName)
                                                             if (isCurrentlyVip != ext.pin) {
                                                                 PhantomPrefs.toggleVipSender(appCtx, ext.packageName, ext.sender)
+                                                                PhantomSettingsBus.notifyChanged()
                                                             }
                                                             if (ext.pin) resCtx.getString(R.string.chat_s_7c4901, ext.sender, ext.appLabel)
                                                             else resCtx.getString(R.string.chat_s_2561d1, ext.sender, ext.appLabel)
                                                         }
                                                         is PendingExtendedAction.MuteApp -> {
                                                             PhantomPrefs.setAppMuted(appCtx, ext.packageName, ext.mute)
+                                                            PhantomSettingsBus.notifyChanged()
                                                             if (ext.mute) resCtx.getString(R.string.chat_s_ec3c41, ext.appLabel)
                                                             else resCtx.getString(R.string.chat_s_702a00, ext.appLabel)
                                                         }
@@ -5008,6 +5102,7 @@ fun ChatAssistantTab(
                                                                 }
                                                             }
                                                             StatsForegroundService.startOrRefresh(appCtx, force = true)
+                                                            com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx, immediate = true)
                                                             resCtx.getString(R.string.chat_s_f51f1c, count)
                                                         }
                                                         is PendingExtendedAction.ExportMessages -> {
@@ -5067,7 +5162,9 @@ fun ChatAssistantTab(
                             val catLbl = com.phantom.checker.data.MemoryEngine.categoryLabel(memWrite.category)
                             val layerLbl = com.phantom.checker.data.MemoryEngine.layerLabel(memWrite.layer)
                             val privLbl = com.phantom.checker.data.MemoryEngine.privacyLabel(memWrite.privacyTier)
-                            val expStr = memWrite.expiresAt?.let { resCtx.getString(R.string.chat_s_be1c17, formatChatTime(it)) }.orEmpty()
+                            val expStr = memWrite.expiresAt?.let {
+                                resCtx.getString(R.string.chat_s_be1c17, PhantomPrefs.formatMessageTime(appCtx, it, includeDate = true))
+                            }.orEmpty()
                             PhantomGlassCard(
                                 glassState = glassState,
                                 modifier = Modifier.fillMaxWidth(),
@@ -5082,7 +5179,7 @@ fun ChatAssistantTab(
                                     } + if (sessionMemWrites.size > 1) resCtx.getString(R.string.chat_s_5ed028, sessionMemWrites.size) else "",
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (hasConflict) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
+                                    color = if (hasConflict) MaterialTheme.colorScheme.warning else MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(Modifier.height(6.dp))
                                 Text(
@@ -5326,7 +5423,7 @@ fun ChatAssistantTab(
                                                             layer = memWrite.layer,
                                                             expiresAt = memWrite.expiresAt,
                                                             privacyTier = memWrite.privacyTier,
-                                                            confidence = com.phantom.checker.data.MemoryEntity.CONFIDENCE_INFERRED,
+                                                            confidence = com.phantom.checker.data.MemoryEntity.CONFIDENCE_CONFIRMED,
                                                             sourceType = com.phantom.checker.data.MemoryEntity.SOURCE_CHAT,
                                                             sourceRef = memWrite.sourceRef,
                                                             forceReplaceConflict = false
@@ -5378,8 +5475,9 @@ fun ChatAssistantTab(
                         }
                     }
 
-                    pendingCrossAppQueue.firstOrNull()?.let { crossAct ->
-                        item(key = "pending_cross_app_${crossAct.hashCode()}") {
+                    pendingCrossAppQueue.firstOrNull { it.sessionId == currentSessionId }?.let { pendingCross ->
+                        val crossAct = pendingCross.proposal
+                        item(key = "pending_cross_app_${pendingCross.sessionId}_${crossAct.hashCode()}") {
                             PhantomGlassCard(
                                 glassState = glassState,
                                 cornerRadius = 16.dp,
@@ -5397,24 +5495,27 @@ fun ChatAssistantTab(
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                     val openAppRoute = remember(crossAct) {
-                                        val pkg = (crossAct as? com.phantom.checker.util.CrossAppActionProposal.OpenApp)?.packageName
-                                        com.phantom.checker.util.IntentCapabilityRegistry.resolve(
-                                            ctx = appCtx,
-                                            intent = com.phantom.checker.util.IntentCapabilityRegistry.IntentType.OPEN_APP,
-                                            targetPackage = pkg
-                                        )
+                                        (crossAct as? com.phantom.checker.util.CrossAppActionProposal.OpenApp)?.let { openAct ->
+                                            com.phantom.checker.util.IntentCapabilityRegistry.resolve(
+                                                ctx = appCtx,
+                                                intent = com.phantom.checker.util.IntentCapabilityRegistry.IntentType.OPEN_APP,
+                                                targetPackage = openAct.packageName
+                                            )
+                                        }
                                     }
-                                    Text(
-                                        text = openAppRoute.executionWayLine(),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.secondary
-                                    )
-                                    openAppRoute.rerouteNoticeText()?.let { notice ->
+                                    if (openAppRoute != null) {
                                         Text(
-                                            text = "ℹ️ $notice",
+                                            text = openAppRoute.executionWayLine(),
                                             style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            color = MaterialTheme.colorScheme.secondary
                                         )
+                                        openAppRoute.rerouteNoticeText()?.let { notice ->
+                                            Text(
+                                                text = "ℹ️ $notice",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
                                     }
                                     Text(
                                         text = resCtx.getString(R.string.chat_s_5688db),
@@ -5427,7 +5528,7 @@ fun ChatAssistantTab(
                                     ) {
                                         OutlinedButton(
                                             onClick = {
-                                                pendingCrossAppQueue = pendingCrossAppQueue.drop(1)
+                                                pendingCrossAppQueue = pendingCrossAppQueue.filterNot { it === pendingCross }
                                             },
                                             modifier = Modifier.weight(1f)
                                         ) {
@@ -5435,7 +5536,7 @@ fun ChatAssistantTab(
                                         }
                                         Button(
                                             onClick = {
-                                                pendingCrossAppQueue = pendingCrossAppQueue.drop(1)
+                                                pendingCrossAppQueue = pendingCrossAppQueue.filterNot { it === pendingCross }
                                                 com.phantom.checker.util.CrossAppActionExecutor.execute(ctx, crossAct)
                                             },
                                             modifier = Modifier.weight(1f)
@@ -5507,8 +5608,9 @@ fun ChatAssistantTab(
                     val sessionMemDeletes = pendingMemoryDeleteQueue.filter { it.sessionId == currentSessionId }
                     sessionMemDeletes.firstOrNull()?.let { memDel ->
                         item(key = "pending_memory_delete_card_${memDel.filterSummary}") {
+                            val visibleTargets = remember(memDel) { memDel.targets.take(10) }
                             var selectedIds by remember(memDel) {
-                                mutableStateOf(memDel.targets.map { it.id }.toSet())
+                                mutableStateOf(visibleTargets.map { it.id }.toSet())
                             }
                             PhantomGlassCard(
                                 glassState = glassState,
@@ -5524,10 +5626,15 @@ fun ChatAssistantTab(
                                 )
                                 Spacer(Modifier.height(6.dp))
                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    memDel.targets.take(10).forEach { m ->
+                                    visibleTargets.forEach { m ->
                                         val checked = m.id in selectedIds
                                         val catLbl = com.phantom.checker.data.MemoryEngine.categoryLabel(m.category)
                                         val layerLbl = com.phantom.checker.data.MemoryEngine.layerLabel(m.layer)
+                                        val displayContent = if (m.privacyTier == com.phantom.checker.data.MemoryEntity.PRIVACY_SENSITIVE) {
+                                            resCtx.getString(R.string.chat_s_2ac638)
+                                        } else {
+                                            m.content
+                                        }
                                         Surface(
                                             shape = RoundedCornerShape(10.dp),
                                             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f)),
@@ -5555,7 +5662,7 @@ fun ChatAssistantTab(
                                                         fontWeight = FontWeight.SemiBold
                                                     )
                                                     Text(
-                                                        text = m.content,
+                                                        text = displayContent,
                                                         style = MaterialTheme.typography.bodySmall,
                                                         maxLines = 2,
                                                         overflow = TextOverflow.Ellipsis
@@ -5609,7 +5716,9 @@ fun ChatAssistantTab(
                                             scope.launch {
                                                 withContext(Dispatchers.IO) {
                                                     val db = AppDatabaseHolder.db(appCtx)
-                                                    db.memoryDao().deleteByIds(idsToDelete)
+                                                    idsToDelete.chunked(500).forEach { chunk ->
+                                                        db.memoryDao().deleteByIds(chunk)
+                                                    }
                                                     db.chatDao().insertMessage(
                                                         ChatMessageEntity(
                                                             sessionId = sid,
@@ -5680,6 +5789,7 @@ fun ChatAssistantTab(
 
         // 圖片預覽 chip（取消後輸入框寬度完全復原）
         pendingImageAttachment?.let { attachment ->
+            val thumbBitmap = remember(attachment.thumbnail) { attachment.thumbnail.asImageBitmap() }
             Spacer(Modifier.height(6.dp))
             Surface(
                 shape = RoundedCornerShape(14.dp),
@@ -5692,7 +5802,7 @@ fun ChatAssistantTab(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Image(
-                        bitmap = attachment.thumbnail.asImageBitmap(),
+                        bitmap = thumbBitmap,
                         contentDescription = resCtx.getString(R.string.chat_s_892dff),
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
@@ -5923,6 +6033,7 @@ fun ChatAssistantTab(
                                     currentSessionId = null
                                     messages = emptyList()
                                     lastError = null
+                                    isViewingProactiveRoom = false
                                     showSessionDrawer = false
                                 }) {
                                     Text(stringResource(R.string.chat_s_b0d90a))
@@ -5945,8 +6056,8 @@ fun ChatAssistantTab(
                             ) {
                                 items(sessions, key = { it.id }) { session ->
                                     val isSelected = session.id == currentSessionId
-                                    val dateStr = remember(session.createdAt) {
-                                        formatChatTime(session.createdAt)
+                                    val dateStr = remember(session.createdAt, settingsVersion) {
+                                        PhantomPrefs.formatMessageTime(appCtx, session.createdAt, includeDate = true)
                                     }
                                     Surface(
                                         shape = RoundedCornerShape(12.dp),
@@ -5961,6 +6072,7 @@ fun ChatAssistantTab(
                                             .pressableScale(0.98f, RoundedCornerShape(12.dp))
                                             .clickable {
                                                 currentSessionId = session.id
+                                                isViewingProactiveRoom = session.title == com.phantom.checker.service.ProactiveEngine.PROACTIVE_SESSION_TITLE
                                                 lastError = null
                                                 showSessionDrawer = false
                                                 scope.launch { loadMessages(session.id) }
@@ -6010,7 +6122,10 @@ fun ChatAssistantTab(
             onDismissRequest = { showQuickCommandsDialog = false },
             title = { Text(stringResource(R.string.chat_s_dda835)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     if (quickCommands.isEmpty()) {
                         Text(
                             text = stringResource(R.string.chat_s_d76c24),
