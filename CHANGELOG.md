@@ -6,7 +6,7 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 ## [5.2.0] - 2026-11-27
 
 - **Tag 比較**：[`v5.1.0...v5.2.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.1.0...v5.2.0)（`versionCode = 60`、`versionName = "5.2.0"`；桌面端 `desktopVersion = "0.8.0"`）
-- **發佈資產**：簽章 `app-release.apk`、`app-debug.apk`、`PhantomCheckDesktop-0.8.0-setup.exe`，並附 `.sha256` 校驗檔。
+- **發佈資產**：簽章 `app-release.apk`、`PhantomCheckDesktop-0.8.0-setup.exe`，並附 `.sha256` 校驗檔。
 
 ### 健檢修復完成（R1–R17，20 個 PR）
 - 239 項健檢缺失全數處理：P0 44／P1 143／P2 52。
@@ -30,7 +30,7 @@ This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 
 ### English
 - **Tag Compare**: [`v5.1.0...v5.2.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.1.0...v5.2.0) (`versionCode = 60`, `versionName = "5.2.0"`; Desktop `desktopVersion = "0.8.0"`)
-- **Release Assets**: signed `app-release.apk`, `app-debug.apk`, `PhantomCheckDesktop-0.8.0-setup.exe`, plus `.sha256` checksums.
+- **Release Assets**: signed `app-release.apk`, `PhantomCheckDesktop-0.8.0-setup.exe`, plus `.sha256` checksums.
 - **Audit remediation complete (R1–R17, 20 PRs)**: all 239 findings addressed — P0 44 / P1 143 / P2 52.
 - **Security**: constant-time fingerprint compare and full SHA-256 TLS pinning, `author_association` gate in `opencode.yml`, SHA-pinned actions, Fail-Closed updater with `.sha256`, `allowBackup=false` + `dataExtractionRules`, unsigned release builds fail fast.
 - **Performance**: DAO range/aggregate queries replace full-table loads, `chunked(500)` bulk deletes, OOM and main-thread I/O fixes.
