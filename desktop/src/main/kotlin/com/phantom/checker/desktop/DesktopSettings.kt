@@ -183,7 +183,7 @@ data class DesktopUpdateCheckResult(
 
 object DesktopSettingsStore {
 
-    const val CURRENT_DESKTOP_VERSION = "0.8.0"
+    const val CURRENT_DESKTOP_VERSION = "0.8.1"
     private const val WIN_RUN_REG_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
     private const val WIN_RUN_VALUE_NAME = "PhantomCheckDesktop"
     private val validStartupTabs = setOf("MESSAGES", "STATS", "TODOS", "CHAT", "RULES", "SETTINGS", "HOME", "REPORTS", "TOOLS")
