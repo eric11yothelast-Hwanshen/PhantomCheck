@@ -15,15 +15,14 @@ import com.phantom.checker.service.DailySummaryPolicy
 import com.phantom.checker.service.ReminderScheduler
 import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.util.AppLocaleHelper
+import com.phantom.checker.util.PhantomPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
-import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 
 /**
  * #439 新增小工具 1：今天待辦（TodoToday）
@@ -48,6 +47,7 @@ class TodoTodayWidgetProvider : AppWidgetProvider() {
                         }
                         lastSnapshot = null
                         refreshNow(appCtx)
+                        runCatching { GoalProgressWidgetProvider.refreshNow(appCtx) }
                     }
                 } catch (_: Exception) {
                 } finally {
@@ -70,9 +70,9 @@ class TodoTodayWidgetProvider : AppWidgetProvider() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 withTimeout(8_500L) {
-                    val items = loadTodayPendingTodos(appCtx)
-                    lastSnapshot = items.map { it.id to it.dueAt }
-                    val views = buildRemoteViews(appCtx, items)
+                    val data = loadTodayPendingTodos(appCtx)
+                    lastSnapshot = computeSnapshotKey(appCtx, data)
+                    val views = buildRemoteViews(appCtx, data)
                     appWidgetManager.updateAppWidget(appWidgetIds, views)
                 }
             } catch (_: Exception) {
@@ -103,12 +103,15 @@ class TodoTodayWidgetProvider : AppWidgetProvider() {
         private const val OPEN_APP_REQUEST_CODE = 2101
         private const val TOGGLE_REQUEST_CODE_BASE = 2110
 
+        private data class TodayTodosData(
+            val totalCount: Int,
+            val items: List<TodoEntity>
+        )
+
         @Volatile
-        private var lastSnapshot: List<Pair<Long, Long>>? = null
+        private var lastSnapshot: String? = null
 
-        private val timeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-
-        private suspend fun loadTodayPendingTodos(appCtx: Context): List<TodoEntity> {
+        private suspend fun loadTodayPendingTodos(appCtx: Context): TodayTodosData {
             val zone = ZoneId.systemDefault()
             val endOfTodayMs = LocalDate.now(zone)
                 .atTime(LocalTime.MAX)
@@ -118,10 +121,20 @@ class TodoTodayWidgetProvider : AppWidgetProvider() {
             val pending = runCatching {
                 AppDatabaseHolder.db(appCtx).todoDao().pendingTodos()
             }.getOrDefault(emptyList())
-            return pending
+            val todaySorted = pending
                 .filter { it.dueAt <= endOfTodayMs }
                 .sortedBy { it.dueAt }
-                .take(MAX_ITEMS)
+            return TodayTodosData(
+                totalCount = todaySorted.size,
+                items = todaySorted.take(MAX_ITEMS)
+            )
+        }
+
+        private fun computeSnapshotKey(context: Context, data: TodayTodosData): String {
+            val localeTag = AppLocaleHelper.resolveEffectiveLocale(context).toLanguageTag()
+            val use24h = PhantomPrefs.is24HourFormat(context)
+            val itemsKey = data.items.joinToString("|") { "${it.id}:${it.dueAt}:${it.title}" }
+            return "$localeTag|$use24h|${data.totalCount}|$itemsKey"
         }
 
         suspend fun refreshNow(context: Context) {
@@ -140,18 +153,19 @@ class TodoTodayWidgetProvider : AppWidgetProvider() {
                 lastSnapshot = null
                 return
             }
-            val items = loadTodayPendingTodos(appCtx)
-            val sig = items.map { it.id to it.dueAt }
+            val data = loadTodayPendingTodos(appCtx)
+            val sig = computeSnapshotKey(appCtx, data)
             if (lastSnapshot == sig) return
             lastSnapshot = sig
-            val views = buildRemoteViews(appCtx, items)
+            val views = buildRemoteViews(appCtx, data)
             try {
                 mgr.updateAppWidget(ids, views)
             } catch (_: Exception) {
             }
         }
 
-        private fun buildRemoteViews(context: Context, items: List<TodoEntity>): RemoteViews {
+        private fun buildRemoteViews(context: Context, data: TodayTodosData): RemoteViews {
+            val items = data.items
             val resCtx = AppLocaleHelper.localizedContext(context)
             val openNotesIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -183,12 +197,11 @@ class TodoTodayWidgetProvider : AppWidgetProvider() {
                 R.id.widget_todo_today_time4
             )
 
-            val zone = ZoneId.systemDefault()
             return RemoteViews(context.packageName, R.layout.widget_todo_today).apply {
                 setTextViewText(R.id.widget_todo_today_header, resCtx.getString(R.string.widget_todo_today_title))
                 setTextViewText(
                     R.id.widget_todo_today_count,
-                    if (items.isEmpty()) "" else items.size.toString()
+                    if (data.totalCount <= 0) "" else data.totalCount.toString()
                 )
                 setOnClickPendingIntent(R.id.widget_root, openNotesPending)
 
@@ -206,7 +219,7 @@ class TodoTodayWidgetProvider : AppWidgetProvider() {
                             setViewVisibility(rowIds[i], View.VISIBLE)
                             setTextViewText(titleIds[i], item.title)
                             val timeStr = if (item.dueAt > 0L) {
-                                Instant.ofEpochMilli(item.dueAt).atZone(zone).toLocalTime().format(timeFormatter)
+                                PhantomPrefs.formatMessageTime(context, item.dueAt, includeDate = false)
                             } else {
                                 ""
                             }

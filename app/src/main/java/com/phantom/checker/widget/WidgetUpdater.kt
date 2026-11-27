@@ -3,7 +3,6 @@ package com.phantom.checker.widget
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
@@ -31,15 +30,69 @@ object WidgetUpdater {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    @Volatile
-    private var debounceJob: Job? = null
+    private val stateLock = Any()
+    private var latestCtx: Context? = null
+    private var pendingRefresh: Boolean = false
+    private var pendingImmediate: Boolean = false
+    private var workerRunning: Boolean = false
+    private var debounceWaitJob: Job? = null
 
     fun scheduleRefresh(ctx: Context, immediate: Boolean = false) {
         val appCtx = ctx.applicationContext
-        debounceJob?.cancel()
-        debounceJob = scope.launch {
-            if (!immediate) delay(DEBOUNCE_MS)
-            refreshAllActiveWidgets(appCtx)
+        val shouldStart = synchronized(stateLock) {
+            latestCtx = appCtx
+            pendingRefresh = true
+            if (immediate) pendingImmediate = true
+            if (workerRunning) {
+                // 僅在等待防抖延遲期間收到 immediate 請求時提前喚醒，絕不中斷執行中的 refreshAllActiveWidgets
+                if (immediate) debounceWaitJob?.cancel()
+                false
+            } else {
+                workerRunning = true
+                true
+            }
+        }
+        if (shouldStart) {
+            scope.launch { drainRefreshLoop() }
+        }
+    }
+
+    private suspend fun drainRefreshLoop() {
+        while (true) {
+            val (ctx, isImmediate) = synchronized(stateLock) {
+                if (!pendingRefresh) {
+                    workerRunning = false
+                    return
+                }
+                val c = latestCtx ?: run {
+                    pendingRefresh = false
+                    pendingImmediate = false
+                    workerRunning = false
+                    return
+                }
+                val imm = pendingImmediate
+                pendingRefresh = false
+                pendingImmediate = false
+                c to imm
+            }
+            if (!isImmediate) {
+                val waitJob = scope.launch { delay(DEBOUNCE_MS) }
+                synchronized(stateLock) { debounceWaitJob = waitJob }
+                try {
+                    waitJob.join()
+                } finally {
+                    synchronized(stateLock) {
+                        if (debounceWaitJob === waitJob) debounceWaitJob = null
+                    }
+                }
+                // 防抖期間合併到的請求將由緊接著的這次刷新一次涵蓋
+                synchronized(stateLock) {
+                    pendingRefresh = false
+                    pendingImmediate = false
+                }
+            }
+            val targetCtx = synchronized(stateLock) { latestCtx } ?: ctx
+            runCatching { refreshAllActiveWidgets(targetCtx) }
         }
     }
 
@@ -96,24 +149,17 @@ object WidgetUpdater {
         if (hasActiveIds(mgr, appCtx, AiSummaryWidgetProvider::class.java)) {
             runCatching { AiSummaryWidgetProvider.updateAllIfChanged(appCtx) }
         }
-
-        // Broadcast update for remaining providers if actively placed on home screen
-        listOf(
-            TodoTodayWidgetProvider::class.java,
-            GoalProgressWidgetProvider::class.java,
-            QuickNoteWidgetProvider::class.java,
-            HealthSnapWidgetProvider::class.java
-        ).forEach { cls ->
-            val ids = runCatching { mgr.getAppWidgetIds(ComponentName(appCtx, cls)) }.getOrNull()
-            if (ids != null && ids.isNotEmpty()) {
-                runCatching {
-                    val intent = Intent(appCtx, cls).apply {
-                        action = AppWidgetManager.ACTION_APPWIDGET_UPDATE
-                        putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, ids)
-                    }
-                    appCtx.sendBroadcast(intent)
-                }
-            }
+        if (hasActiveIds(mgr, appCtx, TodoTodayWidgetProvider::class.java)) {
+            runCatching { TodoTodayWidgetProvider.refreshNow(appCtx) }
+        }
+        if (hasActiveIds(mgr, appCtx, GoalProgressWidgetProvider::class.java)) {
+            runCatching { GoalProgressWidgetProvider.refreshNow(appCtx) }
+        }
+        if (hasActiveIds(mgr, appCtx, QuickNoteWidgetProvider::class.java)) {
+            runCatching { QuickNoteWidgetProvider.refreshNow(appCtx) }
+        }
+        if (hasActiveIds(mgr, appCtx, HealthSnapWidgetProvider::class.java)) {
+            runCatching { HealthSnapWidgetProvider.refreshNow(appCtx) }
         }
     }
 

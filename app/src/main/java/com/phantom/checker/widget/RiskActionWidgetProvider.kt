@@ -9,11 +9,11 @@ import android.content.Intent
 import android.view.View
 import android.widget.RemoteViews
 import com.phantom.checker.R
-import com.phantom.checker.data.AiRuleEntity
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.StatsForegroundService
 import com.phantom.checker.ui.ScamCenterActivity
+import com.phantom.checker.util.AppLocaleHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -36,7 +36,7 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
             try {
                 kotlinx.coroutines.withTimeout(8_500L) {
                     val target = findTargetMessage(appCtx)
-                    lastMessageId = target?.id
+                    lastSnapshot = computeSnapshotKey(appCtx, target)
                     val views = buildRemoteViews(appCtx, target)
                     appWidgetManager.updateAppWidget(appWidgetIds, views)
                 }
@@ -75,7 +75,7 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
                                 msg.copy(
                                     riskLabel = "safe",
                                     riskScore = 0,
-                                    riskReason = "已由桌面小工具加入白名單",
+                                    riskReason = "已由桌面小工具加入白名單", // TODO(R17): 抽離至 strings.xml
                                     isRead = true
                                 )
                             )
@@ -83,7 +83,7 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
                             if (sender.isNotEmpty()) {
                                 com.phantom.checker.data.WhitelistRuleHelper.upsertWhitelist(
                                     dao = db.aiRuleDao(),
-                                    ruleText = "信任「$sender」的訊息（桌面小工具加入白名單）",
+                                    ruleText = "信任「$sender」的訊息（桌面小工具加入白名單）", // TODO(R17): 抽離至 strings.xml
                                     sender = sender,
                                     packageName = msg.packageName,
                                     onCacheInvalidate = { com.phantom.checker.service.NotificationCollectorService.invalidateRuleCaches() }
@@ -91,8 +91,9 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
                             }
                         }
                     }
-                    lastMessageId = null
+                    lastSnapshot = null
                     updateAllIfChanged(appCtx, force = true)
+                    WidgetUpdater.scheduleRefresh(appCtx, immediate = true)
                     StatsForegroundService.startOrRefresh(appCtx, force = true)
                 }
             } catch (_: Exception) {
@@ -107,13 +108,13 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
         val mgr = AppWidgetManager.getInstance(context)
         val remaining = mgr.getAppWidgetIds(ComponentName(context, RiskActionWidgetProvider::class.java))
         if (remaining.isEmpty()) {
-            lastMessageId = null
+            lastSnapshot = null
         }
     }
 
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
-        lastMessageId = null
+        lastSnapshot = null
     }
 
     companion object {
@@ -125,11 +126,19 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
         private const val REQ_WHITELIST = 2007
 
         @Volatile
-        private var lastMessageId: Long? = null
+        private var lastSnapshot: String? = null
+
+        private fun computeSnapshotKey(ctx: Context, target: MessageEntity?): String {
+            val localeTag = AppLocaleHelper.resolveEffectiveLocale(ctx).toLanguageTag()
+            return if (target == null) {
+                "$localeTag|none"
+            } else {
+                "$localeTag|${target.id}:${target.isRead}:${target.riskLabel}:${target.riskScore}"
+            }
+        }
 
         private suspend fun findTargetMessage(ctx: Context): MessageEntity? {
-            val scams = AppDatabaseHolder.db(ctx).messageDao().scams()
-            return scams.firstOrNull { !it.isRead } ?: scams.firstOrNull()
+            return AppDatabaseHolder.db(ctx).messageDao().latestUnreadOrRecentScam()
         }
 
         suspend fun updateAllIfChanged(context: Context, force: Boolean = false) {
@@ -145,12 +154,13 @@ class RiskActionWidgetProvider : AppWidgetProvider() {
                 return
             }
             if (ids.isEmpty()) {
-                lastMessageId = null
+                lastSnapshot = null
                 return
             }
             val target = findTargetMessage(appCtx)
-            if (!force && lastMessageId == target?.id) return
-            lastMessageId = target?.id
+            val sig = computeSnapshotKey(appCtx, target)
+            if (!force && lastSnapshot == sig) return
+            lastSnapshot = sig
             val views = buildRemoteViews(appCtx, target)
             try {
                 mgr.updateAppWidget(ids, views)

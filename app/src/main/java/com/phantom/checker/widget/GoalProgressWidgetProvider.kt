@@ -18,6 +18,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
+import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * #439 新增小工具 2：目標進度（GoalProgress）
@@ -38,7 +40,7 @@ class GoalProgressWidgetProvider : AppWidgetProvider() {
             try {
                 withTimeout(8_500L) {
                     val top = loadMostActiveGoal(appCtx)
-                    lastSnapshot = top?.let { Triple(it.goal.id, it.completedCount, it.nextDueDate) }
+                    lastSnapshot = computeSnapshotKey(appCtx, top)
                     val views = buildRemoteViews(appCtx, top)
                     appWidgetManager.updateAppWidget(appWidgetIds, views)
                 }
@@ -67,7 +69,15 @@ class GoalProgressWidgetProvider : AppWidgetProvider() {
         private const val OPEN_APP_REQUEST_CODE = 2121
 
         @Volatile
-        private var lastSnapshot: Triple<Long, Int, String>? = null
+        private var lastSnapshot: String? = null
+
+        private fun computeSnapshotKey(context: Context, item: GoalEngine.GoalDisplayItem?): String {
+            val localeTag = AppLocaleHelper.resolveEffectiveLocale(context).toLanguageTag()
+            val dayBucket = LocalDate.now(ZoneId.systemDefault()).toEpochDay()
+            if (item == null) return "$localeTag|$dayBucket|empty"
+            val g = item.goal
+            return "$localeTag|$dayBucket|${g.id}:${g.title}:${g.targetCount}:${item.completedCount}:${item.streakDays}:${item.nextDueDate}:${item.nextMilestoneDate}"
+        }
 
         private suspend fun loadMostActiveGoal(appCtx: Context): GoalEngine.GoalDisplayItem? {
             val items = runCatching { GoalEngine.loadGoalDisplayItems(appCtx) }.getOrDefault(emptyList())
@@ -98,7 +108,7 @@ class GoalProgressWidgetProvider : AppWidgetProvider() {
                 return
             }
             val top = loadMostActiveGoal(appCtx)
-            val sig = top?.let { Triple(it.goal.id, it.completedCount, it.nextDueDate) }
+            val sig = computeSnapshotKey(appCtx, top)
             if (lastSnapshot == sig) return
             lastSnapshot = sig
             val views = buildRemoteViews(appCtx, top)

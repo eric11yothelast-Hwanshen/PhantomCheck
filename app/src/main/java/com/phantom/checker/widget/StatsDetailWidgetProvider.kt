@@ -6,20 +6,21 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.drawable.BitmapDrawable
 import android.view.View
 import android.widget.RemoteViews
 import com.phantom.checker.R
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.NotificationCollectorService
 import com.phantom.checker.ui.MainActivity
+import com.phantom.checker.util.AppLocaleHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.Calendar
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
@@ -50,7 +51,9 @@ class StatsDetailWidgetProvider : AppWidgetProvider() {
                         unread = snap.unread,
                         scam = snap.scam,
                         recentPkgs = recentPkgs,
-                        dayStartMs = startOfDay
+                        dayStartMs = startOfDay,
+                        dayCountsHash = dayData.first.contentHashCode(),
+                        localeTag = AppLocaleHelper.resolveEffectiveLocale(appCtx).toLanguageTag()
                     )
                     val views = buildRemoteViews(
                         context = appCtx,
@@ -89,13 +92,16 @@ class StatsDetailWidgetProvider : AppWidgetProvider() {
         val unread: Int,
         val scam: Int,
         val recentPkgs: List<String>,
-        val dayStartMs: Long
+        val dayStartMs: Long,
+        val dayCountsHash: Int,
+        val localeTag: String
     )
 
     companion object {
         private const val WIDGET_CLICK_REQUEST_CODE = 2003
         private const val BAR_MAX_HEIGHT_DP = 38f
         private const val BAR_MIN_HEIGHT_DP = 2f
+        private val DAY_KEY_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd", Locale.US)
 
         private val BAR_COL_IDS = intArrayOf(
             R.id.widget_bar_col_0,
@@ -151,28 +157,33 @@ class StatsDetailWidgetProvider : AppWidgetProvider() {
 
             val dayStartMs = NotificationCollectorService.startOfTodayMillis()
             val trimmedPkgs = recentPkgs.take(3)
+            val localeTag = AppLocaleHelper.resolveEffectiveLocale(appCtx).toLanguageTag()
+            val dayData = withContext(Dispatchers.IO) {
+                loadSevenDayCounts(appCtx)
+            }
             val current = DetailSignature(
                 today = today,
                 unread = unread,
                 scam = scam,
                 recentPkgs = trimmedPkgs,
-                dayStartMs = dayStartMs
+                dayStartMs = dayStartMs,
+                dayCountsHash = dayData.first.contentHashCode(),
+                localeTag = localeTag
             )
             if (lastDetailSig == current) return
 
-            val dayData = withContext(Dispatchers.IO) {
-                loadSevenDayCounts(appCtx)
-            }
             lastDetailSig = current
-            val views = buildRemoteViews(
-                context = appCtx,
-                today = today,
-                unread = unread,
-                scam = scam,
-                dayCounts = dayData.first,
-                dayLabels = dayData.second,
-                recentPkgs = trimmedPkgs
-            )
+            val views = withContext(Dispatchers.IO) {
+                buildRemoteViews(
+                    context = appCtx,
+                    today = today,
+                    unread = unread,
+                    scam = scam,
+                    dayCounts = dayData.first,
+                    dayLabels = dayData.second,
+                    recentPkgs = trimmedPkgs
+                )
+            }
             try {
                 mgr.updateAppWidget(ids, views)
             } catch (_: Exception) {
@@ -180,14 +191,10 @@ class StatsDetailWidgetProvider : AppWidgetProvider() {
         }
 
         private suspend fun loadSevenDayCounts(context: Context): Pair<IntArray, Array<String>> {
-            val cal = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-                add(Calendar.DAY_OF_YEAR, -6)
-            }
-            val start7d = cal.timeInMillis
+            val zone = ZoneId.systemDefault()
+            val today = LocalDate.now(zone)
+            val startDate = today.minusDays(6L)
+            val start7d = startDate.atStartOfDay(zone).toInstant().toEpochMilli()
             val rows = try {
                 AppDatabaseHolder.db(context).messageDao().countByDaySince(start7d)
             } catch (_: Exception) {
@@ -197,16 +204,22 @@ class StatsDetailWidgetProvider : AppWidgetProvider() {
 
             val counts = IntArray(7)
             val labels = Array(7) { "" }
-            val dayMs = 24L * 60L * 60L * 1000L
-            val weekdayNames = arrayOf(com.phantom.checker.PhantomApplication.str(R.string.stats_s_15917f), com.phantom.checker.PhantomApplication.str(R.string.widget_stats_s_d274ee), com.phantom.checker.PhantomApplication.str(R.string.widget_stats_s_1d5639), com.phantom.checker.PhantomApplication.str(R.string.widget_stats_s_49ddb0), com.phantom.checker.PhantomApplication.str(R.string.widget_stats_s_4f8874), com.phantom.checker.PhantomApplication.str(R.string.widget_stats_s_8f07f5), com.phantom.checker.PhantomApplication.str(R.string.widget_stats_s_3d72c7))
-            val dayKeyFmt = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+            val resCtx = AppLocaleHelper.localizedContext(context)
+            val weekdayNames = arrayOf(
+                resCtx.getString(R.string.stats_s_15917f),
+                resCtx.getString(R.string.widget_stats_s_d274ee),
+                resCtx.getString(R.string.widget_stats_s_1d5639),
+                resCtx.getString(R.string.widget_stats_s_49ddb0),
+                resCtx.getString(R.string.widget_stats_s_4f8874),
+                resCtx.getString(R.string.widget_stats_s_8f07f5),
+                resCtx.getString(R.string.widget_stats_s_3d72c7)
+            )
+            val todayLabel = resCtx.getString(R.string.widget_stats_s_d2130d)
 
             for (i in 0 until 7) {
-                val c = Calendar.getInstance().apply {
-                    timeInMillis = start7d + i * dayMs
-                }
-                labels[i] = if (i == 6) com.phantom.checker.PhantomApplication.str(R.string.widget_stats_s_d2130d) else weekdayNames[c.get(Calendar.DAY_OF_WEEK) - 1]
-                counts[i] = countMap[dayKeyFmt.format(c.time)] ?: 0
+                val date = today.minusDays((6 - i).toLong())
+                labels[i] = if (i == 6) todayLabel else weekdayNames[date.dayOfWeek.value % 7]
+                counts[i] = countMap[date.format(DAY_KEY_FORMATTER)] ?: 0
             }
             return counts to labels
         }

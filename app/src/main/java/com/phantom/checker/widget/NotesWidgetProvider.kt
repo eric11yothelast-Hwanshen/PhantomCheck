@@ -13,12 +13,12 @@ import com.phantom.checker.data.NoteEntity
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.DailySummaryPolicy
 import com.phantom.checker.ui.MainActivity
+import com.phantom.checker.util.AppLocaleHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 
 /**
  * 桌面 2x2「幻訊記事」小工具：
@@ -37,10 +37,12 @@ class NotesWidgetProvider : AppWidgetProvider() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 kotlinx.coroutines.withTimeout(8_500L) {
-                    val allNotes = AppDatabaseHolder.db(appCtx).noteDao().all()
-                    val topNotes = allNotes.take(MAX_ITEMS)
-                    lastSnapshot = computeSnapshotKey(allNotes.size, topNotes)
-                    val views = buildRemoteViews(appCtx, allNotes.size, topNotes, System.currentTimeMillis())
+                    val noteDao = AppDatabaseHolder.db(appCtx).noteDao()
+                    val totalCount = noteDao.count()
+                    val topNotes = noteDao.topRecent(MAX_ITEMS)
+                    val now = System.currentTimeMillis()
+                    lastSnapshot = computeSnapshotKey(appCtx, totalCount, topNotes, now)
+                    val views = buildRemoteViews(appCtx, totalCount, topNotes, now)
                     appWidgetManager.updateAppWidget(appWidgetIds, views)
                 }
             } catch (_: Exception) {
@@ -88,26 +90,45 @@ class NotesWidgetProvider : AppWidgetProvider() {
                 lastSnapshot = null
                 return
             }
-            val allNotes = try {
-                AppDatabaseHolder.db(appCtx).noteDao().all()
+            val (totalCount, topNotes) = try {
+                val noteDao = AppDatabaseHolder.db(appCtx).noteDao()
+                noteDao.count() to noteDao.topRecent(MAX_ITEMS)
             } catch (_: Exception) {
                 return
             }
-            val topNotes = allNotes.take(MAX_ITEMS)
-            val snapshot = computeSnapshotKey(allNotes.size, topNotes)
+            val now = System.currentTimeMillis()
+            val snapshot = computeSnapshotKey(appCtx, totalCount, topNotes, now)
             if (lastSnapshot == snapshot) return
             lastSnapshot = snapshot
-            val views = buildRemoteViews(appCtx, allNotes.size, topNotes, System.currentTimeMillis())
+            val views = buildRemoteViews(appCtx, totalCount, topNotes, now)
             try {
                 mgr.updateAppWidget(ids, views)
             } catch (_: Exception) {
             }
         }
 
-        private fun computeSnapshotKey(totalCount: Int, topNotes: List<NoteEntity>): String {
-            if (totalCount == 0 || topNotes.isEmpty()) return "0:empty"
-            return "$totalCount|" + topNotes.joinToString("|") { note ->
-                "${note.id}:${note.pinned}:${note.updatedAt}:${note.content.take(SNIPPET_MAX_LEN)}"
+        private fun relativeTimeBucket(now: Long, ts: Long): String {
+            val diffMin = (now - ts).coerceAtLeast(0L) / 60_000L
+            return when {
+                diffMin < 1L -> "0"
+                diffMin < 60L -> "m:$diffMin"
+                diffMin < 24L * 60L -> "h:${diffMin / 60L}"
+                diffMin < 7L * 24L * 60L -> "d:${diffMin / (24L * 60L)}"
+                else -> "date"
+            }
+        }
+
+        private fun computeSnapshotKey(
+            context: Context,
+            totalCount: Int,
+            topNotes: List<NoteEntity>,
+            now: Long
+        ): String {
+            val localeTag = AppLocaleHelper.resolveEffectiveLocale(context).toLanguageTag()
+            if (totalCount == 0 || topNotes.isEmpty()) return "$localeTag|0:empty"
+            return "$localeTag|$totalCount|" + topNotes.joinToString("|") { note ->
+                val bucket = relativeTimeBucket(now, note.updatedAt)
+                "${note.id}:${note.pinned}:${note.updatedAt}:$bucket:${note.content.take(SNIPPET_MAX_LEN)}"
             }
         }
 
@@ -122,7 +143,7 @@ class NotesWidgetProvider : AppWidgetProvider() {
             return "$prefix$truncated"
         }
 
-        private fun formatRelativeTime(now: Long, ts: Long): String {
+        private fun formatRelativeTime(context: Context, now: Long, ts: Long): String {
             val diffMs = (now - ts).coerceAtLeast(0L)
             val diffMin = diffMs / 60_000L
             return when {
@@ -130,7 +151,7 @@ class NotesWidgetProvider : AppWidgetProvider() {
                 diffMin < 60L -> com.phantom.checker.PhantomApplication.str(R.string.widget_notes_s_f61ef9, diffMin)
                 diffMin < 24L * 60L -> com.phantom.checker.PhantomApplication.str(R.string.widget_notes_s_108d7d, diffMin / 60L)
                 diffMin < 7L * 24L * 60L -> com.phantom.checker.PhantomApplication.str(R.string.widget_notes_s_34a8dc, diffMin / (24L * 60L))
-                else -> SimpleDateFormat("MM/dd", Locale.getDefault()).format(Date(ts))
+                else -> SimpleDateFormat("MM/dd", AppLocaleHelper.resolveEffectiveLocale(context)).format(Date(ts))
             }
         }
 
@@ -193,7 +214,7 @@ class NotesWidgetProvider : AppWidgetProvider() {
                     } else {
                         views.setViewVisibility(rowIds[i], View.VISIBLE)
                         views.setTextViewText(textIds[i], formatSnippet(note))
-                        views.setTextViewText(timeIds[i], formatRelativeTime(now, note.updatedAt))
+                        views.setTextViewText(timeIds[i], formatRelativeTime(context, now, note.updatedAt))
                     }
                 }
             }

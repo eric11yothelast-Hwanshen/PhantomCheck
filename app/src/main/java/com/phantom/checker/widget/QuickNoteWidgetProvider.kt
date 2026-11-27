@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -41,7 +42,7 @@ class QuickNoteWidgetProvider : AppWidgetProvider() {
             try {
                 withTimeout(8_500L) {
                     val notes = loadRecentNotes(appCtx)
-                    lastSnapshot = notes.map { it.id to it.updatedAt }
+                    lastSnapshot = computeSnapshotKey(appCtx, notes)
                     val views = buildRemoteViews(appCtx, notes)
                     appWidgetManager.updateAppWidget(appWidgetIds, views)
                 }
@@ -73,13 +74,22 @@ class QuickNoteWidgetProvider : AppWidgetProvider() {
         private const val NEW_NOTE_REQUEST_CODE = 2132
 
         @Volatile
-        private var lastSnapshot: List<Pair<Long, Long>>? = null
+        private var lastSnapshot: String? = null
 
         private val dateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("MM/dd")
 
         private suspend fun loadRecentNotes(appCtx: Context): List<NoteEntity> =
-            runCatching { AppDatabaseHolder.db(appCtx).noteDao().all().take(MAX_ITEMS) }
+            runCatching { AppDatabaseHolder.db(appCtx).noteDao().topRecent(MAX_ITEMS) }
                 .getOrDefault(emptyList())
+
+        private fun computeSnapshotKey(context: Context, notes: List<NoteEntity>): String {
+            val localeTag = AppLocaleHelper.resolveEffectiveLocale(context).toLanguageTag()
+            val dayBucket = LocalDate.now(ZoneId.systemDefault()).toEpochDay()
+            val itemsKey = notes.joinToString("|") { note ->
+                "${note.id}:${note.pinned}:${note.updatedAt}:${note.content.take(40)}"
+            }
+            return "$localeTag|$dayBucket|$itemsKey"
+        }
 
         suspend fun refreshNow(context: Context) {
             val appCtx = context.applicationContext
@@ -98,7 +108,7 @@ class QuickNoteWidgetProvider : AppWidgetProvider() {
                 return
             }
             val notes = loadRecentNotes(appCtx)
-            val sig = notes.map { it.id to it.updatedAt }
+            val sig = computeSnapshotKey(appCtx, notes)
             if (lastSnapshot == sig) return
             lastSnapshot = sig
             val views = buildRemoteViews(appCtx, notes)

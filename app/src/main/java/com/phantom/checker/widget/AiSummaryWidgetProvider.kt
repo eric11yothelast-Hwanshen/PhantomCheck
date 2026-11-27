@@ -10,8 +10,10 @@ import android.widget.RemoteViews
 import com.phantom.checker.R
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.service.DailySummaryPolicy
+import com.phantom.checker.service.WeeklySummaryPolicy
 import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.ui.stripMarkdown
+import com.phantom.checker.util.AppLocaleHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -34,7 +36,7 @@ class AiSummaryWidgetProvider : AppWidgetProvider() {
             try {
                 kotlinx.coroutines.withTimeout(8_500L) {
                     val latest = AppDatabaseHolder.db(appCtx).aiSummaryDao().latest()
-                    val dateText = latest?.date?.toString().orEmpty()
+                    val dateText = formatSummaryDate(latest?.date)
                     val bodyText = if (latest == null || latest.summary.isBlank()) {
                         com.phantom.checker.PhantomApplication.str(R.string.widget_ai_s_8eb256)
                     } else {
@@ -43,7 +45,8 @@ class AiSummaryWidgetProvider : AppWidgetProvider() {
                             .trim()
                             .take(140)
                     }
-                    lastSnapshot = dateText to bodyText
+                    val localeTag = AppLocaleHelper.resolveEffectiveLocale(appCtx).toLanguageTag()
+                    lastSnapshot = Triple(dateText, bodyText, localeTag)
                     val views = buildRemoteViews(appCtx, dateText, bodyText)
                     appWidgetManager.updateAppWidget(appWidgetIds, views)
                 }
@@ -72,7 +75,16 @@ class AiSummaryWidgetProvider : AppWidgetProvider() {
         private const val WIDGET_CLICK_REQUEST_CODE = 2004
 
         @Volatile
-        private var lastSnapshot: Pair<String, String>? = null
+        private var lastSnapshot: Triple<String, String, String>? = null
+
+        private fun formatSummaryDate(dateKey: Long?): String {
+            if (dateKey == null) return ""
+            return if (dateKey >= WeeklySummaryPolicy.WEEKLY_KEY_OFFSET) {
+                WeeklySummaryPolicy.formatWeekLabel(dateKey)
+            } else {
+                dateKey.toString()
+            }
+        }
 
         suspend fun updateAllIfChanged(context: Context) {
             val appCtx = context.applicationContext
@@ -91,7 +103,7 @@ class AiSummaryWidgetProvider : AppWidgetProvider() {
                 return
             }
             val latest = AppDatabaseHolder.db(appCtx).aiSummaryDao().latest()
-            val dateText = latest?.date?.toString().orEmpty()
+            val dateText = formatSummaryDate(latest?.date)
             val bodyText = if (latest == null || latest.summary.isBlank()) {
                 com.phantom.checker.PhantomApplication.str(R.string.widget_ai_s_8eb256)
             } else {
@@ -100,7 +112,8 @@ class AiSummaryWidgetProvider : AppWidgetProvider() {
                     .trim()
                     .take(140)
             }
-            val snapshot = dateText to bodyText
+            val localeTag = AppLocaleHelper.resolveEffectiveLocale(appCtx).toLanguageTag()
+            val snapshot = Triple(dateText, bodyText, localeTag)
             if (lastSnapshot == snapshot) return
             lastSnapshot = snapshot
             val views = buildRemoteViews(appCtx, dateText, bodyText)

@@ -14,12 +14,11 @@ import com.phantom.checker.service.DailySummaryPolicy
 import com.phantom.checker.service.ReminderScheduler
 import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.ui.MessageDetailActivity
+import com.phantom.checker.util.AppLocaleHelper
+import com.phantom.checker.util.PhantomPrefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * 桌面 2x1「待辦提醒」小工具：
@@ -55,15 +54,16 @@ class ReminderWidgetProvider : AppWidgetProvider() {
                                 db.todoDao().deleteById(itemId)
                                 ReminderScheduler.cancelTodo(appCtx, itemId)
                             } else if (itemType == TYPE_MSG) {
-                                val msg = db.messageDao().byId(itemId)
-                                if (msg != null) {
-                                    db.messageDao().update(msg.copy(remindAt = null))
-                                }
+                                db.messageDao().setRemindAt(itemId, null)
                                 ReminderScheduler.cancel(appCtx, itemId)
                             }
                         }
                     }
                     updateAllIfChanged(appCtx)
+                    if (itemType == TYPE_TODO) {
+                        runCatching { TodoTodayWidgetProvider.refreshNow(appCtx) }
+                        runCatching { GoalProgressWidgetProvider.refreshNow(appCtx) }
+                    }
                 }
             } catch (_: Exception) {
             } finally {
@@ -85,7 +85,7 @@ class ReminderWidgetProvider : AppWidgetProvider() {
                 kotlinx.coroutines.withTimeout(8_500L) {
                     val now = System.currentTimeMillis()
                     val items = loadUpcomingItems(appCtx, now)
-                    lastSnapshot = computeSnapshotKey(items)
+                    lastSnapshot = computeSnapshotKey(appCtx, items)
                     val views = buildRemoteViews(appCtx, items)
                     appWidgetManager.updateAppWidget(appWidgetIds, views)
                 }
@@ -174,14 +174,16 @@ class ReminderWidgetProvider : AppWidgetProvider() {
                 .take(2)
         }
 
-        private fun computeSnapshotKey(items: List<UpcomingReminderItem>): String {
-            if (items.isEmpty()) return "empty"
-            return items.joinToString("|") { "${it.snapshotKey}:${it.summary}" }
+        private fun computeSnapshotKey(context: Context, items: List<UpcomingReminderItem>): String {
+            val localeTag = AppLocaleHelper.resolveEffectiveLocale(context).toLanguageTag()
+            val use24h = PhantomPrefs.is24HourFormat(context)
+            val prefix = "$localeTag|$use24h|"
+            if (items.isEmpty()) return "${prefix}empty"
+            return prefix + items.joinToString("|") { "${it.snapshotKey}:${it.summary}" }
         }
 
-        private fun formatLine(item: UpcomingReminderItem): String {
-            val fmt = SimpleDateFormat("MM/dd HH:mm", Locale.getDefault())
-            val timeStr = fmt.format(Date(item.dueAt))
+        private fun formatLine(context: Context, item: UpcomingReminderItem): String {
+            val timeStr = PhantomPrefs.formatMessageTime(context, item.dueAt, includeDate = true)
             return if (timeStr.isNotEmpty()) "$timeStr · ${item.summary}" else item.summary
         }
 
@@ -203,7 +205,7 @@ class ReminderWidgetProvider : AppWidgetProvider() {
             }
             val now = System.currentTimeMillis()
             val items = loadUpcomingItems(appCtx, now)
-            val snapshot = computeSnapshotKey(items)
+            val snapshot = computeSnapshotKey(appCtx, items)
             if (lastSnapshot == snapshot) return
             lastSnapshot = snapshot
             val views = buildRemoteViews(appCtx, items)
@@ -297,7 +299,7 @@ class ReminderWidgetProvider : AppWidgetProvider() {
                 return
             }
             views.setViewVisibility(rowId, View.VISIBLE)
-            views.setTextViewText(textId, formatLine(item))
+            views.setTextViewText(textId, formatLine(context, item))
             views.setOnClickPendingIntent(textId, buildOpenItemIntent(context, item, 100 + rowOffset))
 
             if (item.todoId != null) {

@@ -8,6 +8,10 @@ import android.content.Context
 import android.content.Intent
 import android.view.View
 import android.widget.RemoteViews
+import androidx.health.connect.client.records.SleepSessionRecord
+import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.request.AggregateRequest
+import androidx.health.connect.client.time.TimeRangeFilter
 import com.phantom.checker.R
 import com.phantom.checker.service.DailySummaryPolicy
 import com.phantom.checker.ui.MainActivity
@@ -19,6 +23,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import java.text.NumberFormat
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
 import java.util.Locale
 
 /**
@@ -41,12 +48,15 @@ class HealthSnapWidgetProvider : AppWidgetProvider() {
             try {
                 withTimeout(8_500L) {
                     val snapshot = loadOrRefreshSnapshot(appCtx, forceRefresh = false)
+                    lastSnapshot = computeSnapshotKey(appCtx, snapshot)
                     val views = buildRemoteViews(appCtx, snapshot)
                     appWidgetManager.updateAppWidget(appWidgetIds, views)
                 }
             } catch (_: Exception) {
-                // 例外時降級為未授權教學態，絕不顯示 0 或錯誤堆疊
-                val fallback = buildRemoteViews(appCtx, CachedHealthSnap.unauthorized())
+                // 例外時優先回退既有快取，僅無快取時才降級為未授權教學態
+                val fallbackSnap = readCache(appCtx) ?: CachedHealthSnap.unauthorized()
+                lastSnapshot = computeSnapshotKey(appCtx, fallbackSnap)
+                val fallback = buildRemoteViews(appCtx, fallbackSnap)
                 runCatching { appWidgetManager.updateAppWidget(appWidgetIds, fallback) }
             } finally {
                 pendingResult.finish()
@@ -59,12 +69,14 @@ class HealthSnapWidgetProvider : AppWidgetProvider() {
         val mgr = AppWidgetManager.getInstance(context)
         val remaining = mgr.getAppWidgetIds(ComponentName(context, HealthSnapWidgetProvider::class.java))
         if (remaining.isEmpty()) {
+            lastSnapshot = null
             clearCache(context.applicationContext)
         }
     }
 
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
+        lastSnapshot = null
         clearCache(context.applicationContext)
     }
 
@@ -80,6 +92,9 @@ class HealthSnapWidgetProvider : AppWidgetProvider() {
 
         private const val OPEN_STATS_REQUEST_CODE = 2141
         private const val OPEN_PERMS_REQUEST_CODE = 2142
+
+        @Volatile
+        private var lastSnapshot: String? = null
 
         private data class CachedHealthSnap(
             val authorized: Boolean,
@@ -99,6 +114,11 @@ class HealthSnapWidgetProvider : AppWidgetProvider() {
                     cachedAtMs = nowMs
                 )
             }
+        }
+
+        private fun computeSnapshotKey(appCtx: Context, snap: CachedHealthSnap): String {
+            val localeTag = AppLocaleHelper.resolveEffectiveLocale(appCtx).toLanguageTag()
+            return "$localeTag|${snap.authorized}|${snap.hasStepsPerm}|${snap.hasSleepPerm}|${snap.steps}|${snap.sleepHours}"
         }
 
         private fun readCache(appCtx: Context): CachedHealthSnap? {
@@ -132,33 +152,81 @@ class HealthSnapWidgetProvider : AppWidgetProvider() {
             }
         }
 
+        /**
+         * 僅查詢今日步數與跨午夜睡眠的輕量聚合（不查心率／距離／熱量，避免多餘 Health Connect IPC）。
+         */
+        private suspend fun readTodayStepsAndSleep(
+            appCtx: Context,
+            hasStepsPerm: Boolean,
+            hasSleepPerm: Boolean
+        ): Pair<Long, Float> {
+            val client = HealthConnectBridge.getClientSafely(appCtx) ?: return -1L to -1f
+            val zone = ZoneId.systemDefault()
+            val today = LocalDate.now(zone)
+
+            var steps = -1L
+            if (hasStepsPerm) {
+                steps = runCatching {
+                    val res = client.aggregate(
+                        AggregateRequest(
+                            metrics = setOf(StepsRecord.COUNT_TOTAL),
+                            timeRangeFilter = TimeRangeFilter.between(
+                                today.atStartOfDay(),
+                                today.plusDays(1).atStartOfDay()
+                            )
+                        )
+                    )
+                    res[StepsRecord.COUNT_TOTAL] ?: 0L
+                }.getOrDefault(-1L)
+            }
+
+            var sleepHours = -1f
+            if (hasSleepPerm) {
+                sleepHours = runCatching {
+                    val res = client.aggregate(
+                        AggregateRequest(
+                            metrics = setOf(SleepSessionRecord.SLEEP_DURATION_TOTAL),
+                            timeRangeFilter = TimeRangeFilter.between(
+                                today.minusDays(1).atTime(LocalTime.of(18, 0)),
+                                today.atTime(LocalTime.of(18, 0))
+                            )
+                        )
+                    )
+                    val dur = res[SleepSessionRecord.SLEEP_DURATION_TOTAL]
+                    if (dur != null) dur.toMinutes() / 60f else 0f
+                }.getOrDefault(-1f)
+            }
+
+            return steps to sleepHours
+        }
+
         private suspend fun loadOrRefreshSnapshot(
             appCtx: Context,
             forceRefresh: Boolean
         ): CachedHealthSnap {
             val nowMs = System.currentTimeMillis()
-            if (!forceRefresh) {
-                val cached = readCache(appCtx)
-                if (cached != null && (nowMs - cached.cachedAtMs) in 0L until CACHE_TTL_MS) {
-                    return cached
-                }
+            val existingCache = readCache(appCtx)
+            if (!forceRefresh && existingCache != null && (nowMs - existingCache.cachedAtMs) in 0L until CACHE_TTL_MS) {
+                return existingCache
             }
-            val perm = runCatching { HealthConnectBridge.getPermissionStatus(appCtx) }
-                .getOrDefault(HealthConnectBridge.HealthPermissionStatus())
+            val perm = runCatching { HealthConnectBridge.getPermissionStatus(appCtx) }.getOrNull()
+                ?: return existingCache ?: CachedHealthSnap.unauthorized(nowMs)
             if (!perm.steps && !perm.sleep) {
                 val unauth = CachedHealthSnap.unauthorized(nowMs)
                 writeCache(appCtx, unauth)
                 return unauth
             }
-            val todayPoint = runCatching {
-                HealthConnectBridge.readRecentDaysTrend(appCtx, days = 1).lastOrNull()
-            }.getOrNull()
+            val (steps, sleepHours) = readTodayStepsAndSleep(
+                appCtx = appCtx,
+                hasStepsPerm = perm.steps,
+                hasSleepPerm = perm.sleep
+            )
             val snap = CachedHealthSnap(
                 authorized = true,
                 hasStepsPerm = perm.steps,
                 hasSleepPerm = perm.sleep,
-                steps = if (perm.steps) (todayPoint?.steps ?: -1L) else -1L,
-                sleepHours = if (perm.sleep) (todayPoint?.sleepHours ?: -1f) else -1f,
+                steps = if (perm.steps) steps else -1L,
+                sleepHours = if (perm.sleep) sleepHours else -1f,
                 cachedAtMs = nowMs
             )
             writeCache(appCtx, snap)
@@ -178,10 +246,14 @@ class HealthSnapWidgetProvider : AppWidgetProvider() {
                 return
             }
             if (ids.isEmpty()) {
+                lastSnapshot = null
                 clearCache(appCtx)
                 return
             }
             val snap = loadOrRefreshSnapshot(appCtx, forceRefresh = forceRefresh)
+            val sig = computeSnapshotKey(appCtx, snap)
+            if (!forceRefresh && lastSnapshot == sig) return
+            lastSnapshot = sig
             val views = buildRemoteViews(appCtx, snap)
             try {
                 mgr.updateAppWidget(ids, views)
