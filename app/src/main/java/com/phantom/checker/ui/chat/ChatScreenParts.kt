@@ -37,7 +37,6 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.google.gson.JsonParser
-import com.phantom.checker.R
 import com.phantom.checker.data.AiRuleEntity
 import com.phantom.checker.data.MessageEntity
 import com.phantom.checker.data.TagEntity
