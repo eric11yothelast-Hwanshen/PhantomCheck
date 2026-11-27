@@ -20,6 +20,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import java.io.File
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #478 / #520 桌面端更新對話框（PhantomDialog 統一外殼＋Release notes 雙語 Markdown 捲動瀏覽＋前往 Release 頁＋下載並執行安裝）。

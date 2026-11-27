@@ -60,6 +60,8 @@ import kotlinx.coroutines.withContext
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
 import androidx.annotation.StringRes
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /** §6.2 全域搜尋範圍 */
 enum class GlobalSearchScope(@StringRes val labelRes: Int) {

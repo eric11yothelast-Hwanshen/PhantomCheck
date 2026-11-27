@@ -44,6 +44,8 @@ import kotlinx.coroutines.delay
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.awt.image.BufferedImage
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #477 / #520 桌面端「配置新手機」QR 配對對話框（PhantomDialog 外殼＋ZXing core 3.5.4）：

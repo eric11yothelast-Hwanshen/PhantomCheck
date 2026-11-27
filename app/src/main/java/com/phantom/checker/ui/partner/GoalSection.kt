@@ -47,6 +47,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #379 夥伴分頁長程目標卡（進度條＋連續天數＋下一個里程碑＋手動建立／管理）：

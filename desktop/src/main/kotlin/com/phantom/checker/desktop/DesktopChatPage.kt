@@ -51,6 +51,8 @@ import com.phantom.checker.shared.ChatSessionNewReq
 import com.phantom.checker.shared.LinkMsgType
 import com.phantom.checker.shared.MessageSummaryDto
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #520 §7 commit 11：桌面 AI 助手頁響應式重編

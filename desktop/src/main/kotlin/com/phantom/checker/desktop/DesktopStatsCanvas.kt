@@ -40,6 +40,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.phantom.checker.shared.ActiveAppStatDto
 import com.phantom.checker.shared.StatsSnapshotDto
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private enum class StatsChartMode { DAYS_7, DAYS_30, HOURLY }
 

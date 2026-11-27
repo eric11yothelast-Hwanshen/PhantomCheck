@@ -59,6 +59,8 @@ import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.delay
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 object OnboardingTargets {
     const val NOTIFICATION_GUIDE = "notification_guide"

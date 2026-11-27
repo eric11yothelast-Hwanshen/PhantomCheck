@@ -79,6 +79,8 @@ import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 data class SettingsHomeSummaries(
     val quickSummary: String,

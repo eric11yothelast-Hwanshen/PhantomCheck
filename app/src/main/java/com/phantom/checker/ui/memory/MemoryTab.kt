@@ -101,6 +101,8 @@ import com.phantom.checker.ui.warningContainer
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
 import androidx.annotation.StringRes
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private enum class MemoryFilterChip(@StringRes val labelRes: Int) {
     ALL(R.string.common_all),

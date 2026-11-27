@@ -2,6 +2,8 @@ package com.phantom.checker.desktop
 
 import androidx.compose.runtime.mutableStateOf
 import java.util.Locale
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #468 / #479 雙語文案中心（以 Compose SnapshotState 驅動，切換 auto / zh-TW / en 時全視窗與系統匣即時重組生效）。

@@ -41,6 +41,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #388 主動情報中樞 Phase A：關注主題清單最小管理對話框（記憶頁與設定頁共用）。

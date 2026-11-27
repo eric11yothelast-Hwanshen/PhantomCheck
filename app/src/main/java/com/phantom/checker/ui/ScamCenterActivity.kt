@@ -77,6 +77,8 @@ import java.util.Date
 import java.util.Locale
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private data class ScamCenterSnapshot(
     val scamMessages: List<MessageEntity>,

@@ -41,6 +41,8 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import com.phantom.checker.R
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * 流體切換開關（FluidSwitch，#398 Aurora 版）：

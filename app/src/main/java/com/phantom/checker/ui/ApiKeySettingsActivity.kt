@@ -75,6 +75,8 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private fun isValidHttpsBaseUrl(rawUrl: String): Boolean {
     val trimmed = rawUrl.trim()

@@ -33,6 +33,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.phantom.checker.shared.MessageSummaryDto
 import com.phantom.checker.shared.StatsSnapshotDto
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #520 桌面「總覽 Home」頁：

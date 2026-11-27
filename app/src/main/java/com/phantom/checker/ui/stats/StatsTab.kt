@@ -85,6 +85,8 @@ import java.util.Locale
 import com.phantom.checker.ui.*
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private val MULTI_WHITESPACE_REGEX = Regex("\\s+")
 

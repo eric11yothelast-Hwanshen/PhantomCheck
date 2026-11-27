@@ -141,6 +141,8 @@ import dev.chrisbanes.haze.HazeState
 import java.util.Locale
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private val WHITESPACE_REGEX = Regex("\\s+")
 

@@ -58,6 +58,8 @@ import com.phantom.checker.shared.TodoDeleteReq
 import com.phantom.checker.shared.TodoItemDto
 import com.phantom.checker.shared.TodosToggleReq
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #520 §7 commit 11：桌面待辦與記事頁響應式重編

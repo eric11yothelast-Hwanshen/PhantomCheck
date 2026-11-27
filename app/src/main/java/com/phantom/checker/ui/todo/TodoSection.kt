@@ -62,6 +62,8 @@ import com.phantom.checker.ui.*
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
 import androidx.annotation.StringRes
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 internal enum class TodoFilterMode(@StringRes val labelRes: Int) {
     ALL(R.string.common_all),

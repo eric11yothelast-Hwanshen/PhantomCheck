@@ -77,6 +77,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private val TAG_COLOR_PALETTE = listOf(
     "#7C3AED", // 品牌紫

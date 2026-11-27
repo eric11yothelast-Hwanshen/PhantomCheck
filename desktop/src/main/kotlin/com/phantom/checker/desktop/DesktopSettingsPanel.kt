@@ -45,6 +45,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private enum class SettingsSubTab { CONNECTION, SYSTEM, CUSTOMIZE, ABOUT }
 private val SETTINGS_TIME_FMT = ThreadLocal.withInitial { java.text.SimpleDateFormat("MM/dd HH:mm:ss", java.util.Locale.getDefault()) }

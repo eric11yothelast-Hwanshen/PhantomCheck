@@ -79,6 +79,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private const val MAX_BATCH_SELECT = 100
 

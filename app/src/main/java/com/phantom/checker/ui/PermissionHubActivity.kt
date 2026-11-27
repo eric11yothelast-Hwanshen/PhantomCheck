@@ -63,6 +63,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #340 權限授予中心（集中管理全部權限，Shizuku 除外）：

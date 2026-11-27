@@ -29,6 +29,8 @@ import java.awt.Dimension
 import java.awt.SystemTray
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.SwingUtilities
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #469 桌面系統匣常駐入口（Compose Multiplatform 官方 androidx.compose.ui.window.Tray API）：

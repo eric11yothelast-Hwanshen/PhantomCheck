@@ -159,6 +159,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Calendar
 import kotlin.math.roundToInt
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 /** 自製 Sparkle 圖示（無需額外 material-icons-extended 依賴） */
 val AutoAwesomeIcon: ImageVector by lazy {
     ImageVector.Builder(

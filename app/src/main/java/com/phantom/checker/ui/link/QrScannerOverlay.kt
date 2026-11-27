@@ -54,6 +54,8 @@ import com.phantom.checker.R
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private const val TAG = "QrScannerOverlay"
 

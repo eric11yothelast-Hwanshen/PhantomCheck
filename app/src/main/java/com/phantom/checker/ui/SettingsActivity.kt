@@ -179,6 +179,8 @@ import java.util.Locale
 import kotlin.math.roundToInt
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private data class InstalledAppInfo(
     val packageName: String,

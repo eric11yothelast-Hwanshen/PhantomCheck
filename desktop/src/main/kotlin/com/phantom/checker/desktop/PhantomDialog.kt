@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #520 §7 commit 13：桌面端統一對話框外殼 PhantomDialog

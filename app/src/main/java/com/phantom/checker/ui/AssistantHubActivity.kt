@@ -72,6 +72,8 @@ import java.util.Locale
 import kotlin.math.roundToInt
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #340 「AI 夥伴與主動推播」獨立設定頁：

@@ -64,6 +64,8 @@ import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #339 連結應用程式中心：

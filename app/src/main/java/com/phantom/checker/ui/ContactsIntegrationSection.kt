@@ -60,6 +60,8 @@ import com.phantom.checker.util.PhantomSettingsBus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #336 通訊錄整合設定元件（暱稱綁定、關係單位匯入嚮導、VIP 信任圈連動）：

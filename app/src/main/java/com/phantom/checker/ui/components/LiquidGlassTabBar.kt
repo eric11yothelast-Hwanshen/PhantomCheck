@@ -49,6 +49,8 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private const val MAX_INDEX_VELOCITY = 24f
 

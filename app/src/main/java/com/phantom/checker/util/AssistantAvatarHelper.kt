@@ -65,6 +65,8 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #315 B3 AI 助手頭像選圖、降採樣、圓形中心裁切與快取管理。

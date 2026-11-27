@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.jetbrains.skia.Image as SkiaImage
 import java.io.File
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 /**
  * #488 / #520 桌面端設計 Token v2（深色／淺色／高對比深／高對比淺，含 popupBg、accentText、onAccent、語意色、focusRing、hover/pressed）：

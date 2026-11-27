@@ -91,6 +91,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private enum class DesktopTab {
     MESSAGES, STATS, TODOS, CHAT, RULES, SETTINGS, REPORTS, TOOLS, HOME

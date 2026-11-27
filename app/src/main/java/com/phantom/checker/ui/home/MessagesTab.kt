@@ -90,6 +90,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private const val PAGE_SIZE = 100
 private const val MAX_BATCH_SELECT = 100

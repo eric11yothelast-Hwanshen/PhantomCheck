@@ -117,6 +117,8 @@ import com.phantom.checker.ui.todo.*
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
 import androidx.annotation.StringRes
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private val TuneIcon: ImageVector by lazy {
     ImageVector.Builder(
