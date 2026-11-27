@@ -13,16 +13,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import com.phantom.checker.ui.warning
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -69,6 +70,7 @@ fun WatchTopicManagerDialog(
     var newType by remember { mutableStateOf(WatchTopicEntity.TYPE_KEYWORD) }
     var editingTopic by remember { mutableStateOf<WatchTopicEntity?>(null) }
     var editHintText by remember { mutableStateOf("") }
+    var pendingDeleteTopic by remember { mutableStateOf<WatchTopicEntity?>(null) }
 
     val pendingCandidatesCount = remember(topics) {
         topics.count {
@@ -245,7 +247,7 @@ fun WatchTopicManagerDialog(
                                             color = if (isMuted) {
                                                 MaterialTheme.colorScheme.onSurfaceVariant
                                             } else if (isCandidate) {
-                                                MaterialTheme.colorScheme.tertiary
+                                                MaterialTheme.colorScheme.warning
                                             } else {
                                                 MaterialTheme.colorScheme.primary
                                             }
@@ -292,14 +294,7 @@ fun WatchTopicManagerDialog(
                                             }
                                         ) { Text(if (isMuted) stringResource(R.string.memory_s_ca3365) else stringResource(R.string.common_muted)) }
                                         TextButton(
-                                            onClick = {
-                                                scope.launch {
-                                                    withContext(Dispatchers.IO) {
-                                                        db.watchTopicDao().deleteById(topic.id)
-                                                    }
-                                                    onShowMessage(resCtx.getString(R.string.watch_topic_s_61d2aa, topic.label))
-                                                }
-                                            }
+                                            onClick = { pendingDeleteTopic = topic }
                                         ) {
                                             Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
                                         }
@@ -317,6 +312,33 @@ fun WatchTopicManagerDialog(
             }
         }
     )
+
+    pendingDeleteTopic?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteTopic = null },
+            title = { Text(stringResource(R.string.common_confirm_delete)) },
+            text = { Text("${target.label}${stringResource(R.string.memory_s_071ef4)}") },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        pendingDeleteTopic = null
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                db.watchTopicDao().deleteById(target.id)
+                            }
+                            onShowMessage(resCtx.getString(R.string.watch_topic_s_61d2aa, target.label))
+                        }
+                    }
+                ) { Text(stringResource(R.string.common_confirm_delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteTopic = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
 
     editingTopic?.let { target ->
         AlertDialog(

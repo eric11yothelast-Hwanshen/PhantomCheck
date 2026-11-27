@@ -243,7 +243,9 @@ internal fun PartnerTab(
         }
         chatMsgCount = withContext(Dispatchers.IO) {
             runCatching {
-                db.chatDao().allSessions().sumOf { s -> db.chatDao().messagesForSession(s.id).size }
+                db.openHelper.readableDatabase.query("SELECT COUNT(*) FROM chat_messages").use { cursor ->
+                    if (cursor.moveToFirst()) cursor.getInt(0) else 0
+                }
             }.getOrDefault(0)
         }
         goalProgressCount = withContext(Dispatchers.IO) {
@@ -251,8 +253,9 @@ internal fun PartnerTab(
         }
     }
 
-    val nowMs = System.currentTimeMillis()
-    val since7d = nowMs - 7L * 24L * 60L * 60L * 1000L
+    val since7d = remember(rawMemories) {
+        System.currentTimeMillis() - 7L * 24L * 60L * 60L * 1000L
+    }
     val confirmedMemoryCount = remember(rawMemories) {
         rawMemories.count {
             it.status == MemoryEntity.STATUS_ACTIVE && it.confidence == MemoryEntity.CONFIDENCE_CONFIRMED
@@ -420,11 +423,15 @@ internal fun PartnerTab(
                             text = { Text(stringResource(R.string.partner_s_7ce9ea)) },
                             onClick = {
                                 showHeaderBgMenu = false
-                                BackgroundImageHelper.removeAssistantHeaderBackground(appCtx)
-                                ThemePreferences.bumpBackgroundVersion()
-                                headerBgVersion = ThemePreferences.getBackgroundVersion()
-                                PhantomSettingsBus.notifyChanged()
-                                onShowMessage(resCtx.getString(R.string.partner_s_07aa1c))
+                                scope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        BackgroundImageHelper.removeAssistantHeaderBackground(appCtx)
+                                    }
+                                    ThemePreferences.bumpBackgroundVersion()
+                                    headerBgVersion = ThemePreferences.getBackgroundVersion()
+                                    PhantomSettingsBus.notifyChanged()
+                                    onShowMessage(resCtx.getString(R.string.partner_s_07aa1c))
+                                }
                             }
                         )
                     }
@@ -604,9 +611,11 @@ internal fun PartnerTab(
                 if (showFullBriefingDialog && lastMsgId > 0L) {
                     fullBriefingText = withContext(Dispatchers.IO) {
                         runCatching {
-                            val dao = db.chatDao()
-                            dao.allSessions().firstNotNullOfOrNull { s ->
-                                dao.messagesForSession(s.id).firstOrNull { it.id == lastMsgId }?.content
+                            db.openHelper.readableDatabase.query(
+                                "SELECT content FROM chat_messages WHERE id = ? LIMIT 1",
+                                arrayOf<Any>(lastMsgId)
+                            ).use { cursor ->
+                                if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getString(0) else null
                             }
                         }.getOrNull()
                     }

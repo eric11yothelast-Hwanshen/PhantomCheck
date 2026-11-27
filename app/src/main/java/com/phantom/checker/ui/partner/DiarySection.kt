@@ -54,8 +54,11 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
+
+private val MONTH_PREFIX_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM", Locale.US)
 
 /**
  * #378 AI 日記／每日回顧卡片（嵌入夥伴分頁頂部＋展開月份瀏覽 Sheet）：
@@ -140,9 +143,10 @@ internal fun PartnerDiaryCard(
         var annotationText by remember(selectedDayKey) { mutableStateOf<String?>(null) }
         var annotationLoading by remember(selectedDayKey) { mutableStateOf(false) }
         var refreshKey by remember { mutableStateOf(0) }
+        var isRefreshingToday by remember { mutableStateOf(false) }
 
         LaunchedEffect(currentMonth, refreshKey) {
-            val prefix = currentMonth.format(DateTimeFormatter.ofPattern("yyyy-MM"))
+            val prefix = currentMonth.format(MONTH_PREFIX_FMT)
             val loaded = withContext(Dispatchers.IO) {
                 AppDatabaseHolder.db(appCtx).diaryDao().byMonth(prefix)
             }
@@ -164,6 +168,8 @@ internal fun PartnerDiaryCard(
         val monthNoteTotal = monthSummaries.sumOf { it.noteCount }
         val monthTodoTotal = monthSummaries.sumOf { it.todoDoneCount }
         val monthScamTotal = monthSummaries.sumOf { it.scamCount }
+        val monthTitlePattern = stringResource(R.string.diary_s_25db57)
+        val monthTitleFmt = remember(monthTitlePattern) { DateTimeFormatter.ofPattern(monthTitlePattern) }
 
         ModalBottomSheet(
             onDismissRequest = { showSheet = false },
@@ -186,7 +192,7 @@ internal fun PartnerDiaryCard(
                         Text(stringResource(R.string.diary_s_7f79ec))
                     }
                     Text(
-                        text = currentMonth.format(DateTimeFormatter.ofPattern(stringResource(R.string.diary_s_25db57))),
+                        text = currentMonth.format(monthTitleFmt),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -228,12 +234,19 @@ internal fun PartnerDiaryCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
+                        enabled = !isRefreshingToday,
                         onClick = {
+                            if (isRefreshingToday) return@OutlinedButton
+                            isRefreshingToday = true
                             scope.launch {
-                                val entity = DiaryPolicy.buildAndSaveDayTimeline(appCtx, LocalDate.now())
-                                currentMonth = YearMonth.now()
-                                selectedDayKey = entity.dayKey
-                                refreshKey++
+                                try {
+                                    val entity = DiaryPolicy.buildAndSaveDayTimeline(appCtx, LocalDate.now())
+                                    currentMonth = YearMonth.now()
+                                    selectedDayKey = entity.dayKey
+                                    refreshKey++
+                                } finally {
+                                    isRefreshingToday = false
+                                }
                             }
                         },
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
@@ -331,9 +344,12 @@ internal fun PartnerDiaryCard(
                                                 if (next && annotationText.isNullOrBlank() && !annotationLoading) {
                                                     annotationLoading = true
                                                     scope.launch {
-                                                        annotationText = DiaryPolicy.getOrGenerateAnnotation(appCtx, summary.dayKey)
-                                                        annotationLoading = false
-                                                        refreshKey++
+                                                        try {
+                                                            annotationText = DiaryPolicy.getOrGenerateAnnotation(appCtx, summary.dayKey)
+                                                            refreshKey++
+                                                        } finally {
+                                                            annotationLoading = false
+                                                        }
                                                     }
                                                 }
                                             },
@@ -355,10 +371,10 @@ internal fun PartnerDiaryCard(
                                         }
                                     }
                                     AnimatedVisibility(
- visible = annotationExpanded,
- enter = PhantomMotion.ExpandEnter,
- exit = PhantomMotion.ExpandExit
- ) {
+                                        visible = annotationExpanded,
+                                        enter = PhantomMotion.ExpandEnter,
+                                        exit = PhantomMotion.ExpandExit
+                                    ) {
                                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             when {
                                                 annotationLoading -> Text(
@@ -452,12 +468,16 @@ internal fun PartnerDiaryCard(
                                                             DiaryPolicy.AnnotationUnavailableReason.DISLIKED_SUPPRESSED -> {
                                                                 TextButton(
                                                                     onClick = {
+                                                                        if (annotationLoading) return@TextButton
                                                                         DiaryPolicy.resetDislikeForCategory(appCtx, dominantCat)
                                                                         annotationLoading = true
                                                                         scope.launch {
-                                                                            annotationText = DiaryPolicy.getOrGenerateAnnotation(appCtx, summary.dayKey)
-                                                                            annotationLoading = false
-                                                                            refreshKey++
+                                                                            try {
+                                                                                annotationText = DiaryPolicy.getOrGenerateAnnotation(appCtx, summary.dayKey)
+                                                                                refreshKey++
+                                                                            } finally {
+                                                                                annotationLoading = false
+                                                                            }
                                                                         }
                                                                     },
                                                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
@@ -468,11 +488,15 @@ internal fun PartnerDiaryCard(
                                                             DiaryPolicy.AnnotationUnavailableReason.OTHER -> {
                                                                 TextButton(
                                                                     onClick = {
+                                                                        if (annotationLoading) return@TextButton
                                                                         annotationLoading = true
                                                                         scope.launch {
-                                                                            annotationText = DiaryPolicy.getOrGenerateAnnotation(appCtx, summary.dayKey)
-                                                                            annotationLoading = false
-                                                                            refreshKey++
+                                                                            try {
+                                                                                annotationText = DiaryPolicy.getOrGenerateAnnotation(appCtx, summary.dayKey)
+                                                                                refreshKey++
+                                                                            } finally {
+                                                                                annotationLoading = false
+                                                                            }
                                                                         }
                                                                     },
                                                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)

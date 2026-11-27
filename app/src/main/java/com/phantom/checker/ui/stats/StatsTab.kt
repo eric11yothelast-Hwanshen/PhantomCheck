@@ -209,6 +209,8 @@ import com.phantom.checker.ui.*
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
 
+private val MULTI_WHITESPACE_REGEX = Regex("\\s+")
+
 internal data class DayCountUi(
     val label: String,
     val count: Int
@@ -227,6 +229,7 @@ internal data class StatsUiState(
     val weeklyRiskCounts: List<DayCountUi> = emptyList(),
     val safeCount: Int = 0,
     val suspiciousCount: Int = 0,
+    val warningCount: Int = 0,
     val scamCount: Int = 0,
     val topRiskyApps: List<AppRiskRow> = emptyList(),
     val dailyTopApps: List<DailyAppRankUi> = emptyList(),
@@ -254,6 +257,7 @@ internal fun StatsTab(
     val appCtx = ctx.applicationContext
     val scope = rememberCoroutineScope()
     var isExporting by remember { mutableStateOf(false) }
+    var isSharingCard by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     val statsSettingsVersion by PhantomSettingsBus.version.collectAsState()
     var statsResumeTrigger by remember { mutableIntStateOf(0) }
@@ -269,7 +273,6 @@ internal fun StatsTab(
             statsLifecycleOwner?.lifecycle?.removeObserver(observer)
         }
     }
-    val profiles = remember(statsSettingsVersion, statsResumeTrigger) { AiClient.getProfiles(appCtx) }
 
     if (showExportDialog) {
         ExportCsvDialog(
@@ -280,26 +283,28 @@ internal fun StatsTab(
                 if (isExporting) return@ExportCsvDialog
                 scope.launch {
                     isExporting = true
-                    val result = MessageExporter.exportToDownloads(
-                        ctx = appCtx,
-                        packageName = pkg,
-                        daysBack = days
-                    )
-                    isExporting = false
-                    result.onSuccess { fileName ->
-                        onShowMessage(resCtx.getString(R.string.settings_s_11c369, fileName))
-                    }.onFailure { err ->
-                        val reason = err.localizedMessage?.takeIf { it.isNotBlank() }
-                            ?: err.javaClass.simpleName
-                        onShowMessage(resCtx.getString(R.string.chat_s_55fba2, reason))
+                    try {
+                        val result = MessageExporter.exportToDownloads(
+                            ctx = appCtx,
+                            packageName = pkg,
+                            daysBack = days
+                        )
+                        result.onSuccess { fileName ->
+                            onShowMessage(resCtx.getString(R.string.settings_s_11c369, fileName))
+                        }.onFailure { err ->
+                            val reason = err.localizedMessage?.takeIf { it.isNotBlank() }
+                                ?: err.javaClass.simpleName
+                            onShowMessage(resCtx.getString(R.string.chat_s_55fba2, reason))
+                        }
+                    } finally {
+                        isExporting = false
                     }
                 }
             }
         )
     }
 
-    val settingsVersion by PhantomSettingsBus.version.collectAsState()
-    val tokenSaverOn = remember(settingsVersion) { PhantomPrefs.isTokenSaverEnabled(appCtx) }
+    val tokenSaverOn = remember(statsSettingsVersion) { PhantomPrefs.isTokenSaverEnabled(appCtx) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -330,7 +335,9 @@ internal fun StatsTab(
         }
         item {
             OutlinedButton(
+                enabled = !isSharingCard,
                 onClick = {
+                    if (isSharingCard) return@OutlinedButton
                     val data = ShareCardReportData(
                         todayCount = state.weeklyCounts.lastOrNull()?.count ?: 0,
                         weekTotalCount = state.weeklyCounts.sumOf { it.count },
@@ -342,11 +349,19 @@ internal fun StatsTab(
                         topApps = state.rawAppGroups
                             .sortedByDescending { it.cnt }
                             .take(5)
-                            .map { it.appLabel to it.cnt }
+                            .map { it.appLabel to it.cnt },
+                        warningCount = state.warningCount
                     )
-                    val res = StatsShareCardGenerator.generateAndShare(ctx, data)
-                    if (res.isFailure) {
-                        onShowMessage(resCtx.getString(R.string.stats_s_db9eb8, res.exceptionOrNull()?.message ?: resCtx.getString(R.string.common_unknown_error)))
+                    isSharingCard = true
+                    scope.launch {
+                        try {
+                            val res = StatsShareCardGenerator.generateAndShareSuspend(ctx, data)
+                            if (res.isFailure) {
+                                onShowMessage(resCtx.getString(R.string.stats_s_db9eb8, res.exceptionOrNull()?.message ?: resCtx.getString(R.string.common_unknown_error)))
+                            }
+                        } finally {
+                            isSharingCard = false
+                        }
                     }
                 },
                 modifier = Modifier
@@ -457,10 +472,14 @@ internal fun StatsTab(
                 if (briefingExpanded && lastMsgId > 0L) {
                     if (fullBriefingText == null) {
                         fullBriefingText = withContext(Dispatchers.IO) {
-                            val dao = AppDatabaseHolder.db(appCtx).chatDao()
-                            dao.allSessions().firstNotNullOfOrNull { s ->
-                                dao.messagesForSession(s.id).firstOrNull { it.id == lastMsgId }?.content
-                            }
+                            runCatching {
+                                AppDatabaseHolder.db(appCtx).openHelper.readableDatabase.query(
+                                    "SELECT content FROM chat_messages WHERE id = ? LIMIT 1",
+                                    arrayOf<Any>(lastMsgId)
+                                ).use { cursor ->
+                                    if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getString(0) else null
+                                }
+                            }.getOrNull()
                         }
                     }
                     PhantomPrefs.markBriefingReadOnce(appCtx, lastMsgId)
@@ -498,7 +517,7 @@ internal fun StatsTab(
                     }
                     IconButton(onClick = { briefingExpanded = !briefingExpanded }) {
                         PhantomChevron(
- expanded = briefingExpanded,
+                            expanded = briefingExpanded,
                             contentDescription = if (briefingExpanded) stringResource(R.string.stats_s_8020ab) else stringResource(R.string.stats_s_55b595)
                         )
                     }
@@ -506,7 +525,7 @@ internal fun StatsTab(
                 if (!briefingExpanded) {
                     val previewText = lastSummary.takeIf { it.isNotBlank() }
                         ?.replace("\n", " ")
-                        ?.replace(Regex("\\s+"), " ")
+                        ?.replace(MULTI_WHITESPACE_REGEX, " ")
                         ?.trim()
                         ?: stringResource(R.string.stats_s_5395df)
                     Text(
@@ -613,7 +632,7 @@ internal fun StatsTab(
                         PhantomPrefs.setWeeklySummaryExpanded(appCtx, weeklyExpanded)
                     }) {
                         PhantomChevron(
- expanded = weeklyExpanded,
+                            expanded = weeklyExpanded,
                             contentDescription = if (weeklyExpanded) stringResource(R.string.stats_s_f1f241) else stringResource(R.string.stats_s_7860c9)
                         )
                     }
@@ -623,7 +642,7 @@ internal fun StatsTab(
                 if (!weeklyExpanded) {
                     val previewText = weekly?.let {
                         val label = WeeklySummaryPolicy.formatWeekLabel(it.date)
-                        val body = stripMarkdown(it.summary).replace("\n", " ").replace(Regex("\\s+"), " ").trim()
+                        val body = stripMarkdown(it.summary).replace("\n", " ").replace(MULTI_WHITESPACE_REGEX, " ").trim()
                         "$label：$body"
                     } ?: stringResource(R.string.stats_s_8aa322)
                     Text(
@@ -665,19 +684,22 @@ internal fun StatsTab(
                                     scope.launch {
                                         isGeneratingWeekly = true
                                         weeklyError = null
-                                        val result = withContext(Dispatchers.IO) {
-                                            WeeklySummaryPolicy.generateWeeklySummary(appCtx, fromSchedule = false)
-                                        }
-                                        isGeneratingWeekly = false
-                                        result.onSuccess {
-                                            weeklyExpanded = true
-                                            PhantomPrefs.setWeeklySummaryExpanded(appCtx, true)
-                                            onSummaryGenerated()
-                                            onShowMessage(resCtx.getString(R.string.stats_s_0ec53f))
-                                        }.onFailure { err ->
-                                            val msg = err.message ?: resCtx.getString(R.string.stats_s_0ccbe0)
-                                            weeklyError = msg
-                                            onShowMessage(msg)
+                                        try {
+                                            val result = withContext(Dispatchers.IO) {
+                                                WeeklySummaryPolicy.generateWeeklySummary(appCtx, fromSchedule = false)
+                                            }
+                                            result.onSuccess {
+                                                weeklyExpanded = true
+                                                PhantomPrefs.setWeeklySummaryExpanded(appCtx, true)
+                                                onSummaryGenerated()
+                                                onShowMessage(resCtx.getString(R.string.stats_s_0ec53f))
+                                            }.onFailure { err ->
+                                                val msg = err.message ?: resCtx.getString(R.string.stats_s_0ccbe0)
+                                                weeklyError = msg
+                                                onShowMessage(msg)
+                                            }
+                                        } finally {
+                                            isGeneratingWeekly = false
                                         }
                                     }
                                 },
@@ -717,9 +739,9 @@ internal fun StatsTab(
                         )
                     }
                 } else {
+                    val weeklyTimeFmt = remember { SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()) }
                     if (weekly != null) {
-                        val timeStr = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
-                            .format(Date(weekly.generatedAt))
+                        val timeStr = remember(weekly.generatedAt) { weeklyTimeFmt.format(Date(weekly.generatedAt)) }
                         Text(
                             text = WeeklySummaryPolicy.formatWeekLabel(weekly.date),
                             style = MaterialTheme.typography.labelMedium,
@@ -788,22 +810,25 @@ internal fun StatsTab(
                             scope.launch {
                                 isGeneratingWeekly = true
                                 weeklyError = null
-                                val result = withContext(Dispatchers.IO) {
-                                    WeeklySummaryPolicy.generateWeeklySummary(appCtx, fromSchedule = false)
-                                }
-                                isGeneratingWeekly = false
-                                result.onSuccess {
-                                    if (weeklyHistoryExpanded) {
-                                        weeklyHistory = withContext(Dispatchers.IO) {
-                                            AppDatabaseHolder.db(appCtx).aiSummaryDao().weeklyHistory()
-                                        }
+                                try {
+                                    val result = withContext(Dispatchers.IO) {
+                                        WeeklySummaryPolicy.generateWeeklySummary(appCtx, fromSchedule = false)
                                     }
-                                    onSummaryGenerated()
-                                    onShowMessage(resCtx.getString(R.string.stats_s_0ec53f))
-                                }.onFailure { err ->
-                                    val msg = err.message ?: resCtx.getString(R.string.stats_s_0ccbe0)
-                                    weeklyError = msg
-                                    onShowMessage(msg)
+                                    result.onSuccess {
+                                        if (weeklyHistoryExpanded) {
+                                            weeklyHistory = withContext(Dispatchers.IO) {
+                                                AppDatabaseHolder.db(appCtx).aiSummaryDao().weeklyHistory()
+                                            }
+                                        }
+                                        onSummaryGenerated()
+                                        onShowMessage(resCtx.getString(R.string.stats_s_0ec53f))
+                                    }.onFailure { err ->
+                                        val msg = err.message ?: resCtx.getString(R.string.stats_s_0ccbe0)
+                                        weeklyError = msg
+                                        onShowMessage(msg)
+                                    }
+                                } finally {
+                                    isGeneratingWeekly = false
                                 }
                             }
                         },
@@ -827,6 +852,7 @@ internal fun StatsTab(
                 }
 
                 if (weeklyHistoryExpanded) {
+                    val historyTimeFmt = remember { SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()) }
                     HorizontalDivider(Modifier.padding(vertical = 10.dp))
                     if (weeklyHistory.isEmpty()) {
                         Text(
@@ -839,8 +865,7 @@ internal fun StatsTab(
                             if (idx > 0) {
                                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
                             }
-                            val genTime = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
-                                .format(Date(item.generatedAt))
+                            val genTime = remember(item.generatedAt) { historyTimeFmt.format(Date(item.generatedAt)) }
                             Text(
                                 text = "${WeeklySummaryPolicy.formatWeekLabel(item.date)}（$genTime）",
                                 style = MaterialTheme.typography.labelMedium,
@@ -948,7 +973,7 @@ internal fun StatsTab(
                 RiskCountCard(
                     title = stringResource(R.string.stats_s_4ea2af),
                     count = state.suspiciousCount,
-                    accentColor = Color(0xFFE6A100),
+                    accentColor = MaterialTheme.colorScheme.warning,
                     glassState = glassState,
                     modifier = Modifier.weight(1f)
                 )
@@ -1152,7 +1177,7 @@ internal fun StatsTab(
             val ratio = if (total > 0) harass.toFloat() / total.toFloat() else 0f
             val pct = (ratio * 100f).toInt()
             val arcTrack = MaterialTheme.colorScheme.surfaceVariant
-            val arcColor = Color(0xFFFF9800)
+            val arcColor = MaterialTheme.colorScheme.warning
 
             PhantomGlassCard(
                 glassState = glassState,
@@ -1651,8 +1676,11 @@ private fun StatsHealthDetailCard(
     LaunchedEffect(selectedPeriod, hcPerm.anyGranted) {
         if (selectedPeriod == 2 && hcPerm.anyGranted && trend30d.isEmpty()) {
             loading30d = true
-            trend30d = com.phantom.checker.util.HealthConnectBridge.readRecentDaysTrend(appCtx, days = 30)
-            loading30d = false
+            try {
+                trend30d = com.phantom.checker.util.HealthConnectBridge.readRecentDaysTrend(appCtx, days = 30)
+            } finally {
+                loading30d = false
+            }
         }
     }
 

@@ -594,6 +594,8 @@ internal fun NotesTab(
     var pendingNlMemoRule by remember { mutableStateOf<AiClient.ParsedMemoRule?>(null) }
     var neverMemoTargetMsg by remember { mutableStateOf<MessageEntity?>(null) }
     var neverMemoFallbackNote by remember { mutableStateOf<NoteEntity?>(null) }
+    var pendingDeleteTodo by remember { mutableStateOf<TodoEntity?>(null) }
+    var pendingDeleteNote by remember { mutableStateOf<NoteEntity?>(null) }
 
     LaunchedEffect(initialEditTodoId, todos) {
         val targetId = initialEditTodoId ?: return@LaunchedEffect
@@ -619,29 +621,31 @@ internal fun NotesTab(
                 editingTodo = null
                 scope.launch {
                     val savedId = withContext(Dispatchers.IO) {
-                        if (target == null) {
-                            db.todoDao().insert(
-                                TodoEntity(
-                                    title = title,
-                                    dueAt = dueAt,
-                                    isDone = false,
-                                    createdAt = System.currentTimeMillis(),
-                                    priority = priority,
-                                    notes = notesText,
-                                    repeatRule = repeatRule
+                        db.withTransaction {
+                            if (target == null) {
+                                db.todoDao().insert(
+                                    TodoEntity(
+                                        title = title,
+                                        dueAt = dueAt,
+                                        isDone = false,
+                                        createdAt = System.currentTimeMillis(),
+                                        priority = priority,
+                                        notes = notesText,
+                                        repeatRule = repeatRule
+                                    )
                                 )
-                            )
-                        } else {
-                            db.todoDao().update(
-                                target.copy(
-                                    title = title,
-                                    dueAt = dueAt,
-                                    priority = priority,
-                                    notes = notesText,
-                                    repeatRule = repeatRule
+                            } else {
+                                db.todoDao().update(
+                                    target.copy(
+                                        title = title,
+                                        dueAt = dueAt,
+                                        priority = priority,
+                                        notes = notesText,
+                                        repeatRule = repeatRule
+                                    )
                                 )
-                            )
-                            target.id
+                                target.id
+                            }
                         }
                     }
                     if (target?.isDone != true) {
@@ -651,7 +655,10 @@ internal fun NotesTab(
                             ReminderScheduler.cancelTodo(appCtx, savedId)
                         }
                     }
-                    com.phantom.checker.widget.ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                    withContext(Dispatchers.IO) {
+                        runCatching { com.phantom.checker.widget.ReminderWidgetProvider.updateAllIfChanged(appCtx) }
+                        runCatching { com.phantom.checker.widget.TodoTodayWidgetProvider.refreshNow(appCtx) }
+                    }
                     onShowMessage(if (target == null) resCtx.getString(R.string.notes_s_3398e6) else resCtx.getString(R.string.notes_s_81fe81))
                 }
             }
@@ -672,26 +679,29 @@ internal fun NotesTab(
                 scope.launch {
                     val now = System.currentTimeMillis()
                     withContext(Dispatchers.IO) {
-                        if (target == null) {
-                            db.noteDao().insert(
-                                NoteEntity(
-                                    content = content,
-                                    colorHex = colorHex,
-                                    source = NoteEntity.SOURCE_MANUAL,
-                                    createdAt = now,
-                                    updatedAt = now
+                        db.withTransaction {
+                            if (target == null) {
+                                db.noteDao().insert(
+                                    NoteEntity(
+                                        content = content,
+                                        colorHex = colorHex,
+                                        source = NoteEntity.SOURCE_MANUAL,
+                                        createdAt = now,
+                                        updatedAt = now
+                                    )
                                 )
-                            )
-                        } else {
-                            db.noteDao().update(
-                                target.copy(
-                                    content = content,
-                                    colorHex = colorHex,
-                                    updatedAt = now
+                            } else {
+                                db.noteDao().update(
+                                    target.copy(
+                                        content = content,
+                                        colorHex = colorHex,
+                                        updatedAt = now
+                                    )
                                 )
-                            )
+                            }
                         }
-                        com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx)
+                        runCatching { com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx) }
+                        runCatching { com.phantom.checker.widget.QuickNoteWidgetProvider.refreshNow(appCtx) }
                     }
                     onShowMessage(if (target == null) resCtx.getString(R.string.notes_s_61d3ff) else resCtx.getString(R.string.notes_s_e7e844))
                 }
@@ -699,10 +709,79 @@ internal fun NotesTab(
         )
     }
 
+    pendingDeleteTodo?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteTodo = null },
+            title = { Text(stringResource(R.string.common_confirm_delete)) },
+            text = { Text("${target.title}${stringResource(R.string.memory_s_071ef4)}") },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        pendingDeleteTodo = null
+                        scope.launch {
+                            ReminderScheduler.cancelTodo(appCtx, target.id)
+                            withContext(Dispatchers.IO) {
+                                db.withTransaction {
+                                    db.todoDao().deleteById(target.id)
+                                }
+                                runCatching { com.phantom.checker.widget.ReminderWidgetProvider.updateAllIfChanged(appCtx) }
+                                runCatching { com.phantom.checker.widget.TodoTodayWidgetProvider.refreshNow(appCtx) }
+                            }
+                            onShowMessage(resCtx.getString(R.string.notes_s_f2302c))
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.common_confirm_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteTodo = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
+    pendingDeleteNote?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteNote = null },
+            title = { Text(stringResource(R.string.common_confirm_delete)) },
+            text = { Text("${target.content.take(50)}${stringResource(R.string.memory_s_071ef4)}") },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        pendingDeleteNote = null
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                db.withTransaction {
+                                    db.noteDao().deleteById(target.id)
+                                }
+                                runCatching { com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx) }
+                                runCatching { com.phantom.checker.widget.QuickNoteWidgetProvider.refreshNow(appCtx) }
+                            }
+                            onShowMessage(resCtx.getString(R.string.notes_s_2e6982))
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.common_confirm_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteNote = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            }
+        )
+    }
+
     val now = System.currentTimeMillis()
-    val startOfToday = NotificationCollectorService.startOfTodayMillis()
+    val todayZone = java.time.ZoneId.systemDefault()
+    val todayDate = java.time.Instant.ofEpochMilli(now).atZone(todayZone).toLocalDate()
+    val startOfToday = todayDate.atStartOfDay(todayZone).toInstant().toEpochMilli()
+    val endOfToday = todayDate.plusDays(1).atStartOfDay(todayZone).toInstant().toEpochMilli() - 1L
     val dayMs = 24L * 60L * 60L * 1000L
-    val endOfToday = startOfToday + dayMs - 1L
     val filteredTodos = remember(todos, todoFilter, now) {
         val sorted = ReminderScheduler.sortTodosSmart(todos, now)
         when (todoFilter) {
@@ -722,19 +801,15 @@ internal fun NotesTab(
         showTodoEditor = true
     }
     val onDeleteTodo: (TodoEntity) -> Unit = { t ->
-        scope.launch {
-            ReminderScheduler.cancelTodo(appCtx, t.id)
-            withContext(Dispatchers.IO) {
-                db.todoDao().deleteById(t.id)
-            }
-            com.phantom.checker.widget.ReminderWidgetProvider.updateAllIfChanged(appCtx)
-            onShowMessage(resCtx.getString(R.string.notes_s_f2302c))
-        }
+        pendingDeleteTodo = t
     }
     val onCompleteTodo: (TodoEntity, Boolean) -> Unit = { t, checked ->
         scope.launch {
             val spawned = withContext(Dispatchers.IO) {
-                ReminderScheduler.completeTodoWithRecurrence(appCtx, t, checked)
+                val next = ReminderScheduler.completeTodoWithRecurrence(appCtx, t, checked)
+                runCatching { com.phantom.checker.widget.TodoTodayWidgetProvider.refreshNow(appCtx) }
+                runCatching { com.phantom.checker.widget.GoalProgressWidgetProvider.refreshNow(appCtx) }
+                next
             }
             if (spawned != null) {
                 onShowMessage(resCtx.getString(R.string.notes_s_44a2ba))
@@ -747,23 +822,20 @@ internal fun NotesTab(
         showEditor = true
     }
     val onDeleteNote: (NoteEntity) -> Unit = { n ->
-        scope.launch {
-            withContext(Dispatchers.IO) {
-                db.noteDao().deleteById(n.id)
-                com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx)
-            }
-            onShowMessage(resCtx.getString(R.string.notes_s_2e6982))
-        }
+        pendingDeleteNote = n
     }
     val onTogglePinNote: (NoteEntity) -> Unit = { n ->
         scope.launch {
             withContext(Dispatchers.IO) {
-                db.noteDao().update(
-                    n.copy(
-                        pinned = !n.pinned
+                db.withTransaction {
+                    db.noteDao().update(
+                        n.copy(
+                            pinned = !n.pinned
+                        )
                     )
-                )
-                com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx)
+                }
+                runCatching { com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(appCtx) }
+                runCatching { com.phantom.checker.widget.QuickNoteWidgetProvider.refreshNow(appCtx) }
             }
         }
     }
@@ -1211,16 +1283,19 @@ internal fun NotesTab(
                                     if (text.isEmpty() || isParsingMemoRule) return@Button
                                     isParsingMemoRule = true
                                     scope.launch {
-                                        val result = AiClient.parseMemoRule(appCtx, text)
-                                        isParsingMemoRule = false
-                                        result.fold(
-                                            onSuccess = { parsed ->
-                                                pendingNlMemoRule = parsed
-                                            },
-                                            onFailure = { err ->
-                                                onShowMessage(err.message ?: resCtx.getString(R.string.notes_s_a71edd))
-                                            }
-                                        )
+                                        try {
+                                            val result = AiClient.parseMemoRule(appCtx, text)
+                                            result.fold(
+                                                onSuccess = { parsed ->
+                                                    pendingNlMemoRule = parsed
+                                                },
+                                                onFailure = { err ->
+                                                    onShowMessage(err.message ?: resCtx.getString(R.string.notes_s_a71edd))
+                                                }
+                                            )
+                                        } finally {
+                                            isParsingMemoRule = false
+                                        }
                                     }
                                 },
                                 enabled = nlMemoRuleInput.isNotBlank() && !isParsingMemoRule

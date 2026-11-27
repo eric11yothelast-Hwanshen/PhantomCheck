@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -35,12 +36,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.room.withTransaction
 import com.phantom.checker.data.GoalEntity
 import com.phantom.checker.service.AppDatabaseHolder
 import com.phantom.checker.ui.PhantomGlassCard
 import com.phantom.checker.util.GoalEngine
 import com.phantom.checker.util.PhantomPrefs
 import com.phantom.checker.util.PhantomSettingsBus
+import com.phantom.checker.widget.GoalProgressWidgetProvider
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -66,6 +69,7 @@ internal fun PartnerGoalsCard(
     var items by remember { mutableStateOf<List<GoalEngine.GoalDisplayItem>>(emptyList()) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var managingItem by remember { mutableStateOf<GoalEngine.GoalDisplayItem?>(null) }
+    var pendingDeleteGoal by remember { mutableStateOf<GoalEntity?>(null) }
     var reloadKey by remember { mutableStateOf(0) }
 
     LaunchedEffect(settingsVersion, reloadKey) {
@@ -275,7 +279,11 @@ internal fun PartnerGoalsCard(
                                         } else {
                                             GoalEntity.STATUS_PAUSED
                                         }
-                                        AppDatabaseHolder.db(appCtx).goalDao().updateGoal(g.copy(status = nextStatus))
+                                        val db = AppDatabaseHolder.db(appCtx)
+                                        db.withTransaction {
+                                            db.goalDao().updateGoal(g.copy(status = nextStatus))
+                                        }
+                                        runCatching { GoalProgressWidgetProvider.refreshNow(appCtx) }
                                     }
                                     PhantomSettingsBus.notifyChanged()
                                     reloadKey++
@@ -288,17 +296,8 @@ internal fun PartnerGoalsCard(
                         }
                         TextButton(
                             onClick = {
-                                scope.launch {
-                                    withContext(Dispatchers.IO) {
-                                        val dao = AppDatabaseHolder.db(appCtx).goalDao()
-                                        dao.deleteProgressForGoal(g.id)
-                                        dao.deleteGoal(g.id)
-                                    }
-                                    PhantomSettingsBus.notifyChanged()
-                                    reloadKey++
-                                    onGoalsChanged()
-                                }
                                 managingItem = null
+                                pendingDeleteGoal = g
                             }
                         ) {
                             Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
@@ -311,9 +310,13 @@ internal fun PartnerGoalsCard(
                     onClick = {
                         scope.launch {
                             withContext(Dispatchers.IO) {
-                                AppDatabaseHolder.db(appCtx).goalDao().updateGoal(
-                                    g.copy(cadenceDays = selectedCadence, missedPushStreak = 0)
-                                )
+                                val db = AppDatabaseHolder.db(appCtx)
+                                db.withTransaction {
+                                    db.goalDao().updateGoal(
+                                        g.copy(cadenceDays = selectedCadence, missedPushStreak = 0)
+                                    )
+                                }
+                                runCatching { GoalProgressWidgetProvider.refreshNow(appCtx) }
                             }
                             PhantomSettingsBus.notifyChanged()
                             reloadKey++
@@ -327,6 +330,43 @@ internal fun PartnerGoalsCard(
             },
             dismissButton = {
                 TextButton(onClick = { managingItem = null }) { Text(stringResource(R.string.common_close)) }
+            }
+        )
+    }
+
+    pendingDeleteGoal?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteGoal = null },
+            title = { Text(stringResource(R.string.common_confirm_delete)) },
+            text = { Text("${target.title}${stringResource(R.string.memory_s_071ef4)}") },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        pendingDeleteGoal = null
+                        scope.launch {
+                            withContext(Dispatchers.IO) {
+                                val db = AppDatabaseHolder.db(appCtx)
+                                db.withTransaction {
+                                    val dao = db.goalDao()
+                                    dao.deleteProgressForGoal(target.id)
+                                    dao.deleteGoal(target.id)
+                                }
+                                runCatching { GoalProgressWidgetProvider.refreshNow(appCtx) }
+                            }
+                            PhantomSettingsBus.notifyChanged()
+                            reloadKey++
+                            onGoalsChanged()
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.common_confirm_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteGoal = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
             }
         )
     }

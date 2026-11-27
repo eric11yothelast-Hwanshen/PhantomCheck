@@ -238,14 +238,17 @@ internal fun NotesTodoRow(
     val isOverdue = !todo.isDone && todo.dueAt < now
     val isDueToday = !todo.isDone && todo.dueAt in startOfToday..endOfToday && !isOverdue
     val overdueDays = if (isOverdue) {
-        ((startOfToday - todo.dueAt) / dayMs).toInt().coerceAtLeast(0)
+        val zone = java.time.ZoneId.systemDefault()
+        val todayDate = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val dueDate = java.time.Instant.ofEpochMilli(todo.dueAt).atZone(zone).toLocalDate()
+        java.time.temporal.ChronoUnit.DAYS.between(dueDate, todayDate).toInt().coerceAtLeast(0)
     } else 0
     val priorityColor = when (todo.priority) {
         TodoEntity.PRIORITY_HIGH -> MaterialTheme.colorScheme.error
         TodoEntity.PRIORITY_LOW -> Color(0xFF26A69A)
-        else -> Color(0xFFFFB300)
+        else -> MaterialTheme.colorScheme.warning
     }
-    val overdueColor = Color(0xFFFF6D00)
+    val overdueColor = MaterialTheme.colorScheme.warning
 
     val doneAlpha by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (todo.isDone) 0.62f else 1f,
@@ -369,6 +372,7 @@ internal fun TodoEditorDialog(
     var priority by remember(initial) { mutableIntStateOf(initial?.priority ?: TodoEntity.PRIORITY_MEDIUM) }
     var repeatRule by remember(initial) { mutableStateOf(initial?.repeatRule ?: TodoEntity.REPEAT_NONE) }
     var notes by remember(initial) { mutableStateOf(initial?.notes ?: "") }
+    val dateFmt = remember { SimpleDateFormat("yyyy/MM/dd", Locale.getDefault()) }
 
     val priorityOptions = listOf(
         TodoEntity.PRIORITY_LOW to stringResource(R.string.todo_s_b9ee25),
@@ -419,7 +423,6 @@ internal fun TodoEditorDialog(
                         },
                         modifier = Modifier.weight(1f)
                     ) {
-                        val dateFmt = SimpleDateFormat("yyyy/MM/dd", Locale.getDefault())
                         Text(dateFmt.format(Date(dueAt)), maxLines = 1)
                     }
                     OutlinedButton(

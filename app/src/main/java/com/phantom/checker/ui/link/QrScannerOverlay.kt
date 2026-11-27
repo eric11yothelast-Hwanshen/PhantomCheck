@@ -30,6 +30,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,7 +77,8 @@ fun QrScannerDialog(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    var cameraError by remember { mutableStateOf<String?>(null) }
+    val currentOnScanned by rememberUpdatedState(onScanned)
+    val currentOnDismiss by rememberUpdatedState(onDismiss)
 
     val handled = remember { AtomicBoolean(false) }
     val closed = remember { AtomicBoolean(false) }
@@ -91,21 +93,37 @@ fun QrScannerDialog(
         }
     }
     val scanner: BarcodeScanner? = scannerResult.getOrNull()
-    if (scanner == null && cameraError == null) {
-        val reason = scannerResult.exceptionOrNull()?.let { it.message ?: it.javaClass.simpleName } ?: "MLKit init error"
-        cameraError = context.getString(R.string.link_hub_camera_init_failed, reason)
+    var cameraError by remember {
+        mutableStateOf(
+            if (scanner == null) {
+                val reason = scannerResult.exceptionOrNull()?.let { it.message ?: it.javaClass.simpleName } ?: "MLKit init error"
+                context.getString(R.string.link_hub_camera_init_failed, reason)
+            } else {
+                null
+            }
+        )
     }
 
     var boundProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var activePreviewView by remember { mutableStateOf<PreviewView?>(null) }
     var needsRebindOnResume by remember { mutableStateOf(false) }
 
+    val dismissSafely: () -> Unit = {
+        if (closed.compareAndSet(false, true)) {
+            handled.set(true)
+            runCatching { boundProvider?.unbindAll() }
+            currentOnDismiss()
+        }
+    }
+
     fun bindCameraUseCases(provider: ProcessCameraProvider, previewView: PreviewView) {
         if (closed.get() || handled.get()) return
         val activeScanner = scanner ?: return
         runCatching {
             if (!provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
-                cameraError = context.getString(R.string.link_hub_camera_no_back_camera)
+                if (!closed.get()) {
+                    cameraError = context.getString(R.string.link_hub_camera_no_back_camera)
+                }
                 return
             }
             val preview = Preview.Builder().build().also {
@@ -130,12 +148,14 @@ fun QrScannerDialog(
                     val task = activeScanner.process(inputImage)
                     handedToAsync = true
                     task.addOnSuccessListener { barcodes ->
-                        if (closed.get()) return@addOnSuccessListener
+                        if (closed.get() || handled.get()) return@addOnSuccessListener
                         val raw = barcodes.firstOrNull()?.rawValue?.trim()
-                        if (!raw.isNullOrBlank() && handled.compareAndSet(false, true)) {
+                        if (!raw.isNullOrBlank() && !closed.get() && handled.compareAndSet(false, true)) {
+                            if (closed.get()) return@addOnSuccessListener
                             ContextCompat.getMainExecutor(context).execute {
-                                if (!closed.get()) {
-                                    onScanned(raw)
+                                if (closed.compareAndSet(false, true)) {
+                                    runCatching { boundProvider?.unbindAll() }
+                                    currentOnScanned(raw)
                                 }
                             }
                         }
@@ -162,6 +182,7 @@ fun QrScannerDialog(
                     }
                 }
             }
+            if (closed.get() || handled.get()) return
             provider.unbindAll()
             provider.bindToLifecycle(
                 lifecycleOwner,
@@ -169,10 +190,14 @@ fun QrScannerDialog(
                 preview,
                 analysis
             )
-            cameraError = null
+            if (!closed.get()) {
+                cameraError = null
+            }
         }.onFailure { err ->
             Log.w(TAG, "Camera bindToLifecycle failed: ${err.javaClass.simpleName}: ${err.message}")
-            cameraError = context.getString(R.string.link_hub_camera_init_failed, err.message ?: err.javaClass.simpleName)
+            if (!closed.get()) {
+                cameraError = context.getString(R.string.link_hub_camera_init_failed, err.message ?: err.javaClass.simpleName)
+            }
         }
     }
 
@@ -198,6 +223,7 @@ fun QrScannerDialog(
         onDispose {
             // #486 嚴格釋放順序：先標記 closed → unbind → 停止 executor 並短等排空 → 最後關閉 ML Kit scanner
             closed.set(true)
+            handled.set(true)
             lifecycleOwner.lifecycle.removeObserver(observer)
             runCatching { boundProvider?.unbindAll() }
             boundProvider = null
@@ -211,7 +237,7 @@ fun QrScannerDialog(
     }
 
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = dismissSafely,
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = true, dismissOnClickOutside = false)
     ) {
         Box(
@@ -230,14 +256,20 @@ fun QrScannerDialog(
                         val providerFuture = ProcessCameraProvider.getInstance(ctx)
                         providerFuture.addListener(
                             {
-                                if (closed.get()) return@addListener
+                                if (closed.get() || handled.get()) return@addListener
                                 runCatching {
                                     val provider = providerFuture.get()
+                                    if (closed.get() || handled.get()) {
+                                        provider.unbindAll()
+                                        return@runCatching
+                                    }
                                     boundProvider = provider
                                     bindCameraUseCases(provider, previewView)
                                 }.onFailure { err ->
                                     Log.w(TAG, "ProcessCameraProvider.getInstance failed: ${err.javaClass.simpleName}")
-                                    cameraError = ctx.getString(R.string.link_hub_camera_init_failed, err.message ?: err.javaClass.simpleName)
+                                    if (!closed.get()) {
+                                        cameraError = ctx.getString(R.string.link_hub_camera_init_failed, err.message ?: err.javaClass.simpleName)
+                                    }
                                 }
                             },
                             ContextCompat.getMainExecutor(ctx)
@@ -262,7 +294,7 @@ fun QrScannerDialog(
                     style = MaterialTheme.typography.titleMedium,
                     color = Color.White
                 )
-                Button(onClick = onDismiss) {
+                Button(onClick = dismissSafely) {
                     Text(stringResource(R.string.link_hub_qr_scan_close))
                 }
             }

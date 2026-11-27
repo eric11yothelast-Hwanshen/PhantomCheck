@@ -106,6 +106,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
+import com.phantom.checker.ui.warning
+import com.phantom.checker.ui.warningContainer
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
 import androidx.annotation.StringRes
@@ -161,14 +163,14 @@ internal fun MemoryTab(
     var reloadRulesTick by remember { mutableStateOf(0) }
 
     LaunchedEffect(rawMemories.size, allNotes.size, allMemoRules.size, reloadRulesTick) {
-        withContext(Dispatchers.IO) {
+        val snap = withContext(Dispatchers.IO) {
             MemoryEngine.lazyArchiveExpiredShortTerm(db, System.currentTimeMillis())
-            val snap = MemoryEngine.loadIntegratedSnapshot(db)
-            whitelistRules = snap.whitelistRules
-            aiTagRules = snap.aiTagRules
-            userTagRules = snap.userTagRules
-            tagsById = snap.tagsById
+            MemoryEngine.loadIntegratedSnapshot(db)
         }
+        whitelistRules = snap.whitelistRules
+        aiTagRules = snap.aiTagRules
+        userTagRules = snap.userTagRules
+        tagsById = snap.tagsById
     }
 
     var searchQuery by remember { mutableStateOf("") }
@@ -490,6 +492,11 @@ internal fun MemoryTab(
         }
     }
 
+    BackHandler(enabled = isBatchMode) {
+        isBatchMode = false
+        selectedBatchIds = emptySet()
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // 頂部標題列：標題＋統計摘要 ｜ 搜尋鈕＋新增＋齒輪（保持 48dp 觸控目標，不擠壓）
         Row(
@@ -513,7 +520,7 @@ internal fun MemoryTab(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     color = if (conflictMemories.isNotEmpty()) {
-                        MaterialTheme.colorScheme.tertiary
+                        MaterialTheme.colorScheme.warning
                     } else {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     }
@@ -1208,7 +1215,7 @@ internal fun MemoryTab(
                                         val catLbl = MemoryEngine.categoryLabel(sortedByTime.first().category)
                                         Surface(
                                             shape = RoundedCornerShape(14.dp),
-                                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.28f),
+                                            color = MaterialTheme.colorScheme.warningContainer.copy(alpha = 0.45f),
                                             modifier = Modifier.fillMaxWidth()
                                         ) {
                                             Column(
@@ -1222,7 +1229,7 @@ internal fun MemoryTab(
                                                     Icon(
                                                         imageVector = Icons.Default.Warning,
                                                         contentDescription = null,
-                                                        tint = MaterialTheme.colorScheme.tertiary,
+                                                        tint = MaterialTheme.colorScheme.warning,
                                                         modifier = Modifier.size(18.dp)
                                                     )
                                                     Text(
@@ -2071,7 +2078,7 @@ private fun CollapsibleMemorySectionCard(
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
                     color = if (highlightWarning) {
-                        MaterialTheme.colorScheme.tertiary
+                        MaterialTheme.colorScheme.warning
                     } else {
                         MaterialTheme.colorScheme.onSurface
                     }
