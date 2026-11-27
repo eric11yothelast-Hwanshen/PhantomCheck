@@ -3,8 +3,10 @@ package com.phantom.checker.desktop
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.nio.charset.Charset
 import java.util.Base64
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 data class NetworkProfileInfo(
     val interfaceAlias: String,
@@ -36,10 +38,71 @@ object DesktopFirewallHelper {
     const val PROGRAM_RULE_NAME = "PhantomCheck Desktop (App)"
 
     private const val QUERY_TIMEOUT_SEC = 12L
+    private const val NETSH_TIMEOUT_SEC = 8L
     private const val ELEVATE_TIMEOUT_SEC = 60L
+    private const val MAX_OUTPUT_CHARS = 256 * 1024
+
+    private data class ProcessResult(
+        val exitCode: Int,
+        val output: String,
+        val timedOut: Boolean
+    )
 
     fun isWindowsOs(): Boolean =
         System.getProperty("os.name").orEmpty().contains("win", ignoreCase = true)
+
+    /**
+     * Runs a child process with merged stdout/stderr drained asynchronously on a daemon thread
+     * so OS pipe buffers can never fill and deadlock `proc.waitFor(...)`.
+     */
+    private fun runProcessWithTimeout(
+        command: List<String>,
+        timeoutSec: Long,
+        charset: Charset = Charsets.UTF_8
+    ): ProcessResult {
+        val proc = ProcessBuilder(command)
+            .redirectErrorStream(true)
+            .start()
+        runCatching { proc.outputStream.close() }
+
+        val outputRef = AtomicReference("")
+        val readerThread = Thread({
+            val text = runCatching {
+                proc.inputStream.bufferedReader(charset).use { reader ->
+                    val sb = StringBuilder()
+                    val buf = CharArray(4096)
+                    var captured = 0
+                    while (true) {
+                        val n = reader.read(buf)
+                        if (n <= 0) break
+                        val remaining = MAX_OUTPUT_CHARS - captured
+                        if (remaining > 0) {
+                            val toAppend = minOf(n, remaining)
+                            sb.append(buf, 0, toAppend)
+                            captured += toAppend
+                        }
+                        // Keep draining even after capture cap so the child never blocks on a full pipe
+                    }
+                    sb.toString()
+                }
+            }.getOrDefault("")
+            outputRef.set(text)
+        }, "phantom-fw-proc-reader").apply {
+            isDaemon = true
+            start()
+        }
+
+        val finished = proc.waitFor(timeoutSec, TimeUnit.SECONDS)
+        if (!finished) {
+            proc.destroyForcibly()
+            runCatching { proc.waitFor(2, TimeUnit.SECONDS) }
+            runCatching { proc.inputStream.close() }
+            runCatching { readerThread.join(1_000L) }
+            return ProcessResult(exitCode = -1, output = outputRef.get(), timedOut = true)
+        }
+        runCatching { readerThread.join(2_000L) }
+        return ProcessResult(exitCode = proc.exitValue(), output = outputRef.get(), timedOut = false)
+    }
 
     suspend fun checkFirewallStatus(port: Int): FirewallCheckResult = withContext(Dispatchers.IO) {
         val safePort = port.coerceIn(1024, 65535)
@@ -83,21 +146,20 @@ object DesktopFirewallHelper {
 
         runCatching {
             val encoded = encodePowerShellCommand(psScript)
-            val proc = ProcessBuilder(
-                "powershell.exe",
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy", "Bypass",
-                "-EncodedCommand", encoded
-            ).redirectErrorStream(true).start()
-
-            val finished = proc.waitFor(QUERY_TIMEOUT_SEC, TimeUnit.SECONDS)
-            if (!finished) {
-                proc.destroyForcibly()
+            val procRes = runProcessWithTimeout(
+                command = listOf(
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy", "Bypass",
+                    "-EncodedCommand", encoded
+                ),
+                timeoutSec = QUERY_TIMEOUT_SEC
+            )
+            if (procRes.timedOut) {
                 throw IllegalStateException("Firewall query timed out (${QUERY_TIMEOUT_SEC}s)")
             }
-            val output = proc.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-            val lines = output.lines().map { it.trim() }.filter { it.isNotEmpty() }
+            val lines = procRes.output.lines().map { it.trim() }.filter { it.isNotEmpty() }
 
             var portRule = false
             var progRule = false
@@ -154,16 +216,13 @@ object DesktopFirewallHelper {
 
     private fun checkRuleViaNetsh(ruleName: String, expectedPort: Int?): Boolean {
         return runCatching {
-            val proc = ProcessBuilder(
-                "netsh", "advfirewall", "firewall", "show", "rule", "name=$ruleName"
-            ).redirectErrorStream(true).start()
-            if (!proc.waitFor(8, TimeUnit.SECONDS)) {
-                proc.destroyForcibly()
-                return@runCatching false
-            }
-            val text = proc.inputStream.bufferedReader().use { it.readText() }
-            if (proc.exitValue() != 0) return@runCatching false
-            if (expectedPort != null && !text.contains(expectedPort.toString())) return@runCatching false
+            val procRes = runProcessWithTimeout(
+                command = listOf("netsh", "advfirewall", "firewall", "show", "rule", "name=$ruleName"),
+                timeoutSec = NETSH_TIMEOUT_SEC,
+                charset = Charset.defaultCharset()
+            )
+            if (procRes.timedOut || procRes.exitCode != 0) return@runCatching false
+            if (expectedPort != null && !procRes.output.contains(expectedPort.toString())) return@runCatching false
             true
         }.getOrDefault(false)
     }
@@ -206,21 +265,21 @@ object DesktopFirewallHelper {
             val outerEncoded = encodePowerShellCommand(launcherScript)
 
             DesktopDiagnostics.info("Firewall", "Requesting UAC elevation to allow inbound TCP port $safePort (exePresent=${validExe != null})")
-            val proc = ProcessBuilder(
-                "powershell.exe",
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy", "Bypass",
-                "-EncodedCommand", outerEncoded
-            ).redirectErrorStream(true).start()
-
-            val finished = proc.waitFor(ELEVATE_TIMEOUT_SEC, TimeUnit.SECONDS)
-            if (!finished) {
-                proc.destroyForcibly()
+            val procRes = runProcessWithTimeout(
+                command = listOf(
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy", "Bypass",
+                    "-EncodedCommand", outerEncoded
+                ),
+                timeoutSec = ELEVATE_TIMEOUT_SEC
+            )
+            if (procRes.timedOut) {
                 throw IllegalStateException("UAC elevation timed out (${ELEVATE_TIMEOUT_SEC}s)")
             }
-            val out = proc.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }.trim()
-            val exitCode = proc.exitValue()
+            val out = procRes.output.trim()
+            val exitCode = procRes.exitCode
             if (exitCode != 0) {
                 val detail = out.take(200).ifBlank { "exit=$exitCode" }
                 DesktopDiagnostics.warn("Firewall", "Elevation or rule creation failed: $detail")

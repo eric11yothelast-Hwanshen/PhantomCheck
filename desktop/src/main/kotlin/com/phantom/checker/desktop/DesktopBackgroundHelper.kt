@@ -7,6 +7,8 @@ import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
 import java.io.FilenameFilter
+import java.util.concurrent.atomic.AtomicReference
+import javax.swing.SwingUtilities
 
 /**
  * #488 桌面端自訂背景圖片輔助（原生 FileDialog 選擇、複製進 DesktopPaths.backgroundsDir、移除還原）。
@@ -40,15 +42,20 @@ object DesktopBackgroundHelper {
         }
         val bytes = source.readBytes()
         // Validate image decodes cleanly before copying
-        SkiaImage.makeFromEncoded(bytes).close()
+        SkiaImage.makeFromEncoded(bytes).use { /* decoded successfully */ }
 
         val dir = DesktopPaths.backgroundsDir
         if (!dir.exists()) dir.mkdirs()
-        // Remove previous managed background copies to avoid stale files piling up
-        dir.listFiles()?.filter { it.name.startsWith("custom_bg.") }?.forEach { runCatching { it.delete() } }
 
         val target = File(dir, "custom_bg_${System.currentTimeMillis()}.$ext")
-        target.writeBytes(bytes)
+        DesktopTls.atomicWriteFile(target, restrictOwnerOnly = false) { tmp ->
+            tmp.writeBytes(bytes)
+        }
+        // Remove previous managed background copies (both legacy custom_bg.* and timestamped custom_bg_*) after atomic write succeeds
+        dir.listFiles()
+            ?.filter { it != target && (it.name.startsWith("custom_bg.") || it.name.startsWith("custom_bg_")) }
+            ?.forEach { runCatching { it.delete() } }
+
         DesktopDiagnostics.info("Background", "Copied custom background (${bytes.size} bytes) to ${target.name}")
         return target.absolutePath
     }
@@ -66,17 +73,29 @@ object DesktopBackgroundHelper {
     }
 
     private fun openNativeImageDialog(): File? {
-        val dialog = FileDialog(null as Frame?, DesktopStrings.bgPickerTitle, FileDialog.LOAD).apply {
-            filenameFilter = FilenameFilter { _, name ->
-                val ext = name.substringAfterLast('.', "").lowercase()
-                ext in allowedExts
+        val resultRef = AtomicReference<File?>(null)
+        val showDialog = Runnable {
+            val dialog = FileDialog(null as Frame?, DesktopStrings.bgPickerTitle, FileDialog.LOAD)
+            try {
+                dialog.filenameFilter = FilenameFilter { _, name ->
+                    val ext = name.substringAfterLast('.', "").lowercase()
+                    ext in allowedExts
+                }
+                dialog.isVisible = true
+                val dir = dialog.directory
+                val file = dialog.file
+                if (!dir.isNullOrBlank() && !file.isNullOrBlank()) {
+                    resultRef.set(File(dir, file))
+                }
+            } finally {
+                dialog.dispose()
             }
-            isVisible = true
         }
-        val dir = dialog.directory
-        val file = dialog.file
-        dialog.dispose()
-        if (dir.isNullOrBlank() || file.isNullOrBlank()) return null
-        return File(dir, file)
+        if (SwingUtilities.isEventDispatchThread()) {
+            showDialog.run()
+        } else {
+            SwingUtilities.invokeAndWait(showDialog)
+        }
+        return resultRef.get()
     }
 }

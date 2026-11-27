@@ -33,7 +33,9 @@ import java.net.BindException
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
+import java.security.MessageDigest
 import java.security.SecureRandom
+import java.util.Locale
 import java.util.Properties
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -135,6 +137,9 @@ class DesktopLinkServer(
 
     private val activeSessions = ConcurrentHashMap<String, PhoneSession>()
     private val pendingTimeouts = ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+    private val lifecycleLock = Any()
+    private val storeLock = Any()
+    private val pairCodeLock = Any()
     private val auditLock = Any()
     private val auditList = mutableListOf<DesktopAuditEntry>()
 
@@ -142,6 +147,11 @@ class DesktopLinkServer(
         private const val MAX_AUDIT_LOGS = 200
         private const val MAX_PAIR_CODE_ATTEMPTS = 5
         private const val PAIR_LOCKOUT_MS = 30_000L
+        private const val PORT_WAIT_MAX_ATTEMPTS = 20
+        private const val PORT_WAIT_DELAY_MS = 50L
+        private const val ENGINE_BIND_MAX_ATTEMPTS = 3
+        private const val STOP_GRACE_PERIOD_MS = 50L
+        private const val STOP_TIMEOUT_MS = 1500L
     }
 
     init {
@@ -173,15 +183,41 @@ class DesktopLinkServer(
         val created = UUID.randomUUID().toString()
         props.setProperty("serverInstanceId", created)
         runCatching {
-            if (!file.parentFile.exists()) file.parentFile.mkdirs()
-            file.bufferedWriter(Charsets.UTF_8).use { props.store(it, "PhantomCheck Desktop Server") }
-            DesktopPaths.restrictOwnerOnlyPermissions(file)
+            DesktopTls.atomicWriteFile(file, restrictOwnerOnly = true) { tmp ->
+                tmp.bufferedWriter(Charsets.UTF_8).use { props.store(it, "PhantomCheck Desktop Server") }
+            }
         }
         return created
     }
 
-    @Synchronized
+    private fun waitForPortAvailable(port: Int): Result<Unit> {
+        var lastBindErr: BindException? = null
+        for (attempt in 1..PORT_WAIT_MAX_ATTEMPTS) {
+            try {
+                ServerSocket().use { sock ->
+                    sock.reuseAddress = true
+                    sock.bind(InetSocketAddress("0.0.0.0", port))
+                }
+                return Result.success(Unit)
+            } catch (e: BindException) {
+                lastBindErr = e
+                if (attempt < PORT_WAIT_MAX_ATTEMPTS) {
+                    runCatching { Thread.sleep(PORT_WAIT_DELAY_MS) }
+                }
+            } catch (e: Exception) {
+                return Result.failure(e)
+            }
+        }
+        return Result.failure(lastBindErr ?: BindException("Port $port already in use"))
+    }
+
     fun start(portOverride: Int? = null, onErrorNotify: ((String) -> Unit)? = null) {
+        synchronized(lifecycleLock) {
+            startLocked(portOverride, onErrorNotify)
+        }
+    }
+
+    private fun startLocked(portOverride: Int?, onErrorNotify: ((String) -> Unit)?) {
         if (server != null) return
         val bindPort = (portOverride ?: DesktopSettingsStore.state.value.serverPort).coerceIn(1024, 65535)
         val pcName = resolveDesktopName()
@@ -203,103 +239,14 @@ class DesktopLinkServer(
             return
         }
 
-        // Pre-flight TCP port check so bind conflicts are immediately visible
-        try {
-            ServerSocket().use { sock ->
-                sock.reuseAddress = true
-                sock.bind(InetSocketAddress("0.0.0.0", bindPort))
-            }
-        } catch (_: BindException) {
-            val msg = DesktopStrings.serverPortInUse(bindPort)
-            DesktopDiagnostics.error("Server", "Port $bindPort already in use")
-            _state.value = _state.value.copy(
-                connState = LinkConnState.ERROR,
-                isServerRunning = false,
-                port = bindPort,
-                desktopName = pcName,
-                certFingerprint = tls.certFingerprintSha256,
-                localIps = ips,
-                lastErrorCode = LinkErrorCode.PORT_IN_USE,
-                lastError = msg
-            )
-            onErrorNotify?.invoke(msg)
-            return
-        } catch (err: Exception) {
-            val msg = err.message ?: err.javaClass.simpleName
-            DesktopDiagnostics.error("Server", "Port pre-check failed on $bindPort: $msg")
-            _state.value = _state.value.copy(
-                connState = LinkConnState.ERROR,
-                isServerRunning = false,
-                port = bindPort,
-                desktopName = pcName,
-                certFingerprint = tls.certFingerprintSha256,
-                localIps = ips,
-                lastErrorCode = LinkErrorCode.INTERNAL_ERROR,
-                lastError = msg
-            )
-            onErrorNotify?.invoke(msg)
-            return
-        }
-
-        val pingSec = DesktopSettingsStore.state.value.pingIntervalSec.coerceIn(10, 60)
-        var createdEngine: EmbeddedServer<*, *>? = null
-        runCatching {
-            val engine = embeddedServer(Netty, configure = {
-                connectionGroupSize = 1
-                workerGroupSize = 2
-                callGroupSize = 4
-                sslConnector(
-                    keyStore = tls.keyStore,
-                    keyAlias = DesktopTls.KEY_ALIAS,
-                    keyStorePassword = { tls.keyPassword.toCharArray() },
-                    privateKeyPassword = { tls.keyPassword.toCharArray() }
-                ) {
-                    this.host = "0.0.0.0"
-                    this.port = bindPort
-                }
-            }) {
-                install(WebSockets) {
-                    pingPeriod = pingSec.seconds
-                    timeout = (pingSec * 2).coerceAtLeast(30).seconds
-                    maxFrameSize = 512 * 1024L
-                }
-                routing {
-                    webSocket(LinkProtocol.WS_PATH) {
-                        val remoteIp = runCatching { call.request.origin.remoteAddress }
-                            .getOrNull()
-                            ?.takeIf { it.isNotBlank() }
-                            ?: "unknown"
-                        handlePhoneConnection(
-                            certFingerprint = tls.certFingerprintSha256,
-                            desktopName = pcName,
-                            remoteIp = remoteIp,
-                            ws = this
-                        )
-                    }
-                }
-            }
-            createdEngine = engine
-            engine.start(wait = false)
-            server = engine
-            _state.value = _state.value.copy(
-                connState = if (activeSessions.isEmpty()) LinkConnState.WAITING_FOR_PHONE else LinkConnState.CONNECTED,
-                isServerRunning = true,
-                port = bindPort,
-                desktopName = pcName,
-                certFingerprint = tls.certFingerprintSha256,
-                localIps = ips,
-                lastErrorCode = null,
-                lastError = null
-            )
-            DesktopDiagnostics.info("Server", "WSS Netty server listening on 0.0.0.0:$bindPort (fp=${tls.certFingerprintSha256.take(8)}…)")
-            mdns.start(bindPort, tls.certFingerprintSha256, pcName)
-        }.onFailure { err ->
-            runCatching { createdEngine?.stop(200, 500) }
-            server = null
-            val isBind = err is BindException || err.cause is BindException
+        // Pre-flight TCP port check with bounded retry so OS socket release after stop/restart never causes spurious PORT_IN_USE
+        val preflight = waitForPortAvailable(bindPort)
+        if (preflight.isFailure) {
+            val err = preflight.exceptionOrNull()
+            val isBind = err is BindException
             val code = if (isBind) LinkErrorCode.PORT_IN_USE else LinkErrorCode.INTERNAL_ERROR
-            val msg = if (isBind) DesktopStrings.serverPortInUse(bindPort) else (err.message ?: err.javaClass.simpleName)
-            DesktopDiagnostics.error("Server", "Failed to start WSS server: $code $msg")
+            val msg = if (isBind) DesktopStrings.serverPortInUse(bindPort) else (err?.message ?: err?.javaClass?.simpleName ?: "Port check failed")
+            DesktopDiagnostics.error("Server", if (isBind) "Port $bindPort already in use" else "Port pre-check failed on $bindPort: $msg")
             _state.value = _state.value.copy(
                 connState = LinkConnState.ERROR,
                 isServerRunning = false,
@@ -311,13 +258,101 @@ class DesktopLinkServer(
                 lastError = msg
             )
             onErrorNotify?.invoke(msg)
+            return
         }
+
+        val pingSec = DesktopSettingsStore.state.value.pingIntervalSec.coerceIn(10, 60)
+        var lastError: Throwable? = null
+        for (attempt in 1..ENGINE_BIND_MAX_ATTEMPTS) {
+            var createdEngine: EmbeddedServer<*, *>? = null
+            val started = runCatching {
+                val engine = embeddedServer(Netty, configure = {
+                    connectionGroupSize = 1
+                    workerGroupSize = 2
+                    callGroupSize = 4
+                    sslConnector(
+                        keyStore = tls.keyStore,
+                        keyAlias = DesktopTls.KEY_ALIAS,
+                        keyStorePassword = { tls.keyPassword.toCharArray() },
+                        privateKeyPassword = { tls.keyPassword.toCharArray() }
+                    ) {
+                        this.host = "0.0.0.0"
+                        this.port = bindPort
+                    }
+                }) {
+                    install(WebSockets) {
+                        pingPeriod = pingSec.seconds
+                        timeout = (pingSec * 2).coerceAtLeast(30).seconds
+                        maxFrameSize = 512 * 1024L
+                    }
+                    routing {
+                        webSocket(LinkProtocol.WS_PATH) {
+                            val remoteIp = runCatching { call.request.origin.remoteAddress }
+                                .getOrNull()
+                                ?.takeIf { it.isNotBlank() }
+                                ?: "unknown"
+                            handlePhoneConnection(
+                                certFingerprint = tls.certFingerprintSha256,
+                                desktopName = pcName,
+                                remoteIp = remoteIp,
+                                ws = this
+                            )
+                        }
+                    }
+                }
+                createdEngine = engine
+                engine.start(wait = false)
+                server = engine
+                _state.value = _state.value.copy(
+                    connState = if (activeSessions.isEmpty()) LinkConnState.WAITING_FOR_PHONE else LinkConnState.CONNECTED,
+                    isServerRunning = true,
+                    port = bindPort,
+                    desktopName = pcName,
+                    certFingerprint = tls.certFingerprintSha256,
+                    localIps = ips,
+                    lastErrorCode = null,
+                    lastError = null
+                )
+                DesktopDiagnostics.info("Server", "WSS Netty server listening on 0.0.0.0:$bindPort (fp=${tls.certFingerprintSha256.take(8)}…)")
+                mdns.start(bindPort, tls.certFingerprintSha256, pcName)
+            }
+            if (started.isSuccess) return
+
+            val err = started.exceptionOrNull()
+            lastError = err
+            runCatching { createdEngine?.stop(STOP_GRACE_PERIOD_MS, STOP_TIMEOUT_MS) }
+            server = null
+            val isBind = err is BindException || err?.cause is BindException
+            if (isBind && attempt < ENGINE_BIND_MAX_ATTEMPTS) {
+                runCatching { Thread.sleep(PORT_WAIT_DELAY_MS) }
+                continue
+            }
+            break
+        }
+
+        val err = lastError
+        val isBind = err is BindException || err?.cause is BindException
+        val code = if (isBind) LinkErrorCode.PORT_IN_USE else LinkErrorCode.INTERNAL_ERROR
+        val msg = if (isBind) DesktopStrings.serverPortInUse(bindPort) else (err?.message ?: err?.javaClass?.simpleName ?: "Unknown error")
+        DesktopDiagnostics.error("Server", "Failed to start WSS server: $code $msg")
+        _state.value = _state.value.copy(
+            connState = LinkConnState.ERROR,
+            isServerRunning = false,
+            port = bindPort,
+            desktopName = pcName,
+            certFingerprint = tls.certFingerprintSha256,
+            localIps = ips,
+            lastErrorCode = code,
+            lastError = msg
+        )
+        onErrorNotify?.invoke(msg)
     }
 
-    @Synchronized
     fun restart(newPort: Int? = null, onErrorNotify: ((String) -> Unit)? = null) {
-        stop()
-        start(portOverride = newPort, onErrorNotify = onErrorNotify)
+        synchronized(lifecycleLock) {
+            stop()
+            startLocked(portOverride = newPort, onErrorNotify = onErrorNotify)
+        }
     }
 
     private fun cancelAllPendingTimeouts() {
@@ -326,30 +361,32 @@ class DesktopLinkServer(
         jobs.forEach { it.cancel() }
     }
 
-    @Synchronized
     fun stop() {
-        cancelAllPendingTimeouts()
-        mdns.stop()
-        val sessions = activeSessions.values.toList()
-        activeSessions.clear()
-        scope.launch {
-            sessions.forEach {
-                runCatching { it.ws.close(CloseReason(CloseReason.Codes.NORMAL, "Desktop server stopped")) }
+        synchronized(lifecycleLock) {
+            cancelAllPendingTimeouts()
+            mdns.stop()
+            val sessions = activeSessions.values.toList()
+            activeSessions.clear()
+            if (sessions.isNotEmpty()) {
+                scope.launch {
+                    sessions.forEach {
+                        runCatching { it.ws.close(CloseReason(CloseReason.Codes.NORMAL, "Desktop server stopped")) }
+                    }
+                }
             }
-        }
-        val srv = server
-        server = null
-        if (srv != null) {
-            scope.launch {
-                runCatching { srv.stop(300, 1000) }
+            val srv = server
+            server = null
+            if (srv != null) {
+                // Stop synchronously so the TCP socket is fully unbound before stop()/restart() returns
+                runCatching { srv.stop(STOP_GRACE_PERIOD_MS, STOP_TIMEOUT_MS) }
             }
+            _state.value = _state.value.copy(
+                connState = LinkConnState.STOPPED,
+                isServerRunning = false,
+                connectedPhones = emptyList()
+            )
+            DesktopDiagnostics.info("Server", "WSS server stopped")
         }
-        _state.value = _state.value.copy(
-            connState = LinkConnState.STOPPED,
-            isServerRunning = false,
-            connectedPhones = emptyList()
-        )
-        DesktopDiagnostics.info("Server", "WSS server stopped")
     }
 
     fun disconnectPhones() {
@@ -386,29 +423,30 @@ class DesktopLinkServer(
     fun getOrGeneratePairCode(nowMs: Long = System.currentTimeMillis()): Pair<String, Long> =
         getCurrentPairCode(nowMs) ?: generatePairCode(nowMs)
 
-    @Synchronized
     private fun consumePairCode(inputCode: String, nowMs: Long = System.currentTimeMillis()): PairCodeStatus {
-        if (nowMs < pairLockoutUntilMs) {
-            return PairCodeStatus.LOCKED_OUT
-        }
-        val cur = activePairCode.get() ?: return PairCodeStatus.INVALID
-        if (nowMs > cur.expiresAtMs) {
-            activePairCode.compareAndSet(cur, null)
-            return PairCodeStatus.EXPIRED
-        }
-        if (inputCode.trim() != cur.code) {
-            val nextFails = cur.failedAttempts + 1
-            if (nextFails >= MAX_PAIR_CODE_ATTEMPTS) {
-                activePairCode.set(null)
-                pairLockoutUntilMs = nowMs + PAIR_LOCKOUT_MS
-                DesktopDiagnostics.warn("PairSecurity", "Pair code burned after $nextFails failed attempts; 30s lockout active")
-                return PairCodeStatus.LOCKED_OUT
+        return synchronized(pairCodeLock) {
+            if (nowMs < pairLockoutUntilMs) {
+                return@synchronized PairCodeStatus.LOCKED_OUT
             }
-            activePairCode.set(cur.copy(failedAttempts = nextFails))
-            return PairCodeStatus.INVALID
+            val cur = activePairCode.get() ?: return@synchronized PairCodeStatus.INVALID
+            if (nowMs > cur.expiresAtMs) {
+                activePairCode.compareAndSet(cur, null)
+                return@synchronized PairCodeStatus.EXPIRED
+            }
+            if (!constantTimeEquals(inputCode.trim(), cur.code)) {
+                val nextFails = cur.failedAttempts + 1
+                if (nextFails >= MAX_PAIR_CODE_ATTEMPTS) {
+                    activePairCode.set(null)
+                    pairLockoutUntilMs = nowMs + PAIR_LOCKOUT_MS
+                    DesktopDiagnostics.warn("PairSecurity", "Pair code burned after $nextFails failed attempts; 30s lockout active")
+                    return@synchronized PairCodeStatus.LOCKED_OUT
+                }
+                activePairCode.set(cur.copy(failedAttempts = nextFails))
+                return@synchronized PairCodeStatus.INVALID
+            }
+            activePairCode.compareAndSet(cur, null)
+            PairCodeStatus.VALID
         }
-        activePairCode.compareAndSet(cur, null)
-        return PairCodeStatus.VALID
     }
 
     fun revokePhone(instanceId: String) {
@@ -532,7 +570,7 @@ class DesktopLinkServer(
                                 ws.close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Version mismatch"))
                                 return
                             }
-                            if (req.expectedFingerprint.isNotBlank() && !req.expectedFingerprint.equals(certFingerprint, ignoreCase = true)) {
+                            if (req.expectedFingerprint.isNotBlank() && !constantTimeEquals(req.expectedFingerprint.trim(), certFingerprint, ignoreCase = true)) {
                                 recordAudit(req.instanceId, "pair.request", false, "fingerprint_mismatch")
                                 _state.value = _state.value.copy(
                                     lastErrorCode = LinkErrorCode.FINGERPRINT_MISMATCH,
@@ -632,7 +670,7 @@ class DesktopLinkServer(
                                 ws.close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Version mismatch"))
                                 return
                             }
-                            if (req.expectedFingerprint.isNotBlank() && !req.expectedFingerprint.equals(certFingerprint, ignoreCase = true)) {
+                            if (req.expectedFingerprint.isNotBlank() && !constantTimeEquals(req.expectedFingerprint.trim(), certFingerprint, ignoreCase = true)) {
                                 recordAudit(req.instanceId, "auth.request", false, "fingerprint_mismatch")
                                 sendEnvelope(ws, LinkMsgType.AUTH_RESPONSE, env.reqId, AuthResponsePayload(ok = false, errorCode = LinkErrorCode.FINGERPRINT_MISMATCH, errorMessage = "Certificate fingerprint mismatch"))
                                 ws.close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Fingerprint mismatch"))
@@ -646,7 +684,7 @@ class DesktopLinkServer(
                                 return
                             }
                             val expectedHmac = computeHmacSha256Hex(paired.hmacSecret, challenge)
-                            if (!expectedHmac.equals(req.hmacResponse, ignoreCase = true)) {
+                            if (!constantTimeEquals(expectedHmac, req.hmacResponse.trim(), ignoreCase = true)) {
                                 recordAudit(req.instanceId, "auth.request", false, "hmac_failed:$remoteIp")
                                 _state.value = _state.value.copy(
                                     lastErrorCode = LinkErrorCode.AUTH_FAILED,
@@ -798,11 +836,10 @@ class DesktopLinkServer(
         _state.value = _state.value.copy(auditLogs = emptyList())
     }
 
-    @Synchronized
-    private fun loadPairedPhones(): List<PairedPhoneInfo> {
+    private fun loadPairedPhones(): List<PairedPhoneInfo> = synchronized(storeLock) {
         val file = DesktopPaths.pairedPhonesFile
-        if (!file.exists()) return emptyList()
-        return runCatching {
+        if (!file.exists()) return@synchronized emptyList()
+        runCatching {
             val raw = file.readText(Charsets.UTF_8)
             val type = object : TypeToken<List<PairedPhoneInfo?>>() {}.type
             gson.fromJson<List<PairedPhoneInfo?>>(raw, type)
@@ -814,13 +851,12 @@ class DesktopLinkServer(
         }.getOrDefault(emptyList())
     }
 
-    @Synchronized
-    private fun savePairedPhones(list: List<PairedPhoneInfo>) {
+    private fun savePairedPhones(list: List<PairedPhoneInfo>) = synchronized(storeLock) {
         runCatching {
             val file = DesktopPaths.pairedPhonesFile
-            if (!file.parentFile.exists()) file.parentFile.mkdirs()
-            file.writeText(gson.toJson(list), Charsets.UTF_8)
-            DesktopPaths.restrictOwnerOnlyPermissions(file)
+            DesktopTls.atomicWriteFile(file, restrictOwnerOnly = true) { tmp ->
+                tmp.writeText(gson.toJson(list), Charsets.UTF_8)
+            }
         }.onFailure { err ->
             DesktopDiagnostics.error("Store", "Failed saving paired phones: ${err.javaClass.simpleName}")
         }
@@ -829,21 +865,21 @@ class DesktopLinkServer(
     private fun findPairedPhone(instanceId: String): PairedPhoneInfo? =
         loadPairedPhones().firstOrNull { it.instanceId == instanceId }
 
-    private fun upsertPairedPhone(phone: PairedPhoneInfo) {
+    private fun upsertPairedPhone(phone: PairedPhoneInfo) = synchronized(storeLock) {
         val list = loadPairedPhones().toMutableList()
         val idx = list.indexOfFirst { it.instanceId == phone.instanceId }
         if (idx >= 0) list[idx] = phone else list.add(0, phone)
         savePairedPhones(list)
     }
 
-    private fun updatePhoneLastSeen(instanceId: String, nowMs: Long) {
+    private fun updatePhoneLastSeen(instanceId: String, nowMs: Long) = synchronized(storeLock) {
         val updated = loadPairedPhones().map {
             if (it.instanceId == instanceId) it.copy(lastSeenAt = nowMs) else it
         }
         savePairedPhones(updated)
     }
 
-    private fun removePairedPhone(instanceId: String) {
+    private fun removePairedPhone(instanceId: String) = synchronized(storeLock) {
         val updated = loadPairedPhones().filterNot { it.instanceId == instanceId }
         savePairedPhones(updated)
     }
@@ -852,5 +888,14 @@ class DesktopLinkServer(
         val mac = Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(secretHex.toByteArray(Charsets.UTF_8), "HmacSHA256"))
         return mac.doFinal(message.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    }
+
+    internal fun constantTimeEquals(a: String, b: String, ignoreCase: Boolean = false): Boolean {
+        val left = if (ignoreCase) a.lowercase(Locale.ROOT) else a
+        val right = if (ignoreCase) b.lowercase(Locale.ROOT) else b
+        return MessageDigest.isEqual(
+            left.toByteArray(Charsets.UTF_8),
+            right.toByteArray(Charsets.UTF_8)
+        )
     }
 }

@@ -63,11 +63,13 @@ Type: files; Name: "{userappdata}\PhantomCheckDesktop\instance.port"
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "PhantomCheckDesktop"; Flags: uninsdeletevalue
 
 [Run]
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""PhantomCheck Desktop"" dir=in action=allow program=""{app}\{#MyAppExeName}"" enable=yes profile=private"; Flags: runhidden waituntilterminated; Tasks: firewall
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""PhantomCheck Desktop (App)"" dir=in action=allow program=""{app}\{#MyAppExeName}"" enable=yes profile=any"; Flags: runhidden waituntilterminated; Tasks: firewall
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""PhantomCheck Desktop"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveFirewallRule"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""PhantomCheck Desktop"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveLegacyFirewallRule"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""PhantomCheck Desktop (App)"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveAppFirewallRule"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""PhantomCheck Desktop (Link)"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveLinkFirewallRule"
 Filename: "{sys}\schtasks.exe"; Parameters: "/delete /tn PhantomCheckDesktopLogon /f"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveAutoStartTask"
 
 [Code]

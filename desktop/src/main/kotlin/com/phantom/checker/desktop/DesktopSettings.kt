@@ -398,12 +398,15 @@ object DesktopSettingsStore {
             p.setProperty("windowY", s.windowY.toString())
             p.setProperty("windowWidth", s.windowWidth.toString())
             p.setProperty("windowHeight", s.windowHeight.toString())
-            file.bufferedWriter(Charsets.UTF_8).use { p.store(it, "PhantomCheck Desktop Settings") }
+            DesktopTls.atomicWriteFile(file, restrictOwnerOnly = false) { tmp ->
+                tmp.bufferedWriter(Charsets.UTF_8).use { p.store(it, "PhantomCheck Desktop Settings") }
+            }
         }.onFailure { err ->
             DesktopDiagnostics.error("Settings", "Failed saving settings: ${err.javaClass.simpleName}: ${err.message}")
         }
     }
 
+    @Synchronized
     fun resetSettingsToDefaults() {
         val defaults = DesktopSettings()
         _state.value = defaults
@@ -722,9 +725,27 @@ $userTag    </LogonTrigger>
 
     private fun runRegCommand(cmd: List<String>): Pair<Int, String> = runCatching {
         val proc = ProcessBuilder(cmd).redirectErrorStream(true).start()
-        val output = proc.inputStream.bufferedReader().readText().trim()
-        val exit = proc.waitFor()
-        exit to output
+        runCatching { proc.outputStream.close() }
+        val outputRef = java.util.concurrent.atomic.AtomicReference("")
+        val readerThread = Thread({
+            val text = runCatching {
+                proc.inputStream.bufferedReader().use { it.readText() }.trim()
+            }.getOrDefault("")
+            outputRef.set(text)
+        }, "phantom-reg-proc-reader").apply {
+            isDaemon = true
+            start()
+        }
+        val finished = proc.waitFor(12, java.util.concurrent.TimeUnit.SECONDS)
+        if (!finished) {
+            proc.destroyForcibly()
+            runCatching { proc.waitFor(2, java.util.concurrent.TimeUnit.SECONDS) }
+            runCatching { proc.inputStream.close() }
+            runCatching { readerThread.join(1_000L) }
+            return@runCatching -1 to "Command timed out (12s)"
+        }
+        runCatching { readerThread.join(2_000L) }
+        proc.exitValue() to outputRef.get()
     }.getOrElse { err -> -1 to (err.message ?: err.javaClass.simpleName) }
 
     internal fun parseRegSzValue(output: String, valueName: String): String {
@@ -804,18 +825,22 @@ $userTag    </LogonTrigger>
                 setRequestProperty("Accept", "application/vnd.github+json")
                 setRequestProperty("User-Agent", "PhantomCheckDesktop/$CURRENT_DESKTOP_VERSION")
             }
-            val code = conn.responseCode
-            if (code != 200) {
-                val err = runCatching { conn.errorStream?.bufferedReader()?.readText()?.take(200) }.getOrNull().orEmpty()
-                DesktopDiagnostics.warn("UpdateCheck", "HTTP $code: $err")
-                return@runCatching DesktopUpdateCheckResult(ok = false, errorMessage = "HTTP $code")
+            try {
+                val code = conn.responseCode
+                if (code != 200) {
+                    val err = runCatching { conn.errorStream?.bufferedReader()?.readText()?.take(200) }.getOrNull().orEmpty()
+                    DesktopDiagnostics.warn("UpdateCheck", "HTTP $code: $err")
+                    return@runCatching DesktopUpdateCheckResult(ok = false, errorMessage = "HTTP $code")
+                }
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JsonParser.parseString(body).asJsonObject
+                val tag = json.get("tag_name")?.asString.orEmpty()
+                val htmlUrl = json.get("html_url")?.asString.orEmpty()
+                DesktopDiagnostics.info("UpdateCheck", "Latest release tag=$tag")
+                DesktopUpdateCheckResult(ok = true, latestTag = tag, htmlUrl = htmlUrl)
+            } finally {
+                conn.disconnect()
             }
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
-            val json = JsonParser.parseString(body).asJsonObject
-            val tag = json.get("tag_name")?.asString.orEmpty()
-            val htmlUrl = json.get("html_url")?.asString.orEmpty()
-            DesktopDiagnostics.info("UpdateCheck", "Latest release tag=$tag")
-            DesktopUpdateCheckResult(ok = true, latestTag = tag, htmlUrl = htmlUrl)
         }.getOrElse { err ->
             DesktopDiagnostics.error("UpdateCheck", err.message ?: err.javaClass.simpleName)
             DesktopUpdateCheckResult(ok = false, errorMessage = err.message ?: err.javaClass.simpleName)

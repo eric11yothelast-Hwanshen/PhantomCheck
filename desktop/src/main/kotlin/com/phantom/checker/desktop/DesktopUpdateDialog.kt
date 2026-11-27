@@ -42,10 +42,10 @@ fun DesktopUpdateDialog(
 ) {
     val tokens = LocalDesktopTokens.current
     val scope = rememberCoroutineScope()
-    var downloading by remember { mutableStateOf(false) }
-    var downloadProgress by remember { mutableFloatStateOf(0f) }
-    var downloadedFile by remember { mutableStateOf<File?>(null) }
-    var downloadError by remember { mutableStateOf<String?>(null) }
+    var downloading by remember(update.tagName, update.installerUrl) { mutableStateOf(false) }
+    var downloadProgress by remember(update.tagName, update.installerUrl) { mutableFloatStateOf(0f) }
+    var downloadedFile by remember(update.tagName, update.installerUrl) { mutableStateOf<File?>(null) }
+    var downloadError by remember(update.tagName, update.installerUrl) { mutableStateOf<String?>(null) }
 
     PhantomDialog(
         onDismissRequest = { if (!downloading) onDismiss() },

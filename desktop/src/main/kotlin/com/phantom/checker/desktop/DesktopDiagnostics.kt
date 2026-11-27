@@ -2,9 +2,12 @@ package com.phantom.checker.desktop
 
 import java.awt.Desktop
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * #468 桌機端診斷紀錄（3 份旋轉日誌檔 desktop-0.log .. desktop-2.log，每份上限 512 KB）。
@@ -14,18 +17,21 @@ object DesktopDiagnostics {
 
     private const val MAX_LOG_BYTES = 512L * 1024L
     private const val MAX_FILES = 3
-    private val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    private val fmt: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
 
     private fun logFile(index: Int): File = File(DesktopPaths.logsDir, "desktop-$index.log")
+
+    private fun nowFormatted(): String = LocalDateTime.now().format(fmt)
 
     @Synchronized
     fun log(level: String, tag: String, message: String) {
         runCatching {
             val active = logFile(0)
+            active.parentFile?.let { if (!it.exists()) it.mkdirs() }
             if (active.exists() && active.length() >= MAX_LOG_BYTES) {
                 rotate()
             }
-            val line = "${fmt.format(Date())} [$level] $tag: $message\n"
+            val line = "${nowFormatted()} [$level] $tag: $message\n"
             active.appendText(line, Charsets.UTF_8)
         }
     }
@@ -34,13 +40,12 @@ object DesktopDiagnostics {
     fun warn(tag: String, message: String) = log("WARN", tag, message)
     fun error(tag: String, message: String) = log("ERROR", tag, message)
 
-    @Volatile
-    private var perfStarted = false
+    private val perfStarted = AtomicBoolean(false)
 
     /** #520 選配效能取樣（僅在啟動參數加 -Dphantom.perf=1 時每 5 秒紀錄 JVM processCpuLoad，預設零開銷） */
     fun startPerfSamplerIfEnabled() {
-        if (perfStarted || System.getProperty("phantom.perf") != "1") return
-        perfStarted = true
+        if (System.getProperty("phantom.perf") != "1") return
+        if (!perfStarted.compareAndSet(false, true)) return
         val t = Thread({
             val bean = runCatching {
                 java.lang.management.ManagementFactory.getOperatingSystemMXBean() as? com.sun.management.OperatingSystemMXBean
@@ -61,9 +66,28 @@ object DesktopDiagnostics {
         for (i in (MAX_FILES - 1) downTo 1) {
             val src = logFile(i - 1)
             val dst = logFile(i)
-            if (dst.exists()) dst.delete()
-            if (src.exists()) src.renameTo(dst)
+            if (src.exists()) {
+                runCatching {
+                    Files.move(src.toPath(), dst.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                }.onFailure {
+                    if (dst.exists()) dst.delete()
+                    src.renameTo(dst)
+                }
+            }
         }
+    }
+
+    @Synchronized
+    private fun snapshotLogFiles(): List<Pair<String, String>> {
+        val result = mutableListOf<Pair<String, String>>()
+        for (i in 0 until MAX_FILES) {
+            val f = logFile(i)
+            if (f.exists()) {
+                val tail = runCatching { f.readText(Charsets.UTF_8).takeLast(16_000) }.getOrDefault("")
+                result.add(f.name to tail)
+            }
+        }
+        return result
     }
 
     fun openLogsFolder(): Result<String> = runCatching {
@@ -92,19 +116,18 @@ object DesktopDiagnostics {
         val out = File(DesktopPaths.logsDir, "diagnostics-export-${System.currentTimeMillis()}.txt")
         val sb = StringBuilder()
         sb.appendLine("=== PhantomCheck Desktop Diagnostics ===")
-        sb.appendLine("Time: ${fmt.format(Date())}")
+        sb.appendLine("Time: ${nowFormatted()}")
         sb.appendLine("OS: ${System.getProperty("os.name")} ${System.getProperty("os.version")} (${System.getProperty("os.arch")})")
         sb.appendLine("Java: ${System.getProperty("java.version")}")
         sb.appendLine("ConfigDir: ${DesktopPaths.configDir.absolutePath}")
         sb.appendLine()
-        for (i in 0 until MAX_FILES) {
-            val f = logFile(i)
-            if (f.exists()) {
-                sb.appendLine("--- ${f.name} ---")
-                sb.appendLine(f.readText(Charsets.UTF_8).takeLast(16_000))
-            }
+        for ((name, content) in snapshotLogFiles()) {
+            sb.appendLine("--- $name ---")
+            sb.appendLine(content)
         }
-        out.writeText(sb.toString(), Charsets.UTF_8)
+        DesktopTls.atomicWriteFile(out, restrictOwnerOnly = true) { tmp ->
+            tmp.writeText(sb.toString(), Charsets.UTF_8)
+        }
         out
     }
 }

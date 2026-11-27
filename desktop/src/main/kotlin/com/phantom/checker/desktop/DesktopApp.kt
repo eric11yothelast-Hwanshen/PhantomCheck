@@ -60,7 +60,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -211,9 +210,6 @@ fun DesktopApp(
     val uiState by server.state.collectAsState()
     val mdnsStatus by server.mdnsStatus.collectAsState()
 
-    val tokens = remember(settings.surfaceOpacity, settings.bgScrimAlpha, settings.highContrastText, settings.bgTheme) {
-        DesktopThemeTokens.from(settings)
-    }
     val accentColor = remember(settings.accentPreset, settings.customAccentHex) {
         DesktopPalette.resolveAccentColor(settings.accentPreset, settings.customAccentHex)
     }
@@ -956,18 +952,19 @@ fun DesktopApp(
         }
     }
 
-    CompositionLocalProvider(LocalDesktopTokens provides tokens) {
+    ProvideDesktopTheme(settings) {
+    val tokens = LocalDesktopTokens.current
     val activeColorScheme = if (settings.lightTheme) {
         androidx.compose.material3.lightColorScheme(
             background = Color(0xFFE2E8F0),
             surface = tokens.surface,
             surfaceVariant = tokens.surfaceElevated,
             primary = accentColor,
-            onPrimary = Color.White,
+            onPrimary = tokens.onAccent,
             onBackground = tokens.textPrimary,
             onSurface = tokens.textPrimary,
             onSurfaceVariant = tokens.textSecondary,
-            error = DesktopPalette.GlassError
+            error = tokens.error
         )
     } else {
         darkColorScheme(
@@ -975,11 +972,11 @@ fun DesktopApp(
             surface = tokens.surface,
             surfaceVariant = tokens.surfaceElevated,
             primary = accentColor,
-            onPrimary = Color(0xFF0A0E17),
+            onPrimary = tokens.onAccent,
             onBackground = tokens.textPrimary,
             onSurface = tokens.textPrimary,
             onSurfaceVariant = tokens.textSecondary,
-            error = DesktopPalette.GlassError
+            error = tokens.error
         )
     }
     MaterialTheme(
@@ -1412,7 +1409,7 @@ fun DesktopApp(
                                             SpringButton(onClick = { activeTab = DesktopTab.HOME }, animationsEnabled = settings.animationsEnabled, containerColor = accentColor) {
                                                 Text(DesktopStrings.tabHome)
                                             }
-                                            SpringOutlinedButton(onClick = { server.restart(uiState.port) }, animationsEnabled = settings.animationsEnabled) {
+                                            SpringOutlinedButton(onClick = { scope.launch(kotlinx.coroutines.Dispatchers.IO) { server.restart(uiState.port) } }, animationsEnabled = settings.animationsEnabled) {
                                                 Text(DesktopStrings.serverRestartBtn)
                                             }
                                             SpringOutlinedButton(onClick = { activeTab = DesktopTab.SETTINGS }, animationsEnabled = settings.animationsEnabled) {

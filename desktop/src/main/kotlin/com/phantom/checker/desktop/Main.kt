@@ -6,6 +6,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.CornerRadius
@@ -24,8 +25,12 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.awt.Dimension
 import java.awt.SystemTray
+import java.util.concurrent.atomic.AtomicBoolean
+import javax.swing.SwingUtilities
 
 /**
  * #469 桌面系統匣常駐入口（Compose Multiplatform 官方 androidx.compose.ui.window.Tray API）：
@@ -48,6 +53,8 @@ fun main(args: Array<String>) {
         val serverState by server.state.collectAsState()
         val trayState = rememberTrayState()
         val trayIcon = remember { PhantomTrayIconPainter }
+        val appScope = rememberCoroutineScope()
+        val exiting = remember { AtomicBoolean(false) }
 
         var isWindowVisible by remember { mutableStateOf(!(startMinimized && traySupported)) }
         var focusRequestTick by remember { mutableStateOf(0) }
@@ -73,18 +80,33 @@ fun main(args: Array<String>) {
         )
 
         fun showAndFocusMainWindow(tabKey: String? = null) {
-            if (tabKey != null) requestedTabKey = tabKey
-            isWindowVisible = true
-            focusRequestTick += 1
+            val apply = {
+                if (tabKey != null) requestedTabKey = tabKey
+                isWindowVisible = true
+                focusRequestTick += 1
+            }
+            if (SwingUtilities.isEventDispatchThread()) {
+                apply()
+            } else {
+                SwingUtilities.invokeLater(apply)
+            }
         }
 
         fun performFullExit() {
-            splash?.dismiss()
-            saveWindowGeometry(windowState)
-            server.stop()
-            singleInstance.release()
-            DesktopDiagnostics.info("App", "Exiting application cleanly")
-            exitApplication()
+            if (!exiting.compareAndSet(false, true)) return
+            val runExit = {
+                splash?.dismiss()
+                saveWindowGeometry(windowState)
+                server.stop()
+                singleInstance.release()
+                DesktopDiagnostics.info("App", "Exiting application cleanly")
+                exitApplication()
+            }
+            if (SwingUtilities.isEventDispatchThread()) {
+                runExit()
+            } else {
+                SwingUtilities.invokeLater(runExit)
+            }
         }
 
         // 生命週期拉升至 application 層，隱藏視窗至系統匣（含 --minimized）時 WSS 伺服器與 mDNS 廣播持續常駐
@@ -95,7 +117,7 @@ fun main(args: Array<String>) {
                 onGracefulExit = { performFullExit() }
             )
             DesktopDiagnostics.info("App", "Started (traySupported=$traySupported, startMinimized=$startMinimized, autoConnect=${settings.autoConnectOnStartup})")
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            kotlinx.coroutines.withContext(Dispatchers.IO) {
                 runCatching { DesktopSettingsStore.verifyAndRepairAutoStartOnLaunch() }
             }
             if (settings.autoConnectOnStartup) {
@@ -216,7 +238,9 @@ fun main(args: Array<String>) {
                     Item(
                         text = if (isServerRunning) DesktopStrings.trayStopServer else DesktopStrings.trayStartServer,
                         onClick = {
-                            if (isServerRunning) server.stop() else server.start()
+                            appScope.launch(Dispatchers.IO) {
+                                if (isServerRunning) server.stop() else server.start()
+                            }
                         }
                     )
                     // 8. Check for Updates
@@ -291,27 +315,29 @@ fun main(args: Array<String>) {
                     }
                 }
             }
-            DesktopApp(
-                server = server,
-                manageLifecycle = false,
-                isWindowVisible = isWindowVisible,
-                requestedTabKey = requestedTabKey,
-                onRequestedTabConsumed = { requestedTabKey = null },
-                triggerUpdateCheckTick = triggerUpdateCheckTick,
-                onMirrorNotification = { title, body ->
-                    if (traySupported) {
-                        runCatching {
-                            trayState.sendNotification(
-                                Notification(
-                                    title = title.ifBlank { DesktopStrings.appTitle },
-                                    message = body,
-                                    type = Notification.Type.Info
+            ProvideDesktopTheme(settings) {
+                DesktopApp(
+                    server = server,
+                    manageLifecycle = false,
+                    isWindowVisible = isWindowVisible,
+                    requestedTabKey = requestedTabKey,
+                    onRequestedTabConsumed = { requestedTabKey = null },
+                    triggerUpdateCheckTick = triggerUpdateCheckTick,
+                    onMirrorNotification = { title, body ->
+                        if (traySupported) {
+                            runCatching {
+                                trayState.sendNotification(
+                                    Notification(
+                                        title = title.ifBlank { DesktopStrings.appTitle },
+                                        message = body,
+                                        type = Notification.Type.Info
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
-                }
-            )
+                )
+            }
         }
     }
 }

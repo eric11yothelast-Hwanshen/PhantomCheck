@@ -9,6 +9,10 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -130,66 +134,70 @@ object DesktopUpdater {
             setRequestProperty("Accept", "application/vnd.github+json")
             setRequestProperty("User-Agent", "PhantomCheckDesktop/${DesktopSettingsStore.CURRENT_DESKTOP_VERSION}")
         }
-        val code = conn.responseCode
-        if (code == 403 || code == 429) {
-            DesktopDiagnostics.warn("Updater", "GitHub API rate limited (HTTP $code)")
-            throw IllegalStateException(if (isAutoStartup) "rate_limited_$code" else "GitHub API rate limit (HTTP $code)")
-        }
-        if (code != 200) {
-            throw IllegalStateException("HTTP $code")
-        }
-        val raw = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-        val arr = JsonParser.parseString(raw).asJsonArray
-        val list = mutableListOf<DesktopReleaseEntry>()
-        for (elem in arr) {
-            val obj = elem.takeIf { it.isJsonObject }?.asJsonObject ?: continue
-            val draft = obj.get("draft")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
-            if (draft) continue
-            val tag = obj.get("tag_name")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty().trim()
-            val htmlUrl = obj.get("html_url")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty().trim()
-            val publishedRaw = obj.get("published_at")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty().trim()
-            val publishedDate = if (publishedRaw.length >= 10) publishedRaw.take(10) else publishedRaw
-            val body = obj.get("body")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty().trim()
+        try {
+            val code = conn.responseCode
+            if (code == 403 || code == 429) {
+                DesktopDiagnostics.warn("Updater", "GitHub API rate limited (HTTP $code)")
+                throw IllegalStateException(if (isAutoStartup) "rate_limited_$code" else "GitHub API rate limit (HTTP $code)")
+            }
+            if (code != 200) {
+                throw IllegalStateException("HTTP $code")
+            }
+            val raw = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val arr = JsonParser.parseString(raw).asJsonArray
+            val list = mutableListOf<DesktopReleaseEntry>()
+            for (elem in arr) {
+                val obj = elem.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+                val draft = obj.get("draft")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
+                if (draft) continue
+                val tag = obj.get("tag_name")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty().trim()
+                val htmlUrl = obj.get("html_url")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty().trim()
+                val publishedRaw = obj.get("published_at")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty().trim()
+                val publishedDate = if (publishedRaw.length >= 10) publishedRaw.take(10) else publishedRaw
+                val body = obj.get("body")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty().trim()
 
-            var bestVer: String? = null
-            var bestUrl: String? = null
-            var bestName: String? = null
-            val allAssets = mutableMapOf<String, String>()
-            val assets = obj.getAsJsonArray("assets")
-            if (assets != null) {
-                for (aElem in assets) {
-                    val aObj = aElem.takeIf { it.isJsonObject }?.asJsonObject ?: continue
-                    val name = aObj.get("name")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
-                    val dlUrl = aObj.get("browser_download_url")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
-                    if (name.isNotBlank() && dlUrl.isNotBlank()) {
-                        allAssets[name.lowercase()] = dlUrl
-                    }
-                    val m = desktopAssetRegex.find(name) ?: continue
-                    val ver = m.groupValues[1]
-                    val ext = m.groupValues[2].lowercase()
-                    // Prefer .exe (Inno Setup) over .msi if both exist for the same release
-                    if (bestVer == null || (ext == "exe" && bestName?.endsWith(".exe", ignoreCase = true) != true)) {
-                        bestVer = ver
-                        bestUrl = dlUrl.ifBlank { null }
-                        bestName = name
+                var bestVer: String? = null
+                var bestUrl: String? = null
+                var bestName: String? = null
+                val allAssets = mutableMapOf<String, String>()
+                val assets = obj.getAsJsonArray("assets")
+                if (assets != null) {
+                    for (aElem in assets) {
+                        val aObj = aElem.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+                        val name = aObj.get("name")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+                        val dlUrl = aObj.get("browser_download_url")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+                        if (name.isNotBlank() && dlUrl.isNotBlank()) {
+                            allAssets[name.lowercase()] = dlUrl
+                        }
+                        val m = desktopAssetRegex.find(name) ?: continue
+                        val ver = m.groupValues[1]
+                        val ext = m.groupValues[2].lowercase()
+                        // Prefer .exe (Inno Setup) over .msi if both exist for the same release
+                        if (bestVer == null || (ext == "exe" && bestName?.endsWith(".exe", ignoreCase = true) != true)) {
+                            bestVer = ver
+                            bestUrl = dlUrl.ifBlank { null }
+                            bestName = name
+                        }
                     }
                 }
-            }
-            val shaUrl = bestName?.let { n -> allAssets["${n.lowercase()}.sha256"] }
-            list.add(
-                DesktopReleaseEntry(
-                    tagName = tag,
-                    publishedDate = publishedDate,
-                    htmlUrl = htmlUrl.ifBlank { RELEASES_URL },
-                    body = body,
-                    desktopAssetVersion = bestVer,
-                    installerUrl = bestUrl,
-                    installerFileName = bestName,
-                    installerSha256Url = shaUrl
+                val shaUrl = bestName?.let { n -> allAssets["${n.lowercase()}.sha256"] }
+                list.add(
+                    DesktopReleaseEntry(
+                        tagName = tag,
+                        publishedDate = publishedDate,
+                        htmlUrl = htmlUrl.ifBlank { RELEASES_URL },
+                        body = body,
+                        desktopAssetVersion = bestVer,
+                        installerUrl = bestUrl,
+                        installerFileName = bestName,
+                        installerSha256Url = shaUrl
+                    )
                 )
-            )
+            }
+            list
+        } finally {
+            conn.disconnect()
         }
-        list
     }
 
     fun shouldSendDailyUpdateNotification(version: String): Boolean {
@@ -199,8 +207,9 @@ object DesktopUpdater {
         val existing = runCatching { if (file.exists()) file.readText(Charsets.UTF_8).trim() else "" }.getOrDefault("")
         if (existing == key) return false
         runCatching {
-            if (!file.parentFile.exists()) file.parentFile.mkdirs()
-            file.writeText(key, Charsets.UTF_8)
+            DesktopTls.atomicWriteFile(file, restrictOwnerOnly = false) { tmp ->
+                tmp.writeText(key, Charsets.UTF_8)
+            }
         }
         return true
     }
@@ -212,53 +221,86 @@ object DesktopUpdater {
         sha256Url: String? = null
     ): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
+            // Mandatory Fail-Closed SHA-256 verification (#549): refuse installation if .sha256 asset is absent or unreadable
+            val requiredShaUrl = sha256Url?.trim().orEmpty()
+            if (requiredShaUrl.isBlank()) {
+                DesktopDiagnostics.error("Updater", "Refusing update download: missing required .sha256 checksum asset")
+                throw IllegalStateException("Missing required SHA-256 checksum (.sha256) asset; installation rejected for safety")
+            }
+            val expectedSha = fetchExpectedSha256(requiredShaUrl)
+            if (expectedSha.isNullOrBlank()) {
+                DesktopDiagnostics.error("Updater", "Refusing update download: unable to fetch or parse .sha256 checksum")
+                throw IllegalStateException("Unable to verify installer SHA-256 checksum (missing or invalid .sha256 asset); installation rejected for safety")
+            }
+
             val safeName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
-            val outFile = File(System.getProperty("java.io.tmpdir"), safeName)
+            val tmpDir = File(System.getProperty("java.io.tmpdir"))
+            val outFile = File(tmpDir, safeName)
+            val tmpFile = File.createTempFile("$safeName.", ".tmp", tmpDir)
+
             val conn = (URL(url).openConnection() as HttpURLConnection).apply {
                 instanceFollowRedirects = true
                 connectTimeout = 12_000
                 readTimeout = 30_000
                 setRequestProperty("User-Agent", "PhantomCheckDesktop/${DesktopSettingsStore.CURRENT_DESKTOP_VERSION}")
             }
-            val code = conn.responseCode
-            if (code !in 200..299) {
-                throw IllegalStateException("Download failed: HTTP $code")
-            }
-            val total = conn.contentLengthLong.coerceAtLeast(-1L)
-            val digest = java.security.MessageDigest.getInstance("SHA-256")
-            conn.inputStream.use { input ->
-                FileOutputStream(outFile).use { output ->
-                    val buf = ByteArray(16 * 1024)
-                    var readTotal = 0L
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n <= 0) break
-                        output.write(buf, 0, n)
-                        digest.update(buf, 0, n)
-                        readTotal += n
-                        if (total > 0L) {
-                            onProgress((readTotal.toFloat() / total.toFloat()).coerceIn(0f, 1f))
+            try {
+                val code = conn.responseCode
+                if (code !in 200..299) {
+                    throw IllegalStateException("Download failed: HTTP $code")
+                }
+                val total = conn.contentLengthLong.coerceAtLeast(-1L)
+                val digest = MessageDigest.getInstance("SHA-256")
+                conn.inputStream.use { input ->
+                    FileOutputStream(tmpFile).use { output ->
+                        val buf = ByteArray(16 * 1024)
+                        var readTotal = 0L
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n <= 0) break
+                            output.write(buf, 0, n)
+                            digest.update(buf, 0, n)
+                            readTotal += n
+                            if (total > 0L) {
+                                onProgress((readTotal.toFloat() / total.toFloat()).coerceIn(0f, 1f))
+                            }
                         }
                     }
                 }
-            }
-            if (!outFile.exists() || outFile.length() <= 0L) {
-                throw IllegalStateException("Downloaded installer file is empty")
-            }
-            val actualSha256 = digest.digest().joinToString("") { "%02x".format(it) }
-            if (!sha256Url.isNullOrBlank()) {
-                val expectedSha = fetchExpectedSha256(sha256Url)
-                if (expectedSha != null && !actualSha256.equals(expectedSha, ignoreCase = true)) {
-                    runCatching { outFile.delete() }
+                if (!tmpFile.exists() || tmpFile.length() <= 0L) {
+                    throw IllegalStateException("Downloaded installer file is empty")
+                }
+                val actualSha256 = digest.digest().joinToString("") { "%02x".format(it) }
+                val matches = MessageDigest.isEqual(
+                    actualSha256.lowercase(Locale.ROOT).toByteArray(Charsets.UTF_8),
+                    expectedSha.lowercase(Locale.ROOT).toByteArray(Charsets.UTF_8)
+                )
+                if (!matches) {
                     DesktopDiagnostics.error("Updater", "SHA-256 mismatch! expected=${expectedSha.take(16)}…, actual=${actualSha256.take(16)}…")
                     throw IllegalStateException("Installer SHA-256 checksum mismatch (file deleted for safety)")
                 }
+                try {
+                    Files.move(
+                        tmpFile.toPath(),
+                        outFile.toPath(),
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING
+                    )
+                } catch (_: AtomicMoveNotSupportedException) {
+                    Files.move(
+                        tmpFile.toPath(),
+                        outFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING
+                    )
+                }
                 DesktopDiagnostics.info("Updater", "Verified installer SHA-256=${actualSha256.take(16)}… (${outFile.length()} bytes)")
-            } else {
-                // Honest limitation (#490 E3): GitHub Release does not publish a .sha256 sidecar asset yet; log local digest.
-                DesktopDiagnostics.info("Updater", "Downloaded installer (${outFile.length()} bytes, local SHA-256=${actualSha256.take(16)}…; no remote .sha256 sidecar on release)")
+                outFile
+            } catch (t: Throwable) {
+                runCatching { tmpFile.delete() }
+                throw t
+            } finally {
+                conn.disconnect()
             }
-            outFile
         }.onFailure { err ->
             DesktopDiagnostics.error("Updater", "Installer download failed: ${err.message ?: err.javaClass.simpleName}")
         }
@@ -271,9 +313,13 @@ object DesktopUpdater {
             readTimeout = 8_000
             setRequestProperty("User-Agent", "PhantomCheckDesktop/${DesktopSettingsStore.CURRENT_DESKTOP_VERSION}")
         }
-        if (conn.responseCode !in 200..299) return@runCatching null
-        val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }.trim()
-        Regex("[0-9a-fA-F]{64}").find(text)?.value?.lowercase()
+        try {
+            if (conn.responseCode !in 200..299) return@runCatching null
+            val text = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }.trim()
+            Regex("[0-9a-fA-F]{64}").find(text)?.value?.lowercase(Locale.ROOT)
+        } finally {
+            conn.disconnect()
+        }
     }.getOrNull()
 
     fun launchInstaller(file: File): Result<Unit> = runCatching {
@@ -295,8 +341,13 @@ object DesktopUpdater {
     }
 
     fun openExternalUrl(url: String): Result<Unit> = runCatching {
+        val uri = URI(url)
+        val scheme = uri.scheme?.lowercase(Locale.ROOT)
+        if (scheme != "http" && scheme != "https") {
+            throw IllegalArgumentException("Unsupported URL scheme: $scheme")
+        }
         if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-            Desktop.getDesktop().browse(URI(url))
+            Desktop.getDesktop().browse(uri)
         } else {
             throw UnsupportedOperationException("Browser launch not supported")
         }

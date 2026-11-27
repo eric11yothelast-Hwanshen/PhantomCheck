@@ -8,7 +8,11 @@ import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
+import java.io.File
 import java.math.BigInteger
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.MessageDigest
@@ -96,9 +100,9 @@ object DesktopTls {
         val ks = KeyStore.getInstance("PKCS12")
         ks.load(null, null)
         ks.setKeyEntry(KEY_ALIAS, keyPair.private, pwdChars, arrayOf(cert))
-        if (!ksFile.parentFile.exists()) ksFile.parentFile.mkdirs()
-        ksFile.outputStream().use { ks.store(it, pwdChars) }
-        DesktopPaths.restrictOwnerOnlyPermissions(ksFile)
+        atomicWriteFile(ksFile, restrictOwnerOnly = true) { tmp ->
+            tmp.outputStream().use { ks.store(it, pwdChars) }
+        }
 
         val fp = sha256Hex(cert.encoded)
         DesktopDiagnostics.info("TLS", "Generated new self-signed PKCS12 certificate (fp=${fp.take(8)}…)")
@@ -124,13 +128,59 @@ object DesktopTls {
         val created = randomHex(24)
         props.setProperty("ksPassword", created)
         runCatching {
-            if (!propsFile.parentFile.exists()) propsFile.parentFile.mkdirs()
-            propsFile.bufferedWriter(Charsets.UTF_8).use { props.store(it, "PhantomCheck Desktop TLS") }
-            DesktopPaths.restrictOwnerOnlyPermissions(propsFile)
+            atomicWriteFile(propsFile, restrictOwnerOnly = true) { tmp ->
+                tmp.bufferedWriter(Charsets.UTF_8).use { props.store(it, "PhantomCheck Desktop TLS") }
+            }
         }.onFailure { err ->
             DesktopDiagnostics.warn("TLS", "Failed saving tls.properties: ${err.javaClass.simpleName}")
         }
         return created
+    }
+
+    /**
+     * Atomically writes [target] via a same-directory `.tmp` file + `Files.move(ATOMIC_MOVE, REPLACE_EXISTING)`
+     * (falling back to `REPLACE_EXISTING` on filesystems without atomic move support).
+     * When [restrictOwnerOnly] is true, owner-only permissions are applied before writing sensitive content.
+     */
+    internal fun atomicWriteFile(
+        target: File,
+        restrictOwnerOnly: Boolean = true,
+        writeBlock: (File) -> Unit
+    ) {
+        val parent = target.parentFile
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs()
+        }
+        val tmp = File.createTempFile("${target.name}.", ".tmp", parent)
+        try {
+            if (restrictOwnerOnly) {
+                DesktopPaths.restrictOwnerOnlyPermissions(tmp)
+            }
+            writeBlock(tmp)
+            if (restrictOwnerOnly) {
+                DesktopPaths.restrictOwnerOnlyPermissions(tmp)
+            }
+            try {
+                Files.move(
+                    tmp.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(
+                    tmp.toPath(),
+                    target.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+            }
+            if (restrictOwnerOnly) {
+                DesktopPaths.restrictOwnerOnlyPermissions(target)
+            }
+        } catch (t: Throwable) {
+            runCatching { tmp.delete() }
+            throw t
+        }
     }
 
     fun sha256Hex(bytes: ByteArray): String {
