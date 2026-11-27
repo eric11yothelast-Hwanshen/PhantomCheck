@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -40,6 +40,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -93,6 +98,33 @@ internal fun DesktopTodosNotesPage(
     var activeSegment by remember { mutableStateOf(0) } // 0 = Todos, 1 = Notes (used on COMPACT/MEDIUM)
     var quickDuePreset by remember { mutableStateOf("") } // "", "1h", "tonight", "tomorrow"
     var quickDueAt by remember { mutableLongStateOf(0L) }
+    var pendingTodoDelete by remember { mutableStateOf<TodoItemDto?>(null) }
+    var pendingNoteDelete by remember { mutableStateOf<NoteItemDto?>(null) }
+
+    val submitTodo: () -> Unit = {
+        val title = newTodoTitle.trim()
+        if (title.isNotBlank()) {
+            scope.launch {
+                if (sendOrNotify(LinkMsgType.TODOS_ADD, TodoAddReq(title = title, dueAt = quickDueAt))) {
+                    onNewTodoTitleChange("")
+                    quickDuePreset = ""
+                    quickDueAt = 0L
+                }
+            }
+        }
+    }
+
+    val submitNote: () -> Unit = {
+        val c = newNoteContent.trim()
+        if (c.isNotBlank()) {
+            scope.launch {
+                if (sendOrNotify(LinkMsgType.NOTE_ADD, NoteAddReq(content = c, pinned = newNotePinned, colorHex = newNoteColor))) {
+                    onNewNoteContentChange("")
+                    onNewNotePinnedChange(false)
+                }
+            }
+        }
+    }
 
     val renderTodosPane: @Composable (Modifier) -> Unit = { paneMod ->
         Column(modifier = paneMod, verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -102,21 +134,19 @@ internal fun DesktopTodosNotesPage(
                     onValueChange = onNewTodoTitleChange,
                     label = { Text(DesktopStrings.todoAddHint) },
                     singleLine = true,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).onPreviewKeyEvent { ev ->
+                        if (ev.type == KeyEventType.KeyDown &&
+                            (ev.key == Key.Enter || ev.key == Key.NumPadEnter)
+                        ) {
+                            submitTodo()
+                            true
+                        } else {
+                            false
+                        }
+                    }
                 )
                 SpringButton(
-                    onClick = {
-                        val title = newTodoTitle.trim()
-                        if (title.isNotBlank()) {
-                            scope.launch {
-                                if (sendOrNotify(LinkMsgType.TODOS_ADD, TodoAddReq(title = title, dueAt = quickDueAt))) {
-                                    onNewTodoTitleChange("")
-                                    quickDuePreset = ""
-                                    quickDueAt = 0L
-                                }
-                            }
-                        }
-                    },
+                    onClick = submitTodo,
                     animationsEnabled = settings.animationsEnabled
                 ) { Text(DesktopStrings.add) }
                 SpringOutlinedButton(
@@ -251,7 +281,7 @@ internal fun DesktopTodosNotesPage(
                                     }
                                 }
                                 TextButton(onClick = { onOpenEditTodoDialog(t) }) { Text(DesktopStrings.todoEdit) }
-                                TextButton(onClick = { scope.launch { sendOrNotify(LinkMsgType.TODOS_DELETE, TodoDeleteReq(id = t.id)) } }) {
+                                TextButton(onClick = { pendingTodoDelete = t }) {
                                     Text(DesktopStrings.todoDelete, color = tokens.error)
                                 }
                             }
@@ -305,7 +335,7 @@ internal fun DesktopTodosNotesPage(
                     Text(if (n.pinned) DesktopStrings.noteUnpin else DesktopStrings.notePin, style = MaterialTheme.typography.labelSmall)
                 }
                 TextButton(onClick = {
-                    scope.launch { sendOrNotify(LinkMsgType.NOTE_DELETE, NoteDeleteReq(id = n.id)) }
+                    pendingNoteDelete = n
                 }) {
                     Text(DesktopStrings.noteDelete, style = MaterialTheme.typography.labelSmall, color = tokens.error)
                 }
@@ -333,20 +363,19 @@ internal fun DesktopTodosNotesPage(
                         onValueChange = onNewNoteContentChange,
                         label = { Text(DesktopStrings.noteInputHint) },
                         singleLine = true,
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f).onPreviewKeyEvent { ev ->
+                            if (ev.type == KeyEventType.KeyDown &&
+                                (ev.key == Key.Enter || ev.key == Key.NumPadEnter)
+                            ) {
+                                submitNote()
+                                true
+                            } else {
+                                false
+                            }
+                        }
                     )
                     SpringButton(
-                        onClick = {
-                            val c = newNoteContent.trim()
-                            if (c.isNotBlank()) {
-                                scope.launch {
-                                    if (sendOrNotify(LinkMsgType.NOTE_ADD, NoteAddReq(content = c, pinned = newNotePinned, colorHex = newNoteColor))) {
-                                        onNewNoteContentChange("")
-                                        onNewNotePinnedChange(false)
-                                    }
-                                }
-                            }
-                        },
+                        onClick = submitNote,
                         animationsEnabled = settings.animationsEnabled
                     ) { Text(DesktopStrings.add) }
                 }
@@ -373,25 +402,11 @@ internal fun DesktopTodosNotesPage(
                     val sortedNotes = remember(notes) {
                         notes.sortedWith(compareByDescending<NoteItemDto> { it.pinned }.thenByDescending { it.updatedAt })
                     }
-                    if (windowClass == DesktopWindowClass.LARGE) {
-                        val rows = remember(sortedNotes) { sortedNotes.chunked(2) }
-                        LazyColumn(state = notesListState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(rows, key = { pair -> pair.joinToString("_") { it.id.toString() } }) { pair ->
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    renderNoteItem(pair[0], Modifier.weight(1f))
-                                    if (pair.size > 1) {
-                                        renderNoteItem(pair[1], Modifier.weight(1f))
-                                    } else {
-                                        Spacer(Modifier.weight(1f))
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        LazyColumn(state = notesListState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(sortedNotes, key = { it.id }) { n ->
-                                renderNoteItem(n, Modifier.fillMaxWidth())
-                            }
+                    // R16a: 雙欄以 chunked(2)+複合鍵會隨增刪整欄重組（鍵值連鎖變動）。
+                    // 改為單欄、以固定 id 作 key，增刪只影響自身項目，不再重組整欄。
+                    LazyColumn(state = notesListState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(sortedNotes, key = { it.id }) { n ->
+                            renderNoteItem(n, Modifier.fillMaxWidth())
                         }
                     }
                 }
@@ -424,5 +439,40 @@ internal fun DesktopTodosNotesPage(
             renderTodosPane(Modifier.weight(0.58f).fillMaxHeight())
             renderNotesPane(Modifier.weight(0.42f).fillMaxHeight())
         }
+    }
+
+    // R16a: 刪除一律先經確認彈窗，避免誤刪待辦／記事。
+    pendingTodoDelete?.let { todo ->
+        AlertDialog(
+            onDismissRequest = { pendingTodoDelete = null },
+            title = { Text(DesktopStrings.todoDelete) },
+            text = { Text(todo.title, maxLines = 3, overflow = TextOverflow.Ellipsis) },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingTodoDelete = null
+                    scope.launch { sendOrNotify(LinkMsgType.TODOS_DELETE, TodoDeleteReq(id = todo.id)) }
+                }) { Text(DesktopStrings.remove, color = tokens.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingTodoDelete = null }) { Text(DesktopStrings.ok) }
+            }
+        )
+    }
+
+    pendingNoteDelete?.let { note ->
+        AlertDialog(
+            onDismissRequest = { pendingNoteDelete = null },
+            title = { Text(DesktopStrings.noteDelete) },
+            text = { Text(note.content, maxLines = 3, overflow = TextOverflow.Ellipsis) },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingNoteDelete = null
+                    scope.launch { sendOrNotify(LinkMsgType.NOTE_DELETE, NoteDeleteReq(id = note.id)) }
+                }) { Text(DesktopStrings.remove, color = tokens.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingNoteDelete = null }) { Text(DesktopStrings.ok) }
+            }
+        )
     }
 }
