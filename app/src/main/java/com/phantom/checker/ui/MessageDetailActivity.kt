@@ -107,10 +107,10 @@ private data class MessageDetailSnapshot(
     val allTags: List<TagEntity>,
     val selectedTagIds: Set<Long>,
     val tagSourceByTagId: Map<Long, String>,
-    val calendarSuggestion: com.phantom.checker.util.CalendarBridge.CalendarEventSuggestion?,
-    val calendarWritableCals: List<com.phantom.checker.util.CalendarBridge.DeviceCalendarInfo>,
-    val calendarConflicts: List<com.phantom.checker.util.CalendarBridge.CalendarEventConflict>,
-    val calendarAllDayEvents: List<com.phantom.checker.util.CalendarBridge.CalendarEventConflict>
+    val calendarSuggestion: com.phantom.checker.util.CalendarBridge.NotificationCalendarSuggestion?,
+    val calendarWritableCals: List<com.phantom.checker.util.CalendarBridge.CalendarAccountInfo>,
+    val calendarConflicts: List<com.phantom.checker.util.CalendarBridge.CalendarEventInstance>,
+    val calendarAllDayEvents: List<com.phantom.checker.util.CalendarBridge.CalendarEventInstance>
 )
 
 class MessageDetailActivity : ComponentActivity() {
