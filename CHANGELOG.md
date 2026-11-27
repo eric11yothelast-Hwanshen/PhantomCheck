@@ -3,6 +3,23 @@
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses Semantic Versioning.
 
+## [5.2.1] - 2026-11-27
+
+- **Tag 比較**：[`v5.2.0...v5.2.1`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.2.0...v5.2.1)（`versionCode = 61`、`versionName = "5.2.1"`；桌面端 `desktopVersion = "0.8.1"`）
+- **發佈資產**：簽章 `app-release.apk`、`PhantomCheckDesktop-0.8.1-setup.exe`，並附 `.sha256` 校驗檔。
+
+### 修復
+- **#583 桌面端更新通道修復**：將桌面端版號由 `0.8.0` 遞增至 `0.8.1`（`desktop/build.gradle.kts`、`DesktopSettingsStore.CURRENT_DESKTOP_VERSION`、`PhantomCheckDesktop.iss`），使既有 `0.8.0` 使用者可透過 `DesktopUpdater` 收到更新提示並升級取得 R15／R16／R17a 之桌面端修復。
+
+### 文件
+- **#583 雙語 README 同步**：於 `README.zh-TW.md` 補齊 `v5.2.0` 與 `v5.2.1` 更新重點段落，於 `README.md` 新增 `v5.2.1` 段落，並將兩份 README 核心功能總覽的桌面端伴侶版號由 `0.7.0` 更新至 `0.8.1`。
+
+### English
+- **Tag Compare**: [`v5.2.0...v5.2.1`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.2.0...v5.2.1) (`versionCode = 61`, `versionName = "5.2.1"`; Desktop `desktopVersion = "0.8.1"`)
+- **Release Assets**: signed `app-release.apk`, `PhantomCheckDesktop-0.8.1-setup.exe`, plus `.sha256` checksums.
+- **Fixed (#583 Desktop Update Channel)**: bumped Desktop Companion version from `0.8.0` to `0.8.1` (`desktop/build.gradle.kts`, `DesktopSettingsStore.CURRENT_DESKTOP_VERSION`, `PhantomCheckDesktop.iss`) so existing `0.8.0` users receive update prompts via `DesktopUpdater` and can upgrade to the R15/R16/R17a desktop fixes.
+- **Docs (#583 Bilingual README Sync)**: added the missing `v5.2.0` and `v5.2.1` highlight sections to `README.zh-TW.md`, added `v5.2.1` highlights to `README.md`, and updated the Desktop Companion version in both READMEs' Core Features overview from `0.7.0` to `0.8.1`.
+
 ## [5.2.0] - 2026-11-27
 
 - **Tag 比較**：[`v5.1.0...v5.2.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.1.0...v5.2.0)（`versionCode = 60`、`versionName = "5.2.0"`；桌面端 `desktopVersion = "0.8.0"`）

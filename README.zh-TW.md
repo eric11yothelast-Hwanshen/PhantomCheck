@@ -45,13 +45,25 @@ Android 智慧防詐訊息管理 App：在不觸發原 App 已讀的前提下攔
 - 📈 **自訂統計儀表板、Health Connect 7 日生理趨勢與每日 App 排行榜**：統計頁支援頂部純本機「本週重點」自然語言摘要條、早晚簡報卡、**Health Connect 7 日睡眠／步數迷你條趨勢圖**（純本機聚合零 AI）、今日 App 訊息量排行榜 Top 5、7 日風險趨勢折線、未讀／已讀比例環形、各 App 佔比橫條與待辦完成率環形，每週 AI 摘要支援錯過補跑、未完句自動續寫、全文展開與失敗重試，並可於設定中心「資料與備份」自訂統計卡顯示與否。
 
 - 🌐 **中英雙語介面、App 內三態語言切換與多語系 AI／防詐功能層（i18n）**：內建繁體中文（`values-zh-rTW`）與英文預設（`values/`，fallback = `en`）雙語資源桶（2,932 條 UI 與 XML `@string` 資源）；設定中心支援**「語言」三態切換（跟隨系統／繁體中文／English；API 33+ 走 `LocaleManager` 與系統 per-app 設定同步，API 26–32 走 `attachBaseContext` 平滑重建）**，通知、桌面小工具、設定搜尋目錄與 AI 自然語言輸出（風險分析、自動備忘錄、每週摘要、深度分析、早晚簡報、回顧註記、主動情報）全面跟隨 App 語言設定，且規則層防詐引擎（`IndicatorExtractor`／`MemoryEngine`／`ContactContext`）同步支援中英文常見詐騙話術離線偵測。
-- 🖥️ **桌面端伴侶（`0.7.0`）與加密區網連線（`PROTOCOL_VERSION = 2`）**：Compose Multiplatform Windows 桌面端（採 `-setup.exe` 單一安裝通道，支援單實例防雙開、開機自啟驗證、通知中心四合一、系統匣常駐、淺色／深色玻璃主題、10 項系統＋16+ 項自訂設定、語言切換即時生效、**啟動自動檢查更新、更新提示對話框與「關於」分頁**）。採用**電腦端開啟 WSS 伺服器（`wss://<lan-ip>:49515/link`）、手機端主動連線**架構：手機可透過**掃描電腦 QR Code**（內建 ML Kit 模型，無 Google Play 服務亦可離線掃描）或**手動輸入電腦區網位址**進行配對，首次配對須輸入 **6 位數單次配對碼**並綁定 **TLS SHA-256 憑證指紋**（支援指紋主鍵動態解析 mDNS 位址），支援雙向對話串同步、星標、標籤、待辦記事完整 CRUD、快速回覆、深度分析與多會話 AI 聊天。
+- 🖥️ **桌面端伴侶（`0.8.1`）與加密區網連線（`PROTOCOL_VERSION = 2`）**：Compose Multiplatform Windows 桌面端（採 `-setup.exe` 單一安裝通道，支援單實例防雙開、開機自啟驗證、通知中心四合一、系統匣常駐、淺色／深色玻璃主題、10 項系統＋16+ 項自訂設定、語言切換即時生效、**啟動自動檢查更新、更新提示對話框與「關於」分頁**）。採用**電腦端開啟 WSS 伺服器（`wss://<lan-ip>:49515/link`）、手機端主動連線**架構：手機可透過**掃描電腦 QR Code**（內建 ML Kit 模型，無 Google Play 服務亦可離線掃描）或**手動輸入電腦區網位址**進行配對，首次配對須輸入 **6 位數單次配對碼**並綁定 **TLS SHA-256 憑證指紋**（支援指紋主鍵動態解析 mDNS 位址），支援雙向對話串同步、星標、標籤、待辦記事完整 CRUD、快速回覆、深度分析與多會話 AI 聊天。
 
 ---
 
 ## 版本紀錄
 
 完整變更紀錄請參閱 [CHANGELOG.md](CHANGELOG.md)。
+
+### v5.2.1 更新重點（versionCode 61，桌面端 0.8.1，2026-11-27）
+
+- **桌面端更新通道修復（#583）**：將桌面端伴侶版號由 `0.8.0` 遞增至 `0.8.1`（同步更新 `desktopVersion`、`CURRENT_DESKTOP_VERSION` 與 Inno Setup 預設 `MyAppVersion`），使既有 `0.8.0` 使用者可正常透過 `DesktopUpdater` 收到更新提示並安裝 R15／R16／R17a 之桌面端修復（含 Fail-Closed 更新器與 48dp `PhantomDialog`）。
+- **文件同步（#583）**：於 `README.zh-TW.md` 補齊 `v5.2.0` 與 `v5.2.1` 更新重點段落，並將 `README.md` 與 `README.zh-TW.md` 核心功能總覽中過期的桌面端伴侶版號更新至 `0.8.1`。
+
+### v5.2.0 更新重點（versionCode 60，桌面端 0.8.0，2026-11-27）
+
+- **健檢修復完成（R1–R17，239 項缺失，20 個 PR）**：跨端健檢列管之全部 P0（44）、P1（143）與 P2（52）缺失已依相依順序分 17 輪修復完畢——涵蓋共用資料層與 DAO 擴充、util 與系統橋接、通知風險管線、排程與背景 Worker、主動情報與 Shizuku、跨端連線、小工具刷新管線、CI/CD 供應鏈、動效與共用元件、主畫面與訊息流程、聊天核心、設定中心、管理頁群、分頁 UI、桌面核心、桌面 UI，以及全倉庫多語系與清理收尾。
+- **安全**：`DesktopLinkClient` 改採常數時間指紋比對與完整 SHA-256 憑證釘選；`opencode.yml` 新增 `author_association` 白名單並將 actions 釘選至完整 commit SHA；桌面更新器改採 Fail-Closed 策略，缺少相符 `.sha256` 校驗檔即拒絕安裝；設定 `allowBackup=false` 並搭配 `dataExtractionRules`；未簽章的 release 建置立即失敗。
+- **效能與可靠性**：以 DAO 區間與聚合查詢取代全表載入，SQLite 批次刪除依 500 筆變數分塊處理，並修復多處 OOM 與主執行緒 I/O 路徑；前景服務遵守 10 秒 `startForeground` 規則，Worker 獨立重拋 `CancellationException`，精確鬧鐘改先檢查 `canScheduleExactAlarms()` 並提供非精確降級備援，並補齊中國廠牌 OEM ROM 防禦組合。
+- **多語系與清理**：將 86 則使用者可見字串移入 `values`／`values-zh-rTW`，清除 641 個未使用 imports，將 17 處正則表達式提升為檔案級常數並快取動態樣式，正則驗證錯誤訊息同步多語化。
 
 ### v5.1.0 更新重點（versionCode 59，桌面端 0.8.0，2026-11-26）
 
