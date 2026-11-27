@@ -2,13 +2,19 @@ package com.phantom.checker.util
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.phantom.checker.shared.LinkProtocol
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import java.security.GeneralSecurityException
 import java.security.SecureRandom
 import java.util.UUID
+import javax.crypto.AEADBadTagException
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -50,9 +56,11 @@ data class DiagnosticLogEntry(
  * - 儲存「已配對電腦」清單（IP/埠/憑證 SHA-256 指紋/HMAC secret）、本機 phoneInstanceId、
  *   最後連線電腦 ID、未知事件與指令審計紀錄（上限 200 筆）、連線階段診斷日誌（上限 60 筆）。
  * - 絕不將訊息內容、配對碼或 HMAC 寫入診斷與審計紀錄。
+ * - R1 (#545)：雙重檢查單例＋記憶體快取層＋StateFlow 暴露（供 R5/R10 零同步解密讀取）＋AEADBadTagException 記錄與清除重建。
  */
 object DesktopLinkStore {
 
+    private const val TAG = "DesktopLinkStore"
     private const val PREF_FILE = "phantom_desktop_link_secrets"
     private const val KEY_ENABLED = "desktop_link_enabled"
     private const val KEY_PHONE_INSTANCE_ID = "desktop_link_phone_instance_id"
@@ -67,67 +75,245 @@ object DesktopLinkStore {
 
     private val gson = Gson()
     private val secureRandom = SecureRandom()
+    private val prefsLock = Any()
 
     @Volatile
     private var cachedPrefs: SharedPreferences? = null
 
-    private fun securePrefs(ctx: Context): SharedPreferences? {
-        cachedPrefs?.let { return it }
-        return synchronized(this) {
-            cachedPrefs ?: try {
-                val appCtx = ctx.applicationContext
-                val masterKey = MasterKey.Builder(appCtx)
-                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                    .build()
-                EncryptedSharedPreferences.create(
-                    appCtx,
-                    PREF_FILE,
-                    masterKey,
-                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-                ).also { cachedPrefs = it }
-            } catch (err: Throwable) {
-                android.util.Log.w("DesktopLinkStore", "EncryptedSharedPreferences init failed: ${err.javaClass.simpleName}")
+    @Volatile
+    var lastKeystoreRecoveryAtMs: Long = 0L
+        private set
+
+    @Volatile
+    var keystoreRecoveryCount: Int = 0
+        private set
+
+    // 記憶體快取層（寫入時同步更新，避免主執行緒與通知建構同步解密＋Gson 反序列化）
+    @Volatile
+    private var cachedEnabled: Boolean? = null
+    @Volatile
+    private var cachedPhoneInstanceId: String? = null
+    @Volatile
+    private var cachedLastDesktopId: String? = null
+    @Volatile
+    private var cachedPairedDevices: List<PairedDesktop>? = null
+    @Volatile
+    private var cachedAuditLogs: List<CommandAuditEntry>? = null
+    @Volatile
+    private var cachedUnknownAttempts: List<UnknownAttempt>? = null
+    @Volatile
+    private var cachedDiagnostics: List<DiagnosticLogEntry>? = null
+
+    // R1 (#545) / R5 / R10: 供背景服務（StatsForegroundService）與 Compose UI（LinkHubContent）非阻塞觀察
+    private val _pairedDevicesFlow = MutableStateFlow<List<PairedDesktop>>(emptyList())
+    val pairedDevicesFlow: StateFlow<List<PairedDesktop>> = _pairedDevicesFlow.asStateFlow()
+
+    private val _linkEnabledFlow = MutableStateFlow(true)
+    val linkEnabledFlow: StateFlow<Boolean> = _linkEnabledFlow.asStateFlow()
+
+    private val _lastDesktopIdFlow = MutableStateFlow("")
+    val lastDesktopIdFlow: StateFlow<String> = _lastDesktopIdFlow.asStateFlow()
+
+    private fun isKeystoreCorruption(err: Throwable): Boolean {
+        var cur: Throwable? = err
+        var depth = 0
+        while (cur != null && depth < 12) {
+            if (cur is AEADBadTagException ||
+                cur is GeneralSecurityException ||
+                cur.javaClass.name.contains("AEADBadTagException") ||
+                cur.javaClass.name.contains("InvalidProtocolBufferException")
+            ) {
+                return true
+            }
+            cur = cur.cause
+            depth++
+        }
+        return false
+    }
+
+    private fun clearMemoryCaches() {
+        cachedEnabled = null
+        cachedPhoneInstanceId = null
+        cachedLastDesktopId = null
+        cachedPairedDevices = null
+        cachedAuditLogs = null
+        cachedUnknownAttempts = null
+        cachedDiagnostics = null
+        _pairedDevicesFlow.value = emptyList()
+        _linkEnabledFlow.value = true
+        _lastDesktopIdFlow.value = ""
+    }
+
+    @Suppress("DEPRECATION")
+    private fun createEncryptedPrefs(appCtx: Context): SharedPreferences {
+        val masterKey = MasterKey.Builder(appCtx)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedSharedPreferences.create(
+            appCtx,
+            PREF_FILE,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+
+    /** 清除損毀之 EncryptedSharedPreferences 檔案並重建；同時記錄復原次數與時間戳。 */
+    fun resetCorruptedStore(ctx: Context, reason: Throwable? = null): SharedPreferences? {
+        val appCtx = ctx.applicationContext ?: ctx
+        return synchronized(prefsLock) {
+            Log.w(
+                TAG,
+                "EncryptedSharedPreferences corrupted (${reason?.javaClass?.simpleName ?: "manual"}), clearing & recreating $PREF_FILE",
+                reason
+            )
+            cachedPrefs = null
+            clearMemoryCaches()
+            runCatching { appCtx.deleteSharedPreferences(PREF_FILE) }
+            runCatching {
+                appCtx.getSharedPreferences(PREF_FILE, Context.MODE_PRIVATE).edit().clear().commit()
+            }
+            keystoreRecoveryCount += 1
+            lastKeystoreRecoveryAtMs = System.currentTimeMillis()
+            try {
+                createEncryptedPrefs(appCtx).also { cachedPrefs = it }
+            } catch (recreateErr: Throwable) {
+                Log.w(TAG, "EncryptedSharedPreferences recreate failed: ${recreateErr.javaClass.simpleName}", recreateErr)
                 null
             }
         }
     }
 
-    fun isLinkEnabled(ctx: Context): Boolean =
-        runCatching { securePrefs(ctx)?.getBoolean(KEY_ENABLED, true) ?: true }.getOrDefault(true)
+    private fun securePrefs(ctx: Context): SharedPreferences? {
+        cachedPrefs?.let { return it }
+        return synchronized(prefsLock) {
+            cachedPrefs ?: run {
+                val appCtx = ctx.applicationContext ?: ctx
+                try {
+                    createEncryptedPrefs(appCtx).also { cachedPrefs = it }
+                } catch (err: Throwable) {
+                    if (isKeystoreCorruption(err)) {
+                        resetCorruptedStore(appCtx, err)
+                    } else {
+                        Log.w(TAG, "EncryptedSharedPreferences init failed: ${err.javaClass.simpleName}")
+                        null
+                    }
+                }
+            }
+        }
+    }
+
+    private fun readStringSafe(ctx: Context, key: String, default: String? = null): String? {
+        val prefs = securePrefs(ctx) ?: return default
+        return try {
+            prefs.getString(key, default)
+        } catch (err: Throwable) {
+            if (isKeystoreCorruption(err)) {
+                resetCorruptedStore(ctx, err)
+            } else {
+                Log.w(TAG, "EncryptedSharedPreferences read failed ($key): ${err.javaClass.simpleName}")
+            }
+            default
+        }
+    }
+
+    private fun readBooleanSafe(ctx: Context, key: String, default: Boolean): Boolean {
+        val prefs = securePrefs(ctx) ?: return default
+        return try {
+            prefs.getBoolean(key, default)
+        } catch (err: Throwable) {
+            if (isKeystoreCorruption(err)) {
+                resetCorruptedStore(ctx, err)
+            } else {
+                Log.w(TAG, "EncryptedSharedPreferences readBoolean failed ($key): ${err.javaClass.simpleName}")
+            }
+            default
+        }
+    }
+
+    private fun editSafe(ctx: Context, block: SharedPreferences.Editor.() -> Unit) {
+        val prefs = securePrefs(ctx) ?: return
+        try {
+            prefs.edit().apply(block).apply()
+        } catch (err: Throwable) {
+            if (isKeystoreCorruption(err)) {
+                val recovered = resetCorruptedStore(ctx, err) ?: return
+                runCatching { recovered.edit().apply(block).apply() }
+            } else {
+                Log.w(TAG, "EncryptedSharedPreferences write failed: ${err.javaClass.simpleName}")
+            }
+        }
+    }
+
+    /** 預熱快取與 StateFlow（建議於背景 IO 執行緒呼叫，避免主執行緒首次觸發同步解密）。 */
+    fun warmUp(ctx: Context) {
+        isLinkEnabled(ctx)
+        getLastConnectedDesktopId(ctx)
+        getPairedDevices(ctx)
+    }
+
+    /** R1 (#545) / R5: 非阻塞取得記憶體快取之已配對裝置清單（不觸發磁碟 I/O 或解密）。 */
+    fun peekPairedDevices(): List<PairedDesktop> = cachedPairedDevices ?: _pairedDevicesFlow.value
+
+    fun isLinkEnabled(ctx: Context): Boolean {
+        cachedEnabled?.let { return it }
+        val loaded = readBooleanSafe(ctx, KEY_ENABLED, true)
+        cachedEnabled = loaded
+        _linkEnabledFlow.value = loaded
+        return loaded
+    }
 
     fun setLinkEnabled(ctx: Context, enabled: Boolean) {
-        runCatching { securePrefs(ctx)?.edit()?.putBoolean(KEY_ENABLED, enabled)?.apply() }
+        cachedEnabled = enabled
+        _linkEnabledFlow.value = enabled
+        editSafe(ctx) { putBoolean(KEY_ENABLED, enabled) }
     }
 
+    @Synchronized
     fun getOrCreatePhoneInstanceId(ctx: Context): String {
-        return runCatching {
-            val prefs = securePrefs(ctx) ?: return@runCatching UUID.randomUUID().toString()
-            val existing = prefs.getString(KEY_PHONE_INSTANCE_ID, null)
-            if (!existing.isNullOrBlank()) return@runCatching existing
-            val created = UUID.randomUUID().toString()
-            prefs.edit().putString(KEY_PHONE_INSTANCE_ID, created).apply()
-            created
-        }.getOrElse { UUID.randomUUID().toString() }
+        cachedPhoneInstanceId?.takeIf { it.isNotBlank() }?.let { return it }
+        val existing = readStringSafe(ctx, KEY_PHONE_INSTANCE_ID, null)
+        if (!existing.isNullOrBlank()) {
+            cachedPhoneInstanceId = existing
+            return existing
+        }
+        val created = UUID.randomUUID().toString()
+        cachedPhoneInstanceId = created
+        editSafe(ctx) { putString(KEY_PHONE_INSTANCE_ID, created) }
+        return created
     }
 
-    fun getLastConnectedDesktopId(ctx: Context): String =
-        runCatching { securePrefs(ctx)?.getString(KEY_LAST_DESKTOP_ID, null).orEmpty() }.getOrDefault("")
+    fun getLastConnectedDesktopId(ctx: Context): String {
+        cachedLastDesktopId?.let { return it }
+        val loaded = readStringSafe(ctx, KEY_LAST_DESKTOP_ID, null).orEmpty()
+        cachedLastDesktopId = loaded
+        _lastDesktopIdFlow.value = loaded
+        return loaded
+    }
 
     fun setLastConnectedDesktopId(ctx: Context, instanceId: String) {
-        runCatching { securePrefs(ctx)?.edit()?.putString(KEY_LAST_DESKTOP_ID, instanceId)?.apply() }
+        cachedLastDesktopId = instanceId
+        _lastDesktopIdFlow.value = instanceId
+        editSafe(ctx) { putString(KEY_LAST_DESKTOP_ID, instanceId) }
     }
 
     fun getPairedDevices(ctx: Context): List<PairedDesktop> {
-        return runCatching {
-            val raw = securePrefs(ctx)?.getString(KEY_PAIRED_DEVICES, null).orEmpty()
-            if (raw.isBlank()) return@runCatching emptyList()
-            val type = object : TypeToken<List<PairedDesktop?>>() {}.type
-            gson.fromJson<List<PairedDesktop?>>(raw, type)
-                .orEmpty()
-                .filterNotNull()
-                .filter { !it.instanceId.isNullOrBlank() }
-        }.getOrDefault(emptyList())
+        cachedPairedDevices?.let { return it }
+        return synchronized(this) {
+            cachedPairedDevices?.let { return@synchronized it }
+            val loaded = runCatching {
+                val raw = readStringSafe(ctx, KEY_PAIRED_DEVICES, null).orEmpty()
+                if (raw.isBlank()) return@runCatching emptyList()
+                val type = object : TypeToken<List<PairedDesktop?>>() {}.type
+                gson.fromJson<List<PairedDesktop?>>(raw, type)
+                    .orEmpty()
+                    .filterNotNull()
+                    .filter { !it.instanceId.isNullOrBlank() }
+            }.getOrDefault(emptyList())
+            cachedPairedDevices = loaded
+            _pairedDevicesFlow.value = loaded
+            loaded
+        }
     }
 
     fun findPairedDevice(ctx: Context, instanceId: String): PairedDesktop? =
@@ -143,7 +329,10 @@ object DesktopLinkStore {
             } else {
                 list.add(0, device)
             }
-            securePrefs(ctx)?.edit()?.putString(KEY_PAIRED_DEVICES, gson.toJson(list))?.apply()
+            val snapshot = list.toList()
+            cachedPairedDevices = snapshot
+            _pairedDevicesFlow.value = snapshot
+            editSafe(ctx) { putString(KEY_PAIRED_DEVICES, gson.toJson(snapshot)) }
         }
     }
 
@@ -153,7 +342,9 @@ object DesktopLinkStore {
             val list = getPairedDevices(ctx).map {
                 if (it.instanceId == instanceId) it.copy(lastSeenAt = nowMs) else it
             }
-            securePrefs(ctx)?.edit()?.putString(KEY_PAIRED_DEVICES, gson.toJson(list))?.apply()
+            cachedPairedDevices = list
+            _pairedDevicesFlow.value = list
+            editSafe(ctx) { putString(KEY_PAIRED_DEVICES, gson.toJson(list)) }
         }
     }
 
@@ -162,23 +353,37 @@ object DesktopLinkStore {
         runCatching {
             val list = getPairedDevices(ctx).filterNot { it.instanceId == instanceId }
             val filteredAudit = getAuditLogs(ctx).filterNot { it.instanceId == instanceId }
-            val editor = securePrefs(ctx)?.edit()
-                ?.putString(KEY_PAIRED_DEVICES, gson.toJson(list))
-                ?.putString(KEY_AUDIT_LOGS, gson.toJson(filteredAudit))
-            if (getLastConnectedDesktopId(ctx) == instanceId) {
-                editor?.remove(KEY_LAST_DESKTOP_ID)
+            val clearLast = getLastConnectedDesktopId(ctx) == instanceId
+            cachedPairedDevices = list
+            _pairedDevicesFlow.value = list
+            cachedAuditLogs = filteredAudit
+            if (clearLast) {
+                cachedLastDesktopId = ""
+                _lastDesktopIdFlow.value = ""
             }
-            editor?.apply()
+            editSafe(ctx) {
+                putString(KEY_PAIRED_DEVICES, gson.toJson(list))
+                putString(KEY_AUDIT_LOGS, gson.toJson(filteredAudit))
+                if (clearLast) {
+                    remove(KEY_LAST_DESKTOP_ID)
+                }
+            }
         }
     }
 
     fun getAuditLogs(ctx: Context): List<CommandAuditEntry> {
-        return runCatching {
-            val raw = securePrefs(ctx)?.getString(KEY_AUDIT_LOGS, null).orEmpty()
-            if (raw.isBlank()) return@runCatching emptyList()
-            val type = object : TypeToken<List<CommandAuditEntry?>>() {}.type
-            gson.fromJson<List<CommandAuditEntry?>>(raw, type).orEmpty().filterNotNull()
-        }.getOrDefault(emptyList())
+        cachedAuditLogs?.let { return it }
+        return synchronized(this) {
+            cachedAuditLogs?.let { return@synchronized it }
+            val loaded = runCatching {
+                val raw = readStringSafe(ctx, KEY_AUDIT_LOGS, null).orEmpty()
+                if (raw.isBlank()) return@runCatching emptyList()
+                val type = object : TypeToken<List<CommandAuditEntry?>>() {}.type
+                gson.fromJson<List<CommandAuditEntry?>>(raw, type).orEmpty().filterNotNull()
+            }.getOrDefault(emptyList())
+            cachedAuditLogs = loaded
+            loaded
+        }
     }
 
     @Synchronized
@@ -194,22 +399,30 @@ object DesktopLinkStore {
             val list = getAuditLogs(ctx).toMutableList()
             list.add(0, CommandAuditEntry(nowMs, instanceId, command, ok, detail.take(80)))
             val trimmed = list.take(MAX_AUDIT_LOGS)
-            securePrefs(ctx)?.edit()?.putString(KEY_AUDIT_LOGS, gson.toJson(trimmed))?.apply()
+            cachedAuditLogs = trimmed
+            editSafe(ctx) { putString(KEY_AUDIT_LOGS, gson.toJson(trimmed)) }
         }
     }
 
     @Synchronized
     fun clearAuditLogs(ctx: Context) {
-        runCatching { securePrefs(ctx)?.edit()?.remove(KEY_AUDIT_LOGS)?.apply() }
+        cachedAuditLogs = emptyList()
+        editSafe(ctx) { remove(KEY_AUDIT_LOGS) }
     }
 
     fun getUnknownAttempts(ctx: Context): List<UnknownAttempt> {
-        return runCatching {
-            val raw = securePrefs(ctx)?.getString(KEY_UNKNOWN_ATTEMPTS, null).orEmpty()
-            if (raw.isBlank()) return@runCatching emptyList()
-            val type = object : TypeToken<List<UnknownAttempt?>>() {}.type
-            gson.fromJson<List<UnknownAttempt?>>(raw, type).orEmpty().filterNotNull()
-        }.getOrDefault(emptyList())
+        cachedUnknownAttempts?.let { return it }
+        return synchronized(this) {
+            cachedUnknownAttempts?.let { return@synchronized it }
+            val loaded = runCatching {
+                val raw = readStringSafe(ctx, KEY_UNKNOWN_ATTEMPTS, null).orEmpty()
+                if (raw.isBlank()) return@runCatching emptyList()
+                val type = object : TypeToken<List<UnknownAttempt?>>() {}.type
+                gson.fromJson<List<UnknownAttempt?>>(raw, type).orEmpty().filterNotNull()
+            }.getOrDefault(emptyList())
+            cachedUnknownAttempts = loaded
+            loaded
+        }
     }
 
     @Synchronized
@@ -224,22 +437,30 @@ object DesktopLinkStore {
             val list = getUnknownAttempts(ctx).toMutableList()
             list.add(0, UnknownAttempt(nowMs, remoteIp, reason, instanceId))
             val trimmed = list.take(MAX_UNKNOWN_ATTEMPTS)
-            securePrefs(ctx)?.edit()?.putString(KEY_UNKNOWN_ATTEMPTS, gson.toJson(trimmed))?.apply()
+            cachedUnknownAttempts = trimmed
+            editSafe(ctx) { putString(KEY_UNKNOWN_ATTEMPTS, gson.toJson(trimmed)) }
         }
     }
 
     @Synchronized
     fun clearUnknownAttempts(ctx: Context) {
-        runCatching { securePrefs(ctx)?.edit()?.remove(KEY_UNKNOWN_ATTEMPTS)?.apply() }
+        cachedUnknownAttempts = emptyList()
+        editSafe(ctx) { remove(KEY_UNKNOWN_ATTEMPTS) }
     }
 
     fun getDiagnostics(ctx: Context): List<DiagnosticLogEntry> {
-        return runCatching {
-            val raw = securePrefs(ctx)?.getString(KEY_DIAGNOSTICS, null).orEmpty()
-            if (raw.isBlank()) return@runCatching emptyList()
-            val type = object : TypeToken<List<DiagnosticLogEntry?>>() {}.type
-            gson.fromJson<List<DiagnosticLogEntry?>>(raw, type).orEmpty().filterNotNull()
-        }.getOrDefault(emptyList())
+        cachedDiagnostics?.let { return it }
+        return synchronized(this) {
+            cachedDiagnostics?.let { return@synchronized it }
+            val loaded = runCatching {
+                val raw = readStringSafe(ctx, KEY_DIAGNOSTICS, null).orEmpty()
+                if (raw.isBlank()) return@runCatching emptyList()
+                val type = object : TypeToken<List<DiagnosticLogEntry?>>() {}.type
+                gson.fromJson<List<DiagnosticLogEntry?>>(raw, type).orEmpty().filterNotNull()
+            }.getOrDefault(emptyList())
+            cachedDiagnostics = loaded
+            loaded
+        }
     }
 
     @Synchronized
@@ -254,13 +475,15 @@ object DesktopLinkStore {
             val list = getDiagnostics(ctx).toMutableList()
             list.add(0, DiagnosticLogEntry(nowMs, stage.take(24), code.take(36), detail.take(100)))
             val trimmed = list.take(MAX_DIAGNOSTICS)
-            securePrefs(ctx)?.edit()?.putString(KEY_DIAGNOSTICS, gson.toJson(trimmed))?.apply()
+            cachedDiagnostics = trimmed
+            editSafe(ctx) { putString(KEY_DIAGNOSTICS, gson.toJson(trimmed)) }
         }
     }
 
     @Synchronized
     fun clearDiagnostics(ctx: Context) {
-        runCatching { securePrefs(ctx)?.edit()?.remove(KEY_DIAGNOSTICS)?.apply() }
+        cachedDiagnostics = emptyList()
+        editSafe(ctx) { remove(KEY_DIAGNOSTICS) }
     }
 
     fun randomHex(numBytes: Int = 32): String {

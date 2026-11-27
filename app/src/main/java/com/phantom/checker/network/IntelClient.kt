@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Base64
+import android.util.Log
 import android.util.LruCache
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -23,7 +24,10 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.security.GeneralSecurityException
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import javax.crypto.AEADBadTagException
 
 /**
  * 公開防詐情報查詢客戶端（零 LLM token、僅送 URL / 加密貨幣地址，不送訊息全文）。
@@ -88,63 +92,162 @@ object IntelClient {
     private val descriptiveUserAgent: String
         get() = "PhantomCheck/${BuildConfig.VERSION_NAME} (Android anti-fraud)"
 
+    private const val TAG = "IntelClient"
+    private val encryptedPrefsLock = Any()
+
+    @Volatile
+    private var cachedEncryptedPrefs: SharedPreferences? = null
+
+    @Volatile
+    var lastKeystoreRecoveryAtMs: Long = 0L
+        private set
+
+    @Volatile
+    var keystoreRecoveryCount: Int = 0
+        private set
+
+    // 記憶體快取層（空字串代表已讀取但未設定，避免重複同步解密）
+    private val keyMemoryCache = ConcurrentHashMap<String, String>()
+
+    private fun isKeystoreCorruption(err: Throwable): Boolean {
+        var cur: Throwable? = err
+        var depth = 0
+        while (cur != null && depth < 12) {
+            if (cur is AEADBadTagException ||
+                cur is GeneralSecurityException ||
+                cur.javaClass.name.contains("AEADBadTagException") ||
+                cur.javaClass.name.contains("InvalidProtocolBufferException")
+            ) {
+                return true
+            }
+            cur = cur.cause
+            depth++
+        }
+        return false
+    }
+
     @Suppress("DEPRECATION")
-    private fun getEncryptedPrefs(context: Context): SharedPreferences? {
-        return try {
-            val appCtx = context.applicationContext
-            val masterKey = MasterKey.Builder(appCtx)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            EncryptedSharedPreferences.create(
-                appCtx,
-                PREFS_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    private fun createEncryptedPrefs(appCtx: Context): SharedPreferences {
+        val masterKey = MasterKey.Builder(appCtx)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedSharedPreferences.create(
+            appCtx,
+            PREFS_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+
+    /** R1 (#545): 清除損毀之 EncryptedSharedPreferences 並重建，記錄復原次數與時間戳。 */
+    fun resetCorruptedPrefs(context: Context, reason: Throwable? = null): SharedPreferences? {
+        val appCtx = context.applicationContext ?: context
+        return synchronized(encryptedPrefsLock) {
+            Log.w(
+                TAG,
+                "EncryptedSharedPreferences corrupted (${reason?.javaClass?.simpleName ?: "manual"}), clearing & recreating $PREFS_NAME",
+                reason
             )
-        } catch (_: Exception) {
-            null
+            cachedEncryptedPrefs = null
+            keyMemoryCache.clear()
+            runCatching { appCtx.deleteSharedPreferences(PREFS_NAME) }
+            runCatching {
+                appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+            }
+            keystoreRecoveryCount += 1
+            lastKeystoreRecoveryAtMs = System.currentTimeMillis()
+            try {
+                createEncryptedPrefs(appCtx).also { cachedEncryptedPrefs = it }
+            } catch (recreateErr: Throwable) {
+                Log.w(TAG, "EncryptedSharedPreferences recreate failed: ${recreateErr.javaClass.simpleName}", recreateErr)
+                null
+            }
+        }
+    }
+
+    private fun getEncryptedPrefs(context: Context): SharedPreferences? {
+        cachedEncryptedPrefs?.let { return it }
+        return synchronized(encryptedPrefsLock) {
+            cachedEncryptedPrefs ?: run {
+                val appCtx = context.applicationContext ?: context
+                try {
+                    createEncryptedPrefs(appCtx).also { cachedEncryptedPrefs = it }
+                } catch (err: Throwable) {
+                    if (isKeystoreCorruption(err)) {
+                        resetCorruptedPrefs(appCtx, err)
+                    } else {
+                        Log.w(TAG, "EncryptedSharedPreferences init failed: ${err.javaClass.simpleName}")
+                        null
+                    }
+                }
+            }
+        }
+    }
+
+    private fun readKeyCached(context: Context, key: String): String? {
+        keyMemoryCache[key]?.let { return it.takeIf { v -> v.isNotEmpty() } }
+        val prefs = getEncryptedPrefs(context) ?: return null
+        val loaded = try {
+            prefs.getString(key, null)?.trim().orEmpty()
+        } catch (err: Throwable) {
+            if (isKeystoreCorruption(err)) {
+                resetCorruptedPrefs(context, err)
+            } else {
+                Log.w(TAG, "EncryptedSharedPreferences read failed ($key): ${err.javaClass.simpleName}")
+            }
+            ""
+        }
+        keyMemoryCache[key] = loaded
+        return loaded.takeIf { it.isNotEmpty() }
+    }
+
+    private fun writeKeyCached(context: Context, key: String, rawValue: String) {
+        val trimmed = rawValue.trim()
+        keyMemoryCache[key] = trimmed
+        val prefs = getEncryptedPrefs(context) ?: return
+        val applyBlock: SharedPreferences.Editor.() -> Unit = {
+            if (trimmed.isEmpty()) remove(key) else putString(key, trimmed)
+        }
+        try {
+            prefs.edit().apply(applyBlock).apply()
+        } catch (err: Throwable) {
+            if (isKeystoreCorruption(err)) {
+                val recovered = resetCorruptedPrefs(context, err) ?: return
+                keyMemoryCache[key] = trimmed
+                runCatching { recovered.edit().apply(applyBlock).apply() }
+            } else {
+                Log.w(TAG, "EncryptedSharedPreferences write failed ($key): ${err.javaClass.simpleName}")
+            }
         }
     }
 
     fun getSafeBrowsingApiKey(context: Context? = null): String? =
-        context?.let { getEncryptedPrefs(it)?.getString(KEY_SAFE_BROWSING_API, null)?.trim()?.takeIf { k -> k.isNotEmpty() } }
+        context?.let { readKeyCached(it, KEY_SAFE_BROWSING_API) }
 
     fun getSafeBrowsingKeySource(context: Context): ApiKeySource {
-        val stored = getEncryptedPrefs(context)?.getString(KEY_SAFE_BROWSING_API, null)?.trim()
+        val stored = readKeyCached(context, KEY_SAFE_BROWSING_API)
         return if (!stored.isNullOrEmpty()) ApiKeySource.ENCRYPTED_PREFS else ApiKeySource.NONE
     }
 
     fun setSafeBrowsingApiKey(context: Context, key: String) {
-        val prefs = getEncryptedPrefs(context) ?: return
-        val trimmed = key.trim()
-        prefs.edit().apply {
-            if (trimmed.isEmpty()) remove(KEY_SAFE_BROWSING_API) else putString(KEY_SAFE_BROWSING_API, trimmed)
-        }.apply()
+        writeKeyCached(context, KEY_SAFE_BROWSING_API, key)
     }
 
     fun isSafeBrowsingKeyConfigured(context: Context? = null): Boolean = getSafeBrowsingApiKey(context) != null
 
     fun getPhishTankAppKey(context: Context): String? =
-        getEncryptedPrefs(context)?.getString(KEY_PHISHTANK_APP, null)?.trim()?.takeIf { it.isNotEmpty() }
+        readKeyCached(context, KEY_PHISHTANK_APP)
 
     fun setPhishTankAppKey(context: Context, key: String) {
-        val prefs = getEncryptedPrefs(context) ?: return
-        val trimmed = key.trim()
-        prefs.edit().apply {
-            if (trimmed.isEmpty()) remove(KEY_PHISHTANK_APP) else putString(KEY_PHISHTANK_APP, trimmed)
-        }.apply()
+        writeKeyCached(context, KEY_PHISHTANK_APP, key)
     }
 
     fun getChainabuseApiKey(context: Context): String? =
-        getEncryptedPrefs(context)?.getString(KEY_CHAINABUSE_API, null)?.trim()?.takeIf { it.isNotEmpty() }
+        readKeyCached(context, KEY_CHAINABUSE_API)
 
     fun setChainabuseApiKey(context: Context, key: String) {
-        val prefs = getEncryptedPrefs(context) ?: return
-        val trimmed = key.trim()
-        prefs.edit().apply {
-            if (trimmed.isEmpty()) remove(KEY_CHAINABUSE_API) else putString(KEY_CHAINABUSE_API, trimmed)
-        }.apply()
+        writeKeyCached(context, KEY_CHAINABUSE_API, key)
     }
 
     fun isChainabuseKeyConfigured(context: Context): Boolean = getChainabuseApiKey(context) != null
@@ -301,6 +404,7 @@ object IntelClient {
         }
 
         var anyClean = false
+        var allEnabledResponded = true
 
         // 3. fraud.tw (165 通報)
         if (useFraudTw) {
@@ -310,7 +414,7 @@ object IntelClient {
                         return@withContext cacheAndReturn(db, cacheKey, now, true, outcome.sourceLabel, outcome.detail)
                     }
                     is ProviderOutcome.Clean -> anyClean = true
-                    is ProviderOutcome.Unavailable -> Unit
+                    is ProviderOutcome.Unavailable -> allEnabledResponded = false
                 }
             }
         }
@@ -322,7 +426,7 @@ object IntelClient {
                     return@withContext cacheAndReturn(db, cacheKey, now, true, outcome.sourceLabel, outcome.detail)
                 }
                 is ProviderOutcome.Clean -> anyClean = true
-                is ProviderOutcome.Unavailable -> Unit
+                is ProviderOutcome.Unavailable -> allEnabledResponded = false
             }
         }
 
@@ -334,7 +438,7 @@ object IntelClient {
                         return@withContext cacheAndReturn(db, cacheKey, now, true, outcome.sourceLabel, outcome.detail)
                     }
                     is ProviderOutcome.Clean -> anyClean = true
-                    is ProviderOutcome.Unavailable -> Unit
+                    is ProviderOutcome.Unavailable -> allEnabledResponded = false
                 }
             }
         }
@@ -347,14 +451,25 @@ object IntelClient {
                         return@withContext cacheAndReturn(db, cacheKey, now, true, outcome.sourceLabel, outcome.detail)
                     }
                     is ProviderOutcome.Clean -> anyClean = true
-                    is ProviderOutcome.Unavailable -> Unit
+                    is ProviderOutcome.Unavailable -> allEnabledResponded = false
                 }
             }
         }
 
-        // 僅當至少有一個外部來源明確回應「未命中」時才快取與回傳已查證結果；
+        // 僅當至少有一個外部來源明確回應「未命中」時才回傳已查證結果；
         // 若全部來源皆離線/不可用，靜默降級回 null，交由既有 AI 流程處理。
         if (!anyClean) return@withContext null
+
+        // R1 (#545): 僅當所有啟用情報源皆成功回應才寫入 72h 完整 Clean 快取，避免部分來源離線時污染快取
+        if (!allEnabledResponded) {
+            return@withContext IntelCheckResult(
+                isHit = false,
+                sourceLabel = "已查證",
+                detail = "已查證，無命中紀錄",
+                checkedAt = now,
+                fromCache = false
+            )
+        }
 
         return@withContext cacheAndReturn(
             db = db,
@@ -663,8 +778,7 @@ object IntelClient {
             setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", descriptiveUserAgent)
         }
-        OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(jsonBody) }
-        return readHttpResponse(conn)
+        return readHttpResponse(conn, jsonBody)
     }
 
     private fun httpPostForm(urlStr: String, formBody: String): HttpResponse {
@@ -677,12 +791,14 @@ object IntelClient {
             setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", descriptiveUserAgent)
         }
-        OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(formBody) }
-        return readHttpResponse(conn)
+        return readHttpResponse(conn, formBody)
     }
 
-    private fun readHttpResponse(conn: HttpURLConnection): HttpResponse {
+    private fun readHttpResponse(conn: HttpURLConnection, requestBody: String? = null): HttpResponse {
         return try {
+            if (requestBody != null) {
+                OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use { it.write(requestBody) }
+            }
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val body = if (stream != null) {

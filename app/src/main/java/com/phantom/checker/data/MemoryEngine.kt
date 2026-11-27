@@ -193,12 +193,9 @@ object MemoryEngine {
         lazyArchiveExpiredShortTerm(db, nowMs)
         val normCat = normalizeCategory(category)
         val normSubj = subject.trim().ifEmpty { proposedContent.take(16).trim() }
-        val activeCandidates = db.memoryDao(). byStatus(MemoryEntity.STATUS_ACTIVE)
-            .filter {
-                it.category == normCat &&
-                    normalizeSubjectKey(it.subject) == normalizeSubjectKey(normSubj) &&
-                    (it.layer != MemoryEntity.LAYER_SHORT_TERM || it.expiresAt == null || it.expiresAt > nowMs)
-            }
+        val targetSubjKey = normalizeSubjectKey(normSubj)
+        val activeCandidates = db.memoryDao().findActiveNonExpiredByCategory(normCat, nowMs)
+            .filter { normalizeSubjectKey(it.subject) == targetSubjKey }
         activeCandidates.firstOrNull { existing ->
             !isSubstantiallySameContent(existing.content, proposedContent)
         }
@@ -249,9 +246,9 @@ object MemoryEngine {
 
         db.withTransaction {
             val dao = db.memoryDao()
-            val matchingActive = dao.byStatus(MemoryEntity.STATUS_ACTIVE).filter {
-                it.category == normCat &&
-                    normalizeSubjectKey(it.subject) == normalizeSubjectKey(cleanSubject)
+            val targetSubjKey = normalizeSubjectKey(cleanSubject)
+            val matchingActive = dao.findActiveNonExpiredByCategory(normCat, nowMs).filter {
+                normalizeSubjectKey(it.subject) == targetSubjKey
             }
             val sameContentExisting = matchingActive.firstOrNull {
                 isSubstantiallySameContent(it.content, cleanContent)
@@ -359,21 +356,16 @@ object MemoryEngine {
             val dao = db.memoryDao()
             val chosen = dao.byId(chosenMemoryId) ?: return@withTransaction null
             val subjKey = normalizeSubjectKey(chosen.subject)
-            val allConflictsInGroup = dao.byStatus(MemoryEntity.STATUS_CONFLICT).filter {
-                it.category == chosen.category && normalizeSubjectKey(it.subject) == subjKey
+            val sameGroupCandidates = dao.findConflictOrActiveByCategory(chosen.category).filter {
+                it.id != chosen.id && normalizeSubjectKey(it.subject) == subjKey
             }
-            val alsoActiveInGroup = dao.byStatus(MemoryEntity.STATUS_ACTIVE).filter {
-                it.id != chosen.id && it.category == chosen.category && normalizeSubjectKey(it.subject) == subjKey
-            }
-            (allConflictsInGroup + alsoActiveInGroup).forEach { item ->
-                if (item.id != chosen.id) {
-                    dao.update(
-                        item.copy(
-                            status = MemoryEntity.STATUS_ARCHIVED,
-                            updatedAt = nowMs
-                        )
+            sameGroupCandidates.forEach { item ->
+                dao.update(
+                    item.copy(
+                        status = MemoryEntity.STATUS_ARCHIVED,
+                        updatedAt = nowMs
                     )
-                }
+                )
             }
             val resolved = chosen.copy(
                 status = MemoryEntity.STATUS_ACTIVE,
@@ -979,8 +971,11 @@ class MemoryExpiryWorker(
             val db = AppDatabaseHolder.db(applicationContext)
             MemoryEngine.lazyArchiveExpiredShortTerm(db, System.currentTimeMillis())
             Result.success()
-        } catch (_: Exception) {
-            Result.success()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("MemoryExpiryWorker", "doWork failed (attempt=$runAttemptCount)", e)
+            if (runAttemptCount < 3) Result.retry() else Result.failure()
         }
     }
 }
@@ -1018,7 +1013,7 @@ class ScamImmunitySummaryWorker(
             val db = AppDatabaseHolder.db(appCtx)
             val now = System.currentTimeMillis()
             val since30d = now - TimeUnit.DAYS.toMillis(30)
-            val recentScams = db.messageDao().scams().filter { it.timestamp >= since30d }
+            val recentScams = db.messageDao().scamsSince(since30d, limit = 500)
             if (recentScams.isEmpty()) {
                 return Result.success()
             }
@@ -1059,8 +1054,11 @@ class ScamImmunitySummaryWorker(
                 nowMs = now
             )
             Result.success()
-        } catch (_: Exception) {
-            Result.success()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("ScamImmunitySummaryWorker", "doWork failed (attempt=$runAttemptCount)", e)
+            if (runAttemptCount < 3) Result.retry() else Result.failure()
         }
     }
 }

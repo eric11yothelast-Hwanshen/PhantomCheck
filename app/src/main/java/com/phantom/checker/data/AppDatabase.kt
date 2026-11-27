@@ -319,6 +319,17 @@ data class HourCountRow(
     val cnt: Int
 )
 
+/** R1 (#545) / R4 / R5 / R6: 時間區間風險分布聚合結果 */
+data class RangeRiskStatsRow(
+    val total: Int,
+    val unread: Int,
+    val scam: Int,
+    val warning: Int,
+    val suspicious: Int,
+    val safe: Int,
+    val unanalyzed: Int
+)
+
 @Dao
 interface MessageDao {
     @Query("SELECT * FROM messages ORDER BY timestamp DESC LIMIT :limit OFFSET :offset")
@@ -360,14 +371,41 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE (:packageName IS NULL OR packageName = :packageName) AND (:sinceTs IS NULL OR timestamp >= :sinceTs) ORDER BY timestamp DESC")
     suspend fun exportQuery(packageName: String?, sinceTs: Long?): List<MessageEntity>
 
+    /** R1 (#545) / R6 / R10 / R11: 單筆訊息查詢 */
     @Query("SELECT * FROM messages WHERE id = :id LIMIT 1")
     suspend fun byId(id: Long): MessageEntity?
+
+    /** R1 (#545) / R10 / R11: 批次 ID 查詢內部單批（請透過 byIds 呼叫以自動 chunked(500)） */
+    @Query("SELECT * FROM messages WHERE id IN (:ids)")
+    suspend fun byIdsChunk(ids: List<Long>): List<MessageEntity>
+
+    /** R1 (#545) / R10 / R11: 批次 ID 查詢（自動 chunked(500) 避免 SQLite 999 host variable 上限） */
+    suspend fun byIds(ids: List<Long>): List<MessageEntity> {
+        if (ids.isEmpty()) return emptyList()
+        if (ids.size <= 500) return byIdsChunk(ids)
+        return ids.chunked(500).flatMap { byIdsChunk(it) }
+    }
+
+    /** R1 (#545) / R7: 取得最新一筆高風險詐騙/警告訊息（優先未讀，LIMIT 1，供 RiskActionWidgetProvider） */
+    @Query(
+        "SELECT * FROM messages WHERE isOwn = 0 AND riskLabel IN ('scam', 'warning') " +
+            "ORDER BY isRead ASC, timestamp DESC LIMIT 1"
+    )
+    suspend fun latestUnreadOrRecentScam(): MessageEntity?
+
+    /** R1 (#545) / R6: 依游標遞增撈取新訊息（WHERE id > :cursor ORDER BY id ASC LIMIT 50，供 DesktopLinkClient） */
+    @Query("SELECT * FROM messages WHERE id > :cursor ORDER BY id ASC LIMIT :limit")
+    suspend fun afterIdCursor(cursor: Long, limit: Int = 50): List<MessageEntity>
 
     @Query("SELECT * FROM messages WHERE content LIKE '%' || :q || '%' OR sender LIKE '%' || :q || '%' ORDER BY timestamp DESC LIMIT 200")
     suspend fun search(q: String): List<MessageEntity>
 
     @Query("SELECT * FROM messages WHERE isOwn = 0 AND riskLabel = 'scam' ORDER BY timestamp DESC")
     suspend fun scams(): List<MessageEntity>
+
+    /** R1 (#545): 近 N 日詐騙訊息查詢（含 LIMIT，供 ScamImmunitySummaryWorker 取代全庫 scams()） */
+    @Query("SELECT * FROM messages WHERE isOwn = 0 AND riskLabel = 'scam' AND timestamp >= :sinceTs ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun scamsSince(sinceTs: Long, limit: Int = 500): List<MessageEntity>
 
     @Query("SELECT * FROM messages WHERE isFiltered = 1 ORDER BY timestamp DESC")
     suspend fun filtered(): List<MessageEntity>
@@ -394,6 +432,39 @@ interface MessageDao {
             "FROM messages WHERE isOwn = 0"
     )
     suspend fun statsSnapshot(startOfDay: Long): StatsSnapshotRow
+
+    /** R1 (#545) / R4 / R5 / R6: 時間區間風險分布聚合（供 WeeklySummaryPolicy / ProactiveEngine / DesktopLinkClient） */
+    @Query(
+        "SELECT COUNT(*) AS total, " +
+            "COALESCE(SUM(CASE WHEN isRead = 0 THEN 1 ELSE 0 END), 0) AS unread, " +
+            "COALESCE(SUM(CASE WHEN riskLabel = 'scam' THEN 1 ELSE 0 END), 0) AS scam, " +
+            "COALESCE(SUM(CASE WHEN riskLabel = 'warning' THEN 1 ELSE 0 END), 0) AS warning, " +
+            "COALESCE(SUM(CASE WHEN riskLabel = 'suspicious' THEN 1 ELSE 0 END), 0) AS suspicious, " +
+            "COALESCE(SUM(CASE WHEN riskLabel = 'safe' THEN 1 ELSE 0 END), 0) AS safe, " +
+            "COALESCE(SUM(CASE WHEN riskLabel = '' OR riskLabel IS NULL THEN 1 ELSE 0 END), 0) AS unanalyzed " +
+            "FROM messages WHERE isOwn = 0 AND timestamp >= :startTs AND timestamp < :endTs"
+    )
+    suspend fun statsBetween(startTs: Long, endTs: Long): RangeRiskStatsRow
+
+    /** R1 (#545) / R4 / R6: 時間區間各 App 訊息統計排行（供週報與桌面端週排行聚合） */
+    @Query(
+        "SELECT packageName, MAX(appLabel) AS appLabel, COUNT(*) AS cnt, MAX(timestamp) AS lastTs, " +
+            "SUM(CASE WHEN riskLabel = 'scam' THEN 2 WHEN riskLabel IN ('warning', 'suspicious') THEN 1 ELSE 0 END) AS riskScore " +
+            "FROM messages WHERE isOwn = 0 AND timestamp >= :startTs AND timestamp < :endTs " +
+            "GROUP BY packageName ORDER BY cnt DESC, lastTs DESC LIMIT :limit"
+    )
+    suspend fun topAppsBetween(startTs: Long, endTs: Long, limit: Int = 10): List<AppGroupRow>
+
+    /** R1 (#545) / R4 / R5: 時間區間高風險訊息查詢（含 LIMIT，供主動引擎與摘要使用） */
+    @Query(
+        "SELECT * FROM messages WHERE isOwn = 0 AND timestamp >= :startTs AND timestamp < :endTs " +
+            "AND riskLabel IN ('scam', 'warning', 'suspicious') ORDER BY timestamp DESC LIMIT :limit"
+    )
+    suspend fun riskyBetween(startTs: Long, endTs: Long, limit: Int = 100): List<MessageEntity>
+
+    /** R1 (#545) / R6 / R10: 統計 warning 筆數（與 suspicious 分離，供 StatsSnapshot 與 ScamCenter） */
+    @Query("SELECT COUNT(*) FROM messages WHERE isOwn = 0 AND riskLabel = 'warning'")
+    suspend fun warningCount(): Int
 
     @Query("SELECT COUNT(*) FROM messages WHERE isOwn = 0 AND timestamp >= :startOfDay")
     suspend fun todayCount(startOfDay: Long): Int
@@ -448,7 +519,14 @@ interface MessageDao {
     ): List<MessageEntity>
 
     @Query("UPDATE messages SET isRead = 1 WHERE id IN (:ids)")
-    suspend fun markReadByIds(ids: List<Long>)
+    suspend fun markReadByIdsChunk(ids: List<Long>)
+
+    /** R1 (#545): 批次標記已讀（自動 chunked(500)） */
+    @Transaction
+    suspend fun markReadByIds(ids: List<Long>) {
+        if (ids.isEmpty()) return
+        ids.chunked(500).forEach { markReadByIdsChunk(it) }
+    }
 
     @Query("SELECT id FROM messages WHERE packageName = :packageName AND conversationKey = :conversationKey AND isRead = 0")
     suspend fun unreadIdsByConversation(packageName: String, conversationKey: String): List<Long>
@@ -466,7 +544,14 @@ interface MessageDao {
     suspend fun setStarred(id: Long, starred: Boolean)
 
     @Query("UPDATE messages SET isStarred = :starred WHERE id IN (:ids)")
-    suspend fun setStarredByIds(ids: List<Long>, starred: Boolean)
+    suspend fun setStarredByIdsChunk(ids: List<Long>, starred: Boolean)
+
+    /** R1 (#545): 批次設定星標（自動 chunked(500)） */
+    @Transaction
+    suspend fun setStarredByIds(ids: List<Long>, starred: Boolean) {
+        if (ids.isEmpty()) return
+        ids.chunked(500).forEach { setStarredByIdsChunk(it, starred) }
+    }
 
     @Query("UPDATE messages SET remindAt = :remindAt WHERE id = :id")
     suspend fun setRemindAt(id: Long, remindAt: Long?)
@@ -534,6 +619,10 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE isOwn = 0 AND timestamp >= :sinceTs ORDER BY timestamp DESC")
     suspend fun since(sinceTs: Long): List<MessageEntity>
 
+    /** R1 (#545) / R5: 最近訊息查詢（含 LIMIT，供 WatchTopicEngine 取代 since()+take()） */
+    @Query("SELECT * FROM messages WHERE isOwn = 0 AND timestamp >= :sinceTs ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun sinceLimited(sinceTs: Long, limit: Int): List<MessageEntity>
+
     @Query("SELECT * FROM messages WHERE isOwn = 0 AND timestamp >= :startTs AND timestamp < :endTs ORDER BY timestamp DESC")
     suspend fun between(startTs: Long, endTs: Long): List<MessageEntity>
 
@@ -559,7 +648,14 @@ interface MessageDao {
     suspend fun deleteById(id: Long)
 
     @Query("DELETE FROM messages WHERE id IN (:ids)")
-    suspend fun deleteByIds(ids: List<Long>)
+    suspend fun deleteByIdsChunk(ids: List<Long>)
+
+    /** R1 (#545) / R10 / R11: 批次刪除訊息（自動 chunked(500) 避免 SQLite 999 host variable 上限） */
+    @Transaction
+    suspend fun deleteByIds(ids: List<Long>) {
+        if (ids.isEmpty()) return
+        ids.chunked(500).forEach { deleteByIdsChunk(it) }
+    }
 
     @Query("DELETE FROM messages WHERE isRead = 1")
     suspend fun deleteReadMessages()
@@ -586,10 +682,70 @@ interface MessageDao {
     suspend fun deleteOlderThanCount(keepCount: Int): Int
 
     @Query("SELECT id FROM messages WHERE id IN (:ids) AND riskLabel != 'scam'")
-    suspend fun nonScamIdsFrom(ids: List<Long>): List<Long>
+    suspend fun nonScamIdsFromChunk(ids: List<Long>): List<Long>
+
+    /** R1 (#545) / R10: 篩除非詐騙 ID（自動 chunked(500)） */
+    suspend fun nonScamIdsFrom(ids: List<Long>): List<Long> {
+        if (ids.isEmpty()) return emptyList()
+        if (ids.size <= 500) return nonScamIdsFromChunk(ids)
+        return ids.chunked(500).flatMap { nonScamIdsFromChunk(it) }
+    }
 
     @Query("DELETE FROM messages WHERE id IN (:ids) AND riskLabel != 'scam'")
-    suspend fun deleteNonScamByIds(ids: List<Long>): Int
+    suspend fun deleteNonScamByIdsChunk(ids: List<Long>): Int
+
+    /** R1 (#545) / R10: 批次刪除非詐騙訊息（自動 chunked(500)） */
+    @Transaction
+    suspend fun deleteNonScamByIds(ids: List<Long>): Int {
+        if (ids.isEmpty()) return 0
+        var total = 0
+        ids.chunked(500).forEach { total += deleteNonScamByIdsChunk(it) }
+        return total
+    }
+
+    /** R1 (#545) / R4 / R10 / R11: 孤兒清理系列（message_tags / intel_results / pending_ai_analysis） */
+    @Query("DELETE FROM message_tags WHERE messageId NOT IN (SELECT id FROM messages)")
+    suspend fun deleteOrphanMessageTags(): Int
+
+    /** R1 (#545) / R4 / R10 / R11: 清理對應訊息已不存在之 intel_results 孤兒紀錄 */
+    @Query("DELETE FROM intel_results WHERE messageId NOT IN (SELECT id FROM messages)")
+    suspend fun deleteOrphanIntelResults(): Int
+
+    /** R1 (#545) / R4 / R10 / R11: 清理對應訊息已不存在之 pending_ai_analysis 孤兒紀錄 */
+    @Query("DELETE FROM pending_ai_analysis WHERE messageId NOT IN (SELECT id FROM messages)")
+    suspend fun deleteOrphanPendingAiAnalysis(): Int
+
+    /** R1 (#545) / R4 / R10 / R11: 同交易清理所有訊息關聯表孤兒 */
+    @Transaction
+    suspend fun deleteAllMessageOrphans() {
+        deleteOrphanMessageTags()
+        deleteOrphanIntelResults()
+        deleteOrphanPendingAiAnalysis()
+    }
+
+    /** R1 (#545) / R10 / R11: 同交易刪除單筆訊息並清理關聯孤兒 */
+    @Transaction
+    suspend fun deleteByIdWithOrphans(id: Long) {
+        deleteById(id)
+        deleteAllMessageOrphans()
+    }
+
+    /** R1 (#545) / R10 / R11: 同交易批次刪除訊息並清理關聯孤兒（自動 chunked(500)） */
+    @Transaction
+    suspend fun deleteByIdsWithOrphans(ids: List<Long>) {
+        if (ids.isEmpty()) return
+        deleteByIds(ids)
+        deleteAllMessageOrphans()
+    }
+
+    /** R1 (#545) / R10: 同交易批次刪除非詐騙訊息並清理關聯孤兒（保護 scam 證據，自動 chunked(500)） */
+    @Transaction
+    suspend fun deleteNonScamByIdsWithOrphans(ids: List<Long>): Int {
+        if (ids.isEmpty()) return 0
+        val deleted = deleteNonScamByIds(ids)
+        if (deleted > 0) deleteAllMessageOrphans()
+        return deleted
+    }
 
     @Query("UPDATE messages SET isRead = 1 WHERE packageName = :packageName AND conversationKey IN (:conversationKeys) AND isRead = 0")
     suspend fun markConversationsRead(packageName: String, conversationKeys: List<String>)
@@ -664,7 +820,14 @@ interface TagDao {
     suspend fun deleteCrossRefsByMessage(messageId: Long)
 
     @Query("DELETE FROM message_tags WHERE messageId IN (:ids)")
-    suspend fun deleteCrossRefsByMessageIds(ids: List<Long>)
+    suspend fun deleteCrossRefsByMessageIdsChunk(ids: List<Long>)
+
+    /** R1 (#545) / R10 / R11: 批次刪除標籤關聯（自動 chunked(500)） */
+    @Transaction
+    suspend fun deleteCrossRefsByMessageIds(ids: List<Long>) {
+        if (ids.isEmpty()) return
+        ids.chunked(500).forEach { deleteCrossRefsByMessageIdsChunk(it) }
+    }
 
     @Query("DELETE FROM message_tags WHERE messageId IN (SELECT id FROM messages WHERE packageName = :packageName)")
     suspend fun deleteCrossRefsByApp(packageName: String)
@@ -705,7 +868,14 @@ interface TagDao {
     suspend fun tagIdsForMessage(messageId: Long): List<Long>
 
     @Query("SELECT * FROM message_tags WHERE messageId IN (:messageIds)")
-    suspend fun crossRefsForMessages(messageIds: List<Long>): List<MessageTagCrossRef>
+    suspend fun crossRefsForMessagesChunk(messageIds: List<Long>): List<MessageTagCrossRef>
+
+    /** R1 (#545): 批次查詢標籤關聯（自動 chunked(500)） */
+    suspend fun crossRefsForMessages(messageIds: List<Long>): List<MessageTagCrossRef> {
+        if (messageIds.isEmpty()) return emptyList()
+        if (messageIds.size <= 500) return crossRefsForMessagesChunk(messageIds)
+        return messageIds.chunked(500).flatMap { crossRefsForMessagesChunk(it) }
+    }
 
     @Query("SELECT * FROM message_tags")
     suspend fun allCrossRefs(): List<MessageTagCrossRef>
@@ -727,7 +897,14 @@ interface TagDao {
             "WHERE mt.messageId IN (:messageIds) " +
             "ORDER BY t.sortOrder ASC, t.id ASC"
     )
-    suspend fun tagsForMessages(messageIds: List<Long>): List<MessageTagRow>
+    suspend fun tagsForMessagesChunk(messageIds: List<Long>): List<MessageTagRow>
+
+    /** R1 (#545): 批次查詢訊息標籤（自動 chunked(500)） */
+    suspend fun tagsForMessages(messageIds: List<Long>): List<MessageTagRow> {
+        if (messageIds.isEmpty()) return emptyList()
+        if (messageIds.size <= 500) return tagsForMessagesChunk(messageIds)
+        return messageIds.chunked(500).flatMap { tagsForMessagesChunk(it) }
+    }
 
     @Query(
         "SELECT t.id AS tagId, t.name AS name, t.colorHex AS colorHex, " +
@@ -741,6 +918,26 @@ interface TagDao {
 
     @Query("DELETE FROM message_tags WHERE messageId NOT IN (SELECT id FROM messages)")
     suspend fun deleteOrphanCrossRefs()
+
+    /** R1 (#545) / R6 / R10: 清理已不存在標籤之規則孤兒 */
+    @Query("DELETE FROM user_tag_rules WHERE targetTagId NOT IN (SELECT id FROM tags)")
+    suspend fun deleteOrphanUserTagRules(): Int
+
+    @Query("DELETE FROM app_category_rules WHERE tagId NOT IN (SELECT id FROM tags)")
+    suspend fun deleteOrphanAppCategoryRules(): Int
+
+    @Query("DELETE FROM ai_rules WHERE kind = 'tag' AND targetTagId IS NOT NULL AND targetTagId NOT IN (SELECT id FROM tags)")
+    suspend fun deleteOrphanAiTagRules(): Int
+
+    /** R1 (#545) / R6 / R10: 同交易刪除標籤並清理關聯表與規則孤兒 */
+    @Transaction
+    suspend fun deleteTagWithOrphans(tagId: Long) {
+        deleteCrossRefsByTag(tagId)
+        deleteById(tagId)
+        deleteOrphanUserTagRules()
+        deleteOrphanAppCategoryRules()
+        deleteOrphanAiTagRules()
+    }
 }
 
 @Dao
@@ -778,6 +975,27 @@ interface AiRuleDao {
     /** 全量啟用白名單查詢（不設 LIMIT，專供正確性比對路徑使用，避免第 21 筆以後白名單靜默失效） */
     @Query("SELECT * FROM ai_rules WHERE isEnabled = 1 AND kind = 'whitelist' ORDER BY createdAt ASC, id ASC")
     suspend fun activeWhitelistAll(): List<AiRuleEntity>
+
+    /** R1 (#545): 全量白名單（含停用），供 WhitelistRuleHelper 去重與重新啟用使用 */
+    @Query("SELECT * FROM ai_rules WHERE kind = 'whitelist' ORDER BY createdAt DESC, id DESC")
+    suspend fun allWhitelist(): List<AiRuleEntity>
+
+    /** R1 (#545) / R2: 依寄件者與 App 查詢白名單（含停用，收斂白名單查詢至 DAO） */
+    @Query(
+        "SELECT * FROM ai_rules WHERE kind = 'whitelist' " +
+            "AND LOWER(TRIM(COALESCE(sender, ''))) = LOWER(TRIM(:sender)) " +
+            "AND (:packageName IS NULL OR packageName IS NULL OR TRIM(packageName) = '' OR LOWER(TRIM(packageName)) = LOWER(TRIM(:packageName))) " +
+            "ORDER BY createdAt DESC, id DESC"
+    )
+    suspend fun findWhitelistBySender(sender: String, packageName: String? = null): List<AiRuleEntity>
+
+    /** R1 (#545) / R2: 依 App 查詢啟用白名單（供 ContactContext / 規則快取對接） */
+    @Query(
+        "SELECT * FROM ai_rules WHERE isEnabled = 1 AND kind = 'whitelist' " +
+            "AND (:packageName IS NULL OR packageName IS NULL OR TRIM(packageName) = '' OR LOWER(TRIM(packageName)) = LOWER(TRIM(:packageName))) " +
+            "ORDER BY createdAt ASC, id ASC"
+    )
+    suspend fun activeWhitelistForPackage(packageName: String?): List<AiRuleEntity>
 
     @Query("SELECT * FROM ai_rules WHERE kind = :kind AND isEnabled = 1 ORDER BY packageName ASC, id ASC")
     suspend fun activeByKind(kind: String): List<AiRuleEntity>
@@ -827,7 +1045,7 @@ object WhitelistRuleHelper {
             return UpsertResult(Status.FAILED, null, "白名單規則內容不可為空")
         }
         val effectiveRuleText = normRuleText.ifEmpty { "白名單寄件者：$normSender" }
-        val existingList = dao.all().filter { it.kind == AiRuleEntity.KIND_WHITELIST }
+        val existingList = dao.allWhitelist()
         val matched = existingList.firstOrNull { r ->
             val rPkg = r.packageName?.trim()?.takeIf { it.isNotEmpty() }
             val samePkg = (rPkg == null && normPkg == null) ||
@@ -886,6 +1104,14 @@ interface ChatDao {
 
     @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY createdAt ASC, id ASC")
     suspend fun messagesForSession(sessionId: Long): List<ChatMessageEntity>
+
+    /** R1 (#545) / R5: 取得指定對話最新 N 則訊息（由新到舊，避免 ProactiveEngine 全量載入） */
+    @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY createdAt DESC, id DESC LIMIT :limit")
+    suspend fun recentMessagesForSession(sessionId: Long, limit: Int): List<ChatMessageEntity>
+
+    /** R1 (#545) / R5: 取得指定對話最後一則使用者訊息時間（供 ProactiveEngine 判斷互動活躍度） */
+    @Query("SELECT MAX(createdAt) FROM chat_messages WHERE sessionId = :sessionId AND role = 'user'")
+    suspend fun lastUserMessageTime(sessionId: Long): Long?
 
     @Insert
     suspend fun insertMessage(message: ChatMessageEntity): Long
@@ -952,13 +1178,34 @@ interface IntelDao {
     suspend fun getResult(messageId: Long): IntelResultEntity?
 
     @Query("SELECT * FROM intel_results WHERE messageId IN (:messageIds)")
-    suspend fun getResults(messageIds: List<Long>): List<IntelResultEntity>
+    suspend fun getResultsChunk(messageIds: List<Long>): List<IntelResultEntity>
+
+    /** R1 (#545): 批次查詢情報結果（自動 chunked(500)） */
+    suspend fun getResults(messageIds: List<Long>): List<IntelResultEntity> {
+        if (messageIds.isEmpty()) return emptyList()
+        if (messageIds.size <= 500) return getResultsChunk(messageIds)
+        return messageIds.chunked(500).flatMap { getResultsChunk(it) }
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putResult(result: IntelResultEntity)
 
     @Query("DELETE FROM intel_results WHERE messageId = :messageId")
     suspend fun deleteResult(messageId: Long)
+
+    @Query("DELETE FROM intel_results WHERE messageId IN (:messageIds)")
+    suspend fun deleteResultsByMessageIdsChunk(messageIds: List<Long>)
+
+    /** R1 (#545) / R10 / R11: 批次刪除情報結果（自動 chunked(500)） */
+    @Transaction
+    suspend fun deleteResultsByMessageIds(messageIds: List<Long>) {
+        if (messageIds.isEmpty()) return
+        messageIds.chunked(500).forEach { deleteResultsByMessageIdsChunk(it) }
+    }
+
+    /** R1 (#545) / R4 / R10 / R11: 清理對應訊息已不存在的 intel_results 孤兒紀錄 */
+    @Query("DELETE FROM intel_results WHERE messageId NOT IN (SELECT id FROM messages)")
+    suspend fun deleteOrphanResults(): Int
 
     @Query("DELETE FROM intel_results")
     suspend fun deleteAllResults()
@@ -1006,6 +1253,14 @@ interface TodoDao {
 
     @Query("SELECT * FROM todos WHERE isDone = 0 AND dueAt > :now ORDER BY dueAt ASC")
     suspend fun futurePending(now: Long): List<TodoEntity>
+
+    /** R1 (#545) / R4 / R5 / R14: 依到期時間區間查詢待辦（含已完成） */
+    @Query("SELECT * FROM todos WHERE dueAt >= :startTs AND dueAt < :endTs ORDER BY isDone ASC, dueAt ASC, id ASC")
+    suspend fun between(startTs: Long, endTs: Long): List<TodoEntity>
+
+    /** R1 (#545) / R4 / R5 / R14: 依到期時間區間查詢未完成待辦 */
+    @Query("SELECT * FROM todos WHERE isDone = 0 AND dueAt >= :startTs AND dueAt < :endTs ORDER BY dueAt ASC, id ASC")
+    suspend fun pendingBetween(startTs: Long, endTs: Long): List<TodoEntity>
 
     @Query("SELECT * FROM todos WHERE relatedMessageId = :messageId LIMIT 1")
     suspend fun findByRelatedMessageId(messageId: Long): TodoEntity?
@@ -1061,16 +1316,34 @@ interface PendingAiAnalysisDao {
     fun observePendingCount(): Flow<Int>
 
     @Query("DELETE FROM pending_ai_analysis WHERE messageId IN (:messageIds)")
-    suspend fun deleteByIds(messageIds: List<Long>)
+    suspend fun deleteByIdsChunk(messageIds: List<Long>)
+
+    /** R1 (#545): 批次刪除待分析佇列（自動 chunked(500)） */
+    @Transaction
+    suspend fun deleteByIds(messageIds: List<Long>) {
+        if (messageIds.isEmpty()) return
+        messageIds.chunked(500).forEach { deleteByIdsChunk(it) }
+    }
 
     @Query("UPDATE pending_ai_analysis SET attempts = attempts + 1 WHERE messageId IN (:messageIds)")
-    suspend fun incrementAttempts(messageIds: List<Long>)
+    suspend fun incrementAttemptsChunk(messageIds: List<Long>)
+
+    /** R1 (#545): 批次累加嘗試次數（自動 chunked(500)） */
+    @Transaction
+    suspend fun incrementAttempts(messageIds: List<Long>) {
+        if (messageIds.isEmpty()) return
+        messageIds.chunked(500).forEach { incrementAttemptsChunk(it) }
+    }
 
     @Query("SELECT * FROM pending_ai_analysis WHERE attempts >= 3")
     suspend fun exhaustedItems(): List<PendingAiAnalysisEntity>
 
     @Query("DELETE FROM pending_ai_analysis WHERE attempts >= 3")
     suspend fun deleteExhausted()
+
+    /** R1 (#545) / R4 / R10 / R11: 清理對應訊息已不存在之 pending_ai_analysis 孤兒紀錄 */
+    @Query("DELETE FROM pending_ai_analysis WHERE messageId NOT IN (SELECT id FROM messages)")
+    suspend fun deleteOrphanPending(): Int
 
     @Query("DELETE FROM pending_ai_analysis")
     suspend fun clearAll()
@@ -1108,6 +1381,18 @@ interface NoteDao {
 
     @Query("SELECT * FROM notes ORDER BY pinned DESC, updatedAt DESC")
     fun observeAll(): Flow<List<NoteEntity>>
+
+    /** R1 (#545) / R5 / R7: 依置頂與更新時間取前 N 筆備忘（供 Widget 與 WatchTopicEngine） */
+    @Query("SELECT * FROM notes ORDER BY pinned DESC, updatedAt DESC LIMIT :limit")
+    suspend fun topRecent(limit: Int): List<NoteEntity>
+
+    /** R1 (#545) / R7: 備忘總數（供 Widget 顯示筆數，免全表載入） */
+    @Query("SELECT COUNT(*) FROM notes")
+    suspend fun count(): Int
+
+    /** R1 (#545) / R6: 單筆備忘查詢（供 DesktopLinkClient NOTE_EDIT / NOTE_PIN_TOGGLE） */
+    @Query("SELECT * FROM notes WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): NoteEntity?
 
     @Query("SELECT * FROM notes WHERE relatedMessageId = :messageId AND source = 'auto' LIMIT 1")
     suspend fun findAutoByMessageId(messageId: Long): NoteEntity?
@@ -1363,6 +1648,25 @@ interface MemoryDao {
     @Query("SELECT * FROM memories WHERE category = :category AND subject = :subject AND status = 'active' ORDER BY updatedAt DESC, id DESC")
     suspend fun findActiveByCategoryAndSubject(category: String, subject: String): List<MemoryEntity>
 
+    /** R1 (#545): 依分類與狀態查詢記憶（走 category 索引，取代 MemoryEngine byStatus 全表載入） */
+    @Query("SELECT * FROM memories WHERE category = :category AND status = :status ORDER BY updatedAt DESC, id DESC")
+    suspend fun findByCategoryAndStatus(category: String, status: String): List<MemoryEntity>
+
+    /** R1 (#545): 依分類查詢未過期 active 記憶（供 MemoryEngine.previewConflict / writeMemoryWithConflictDetection） */
+    @Query(
+        "SELECT * FROM memories WHERE category = :category AND status = 'active' " +
+            "AND (layer != 'short_term' OR expiresAt IS NULL OR expiresAt > :nowMs) " +
+            "ORDER BY updatedAt DESC, id DESC"
+    )
+    suspend fun findActiveNonExpiredByCategory(category: String, nowMs: Long): List<MemoryEntity>
+
+    /** R1 (#545): 依分類一次查詢 conflict 與 active 記憶（供 MemoryEngine.resolveConflictGroup） */
+    @Query(
+        "SELECT * FROM memories WHERE category = :category AND status IN ('conflict', 'active') " +
+            "ORDER BY updatedAt DESC, id DESC"
+    )
+    suspend fun findConflictOrActiveByCategory(category: String): List<MemoryEntity>
+
     @Query(
         "SELECT * FROM memories WHERE status = 'active' AND privacyTier = 'normal' " +
             "AND (layer != 'short_term' OR expiresAt IS NULL OR expiresAt > :nowMs) " +
@@ -1384,7 +1688,14 @@ interface MemoryDao {
     suspend fun archiveExpiredShortTerm(nowMs: Long): Int
 
     @Query("UPDATE memories SET lastUsedAt = :usedAt, useCount = useCount + 1 WHERE id IN (:ids)")
-    suspend fun recordUsage(ids: List<Long>, usedAt: Long)
+    suspend fun recordUsageChunk(ids: List<Long>, usedAt: Long)
+
+    /** R1 (#545): 批次記錄記憶使用次數（自動 chunked(500)） */
+    @Transaction
+    suspend fun recordUsage(ids: List<Long>, usedAt: Long) {
+        if (ids.isEmpty()) return
+        ids.chunked(500).forEach { recordUsageChunk(it, usedAt) }
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(memory: MemoryEntity): Long
@@ -1396,7 +1707,14 @@ interface MemoryDao {
     suspend fun deleteById(id: Long)
 
     @Query("DELETE FROM memories WHERE id IN (:ids)")
-    suspend fun deleteByIds(ids: List<Long>)
+    suspend fun deleteByIdsChunk(ids: List<Long>)
+
+    /** R1 (#545) / R11: 批次刪除記憶（自動 chunked(500) 避免 SQLite 999 host variable 上限） */
+    @Transaction
+    suspend fun deleteByIds(ids: List<Long>) {
+        if (ids.isEmpty()) return
+        ids.chunked(500).forEach { deleteByIdsChunk(it) }
+    }
 }
 
 /**

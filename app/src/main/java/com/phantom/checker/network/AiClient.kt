@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Base64
+import android.util.Log
 import android.util.LruCache
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -39,11 +40,13 @@ import retrofit2.http.Url
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
+import java.security.GeneralSecurityException
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import javax.crypto.AEADBadTagException
 import kotlin.math.ceil
 
 data class ChatMessage(val role: String, val content: String)
@@ -272,26 +275,133 @@ object AiClient {
         }
     }
 
+    private const val TAG_ESP = "AiClient"
+    private const val KEY_AI_PROVIDERS_BACKUP = "ai_providers_json_backup"
+    private const val KEY_ACTIVE_PROVIDER_BACKUP = "active_provider_id_backup"
+
+    private val encryptedPrefsLock = Any()
+
+    @Volatile
+    private var cachedEncryptedPrefs: SharedPreferences? = null
+
+    @Volatile
+    private var cachedProfiles: List<AiProviderProfile>? = null
+
+    @Volatile
+    private var cachedActiveProviderId: String? = null
+
+    @Volatile
+    private var activeProviderIdLoaded: Boolean = false
+
+    @Volatile
+    private var profilesCorrupted: Boolean = false
+
+    @Volatile
+    var lastKeystoreRecoveryAtMs: Long = 0L
+        private set
+
+    @Volatile
+    var keystoreRecoveryCount: Int = 0
+        private set
+
+    private fun isKeystoreCorruption(err: Throwable): Boolean {
+        var cur: Throwable? = err
+        var depth = 0
+        while (cur != null && depth < 12) {
+            if (cur is AEADBadTagException ||
+                cur is GeneralSecurityException ||
+                cur.javaClass.name.contains("AEADBadTagException") ||
+                cur.javaClass.name.contains("InvalidProtocolBufferException")
+            ) {
+                return true
+            }
+            cur = cur.cause
+            depth++
+        }
+        return false
+    }
+
+    private fun clearProfileMemoryCaches() {
+        cachedProfiles = null
+        cachedActiveProviderId = null
+        activeProviderIdLoaded = false
+        profilesCorrupted = false
+    }
+
     @Suppress("DEPRECATION")
-    private fun getEncryptedPrefs(context: Context): SharedPreferences? {
-        return try {
-            val masterKey = MasterKey.Builder(context.applicationContext)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            EncryptedSharedPreferences.create(
-                context.applicationContext,
-                PREFS_NAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+    private fun createEncryptedPrefs(appCtx: Context): SharedPreferences {
+        val masterKey = MasterKey.Builder(appCtx)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return EncryptedSharedPreferences.create(
+            appCtx,
+            PREFS_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+
+    /** R1 (#545): 清除損毀之 EncryptedSharedPreferences 並重建，記錄復原次數與時間戳。 */
+    fun resetCorruptedPrefs(context: Context, reason: Throwable? = null): SharedPreferences? {
+        val appCtx = context.applicationContext ?: context
+        return synchronized(encryptedPrefsLock) {
+            Log.w(
+                TAG_ESP,
+                "EncryptedSharedPreferences corrupted (${reason?.javaClass?.simpleName ?: "manual"}), clearing & recreating $PREFS_NAME",
+                reason
             )
-        } catch (_: Exception) {
-            null
+            cachedEncryptedPrefs = null
+            clearProfileMemoryCaches()
+            runCatching { appCtx.deleteSharedPreferences(PREFS_NAME) }
+            runCatching {
+                appCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+            }
+            keystoreRecoveryCount += 1
+            lastKeystoreRecoveryAtMs = System.currentTimeMillis()
+            try {
+                createEncryptedPrefs(appCtx).also { cachedEncryptedPrefs = it }
+            } catch (recreateErr: Throwable) {
+                Log.w(TAG_ESP, "EncryptedSharedPreferences recreate failed: ${recreateErr.javaClass.simpleName}", recreateErr)
+                null
+            }
         }
     }
 
-    @Synchronized
-    private fun migrateLegacyIfNeeded(prefs: SharedPreferences) {
+    private fun getEncryptedPrefs(context: Context): SharedPreferences? {
+        cachedEncryptedPrefs?.let { return it }
+        return synchronized(encryptedPrefsLock) {
+            cachedEncryptedPrefs ?: run {
+                val appCtx = context.applicationContext ?: context
+                try {
+                    createEncryptedPrefs(appCtx).also { cachedEncryptedPrefs = it }
+                } catch (err: Throwable) {
+                    if (isKeystoreCorruption(err)) {
+                        resetCorruptedPrefs(appCtx, err)
+                    } else {
+                        Log.w(TAG_ESP, "EncryptedSharedPreferences init failed: ${err.javaClass.simpleName}")
+                        null
+                    }
+                }
+            }
+        }
+    }
+
+    private fun parseProfilesJsonStrict(raw: String): List<AiProviderProfile> {
+        val type = object : TypeToken<List<AiProviderProfile>>() {}.type
+        val list = gson.fromJson<List<AiProviderProfile>>(raw, type)
+            ?: throw IllegalStateException("Parsed profiles list is null")
+        return list.map { profile ->
+            @Suppress("USELESS_ELVIS")
+            if (profile.apiPath.isNullOrBlank()) {
+                profile.copy(apiPath = AiProviderProfile.DEFAULT_API_PATH)
+            } else {
+                profile
+            }
+        }
+    }
+
+    private fun migrateLegacyIfNeededLocked(prefs: SharedPreferences) {
         val existingJson = prefs.getString(KEY_AI_PROVIDERS, null)
         val legacyKey = prefs.getString(KEY_LEGACY_MISTRAL_API_KEY, null)?.trim()
         if (existingJson.isNullOrBlank() && !legacyKey.isNullOrEmpty()) {
@@ -303,81 +413,197 @@ object AiClient {
                 apiKey = legacyKey,
                 apiPath = AiProviderProfile.DEFAULT_API_PATH
             )
+            val json = gson.toJson(listOf(migrated))
             prefs.edit()
-                .putString(KEY_AI_PROVIDERS, gson.toJson(listOf(migrated)))
+                .putString(KEY_AI_PROVIDERS, json)
+                .putString(KEY_AI_PROVIDERS_BACKUP, json)
                 .putString(KEY_ACTIVE_PROVIDER, migrated.id)
+                .putString(KEY_ACTIVE_PROVIDER_BACKUP, migrated.id)
                 .remove(KEY_LEGACY_MISTRAL_API_KEY)
                 .apply()
+            cachedProfiles = listOf(migrated)
+            cachedActiveProviderId = migrated.id
+            activeProviderIdLoaded = true
+            profilesCorrupted = false
         }
     }
 
     fun getProfiles(context: Context): List<AiProviderProfile> {
         init(context)
-        val prefs = getEncryptedPrefs(context) ?: return emptyList()
-        migrateLegacyIfNeeded(prefs)
-        val raw = prefs.getString(KEY_AI_PROVIDERS, null) ?: return emptyList()
-        return try {
-            val type = object : TypeToken<List<AiProviderProfile>>() {}.type
-            val list = gson.fromJson<List<AiProviderProfile>>(raw, type) ?: emptyList()
-            list.map { profile ->
-                @Suppress("USELESS_ELVIS")
-                if (profile.apiPath.isNullOrBlank()) {
-                    profile.copy(apiPath = AiProviderProfile.DEFAULT_API_PATH)
-                } else {
-                    profile
+        cachedProfiles?.let { return it }
+        return synchronized(encryptedPrefsLock) {
+            cachedProfiles?.let { return@synchronized it }
+            val prefs = getEncryptedPrefs(context) ?: return@synchronized emptyList()
+            try {
+                migrateLegacyIfNeededLocked(prefs)
+                cachedProfiles?.let { return@synchronized it }
+                val raw = prefs.getString(KEY_AI_PROVIDERS, null)
+                if (raw.isNullOrBlank()) {
+                    profilesCorrupted = false
+                    cachedProfiles = emptyList()
+                    return@synchronized emptyList()
                 }
+                return@synchronized try {
+                    val parsed = parseProfilesJsonStrict(raw)
+                    profilesCorrupted = false
+                    cachedProfiles = parsed
+                    parsed
+                } catch (parseErr: Exception) {
+                    Log.w(TAG_ESP, "Failed to parse ai_providers JSON; attempting backup recovery", parseErr)
+                    val backupRaw = prefs.getString(KEY_AI_PROVIDERS_BACKUP, null)
+                    val recovered = if (!backupRaw.isNullOrBlank()) {
+                        runCatching { parseProfilesJsonStrict(backupRaw) }.getOrNull()
+                    } else {
+                        null
+                    }
+                    if (recovered != null) {
+                        Log.w(TAG_ESP, "Recovered ${recovered.size} profiles from backup")
+                        profilesCorrupted = false
+                        cachedProfiles = recovered
+                        recovered
+                    } else {
+                        // 標記損毀狀態，防止後續 upsertProfile/deleteProfile 靜默覆蓋原設定
+                        profilesCorrupted = true
+                        emptyList()
+                    }
+                }
+            } catch (err: Throwable) {
+                if (isKeystoreCorruption(err)) {
+                    resetCorruptedPrefs(context, err)
+                } else {
+                    Log.w(TAG_ESP, "getProfiles read failed: ${err.javaClass.simpleName}")
+                }
+                emptyList()
             }
-        } catch (_: Exception) {
-            emptyList()
         }
     }
 
     fun getActiveProviderId(context: Context): String? {
-        val prefs = getEncryptedPrefs(context) ?: return null
-        migrateLegacyIfNeeded(prefs)
-        return prefs.getString(KEY_ACTIVE_PROVIDER, null)?.takeIf { it.isNotBlank() }
+        if (activeProviderIdLoaded) return cachedActiveProviderId
+        return synchronized(encryptedPrefsLock) {
+            if (activeProviderIdLoaded) return@synchronized cachedActiveProviderId
+            val prefs = getEncryptedPrefs(context) ?: return@synchronized null
+            try {
+                migrateLegacyIfNeededLocked(prefs)
+                val id = prefs.getString(KEY_ACTIVE_PROVIDER, null)?.takeIf { it.isNotBlank() }
+                    ?: prefs.getString(KEY_ACTIVE_PROVIDER_BACKUP, null)?.takeIf { it.isNotBlank() }
+                cachedActiveProviderId = id
+                activeProviderIdLoaded = true
+                id
+            } catch (err: Throwable) {
+                if (isKeystoreCorruption(err)) {
+                    resetCorruptedPrefs(context, err)
+                } else {
+                    Log.w(TAG_ESP, "getActiveProviderId read failed: ${err.javaClass.simpleName}")
+                }
+                null
+            }
+        }
     }
 
     fun saveProfiles(context: Context, profiles: List<AiProviderProfile>, activeId: String?) {
         init(context)
-        val prefs = getEncryptedPrefs(context) ?: return
-        val resolvedActiveId = when {
-            activeId != null && profiles.any { it.id == activeId } -> activeId
-            else -> profiles.firstOrNull()?.id
+        synchronized(encryptedPrefsLock) {
+            val prefs = getEncryptedPrefs(context) ?: return
+            val existingRaw = runCatching { prefs.getString(KEY_AI_PROVIDERS, null) }.getOrNull()
+            // 損毀保護：若既有 JSON 無法解析且呼叫端嘗試寫入空清單，拒絕覆蓋以免誤刪既有設定
+            if (profilesCorrupted && profiles.isEmpty() && !existingRaw.isNullOrBlank()) {
+                Log.w(TAG_ESP, "Refusing to overwrite corrupted ai_providers with empty list")
+                return
+            }
+            val resolvedActiveId = when {
+                activeId != null && profiles.any { it.id == activeId } -> activeId
+                else -> profiles.firstOrNull()?.id
+            }
+            val newJson = gson.toJson(profiles)
+            val existingActive = runCatching { prefs.getString(KEY_ACTIVE_PROVIDER, null) }.getOrNull()
+            // 先備份既有有效設定再寫入新設定
+            val canBackupExisting = !existingRaw.isNullOrBlank() &&
+                runCatching { parseProfilesJsonStrict(existingRaw) }.isSuccess
+            val applyBlock: SharedPreferences.Editor.() -> Unit = {
+                if (canBackupExisting) {
+                    putString(KEY_AI_PROVIDERS_BACKUP, existingRaw)
+                    if (!existingActive.isNullOrBlank()) {
+                        putString(KEY_ACTIVE_PROVIDER_BACKUP, existingActive)
+                    }
+                }
+                putString(KEY_AI_PROVIDERS, newJson)
+                if (resolvedActiveId != null) {
+                    putString(KEY_ACTIVE_PROVIDER, resolvedActiveId)
+                } else {
+                    remove(KEY_ACTIVE_PROVIDER)
+                }
+            }
+            try {
+                prefs.edit().apply(applyBlock).apply()
+            } catch (err: Throwable) {
+                if (isKeystoreCorruption(err)) {
+                    val recovered = resetCorruptedPrefs(context, err) ?: return
+                    runCatching { recovered.edit().apply(applyBlock).apply() }
+                } else {
+                    Log.w(TAG_ESP, "saveProfiles write failed: ${err.javaClass.simpleName}")
+                    return
+                }
+            }
+            cachedProfiles = profiles.toList()
+            cachedActiveProviderId = resolvedActiveId
+            activeProviderIdLoaded = true
+            profilesCorrupted = false
         }
-        val editor = prefs.edit()
-            .putString(KEY_AI_PROVIDERS, gson.toJson(profiles))
-        if (resolvedActiveId != null) {
-            editor.putString(KEY_ACTIVE_PROVIDER, resolvedActiveId)
-        } else {
-            editor.remove(KEY_ACTIVE_PROVIDER)
-        }
-        editor.apply()
     }
 
     fun setActiveProvider(context: Context, id: String) {
         init(context)
-        val prefs = getEncryptedPrefs(context) ?: return
-        prefs.edit().putString(KEY_ACTIVE_PROVIDER, id).apply()
+        synchronized(encryptedPrefsLock) {
+            val prefs = getEncryptedPrefs(context) ?: return
+            val cleanId = id.takeIf { it.isNotBlank() }
+            try {
+                prefs.edit().putString(KEY_ACTIVE_PROVIDER, id).apply()
+                cachedActiveProviderId = cleanId
+                activeProviderIdLoaded = true
+            } catch (err: Throwable) {
+                if (isKeystoreCorruption(err)) {
+                    val recovered = resetCorruptedPrefs(context, err) ?: return
+                    runCatching { recovered.edit().putString(KEY_ACTIVE_PROVIDER, id).apply() }
+                    cachedActiveProviderId = cleanId
+                    activeProviderIdLoaded = true
+                } else {
+                    Log.w(TAG_ESP, "setActiveProvider write failed: ${err.javaClass.simpleName}")
+                }
+            }
+        }
     }
 
     fun upsertProfile(context: Context, profile: AiProviderProfile, setActive: Boolean = false) {
-        val current = getProfiles(context).toMutableList()
-        val idx = current.indexOfFirst { it.id == profile.id }
-        if (idx >= 0) {
-            current[idx] = profile
-        } else {
-            current.add(profile)
+        synchronized(encryptedPrefsLock) {
+            val current = getProfiles(context).toMutableList()
+            if (profilesCorrupted) {
+                Log.w(TAG_ESP, "Refusing upsertProfile while existing profiles JSON is corrupted")
+                return
+            }
+            val idx = current.indexOfFirst { it.id == profile.id }
+            if (idx >= 0) {
+                current[idx] = profile
+            } else {
+                current.add(profile)
+            }
+            val activeId = if (setActive || current.size == 1) profile.id else getActiveProviderId(context)
+            saveProfiles(context, current, activeId)
         }
-        val activeId = if (setActive || current.size == 1) profile.id else getActiveProviderId(context)
-        saveProfiles(context, current, activeId)
     }
 
     fun deleteProfile(context: Context, id: String) {
-        val remaining = getProfiles(context).filterNot { it.id == id }
-        val currentActive = getActiveProviderId(context)
-        val nextActive = if (currentActive == id) remaining.firstOrNull()?.id else currentActive
-        saveProfiles(context, remaining, nextActive)
+        synchronized(encryptedPrefsLock) {
+            val loaded = getProfiles(context)
+            if (profilesCorrupted) {
+                Log.w(TAG_ESP, "Refusing deleteProfile while existing profiles JSON is corrupted")
+                return
+            }
+            val remaining = loaded.filterNot { it.id == id }
+            val currentActive = getActiveProviderId(context)
+            val nextActive = if (currentActive == id) remaining.firstOrNull()?.id else currentActive
+            saveProfiles(context, remaining, nextActive)
+        }
     }
 
     fun getBuildConfigApiKey(): String? {
@@ -3168,12 +3394,21 @@ object AiClient {
         val trimmedHistory = history.takeLast(12)
 
         val profile = getProfileForPurpose(context, purpose)
-        fun tryCheckAndIncrementQuota(): Boolean = if (purpose == AiPurpose.PROACTIVE) {
-            PhantomPrefs.canUseProactiveAiTodayAndIncrement(context)
-        } else {
-            PhantomPrefs.canUseAiTodayAndIncrement(context)
+        var quotaCharged = false
+        var succeeded = false
+        fun ensureQuotaCharged(): Boolean {
+            if (quotaCharged) return true
+            val ok = if (purpose == AiPurpose.PROACTIVE) {
+                PhantomPrefs.canUseProactiveAiTodayAndIncrement(context)
+            } else {
+                PhantomPrefs.canUseAiTodayAndIncrement(context)
+            }
+            if (ok) quotaCharged = true
+            return ok
         }
-        fun refund() {
+        fun refundIfCharged() {
+            if (!quotaCharged) return
+            quotaCharged = false
             if (purpose == AiPurpose.PROACTIVE) {
                 PhantomPrefs.refundTodayProactiveAiUsage(context)
             } else {
@@ -3187,168 +3422,165 @@ object AiClient {
             "$systemPrompt\n${buildLanguageDirective()}"
         }
 
-        // 1. Gemini 3+ 原生 Google Search grounding（若尚未被標記為不支援 grounding）
-        if (isGeminiGroundingSupported(profile) && !profile!!.apiKey.isBlank() &&
-            groundingUnsupportedKeys[groundingCacheKey(profile)] != true
-        ) {
-            if (!tryCheckAndIncrementQuota()) {
-                return@withContext Result.failure(IllegalStateException("今日 AI 查詢額度已達上限。"))
-            }
+        try {
+            // 1. Gemini 3+ 原生 Google Search grounding（若尚未被標記為不支援 grounding）
+            if (isGeminiGroundingSupported(profile) && !profile!!.apiKey.isBlank() &&
+                groundingUnsupportedKeys[groundingCacheKey(profile)] != true
+            ) {
+                if (!ensureQuotaCharged()) {
+                    return@withContext Result.failure(IllegalStateException("今日 AI 查詢額度已達上限。"))
+                }
 
-            val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
-            val geminiUserMsg = if (effectiveSearchQuery != cleanQuery) {
-                "$cleanQuery\n(Search focus: $effectiveSearchQuery)"
-            } else {
-                cleanQuery
-            }
-            val reqObj = ChatRequest(
-                model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
-                messages = buildList {
-                    add(ChatMessage("system", effectiveSystemPrompt))
-                    addAll(trimmedHistory)
-                    add(ChatMessage("user", geminiUserMsg))
-                },
-                maxTokens = maxTokens.coerceIn(120, 800),
-                temperature = 0.2,
-                tools = listOf(mapOf("google_search" to emptyMap<String, Any>()))
-            )
-            val jsonBody = gson.toJson(reqObj)
-            val httpReq = okhttp3.Request.Builder()
-                .url(fullUrl)
-                .header("Authorization", "Bearer ${profile.apiKey.trim()}")
-                .header("Content-Type", "application/json")
-                .post(jsonBody.toRequestBody("application/json; charset=utf-8".toMediaType()))
-                .build()
-            var shouldFallbackFrom400 = false
-            val geminiResult: Result<GroundedResult>? = try {
-                enforceRateLimit()
-                chatOkHttpClient.newCall(httpReq).execute().use { resp ->
-                    val raw = resp.body?.string().orEmpty()
-                    if (resp.code == 429) {
-                        refund()
-                        Result.failure(IllegalStateException("Gemini 聯網查詢頻率已達上限（429），已靜默退避。"))
-                    } else if (!resp.isSuccessful) {
-                        refund()
-                        if (isGroundingUnsupported400(resp.code, raw)) {
-                            groundingUnsupportedKeys[groundingCacheKey(profile)] = true
-                            shouldFallbackFrom400 = true
-                            null
+                val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
+                val geminiUserMsg = if (effectiveSearchQuery != cleanQuery) {
+                    "$cleanQuery\n(Search focus: $effectiveSearchQuery)"
+                } else {
+                    cleanQuery
+                }
+                val reqObj = ChatRequest(
+                    model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
+                    messages = buildList {
+                        add(ChatMessage("system", effectiveSystemPrompt))
+                        addAll(trimmedHistory)
+                        add(ChatMessage("user", geminiUserMsg))
+                    },
+                    maxTokens = maxTokens.coerceIn(120, 800),
+                    temperature = 0.2,
+                    tools = listOf(mapOf("google_search" to emptyMap<String, Any>()))
+                )
+                val jsonBody = gson.toJson(reqObj)
+                val httpReq = okhttp3.Request.Builder()
+                    .url(fullUrl)
+                    .header("Authorization", "Bearer ${profile.apiKey.trim()}")
+                    .header("Content-Type", "application/json")
+                    .post(jsonBody.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                    .build()
+                var shouldFallbackFrom400 = false
+                val geminiResult: Result<GroundedResult>? = try {
+                    enforceRateLimit()
+                    chatOkHttpClient.newCall(httpReq).execute().use { resp ->
+                        val raw = resp.body?.string().orEmpty()
+                        if (resp.code == 429) {
+                            Result.failure(IllegalStateException("Gemini 聯網查詢頻率已達上限（429），已靜默退避。"))
+                        } else if (!resp.isSuccessful) {
+                            if (isGroundingUnsupported400(resp.code, raw)) {
+                                groundingUnsupportedKeys[groundingCacheKey(profile)] = true
+                                shouldFallbackFrom400 = true
+                                null
+                            } else {
+                                Result.failure(IllegalStateException("聯網查詢失敗（HTTP ${resp.code}）。"))
+                            }
                         } else {
-                            Result.failure(IllegalStateException("聯網查詢失敗（HTTP ${resp.code}）。"))
-                        }
-                    } else {
-                        val root = runCatching { JsonParser.parseString(raw).asJsonObject }.getOrNull()
-                        val msgContent = runCatching {
-                            root?.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject
-                                ?.getAsJsonObject("message")?.get("content")
-                        }.getOrNull()
-                        val replyText = extractReplyText(msgContent).trim()
-                        if (replyText.isBlank()) {
-                            refund()
-                            Result.failure(IllegalStateException("查無可用最新資料。"))
-                        } else {
-                            val sources = extractGroundedSources(root, replyText)
-                                .distinctBy { FreeWebSearchEngine.extractDisplayDomain(it) }
-                                .take(3)
-                            Result.success(GroundedResult(text = replyText, sources = sources))
+                            val root = runCatching { JsonParser.parseString(raw).asJsonObject }.getOrNull()
+                            val msgContent = runCatching {
+                                root?.getAsJsonArray("choices")?.firstOrNull()?.asJsonObject
+                                    ?.getAsJsonObject("message")?.get("content")
+                            }.getOrNull()
+                            val replyText = extractReplyText(msgContent).trim()
+                            if (replyText.isBlank()) {
+                                Result.failure(IllegalStateException("查無可用最新資料。"))
+                            } else {
+                                val sources = extractGroundedSources(root, replyText)
+                                    .distinctBy { FreeWebSearchEngine.extractDisplayDomain(it) }
+                                    .take(3)
+                                succeeded = true
+                                Result.success(GroundedResult(text = replyText, sources = sources))
+                            }
                         }
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: RetiredAiEndpointException) {
+                    Result.failure(e)
+                } catch (e: NonJsonAiResponseException) {
+                    Result.failure(e)
+                } catch (e: Exception) {
+                    Result.failure(IllegalStateException("聯網查詢連線失敗（${e.javaClass.simpleName}）。"))
                 }
-            } catch (e: CancellationException) {
-                refund()
-                throw e
-            } catch (e: RetiredAiEndpointException) {
-                refund()
-                Result.failure(e)
-            } catch (e: NonJsonAiResponseException) {
-                refund()
-                Result.failure(e)
-            } catch (e: Exception) {
-                refund()
-                Result.failure(IllegalStateException("聯網查詢連線失敗（${e.javaClass.simpleName}）。"))
+                if (!shouldFallbackFrom400 && geminiResult != null) {
+                    return@withContext geminiResult
+                }
             }
-            if (!shouldFallbackFrom400 && geminiResult != null) {
-                return@withContext geminiResult
-            }
-        }
 
-        // 2. BYOK 外部搜尋端點（如 Perplexity sonar）
-        if (com.phantom.checker.util.EncryptedByokStore.isExternalSearchConfigured(context)) {
-            val byokReply = queryExternalSearchEndpoint(context, effectiveSearchQuery)
-            if (!byokReply.isNullOrBlank()) {
-                val sources = extractGroundedSources(null, byokReply)
-                    .distinctBy { FreeWebSearchEngine.extractDisplayDomain(it) }
-                    .take(3)
-                return@withContext Result.success(GroundedResult(text = byokReply, sources = sources))
-            }
-        }
-
-        // 3. 免費搜尋引擎後端（DuckDuckGo IA → DDG HTML → Wikipedia）＋ 現有一般模型摘要
-        if (profile != null && profile.apiKey.isNotBlank()) {
-            if (!tryCheckAndIncrementQuota()) {
-                return@withContext Result.failure(IllegalStateException("今日 AI 查詢額度已達上限。"))
-            }
-            val snippets = FreeWebSearchEngine.search(effectiveSearchQuery, preferZh = isZhTwLocale())
-            if (snippets.isEmpty()) {
-                refund()
-                return@withContext Result.failure(IllegalStateException("查無可用最新資料（免費搜尋引擎目前無結果或網路不可用）。"))
-            }
-            val formattedSnippets = snippets.mapIndexed { idx, s ->
-                val domain = FreeWebSearchEngine.extractDisplayDomain(s.url)
-                "[${idx + 1}] (${domain}) ${s.title}\n${s.snippet}"
-            }.joinToString("\n\n")
-            val groundedSystem = if (isZhTwLocale()) {
-                "$effectiveSystemPrompt\n\n以下是免費搜尋引擎（DuckDuckGo / Wikipedia）針對「$effectiveSearchQuery」取得的公開來源片段，請【僅依以下來源】並結合上方記憶與個人化設定精簡回答，行內以 [1] 或網域名稱引用來源（不要貼整串長網址）；若來源不足以回答請誠實說明，絕不以既有知識頂替：\n\n$formattedSnippets"
-            } else {
-                "$effectiveSystemPrompt\n\nBelow are public snippets from free search engines (DuckDuckGo / Wikipedia) for \"$effectiveSearchQuery\". Answer concisely 【ONLY based on these sources】 combined with the user's memory/persona above, citing sources inline as [1] or domain name (do NOT paste raw long URLs). If insufficient, state so honestly without fabricating from prior knowledge:\n\n$formattedSnippets"
-            }
-            val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
-            val reqObj = ChatRequest(
-                model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
-                messages = buildList {
-                    add(ChatMessage("system", groundedSystem))
-                    addAll(trimmedHistory)
-                    add(ChatMessage("user", cleanQuery))
-                },
-                maxTokens = maxTokens.coerceIn(120, 800),
-                temperature = 0.2
-            )
-            return@withContext try {
-                enforceRateLimit()
-                val res = getApi(profile.baseUrl).chat(
-                    url = fullUrl,
-                    auth = "Bearer ${profile.apiKey.trim()}",
-                    body = reqObj
-                )
-                val replyText = extractReplyText(res.choices.firstOrNull()?.message?.content).trim()
-                if (replyText.isBlank()) {
-                    refund()
-                    Result.failure(IllegalStateException("查無可用最新資料。"))
-                } else {
-                    val cited = extractGroundedSources(null, replyText)
-                    val mergedSources = (cited + snippets.map { it.url })
+            // 2. BYOK 外部搜尋端點（如 Perplexity sonar；不扣內建 AI 額度，若前面 Gemini 400 已扣則退還）
+            if (com.phantom.checker.util.EncryptedByokStore.isExternalSearchConfigured(context)) {
+                val byokReply = queryExternalSearchEndpoint(context, effectiveSearchQuery)
+                if (!byokReply.isNullOrBlank()) {
+                    refundIfCharged()
+                    val sources = extractGroundedSources(null, byokReply)
                         .distinctBy { FreeWebSearchEngine.extractDisplayDomain(it) }
                         .take(3)
-                    Result.success(GroundedResult(text = replyText, sources = mergedSources))
+                    succeeded = true
+                    return@withContext Result.success(GroundedResult(text = byokReply, sources = sources))
                 }
-            } catch (e: CancellationException) {
-                refund()
-                throw e
-            } catch (e: RetiredAiEndpointException) {
-                refund()
-                Result.failure(e)
-            } catch (e: NonJsonAiResponseException) {
-                refund()
-                Result.failure(e)
-            } catch (e: Exception) {
-                refund()
-                Result.failure(IllegalStateException("聯網查詢連線失敗（${e.javaClass.simpleName}）。"))
+            }
+
+            // 3. 免費搜尋引擎後端（DuckDuckGo IA → DDG HTML → Wikipedia）＋ 現有一般模型摘要
+            if (profile != null && profile.apiKey.isNotBlank()) {
+                if (!ensureQuotaCharged()) {
+                    return@withContext Result.failure(IllegalStateException("今日 AI 查詢額度已達上限。"))
+                }
+                val snippets = FreeWebSearchEngine.search(effectiveSearchQuery, preferZh = isZhTwLocale())
+                if (snippets.isEmpty()) {
+                    return@withContext Result.failure(IllegalStateException("查無可用最新資料（免費搜尋引擎目前無結果或網路不可用）。"))
+                }
+                val formattedSnippets = snippets.mapIndexed { idx, s ->
+                    val domain = FreeWebSearchEngine.extractDisplayDomain(s.url)
+                    "[${idx + 1}] (${domain}) ${s.title}\n${s.snippet}"
+                }.joinToString("\n\n")
+                val groundedSystem = if (isZhTwLocale()) {
+                    "$effectiveSystemPrompt\n\n以下是免費搜尋引擎（DuckDuckGo / Wikipedia）針對「$effectiveSearchQuery」取得的公開來源片段，請【僅依以下來源】並結合上方記憶與個人化設定精簡回答，行內以 [1] 或網域名稱引用來源（不要貼整串長網址）；若來源不足以回答請誠實說明，絕不以既有知識頂替：\n\n$formattedSnippets"
+                } else {
+                    "$effectiveSystemPrompt\n\nBelow are public snippets from free search engines (DuckDuckGo / Wikipedia) for \"$effectiveSearchQuery\". Answer concisely 【ONLY based on these sources】 combined with the user's memory/persona above, citing sources inline as [1] or domain name (do NOT paste raw long URLs). If insufficient, state so honestly without fabricating from prior knowledge:\n\n$formattedSnippets"
+                }
+                val fullUrl = buildFullUrl(profile.baseUrl, profile.resolvedApiPath())
+                val reqObj = ChatRequest(
+                    model = profile.model.trim().ifEmpty { FALLBACK_MODEL },
+                    messages = buildList {
+                        add(ChatMessage("system", groundedSystem))
+                        addAll(trimmedHistory)
+                        add(ChatMessage("user", cleanQuery))
+                    },
+                    maxTokens = maxTokens.coerceIn(120, 800),
+                    temperature = 0.2
+                )
+                return@withContext try {
+                    enforceRateLimit()
+                    val res = getApi(profile.baseUrl).chat(
+                        url = fullUrl,
+                        auth = "Bearer ${profile.apiKey.trim()}",
+                        body = reqObj
+                    )
+                    val replyText = extractReplyText(res.choices.firstOrNull()?.message?.content).trim()
+                    if (replyText.isBlank()) {
+                        Result.failure(IllegalStateException("查無可用最新資料。"))
+                    } else {
+                        val cited = extractGroundedSources(null, replyText)
+                        val mergedSources = (cited + snippets.map { it.url })
+                            .distinctBy { FreeWebSearchEngine.extractDisplayDomain(it) }
+                            .take(3)
+                        succeeded = true
+                        Result.success(GroundedResult(text = replyText, sources = mergedSources))
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: RetiredAiEndpointException) {
+                    Result.failure(e)
+                } catch (e: NonJsonAiResponseException) {
+                    Result.failure(e)
+                } catch (e: Exception) {
+                    Result.failure(IllegalStateException("聯網查詢連線失敗（${e.javaClass.simpleName}）。"))
+                }
+            }
+
+            Result.failure(
+                IllegalStateException("目前未設定可用的 AI API 金鑰或 BYOK 外部搜尋端點，無法執行聯網查詢。")
+            )
+        } finally {
+            if (!succeeded) {
+                refundIfCharged()
             }
         }
-
-        Result.failure(
-            IllegalStateException("目前未設定可用的 AI API 金鑰或 BYOK 外部搜尋端點，無法執行聯網查詢。")
-        )
     }
 
     /**

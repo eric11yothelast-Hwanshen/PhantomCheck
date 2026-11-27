@@ -90,12 +90,47 @@ object AppLocaleHelper {
         return base.createConfigurationContext(config)
     }
 
+    private val localizedCacheLock = Any()
+    @Volatile
+    private var cachedLocaleAppCtx: Context? = null
+    @Volatile
+    private var cachedLocaleMode: String? = null
+    @Volatile
+    private var cachedLocalizedCtx: Context? = null
+
     /** 供 PhantomApplication.str()、通知與 Widget/RemoteViews 取得套用 App 語系後的 Context。 */
     fun localizedContext(ctx: Context): Context {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             return ctx
         }
-        return wrapContext(ctx)
+        val appCtx = ctx.applicationContext ?: ctx
+        val mode = runCatching { PhantomPrefs.getAppLanguageMode(appCtx) }
+            .getOrDefault(PhantomPrefs.APP_LOCALE_SYSTEM)
+        if (mode == PhantomPrefs.APP_LOCALE_SYSTEM) {
+            return ctx
+        }
+        if (cachedLocaleAppCtx === appCtx && cachedLocaleMode == mode) {
+            cachedLocalizedCtx?.let { return it }
+        }
+        return synchronized(localizedCacheLock) {
+            if (cachedLocaleAppCtx === appCtx && cachedLocaleMode == mode) {
+                cachedLocalizedCtx?.let { return@synchronized it }
+            }
+            val created = wrapContext(appCtx)
+            cachedLocaleAppCtx = appCtx
+            cachedLocaleMode = mode
+            cachedLocalizedCtx = created
+            created
+        }
+    }
+
+    /** 清除 API 26–32 localizedContext 快取（語系切換時自動呼叫）。 */
+    fun invalidateLocalizedContextCache() {
+        synchronized(localizedCacheLock) {
+            cachedLocaleAppCtx = null
+            cachedLocaleMode = null
+            cachedLocalizedCtx = null
+        }
     }
 
     /** 套用使用者於設定頁選擇的語言模式，並安全觸發介面更新。 */
@@ -104,6 +139,7 @@ object AppLocaleHelper {
         val appCtx = activity.applicationContext
         val currentMode = getEffectiveMode(appCtx)
         PhantomPrefs.setAppLanguageMode(appCtx, normalized)
+        invalidateLocalizedContextCache()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val lm = runCatching { appCtx.getSystemService(LocaleManager::class.java) }.getOrNull()

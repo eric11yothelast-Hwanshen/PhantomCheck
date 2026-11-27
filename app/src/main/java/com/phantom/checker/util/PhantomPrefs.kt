@@ -1,6 +1,7 @@
 package com.phantom.checker.util
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.text.SimpleDateFormat
@@ -1246,7 +1247,7 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
             use24h -> "HH:mm"
             else -> "a hh:mm"
         }
-        val locale = Locale.getDefault()
+        val locale = AppLocaleHelper.resolveEffectiveLocale(ctx)
         val key = "${locale.toLanguageTag()}|$pattern"
         val map = messageTimeFormatters.get()!!
         val sdf = map.getOrPut(key) { SimpleDateFormat(pattern, locale) }
@@ -1839,49 +1840,119 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putBoolean("proactive_dirty_flag", dirty).apply()
     }
 
+    private val proactiveCountersLock = Any()
+    private var proactiveCountersPrefsRef: SharedPreferences? = null
+    private var cachedProactiveDailyDate: String = ""
+    private var cachedProactiveDailyCount: Int = 0
+    private var cachedProactivePushTotalCount: Int = 0
+
+    private fun ensureProactiveCountersLoadedLocked(p: SharedPreferences) {
+        if (proactiveCountersPrefsRef === p) return
+        cachedProactiveDailyDate = p.getString("proactive_daily_date", "").orEmpty()
+        cachedProactiveDailyCount = p.getInt("proactive_daily_count", 0)
+        cachedProactivePushTotalCount = p.getInt("proactive_push_total_count", 0)
+        proactiveCountersPrefsRef = p
+    }
+
     fun getProactiveDailySentCount(ctx: Context, todayKey: String): Int {
         val p = prefs(ctx)
-        if (p.getString("proactive_daily_date", "") != todayKey) return 0
-        return p.getInt("proactive_daily_count", 0)
+        synchronized(proactiveCountersLock) {
+            ensureProactiveCountersLoadedLocked(p)
+            return if (cachedProactiveDailyDate == todayKey) cachedProactiveDailyCount else 0
+        }
     }
 
     fun incrementProactiveDailySentCount(ctx: Context, todayKey: String) {
         val p = prefs(ctx)
-        val prev = if (p.getString("proactive_daily_date", "") == todayKey) p.getInt("proactive_daily_count", 0) else 0
-        val total7d = p.getInt("proactive_push_total_count", 0) + 1
-        p.edit()
-            .putString("proactive_daily_date", todayKey)
-            .putInt("proactive_daily_count", prev + 1)
-            .putInt("proactive_push_total_count", total7d)
-            .apply()
+        synchronized(proactiveCountersLock) {
+            ensureProactiveCountersLoadedLocked(p)
+            val prev = if (cachedProactiveDailyDate == todayKey) cachedProactiveDailyCount else 0
+            val nextDaily = prev + 1
+            val nextTotal = cachedProactivePushTotalCount + 1
+            cachedProactiveDailyDate = todayKey
+            cachedProactiveDailyCount = nextDaily
+            cachedProactivePushTotalCount = nextTotal
+            p.edit()
+                .putString("proactive_daily_date", todayKey)
+                .putInt("proactive_daily_count", nextDaily)
+                .putInt("proactive_push_total_count", nextTotal)
+                .apply()
+        }
     }
 
-    fun getProactivePushTotalCount(ctx: Context): Int =
-        prefs(ctx).getInt("proactive_push_total_count", 0)
+    fun getProactivePushTotalCount(ctx: Context): Int {
+        val p = prefs(ctx)
+        synchronized(proactiveCountersLock) {
+            ensureProactiveCountersLoadedLocked(p)
+            return cachedProactivePushTotalCount
+        }
+    }
 
     // ---- #372 主動提醒事件里程碑與 10 分鐘內容去重閘門 ----
 
     private const val KEY_PROACTIVE_MILESTONE_KEYS = "proactive_delivered_milestones"
+    private const val KEY_PROACTIVE_MILESTONE_KEYS_ORDERED = "proactive_delivered_milestones_ordered"
     private const val KEY_PROACTIVE_RECENT_HASHES = "proactive_recent_content_hashes"
     private const val PROACTIVE_CONTENT_DEDUP_WINDOW_MS = 10L * 60L * 1000L
+
+    private val proactiveMilestonesLock = Any()
+    private var proactiveMilestonesPrefsRef: SharedPreferences? = null
+    private var cachedProactiveMilestones: LinkedHashSet<String>? = null
+
+    private fun loadProactiveMilestonesLocked(p: SharedPreferences): LinkedHashSet<String> {
+        if (proactiveMilestonesPrefsRef === p) {
+            cachedProactiveMilestones?.let { return it }
+        }
+        val orderedRaw = p.getString(KEY_PROACTIVE_MILESTONE_KEYS_ORDERED, null)
+        val set = LinkedHashSet<String>()
+        if (orderedRaw != null) {
+            orderedRaw.lineSequence().forEach { line ->
+                val trimmed = line.trim()
+                if (trimmed.isNotEmpty()) set.add(trimmed)
+            }
+        } else {
+            // 相容舊版無序 StringSet：首次讀取時遷移至有序 \n 字串
+            val legacy = p.getStringSet(KEY_PROACTIVE_MILESTONE_KEYS, emptySet()).orEmpty()
+            legacy.forEach { k ->
+                val trimmed = k.trim()
+                if (trimmed.isNotEmpty()) set.add(trimmed)
+            }
+            if (legacy.isNotEmpty()) {
+                p.edit()
+                    .putString(KEY_PROACTIVE_MILESTONE_KEYS_ORDERED, set.joinToString("\n"))
+                    .remove(KEY_PROACTIVE_MILESTONE_KEYS)
+                    .apply()
+            }
+        }
+        proactiveMilestonesPrefsRef = p
+        cachedProactiveMilestones = set
+        return set
+    }
 
     /**
      * 讀取已投遞的里程碑 key 集合，並自動清理非當日（dayKey 不符）之過期 key。
      * key 格式：type:id:dayKey:milestone 或 allDay:eventId:dayKey。
+     * R1 (#545)：改以 \n 分隔有序字串＋專屬鎖＋記憶體快取，確保超過 200 筆時依插入順序淘汰。
      */
     fun getPrunedProactiveMilestones(ctx: Context, todayKey: String): Set<String> {
         val p = prefs(ctx)
-        val raw = p.getStringSet(KEY_PROACTIVE_MILESTONE_KEYS, emptySet()).orEmpty()
-        if (raw.isEmpty()) return emptySet()
-        val kept = raw.filterTo(LinkedHashSet()) { key ->
-            val parts = key.split(':')
-            // 格式為 type:id:dayKey:milestone 或 allDay:id:dayKey -> 第 3 欄為 dayKey
-            parts.size >= 3 && parts[2] == todayKey
+        synchronized(proactiveMilestonesLock) {
+            val current = loadProactiveMilestonesLocked(p)
+            if (current.isEmpty()) return emptySet()
+            val kept = current.filterTo(LinkedHashSet()) { key ->
+                val parts = key.split(':')
+                // 格式為 type:id:dayKey:milestone 或 allDay:id:dayKey -> 第 3 欄為 dayKey
+                parts.size >= 3 && parts[2] == todayKey
+            }
+            if (kept.size != current.size) {
+                cachedProactiveMilestones = kept
+                p.edit()
+                    .putString(KEY_PROACTIVE_MILESTONE_KEYS_ORDERED, kept.joinToString("\n"))
+                    .remove(KEY_PROACTIVE_MILESTONE_KEYS)
+                    .apply()
+            }
+            return LinkedHashSet(kept)
         }
-        if (kept.size != raw.size) {
-            p.edit().putStringSet(KEY_PROACTIVE_MILESTONE_KEYS, kept).apply()
-        }
-        return kept
     }
 
     fun isProactiveMilestoneDelivered(ctx: Context, milestoneKey: String, todayKey: String): Boolean {
@@ -1890,10 +1961,53 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
 
     fun markProactiveMilestonesDelivered(ctx: Context, milestoneKeys: Collection<String>, todayKey: String) {
         if (milestoneKeys.isEmpty()) return
-        val kept = getPrunedProactiveMilestones(ctx, todayKey).toMutableSet()
-        kept.addAll(milestoneKeys.filter { it.isNotBlank() })
-        val trimmed = if (kept.size > 200) kept.toList().takeLast(200).toSet() else kept
-        prefs(ctx).edit().putStringSet(KEY_PROACTIVE_MILESTONE_KEYS, trimmed).apply()
+        val p = prefs(ctx)
+        synchronized(proactiveMilestonesLock) {
+            val current = loadProactiveMilestonesLocked(p)
+            val kept = current.filterTo(LinkedHashSet()) { key ->
+                val parts = key.split(':')
+                parts.size >= 3 && parts[2] == todayKey
+            }
+            milestoneKeys.forEach { rawKey ->
+                val clean = rawKey.trim().replace("\n", " ")
+                if (clean.isNotEmpty()) {
+                    kept.remove(clean)
+                    kept.add(clean)
+                }
+            }
+            val trimmed = if (kept.size > 200) {
+                LinkedHashSet(kept.toList().takeLast(200))
+            } else {
+                kept
+            }
+            cachedProactiveMilestones = trimmed
+            p.edit()
+                .putString(KEY_PROACTIVE_MILESTONE_KEYS_ORDERED, trimmed.joinToString("\n"))
+                .remove(KEY_PROACTIVE_MILESTONE_KEYS)
+                .apply()
+        }
+    }
+
+    private val proactiveContentHashLock = Any()
+    private var proactiveContentHashPrefsRef: SharedPreferences? = null
+    private var cachedProactiveContentHashes: LinkedHashMap<String, Long>? = null
+
+    private fun loadProactiveContentHashesLocked(p: SharedPreferences): LinkedHashMap<String, Long> {
+        if (proactiveContentHashPrefsRef === p) {
+            cachedProactiveContentHashes?.let { return it }
+        }
+        val map = LinkedHashMap<String, Long>()
+        val raw = p.getString(KEY_PROACTIVE_RECENT_HASHES, "").orEmpty()
+        raw.lineSequence().forEach { line ->
+            val idx = line.indexOf('|')
+            if (idx <= 0) return@forEach
+            val hash = line.substring(0, idx)
+            val ts = line.substring(idx + 1).toLongOrNull() ?: return@forEach
+            map[hash] = ts
+        }
+        proactiveContentHashPrefsRef = p
+        cachedProactiveContentHashes = map
+        return map
     }
 
     /**
@@ -1902,45 +2016,44 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
      */
     fun isProactiveContentHashRecent(ctx: Context, contentHash: String, nowMs: Long): Boolean {
         val p = prefs(ctx)
-        val raw = p.getString(KEY_PROACTIVE_RECENT_HASHES, "").orEmpty()
-        if (raw.isBlank()) return false
         val windowMs = getProactiveDedupWindowMinutes(ctx) * 60L * 1000L
         val cutoff = nowMs - windowMs
-        val kept = mutableListOf<String>()
-        var hit = false
-        raw.lineSequence().forEach { line ->
-            val idx = line.indexOf('|')
-            if (idx <= 0) return@forEach
-            val hash = line.substring(0, idx)
-            val ts = line.substring(idx + 1).toLongOrNull() ?: return@forEach
-            if (ts >= cutoff) {
-                kept.add(line)
-                if (hash == contentHash) hit = true
+        synchronized(proactiveContentHashLock) {
+            val map = loadProactiveContentHashesLocked(p)
+            if (map.isEmpty()) return false
+            val beforeSize = map.size
+            val iter = map.entries.iterator()
+            while (iter.hasNext()) {
+                if (iter.next().value < cutoff) iter.remove()
             }
+            val hit = map.containsKey(contentHash)
+            if (map.size != beforeSize) {
+                val encoded = map.entries.joinToString("\n") { "${it.key}|${it.value}" }
+                p.edit().putString(KEY_PROACTIVE_RECENT_HASHES, encoded).apply()
+            }
+            return hit
         }
-        val normalized = kept.joinToString("\n")
-        if (normalized != raw) {
-            p.edit().putString(KEY_PROACTIVE_RECENT_HASHES, normalized).apply()
-        }
-        return hit
     }
 
     fun recordProactiveContentHash(ctx: Context, contentHash: String, nowMs: Long) {
         val p = prefs(ctx)
-        val raw = p.getString(KEY_PROACTIVE_RECENT_HASHES, "").orEmpty()
         val windowMs = getProactiveDedupWindowMinutes(ctx) * 60L * 1000L
         val cutoff = nowMs - windowMs
-        val kept = raw.lineSequence()
-            .filter { line ->
-                val idx = line.indexOf('|')
-                if (idx <= 0) return@filter false
-                val ts = line.substring(idx + 1).toLongOrNull() ?: return@filter false
-                ts >= cutoff && line.substring(0, idx) != contentHash
+        synchronized(proactiveContentHashLock) {
+            val map = loadProactiveContentHashesLocked(p)
+            val iter = map.entries.iterator()
+            while (iter.hasNext()) {
+                if (iter.next().value < cutoff) iter.remove()
             }
-            .toMutableList()
-        kept.add("$contentHash|$nowMs")
-        val trimmed = if (kept.size > 40) kept.takeLast(40) else kept
-        p.edit().putString(KEY_PROACTIVE_RECENT_HASHES, trimmed.joinToString("\n")).apply()
+            map.remove(contentHash)
+            map[contentHash] = nowMs
+            while (map.size > 40) {
+                val firstKey = map.entries.first().key
+                map.remove(firstKey)
+            }
+            val encoded = map.entries.joinToString("\n") { "${it.key}|${it.value}" }
+            p.edit().putString(KEY_PROACTIVE_RECENT_HASHES, encoded).apply()
+        }
     }
 
     // ---- #377 主動訊息體驗與自訂設定擴充 ----
@@ -1953,19 +2066,39 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putInt("briefing_daily_cap", cap.coerceIn(1, 10)).apply()
     }
 
+    private val briefingCountersLock = Any()
+    private var briefingCountersPrefsRef: SharedPreferences? = null
+    private var cachedBriefingDailyDate: String = ""
+    private var cachedBriefingDailyCount: Int = 0
+
+    private fun ensureBriefingCountersLoadedLocked(p: SharedPreferences) {
+        if (briefingCountersPrefsRef === p) return
+        cachedBriefingDailyDate = p.getString("briefing_daily_date", "").orEmpty()
+        cachedBriefingDailyCount = p.getInt("briefing_daily_count", 0)
+        briefingCountersPrefsRef = p
+    }
+
     fun getBriefingDailySentCount(ctx: Context, todayKey: String): Int {
         val p = prefs(ctx)
-        if (p.getString("briefing_daily_date", "") != todayKey) return 0
-        return p.getInt("briefing_daily_count", 0)
+        synchronized(briefingCountersLock) {
+            ensureBriefingCountersLoadedLocked(p)
+            return if (cachedBriefingDailyDate == todayKey) cachedBriefingDailyCount else 0
+        }
     }
 
     fun incrementBriefingDailySentCount(ctx: Context, todayKey: String) {
         val p = prefs(ctx)
-        val prev = if (p.getString("briefing_daily_date", "") == todayKey) p.getInt("briefing_daily_count", 0) else 0
-        p.edit()
-            .putString("briefing_daily_date", todayKey)
-            .putInt("briefing_daily_count", prev + 1)
-            .apply()
+        synchronized(briefingCountersLock) {
+            ensureBriefingCountersLoadedLocked(p)
+            val prev = if (cachedBriefingDailyDate == todayKey) cachedBriefingDailyCount else 0
+            val next = prev + 1
+            cachedBriefingDailyDate = todayKey
+            cachedBriefingDailyCount = next
+            p.edit()
+                .putString("briefing_daily_date", todayKey)
+                .putInt("briefing_daily_count", next)
+                .apply()
+        }
     }
 
     /** 行程／待辦主動提醒提前分鐘數（15 / 30 / 60，預設 30） */
@@ -2052,12 +2185,18 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putInt("proactive_dedup_window_minutes", safe).apply()
     }
 
-    /** 每則主動訊息回饋（👍 helpful / 👎 noisy），輕量存 prefs 不新增 DB 表 */
-    fun recordProactiveMessageFeedback(ctx: Context, messageId: Long, helpful: Boolean) {
-        if (messageId <= 0L) return
-        val p = prefs(ctx)
-        val raw = p.getString("proactive_msg_feedback_map", "").orEmpty()
+    private val proactiveFeedbackLock = Any()
+    private var proactiveFeedbackPrefsRef: SharedPreferences? = null
+    private var cachedProactiveFeedbackMap: LinkedHashMap<Long, String>? = null
+    private var cachedFeedbackHelpfulCount: Int = 0
+    private var cachedFeedbackNoisyCount: Int = 0
+
+    private fun ensureProactiveFeedbackLoadedLocked(p: SharedPreferences): LinkedHashMap<Long, String> {
+        if (proactiveFeedbackPrefsRef === p) {
+            cachedProactiveFeedbackMap?.let { return it }
+        }
         val entries = LinkedHashMap<Long, String>()
+        val raw = p.getString("proactive_msg_feedback_map", "").orEmpty()
         raw.split(',').forEach { pair ->
             val idx = pair.indexOf(':')
             if (idx > 0) {
@@ -2065,38 +2204,57 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
                 entries[id] = pair.substring(idx + 1)
             }
         }
-        val prev = entries[messageId]
-        val nextVal = if (helpful) "up" else "down"
-        if (prev == nextVal) return
-        entries[messageId] = nextVal
-        val trimmed = entries.entries.toList().let { if (it.size > 120) it.takeLast(120) else it }
-        var up = p.getInt("proactive_feedback_helpful_count", 0)
-        var down = p.getInt("proactive_feedback_noisy_count", 0)
-        if (prev == "up") up = (up - 1).coerceAtLeast(0)
-        if (prev == "down") down = (down - 1).coerceAtLeast(0)
-        if (helpful) up++ else down++
-        p.edit()
-            .putString("proactive_msg_feedback_map", trimmed.joinToString(",") { "${it.key}:${it.value}" })
-            .putInt("proactive_feedback_helpful_count", up)
-            .putInt("proactive_feedback_noisy_count", down)
-            .apply()
+        cachedFeedbackHelpfulCount = p.getInt("proactive_feedback_helpful_count", 0)
+        cachedFeedbackNoisyCount = p.getInt("proactive_feedback_noisy_count", 0)
+        proactiveFeedbackPrefsRef = p
+        cachedProactiveFeedbackMap = entries
+        return entries
+    }
+
+    /** 每則主動訊息回饋（👍 helpful / 👎 noisy），輕量存 prefs 不新增 DB 表 */
+    fun recordProactiveMessageFeedback(ctx: Context, messageId: Long, helpful: Boolean) {
+        if (messageId <= 0L) return
+        val p = prefs(ctx)
+        synchronized(proactiveFeedbackLock) {
+            val entries = ensureProactiveFeedbackLoadedLocked(p)
+            val prev = entries[messageId]
+            val nextVal = if (helpful) "up" else "down"
+            if (prev == nextVal) return
+            entries.remove(messageId)
+            entries[messageId] = nextVal
+            while (entries.size > 120) {
+                val firstKey = entries.entries.first().key
+                entries.remove(firstKey)
+            }
+            var up = cachedFeedbackHelpfulCount
+            var down = cachedFeedbackNoisyCount
+            if (prev == "up") up = (up - 1).coerceAtLeast(0)
+            if (prev == "down") down = (down - 1).coerceAtLeast(0)
+            if (helpful) up++ else down++
+            cachedFeedbackHelpfulCount = up
+            cachedFeedbackNoisyCount = down
+            p.edit()
+                .putString("proactive_msg_feedback_map", entries.entries.joinToString(",") { "${it.key}:${it.value}" })
+                .putInt("proactive_feedback_helpful_count", up)
+                .putInt("proactive_feedback_noisy_count", down)
+                .apply()
+        }
     }
 
     fun getProactiveMessageFeedback(ctx: Context, messageId: Long): String? {
         if (messageId <= 0L) return null
-        val raw = prefs(ctx).getString("proactive_msg_feedback_map", "").orEmpty()
-        raw.split(',').forEach { pair ->
-            val idx = pair.indexOf(':')
-            if (idx > 0 && pair.substring(0, idx).toLongOrNull() == messageId) {
-                return pair.substring(idx + 1)
-            }
+        val p = prefs(ctx)
+        synchronized(proactiveFeedbackLock) {
+            return ensureProactiveFeedbackLoadedLocked(p)[messageId]
         }
-        return null
     }
 
     fun getProactiveFeedbackCounts(ctx: Context): Pair<Int, Int> {
         val p = prefs(ctx)
-        return p.getInt("proactive_feedback_helpful_count", 0) to p.getInt("proactive_feedback_noisy_count", 0)
+        synchronized(proactiveFeedbackLock) {
+            ensureProactiveFeedbackLoadedLocked(p)
+            return cachedFeedbackHelpfulCount to cachedFeedbackNoisyCount
+        }
     }
 
     fun getLastBriefingDay(ctx: Context, isMorning: Boolean): String =
@@ -2125,12 +2283,42 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
             .apply()
     }
 
-    fun getBriefingReadCount(ctx: Context): Int =
-        prefs(ctx).getInt("briefing_read_count", 0)
+    private val briefingReadLock = Any()
+    private var briefingReadPrefsRef: SharedPreferences? = null
+    private var cachedBriefingReadCount: Int = 0
+    private var cachedBriefingCountedIds: LinkedHashSet<Long>? = null
+
+    private fun ensureBriefingReadLoadedLocked(p: SharedPreferences): LinkedHashSet<Long> {
+        if (briefingReadPrefsRef === p) {
+            cachedBriefingCountedIds?.let { return it }
+        }
+        val raw = p.getString("briefing_counted_msg_ids", "").orEmpty()
+        val ids = LinkedHashSet<Long>()
+        raw.split(',').forEach { token ->
+            token.trim().toLongOrNull()?.let { ids.add(it) }
+        }
+        cachedBriefingReadCount = p.getInt("briefing_read_count", 0)
+        briefingReadPrefsRef = p
+        cachedBriefingCountedIds = ids
+        return ids
+    }
+
+    fun getBriefingReadCount(ctx: Context): Int {
+        val p = prefs(ctx)
+        synchronized(briefingReadLock) {
+            ensureBriefingReadLoadedLocked(p)
+            return cachedBriefingReadCount
+        }
+    }
 
     fun incrementBriefingReadCount(ctx: Context) {
         val p = prefs(ctx)
-        p.edit().putInt("briefing_read_count", p.getInt("briefing_read_count", 0) + 1).apply()
+        synchronized(briefingReadLock) {
+            ensureBriefingReadLoadedLocked(p)
+            val next = cachedBriefingReadCount + 1
+            cachedBriefingReadCount = next
+            p.edit().putInt("briefing_read_count", next).apply()
+        }
         PhantomSettingsBus.notifyChanged()
     }
 
@@ -2141,15 +2329,21 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     fun markBriefingReadOnce(ctx: Context, messageId: Long): Boolean {
         if (messageId <= 0L) return false
         val p = prefs(ctx)
-        val raw = p.getString("briefing_counted_msg_ids", "").orEmpty()
-        val ids = raw.split(',').mapNotNull { it.trim().toLongOrNull() }.toMutableList()
-        if (messageId in ids) return false
-        ids.add(messageId)
-        val trimmed = if (ids.size > 30) ids.takeLast(30) else ids
-        p.edit()
-            .putString("briefing_counted_msg_ids", trimmed.joinToString(","))
-            .putInt("briefing_read_count", p.getInt("briefing_read_count", 0) + 1)
-            .apply()
+        synchronized(briefingReadLock) {
+            val ids = ensureBriefingReadLoadedLocked(p)
+            if (messageId in ids) return false
+            ids.add(messageId)
+            while (ids.size > 30) {
+                val oldest = ids.first()
+                ids.remove(oldest)
+            }
+            val next = cachedBriefingReadCount + 1
+            cachedBriefingReadCount = next
+            p.edit()
+                .putString("briefing_counted_msg_ids", ids.joinToString(","))
+                .putInt("briefing_read_count", next)
+                .apply()
+        }
         PhantomSettingsBus.notifyChanged()
         return true
     }
@@ -2571,19 +2765,46 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putInt("calendar_insight_interval_minutes", safe).apply()
     }
 
+    private val calendarInsightSeenLock = Any()
+    private var calendarInsightSeenPrefsRef: SharedPreferences? = null
+    private var cachedCalendarInsightSeenKeys: LinkedHashSet<String>? = null
+
+    private fun loadCalendarInsightSeenKeysLocked(p: SharedPreferences): LinkedHashSet<String> {
+        if (calendarInsightSeenPrefsRef === p) {
+            cachedCalendarInsightSeenKeys?.let { return it }
+        }
+        val set = LinkedHashSet<String>()
+        p.getString("calendar_insight_seen_keys_v1", "").orEmpty()
+            .lineSequence()
+            .filter { it.isNotBlank() }
+            .forEach { set.add(it) }
+        calendarInsightSeenPrefsRef = p
+        cachedCalendarInsightSeenKeys = set
+        return set
+    }
+
     fun hasCalendarInsightSeenKey(ctx: Context, key: String): Boolean {
-        val raw = prefs(ctx).getString("calendar_insight_seen_keys_v1", "").orEmpty()
-        if (raw.isEmpty()) return false
-        return raw.split('\n').any { it == key }
+        if (key.isBlank()) return false
+        val p = prefs(ctx)
+        synchronized(calendarInsightSeenLock) {
+            return key in loadCalendarInsightSeenKeysLocked(p)
+        }
     }
 
     fun markCalendarInsightSeenKey(ctx: Context, key: String) {
-        val raw = prefs(ctx).getString("calendar_insight_seen_keys_v1", "").orEmpty()
-        val list = raw.split('\n').filter { it.isNotBlank() }.toMutableList()
-        if (key in list) return
-        list.add(key)
-        val trimmed = if (list.size > 200) list.takeLast(200) else list
-        prefs(ctx).edit().putString("calendar_insight_seen_keys_v1", trimmed.joinToString("\n")).apply()
+        val clean = key.trim().replace("\n", " ")
+        if (clean.isEmpty()) return
+        val p = prefs(ctx)
+        synchronized(calendarInsightSeenLock) {
+            val set = loadCalendarInsightSeenKeysLocked(p)
+            if (clean in set) return
+            set.add(clean)
+            while (set.size > 200) {
+                val oldest = set.first()
+                set.remove(oldest)
+            }
+            p.edit().putString("calendar_insight_seen_keys_v1", set.joinToString("\n")).apply()
+        }
     }
 
     // ---- #366 主動訊息聊天室、對話自動記憶擷取、未決事項膠囊列與壓縮錨點 ----
@@ -2663,6 +2884,29 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
     private const val SENDER_REPUTATION_TRUST_THRESHOLD = 10
     private const val MAX_SENDER_REPUTATION_ENTRIES = 200
 
+    private val senderReputationLock = Any()
+    private var senderReputationPrefsRef: SharedPreferences? = null
+    private var cachedSenderReputationMap: LinkedHashMap<String, Pair<Int, Long>>? = null
+
+    private fun loadSenderReputationMapLocked(p: SharedPreferences): LinkedHashMap<String, Pair<Int, Long>> {
+        if (senderReputationPrefsRef === p) {
+            cachedSenderReputationMap?.let { return it }
+        }
+        val map = LinkedHashMap<String, Pair<Int, Long>>()
+        p.getString(KEY_SENDER_REPUTATION_30D, "").orEmpty().lineSequence().forEach { line ->
+            val eq = line.lastIndexOf('=')
+            if (eq <= 0) return@forEach
+            val keyPart = line.substring(0, eq)
+            val valParts = line.substring(eq + 1).split(':')
+            val count = valParts.getOrNull(0)?.toIntOrNull() ?: return@forEach
+            val ts = valParts.getOrNull(1)?.toLongOrNull() ?: return@forEach
+            map[keyPart] = count to ts
+        }
+        senderReputationPrefsRef = p
+        cachedSenderReputationMap = map
+        return map
+    }
+
     private fun senderReputationKey(packageName: String, sender: String): String =
         "${packageName.trim().lowercase(Locale.ROOT)}|${sender.trim().lowercase(Locale.ROOT)}"
             .replace("\n", " ")
@@ -2679,28 +2923,21 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         val k = senderReputationKey(packageName, sender)
         val cutoff = nowMs - SENDER_REPUTATION_WINDOW_MS
         val p = prefs(ctx)
-        val map = LinkedHashMap<String, Pair<Int, Long>>()
-        p.getString(KEY_SENDER_REPUTATION_30D, "").orEmpty().lineSequence().forEach { line ->
-            val eq = line.lastIndexOf('=')
-            if (eq <= 0) return@forEach
-            val keyPart = line.substring(0, eq)
-            val valParts = line.substring(eq + 1).split(':')
-            val count = valParts.getOrNull(0)?.toIntOrNull() ?: return@forEach
-            val ts = valParts.getOrNull(1)?.toLongOrNull() ?: return@forEach
-            if (ts >= cutoff) {
-                map[keyPart] = count to ts
+        synchronized(senderReputationLock) {
+            val map = loadSenderReputationMapLocked(p)
+            val iter = map.entries.iterator()
+            while (iter.hasNext()) {
+                if (iter.next().value.second < cutoff) iter.remove()
             }
+            val prev = map.remove(k)?.first ?: 0
+            map[k] = (prev + bonus.coerceAtLeast(1)).coerceAtMost(9999) to nowMs
+            while (map.size > MAX_SENDER_REPUTATION_ENTRIES) {
+                val oldestKey = map.entries.first().key
+                map.remove(oldestKey)
+            }
+            val encoded = map.entries.joinToString("\n") { (key, v) -> "$key=${v.first}:${v.second}" }
+            p.edit().putString(KEY_SENDER_REPUTATION_30D, encoded).apply()
         }
-        val prev = map.remove(k)?.first ?: 0
-        map[k] = (prev + bonus.coerceAtLeast(1)).coerceAtMost(9999) to nowMs
-        val entries = map.entries.toList()
-        val trimmed = if (entries.size > MAX_SENDER_REPUTATION_ENTRIES) {
-            entries.takeLast(MAX_SENDER_REPUTATION_ENTRIES)
-        } else {
-            entries
-        }
-        val encoded = trimmed.joinToString("\n") { (key, v) -> "$key=${v.first}:${v.second}" }
-        p.edit().putString(KEY_SENDER_REPUTATION_30D, encoded).apply()
     }
 
     fun getSenderLowRiskCount30d(
@@ -2712,19 +2949,12 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         if (sender.isBlank()) return 0
         val k = senderReputationKey(packageName, sender)
         val cutoff = nowMs - SENDER_REPUTATION_WINDOW_MS
-        val raw = prefs(ctx).getString(KEY_SENDER_REPUTATION_30D, "").orEmpty()
-        if (raw.isBlank()) return 0
-        raw.lineSequence().forEach { line ->
-            val eq = line.lastIndexOf('=')
-            if (eq <= 0) return@forEach
-            if (line.substring(0, eq) == k) {
-                val valParts = line.substring(eq + 1).split(':')
-                val count = valParts.getOrNull(0)?.toIntOrNull() ?: 0
-                val ts = valParts.getOrNull(1)?.toLongOrNull() ?: 0L
-                return if (ts >= cutoff) count else 0
-            }
+        val p = prefs(ctx)
+        synchronized(senderReputationLock) {
+            val map = loadSenderReputationMapLocked(p)
+            val entry = map[k] ?: return 0
+            return if (entry.second >= cutoff) entry.first else 0
         }
-        return 0
     }
 
     fun isTrustedSenderHistory(
@@ -2795,18 +3025,68 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putBoolean("goal_tracking_enabled", enabled).apply()
     }
 
+    private const val KEY_GOAL_DISMISSED_HASHES_LEGACY = "goal_dismissed_hashes"
+    private const val KEY_GOAL_DISMISSED_HASHES_ORDERED = "goal_dismissed_hashes_ordered"
+
+    private val goalDismissedLock = Any()
+    private var goalDismissedPrefsRef: SharedPreferences? = null
+    private var cachedGoalDismissedHashes: LinkedHashSet<String>? = null
+
+    private fun loadGoalDismissedHashesLocked(p: SharedPreferences): LinkedHashSet<String> {
+        if (goalDismissedPrefsRef === p) {
+            cachedGoalDismissedHashes?.let { return it }
+        }
+        val set = LinkedHashSet<String>()
+        val orderedRaw = p.getString(KEY_GOAL_DISMISSED_HASHES_ORDERED, null)
+        if (orderedRaw != null) {
+            orderedRaw.lineSequence().forEach { line ->
+                val clean = line.trim()
+                if (clean.isNotEmpty()) set.add(clean)
+            }
+        } else {
+            // 相容舊版無序 StringSet：首次讀取遷移至有序 \n 字串
+            val legacy = p.getStringSet(KEY_GOAL_DISMISSED_HASHES_LEGACY, emptySet()).orEmpty()
+            legacy.forEach { h ->
+                val clean = h.trim()
+                if (clean.isNotEmpty()) set.add(clean)
+            }
+            if (legacy.isNotEmpty()) {
+                p.edit()
+                    .putString(KEY_GOAL_DISMISSED_HASHES_ORDERED, set.joinToString("\n"))
+                    .remove(KEY_GOAL_DISMISSED_HASHES_LEGACY)
+                    .apply()
+            }
+        }
+        goalDismissedPrefsRef = p
+        cachedGoalDismissedHashes = set
+        return set
+    }
+
     fun isGoalCandidateDismissed(ctx: Context, messageHash: String): Boolean {
-        val set = prefs(ctx).getStringSet("goal_dismissed_hashes", emptySet()).orEmpty()
-        return messageHash in set
+        if (messageHash.isBlank()) return false
+        val p = prefs(ctx)
+        synchronized(goalDismissedLock) {
+            return messageHash in loadGoalDismissedHashesLocked(p)
+        }
     }
 
     fun markGoalCandidateDismissed(ctx: Context, messageHash: String) {
-        if (messageHash.isBlank()) return
+        val clean = messageHash.trim().replace("\n", " ")
+        if (clean.isEmpty()) return
         val p = prefs(ctx)
-        val next = p.getStringSet("goal_dismissed_hashes", emptySet()).orEmpty().toMutableSet()
-        next.add(messageHash)
-        val trimmed = if (next.size > 100) next.toList().takeLast(100).toSet() else next
-        p.edit().putStringSet("goal_dismissed_hashes", trimmed).apply()
+        synchronized(goalDismissedLock) {
+            val set = loadGoalDismissedHashesLocked(p)
+            set.remove(clean)
+            set.add(clean)
+            while (set.size > 100) {
+                val oldest = set.first()
+                set.remove(oldest)
+            }
+            p.edit()
+                .putString(KEY_GOAL_DISMISSED_HASHES_ORDERED, set.joinToString("\n"))
+                .remove(KEY_GOAL_DISMISSED_HASHES_LEGACY)
+                .apply()
+        }
     }
 
     // ---- #381 Health Connect 生理數據整合 ----
@@ -2833,45 +3113,58 @@ private const val KEY_EXPANDED_SUBCARDS = "settings_expanded_subcards"
         prefs(ctx).edit().putBoolean("health_ai_query_enabled", enabled).apply()
     }
 
-    /** #403 記錄與檢查每條主動健康觀察規則近 7 日已投遞次數（每規則每週至多 2 次） */
-    fun getHealthRuleWeeklyCount(ctx: Context, ruleId: String, nowMs: Long = System.currentTimeMillis()): Int {
-        val p = prefs(ctx)
+    private val healthRuleHistoryLock = Any()
+    private var healthRuleHistoryPrefsRef: SharedPreferences? = null
+    private var cachedHealthRuleHistory: MutableList<Pair<String, Long>>? = null
+
+    private fun loadHealthRuleHistoryLocked(p: SharedPreferences): MutableList<Pair<String, Long>> {
+        if (healthRuleHistoryPrefsRef === p) {
+            cachedHealthRuleHistory?.let { return it }
+        }
+        val list = mutableListOf<Pair<String, Long>>()
         val raw = p.getString("health_proactive_weekly_history", "").orEmpty()
-        if (raw.isBlank()) return 0
-        val cutoff = nowMs - 7L * 24L * 60L * 60L * 1000L
-        var count = 0
-        val kept = mutableListOf<String>()
         raw.lineSequence().forEach { line ->
             val parts = line.split('|')
             if (parts.size < 2) return@forEach
             val rId = parts[0]
             val ts = parts[1].toLongOrNull() ?: return@forEach
-            if (ts >= cutoff) {
-                kept.add(line)
-                if (rId == ruleId) count++
+            list.add(rId to ts)
+        }
+        healthRuleHistoryPrefsRef = p
+        cachedHealthRuleHistory = list
+        return list
+    }
+
+    /** #403 記錄與檢查每條主動健康觀察規則近 7 日已投遞次數（每規則每週至多 2 次） */
+    fun getHealthRuleWeeklyCount(ctx: Context, ruleId: String, nowMs: Long = System.currentTimeMillis()): Int {
+        val p = prefs(ctx)
+        val cutoff = nowMs - 7L * 24L * 60L * 60L * 1000L
+        synchronized(healthRuleHistoryLock) {
+            val list = loadHealthRuleHistoryLocked(p)
+            if (list.isEmpty()) return 0
+            val beforeSize = list.size
+            list.removeAll { it.second < cutoff }
+            if (list.size != beforeSize) {
+                val encoded = list.joinToString("\n") { "${it.first}|${it.second}" }
+                p.edit().putString("health_proactive_weekly_history", encoded).apply()
             }
+            return list.count { it.first == ruleId }
         }
-        val normalized = kept.joinToString("\n")
-        if (normalized != raw) {
-            p.edit().putString("health_proactive_weekly_history", normalized).apply()
-        }
-        return count
     }
 
     fun recordHealthRuleDelivered(ctx: Context, ruleId: String, nowMs: Long = System.currentTimeMillis()) {
         val p = prefs(ctx)
-        val raw = p.getString("health_proactive_weekly_history", "").orEmpty()
         val cutoff = nowMs - 7L * 24L * 60L * 60L * 1000L
-        val kept = raw.lineSequence()
-            .filter { line ->
-                val parts = line.split('|')
-                val ts = parts.getOrNull(1)?.toLongOrNull() ?: return@filter false
-                ts >= cutoff
+        synchronized(healthRuleHistoryLock) {
+            val list = loadHealthRuleHistoryLocked(p)
+            list.removeAll { it.second < cutoff }
+            list.add(ruleId to nowMs)
+            while (list.size > 60) {
+                list.removeAt(0)
             }
-            .toMutableList()
-        kept.add("$ruleId|$nowMs")
-        val trimmed = if (kept.size > 60) kept.takeLast(60) else kept
-        p.edit().putString("health_proactive_weekly_history", trimmed.joinToString("\n")).apply()
+            val encoded = list.joinToString("\n") { "${it.first}|${it.second}" }
+            p.edit().putString("health_proactive_weekly_history", encoded).apply()
+        }
     }
 
     /** 未授權 Health Connect 時每 7 天最多一次軟性邀請 */

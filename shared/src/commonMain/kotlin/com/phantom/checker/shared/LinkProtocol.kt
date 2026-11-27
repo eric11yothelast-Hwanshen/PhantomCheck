@@ -153,14 +153,6 @@ data class LinkEnvelope(
     val payloadJson: String = ""
 )
 
-data class QrPairingPayload(
-    val wssUrl: String = "",
-    val fingerprint: String = "",
-    val code: String = "",
-    val deviceName: String = "",
-    val protocolVersion: Int = LinkProtocol.PROTOCOL_VERSION
-)
-
 /**
  * #476 / #477 桌面伺服器產出之配對 QR JSON（手機掃描連線用）。
  */
@@ -299,7 +291,8 @@ data class StatsSnapshotDto(
     val hourlyCounts: List<HourCountDto> = emptyList(),
     val dailyCounts30: List<DayCountDto> = emptyList(),
     val activeAppsToday: List<ActiveAppStatDto> = emptyList(),
-    val weeklyTopApps: List<ActiveAppStatDto> = emptyList()
+    val weeklyTopApps: List<ActiveAppStatDto> = emptyList(),
+    val warning: Int = 0
 )
 
 data class ChatSendReq(
