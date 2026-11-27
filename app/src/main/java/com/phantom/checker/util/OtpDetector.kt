@@ -15,7 +15,7 @@ object OtpDetector {
     )
 
     private val CODE_BEFORE_KEYWORD_REGEX = Regex(
-        pattern = "(?<!\\d)(\\d{4,8})(?!\\d)[^0-9\\n]{0,16}?(?:為您的|為您此次|是您的)?(?:驗證碼|安全碼|動態碼|動態密碼|一次性密碼|認證碼|確認碼|otp|verification\\s*code)",
+        pattern = "(?<!\\d)(\\d{4,8})(?!\\d)[^0-9\\n]{0,16}?(?:為您的|為您此次|是您的)?(?:驗證碼|安全碼|動態碼|動態密碼|一次性密碼|認證碼|確認碼|\\botp\\b|verification\\s*code|security\\s*code|auth(?:entication)?\\s*code|passcode|one[-\\s]?time\\s*password|\\b2fa\\b)",
         options = setOf(RegexOption.IGNORE_CASE)
     )
 

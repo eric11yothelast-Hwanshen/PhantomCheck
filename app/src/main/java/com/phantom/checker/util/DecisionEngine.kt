@@ -204,10 +204,12 @@ object DecisionEngine {
         }
     }
 
+    private val SIGNAL_BADGE_REGEX = Regex("\\[([^\\]]{1,28})]")
+
     /** 供 UI 唯讀擷取 provenance 中的訊號標記清單 */
     fun extractSignalBadges(riskReason: String): List<String> {
         if (riskReason.isBlank()) return emptyList()
-        return Regex("\\[([^\\]]{1,28})]").findAll(riskReason)
+        return SIGNAL_BADGE_REGEX.findAll(riskReason)
             .map { it.groupValues[1] }
             .distinct()
             .take(6)

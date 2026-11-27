@@ -25,6 +25,7 @@ object ReplyProxyManager {
     const val CHANNEL_ID = "phantom_reply_proxy"
     const val REMOTE_INPUT_KEY = "proxy_reply"
     const val ACTION_REPLY = "com.phantom.checker.ACTION_PROXY_REPLY"
+    const val ACTION_CONFIRM_SMS = "com.phantom.checker.ACTION_PROXY_CONFIRM_SMS"
     const val ACTION_CLOSE = "com.phantom.checker.ACTION_PROXY_CLOSE"
     const val ACTION_DISMISSED = "com.phantom.checker.ACTION_PROXY_DISMISSED"
     const val ACTION_TIMEOUT = "com.phantom.checker.ACTION_PROXY_TIMEOUT"
@@ -44,10 +45,12 @@ object ReplyProxyManager {
         val packageName: String,
         val appLabel: String,
         val sender: String,
+        val conversationKey: String = sender,
         val originalSnippet: String,
         val history: MutableList<ReplyHistoryEntry>,
         var lastActivityAt: Long,
-        val notificationId: Int
+        val notificationId: Int,
+        var pendingSmsText: String? = null
     )
 
     private val lock = Any()
@@ -57,8 +60,18 @@ object ReplyProxyManager {
         }
     }
 
-    fun buildSessionKey(packageName: String, sender: String): String =
-        "$packageName|${sender.trim()}"
+    fun buildSessionKey(
+        packageName: String,
+        sender: String,
+        conversationKey: String? = null
+    ): String {
+        val convNorm = conversationKey?.trim()?.takeIf { it.isNotEmpty() }
+        return if (convNorm != null) {
+            "$packageName|$convNorm"
+        } else {
+            "$packageName|${sender.trim()}"
+        }
+    }
 
     fun getSession(sessionKey: String): ProxySession? = synchronized(lock) {
         sessions[sessionKey]
@@ -70,13 +83,15 @@ object ReplyProxyManager {
         appLabel: String,
         sender: String,
         originalSnippet: String,
-        initialReplyText: String? = null
+        initialReplyText: String? = null,
+        conversationKey: String? = null
     ) {
         val appCtx = ctx.applicationContext
         if (!PhantomPrefs.isReplyProxyEnabled(appCtx)) return
-        val key = buildSessionKey(packageName, sender)
         val now = System.currentTimeMillis()
         val displaySender = sender.trim().ifBlank { appLabel.ifBlank { packageName } }
+        val effectiveConvKey = conversationKey?.trim()?.takeIf { it.isNotEmpty() } ?: displaySender
+        val key = buildSessionKey(packageName, displaySender, effectiveConvKey)
         val displayApp = appLabel.ifBlank { packageName }
 
         var evicted: ProxySession? = null
@@ -86,6 +101,7 @@ object ReplyProxyManager {
                 if (!initialReplyText.isNullOrBlank()) {
                     appendEntryLocked(existing, isSelf = true, text = initialReplyText.trim(), ts = now)
                 }
+                existing.pendingSmsText = null
                 existing.lastActivityAt = now
                 existing
             } else {
@@ -116,6 +132,7 @@ object ReplyProxyManager {
                     packageName = packageName,
                     appLabel = displayApp,
                     sender = displaySender,
+                    conversationKey = effectiveConvKey,
                     originalSnippet = originalSnippet.trim().take(200),
                     history = history,
                     lastActivityAt = now,
@@ -148,12 +165,45 @@ object ReplyProxyManager {
         val now = System.currentTimeMillis()
         val session = synchronized(lock) {
             val s = sessions[sessionKey] ?: return
+            s.pendingSmsText = null
             appendEntryLocked(s, isSelf = isSelf, text = text, ts = now)
             s.lastActivityAt = now
             s
         }
         postOrUpdateNotification(appCtx, session)
         scheduleIdleTimeout(appCtx, session)
+    }
+
+    /**
+     * 僅供真正簡訊來源在原始通知不可用時，暫存待發文字並於通知欄顯示明確「確認 (SMS)」按鈕。
+     */
+    fun requestSmsFallbackConfirmation(
+        ctx: Context,
+        sessionKey: String,
+        pendingReplyText: String,
+        noticeText: String
+    ) {
+        val appCtx = ctx.applicationContext
+        val now = System.currentTimeMillis()
+        val session = synchronized(lock) {
+            val s = sessions[sessionKey] ?: return
+            s.pendingSmsText = pendingReplyText
+            appendEntryLocked(s, isSelf = false, text = noticeText, ts = now)
+            s.lastActivityAt = now
+            s
+        }
+        postOrUpdateNotification(appCtx, session)
+        scheduleIdleTimeout(appCtx, session)
+    }
+
+    /**
+     * 原子性取出並清除待確認的簡訊文字（避免重複點擊重複發送）。
+     */
+    fun consumePendingSms(sessionKey: String): Pair<ProxySession, String>? = synchronized(lock) {
+        val s = sessions[sessionKey] ?: return@synchronized null
+        val text = s.pendingSmsText?.trim()?.takeIf { it.isNotEmpty() } ?: return@synchronized null
+        s.pendingSmsText = null
+        s to text
     }
 
     fun closeSession(
@@ -210,7 +260,9 @@ object ReplyProxyManager {
                 .setConversationTitle("${session.sender}（${session.appLabel}）")
                 .setGroupConversation(false)
 
-            val snapshotHistory = synchronized(lock) { session.history.toList() }
+            val (snapshotHistory, hasPendingSms) = synchronized(lock) {
+                session.history.toList() to !session.pendingSmsText.isNullOrBlank()
+            }
             snapshotHistory.forEach { entry ->
                 style.addMessage(
                     entry.text,
@@ -265,12 +317,33 @@ object ReplyProxyManager {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val notif = NotificationCompat.Builder(ctx, CHANNEL_ID)
+            val builder = NotificationCompat.Builder(ctx, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_phantom)
                 .setStyle(style)
                 .setContentTitle("${session.sender}（${session.appLabel}）")
                 .setContentText(snapshotHistory.lastOrNull()?.text.orEmpty())
                 .addAction(replyAction)
+
+            if (hasPendingSms) {
+                val confirmSmsIntent = Intent(ctx, ReplyProxyReceiver::class.java).apply {
+                    action = ACTION_CONFIRM_SMS
+                    putExtra(EXTRA_SESSION_KEY, session.sessionKey)
+                }
+                val confirmSmsPi = PendingIntent.getBroadcast(
+                    ctx,
+                    reqCode(session.sessionKey, 5),
+                    confirmSmsIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                val confirmSmsAction = NotificationCompat.Action.Builder(
+                    0,
+                    "${com.phantom.checker.PhantomApplication.str(R.string.common_confirm_add)} (SMS)",
+                    confirmSmsPi
+                ).build()
+                builder.addAction(confirmSmsAction)
+            }
+
+            val notif = builder
                 .addAction(closeAction)
                 .setDeleteIntent(dismissPi)
                 .setAutoCancel(false)

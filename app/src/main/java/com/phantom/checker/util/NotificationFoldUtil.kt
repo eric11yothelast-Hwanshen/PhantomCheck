@@ -19,7 +19,7 @@ data class FoldedMessage(
  *
  * 規則：
  * - 同 packageName + sender + conversationKey + riskLabel 才可比
- * - 任一筆含 scam / suspicious 風險標籤者不合併（高風險逐則保留）
+ * - 任一筆含 scam / suspicious / warning 風險標籤者不合併（高風險逐則保留）
  * - 內含疑似訂單編號／金額／OTP／電話／URL 等關鍵數字或網址序列集合不一致者不合併
  * - 正規化（\s+ 壓縮、trim）後完全相同，或 character bigram Dice 係數 ≥ 0.85
  * - 相鄰時間窗 ≤ 24 小時鏈式串接，跨窗不合併
@@ -29,6 +29,8 @@ object NotificationFoldUtil {
     private const val CHAIN_WINDOW_MS = 24L * 60L * 60L * 1000L
     private const val DICE_THRESHOLD = 0.85
     private val KEY_TOKEN_REGEX = Regex("""https?://\S+|\d+(?:[.,]\d+)*""")
+    private val WHITESPACE_REGEX = Regex("\\s+")
+    private val HIGH_RISK_LABELS = setOf("scam", "suspicious", "warning")
 
     private data class MutableGroup(
         val representative: MessageEntity,
@@ -48,7 +50,7 @@ object NotificationFoldUtil {
         val groups = ArrayList<MutableGroup>(messages.size)
         for (msg in messages) {
             val riskKey = msg.riskLabel.trim().lowercase(Locale.ROOT)
-            val isHighRisk = riskKey == "scam" || riskKey == "suspicious"
+            val isHighRisk = riskKey in HIGH_RISK_LABELS
             val senderKey = msg.sender.trim()
             val convKey = msg.conversationKey.trim()
             val normCombined = normalize("${msg.sender} ${msg.content}")
@@ -75,7 +77,7 @@ object NotificationFoldUtil {
             var matched: MutableGroup? = null
             for (i in groups.indices.reversed()) {
                 val g = groups[i]
-                if (g.riskKey == "scam" || g.riskKey == "suspicious") continue
+                if (g.riskKey in HIGH_RISK_LABELS) continue
                 if (g.representative.packageName != msg.packageName) continue
                 if (g.senderKey != senderKey) continue
                 if (g.convKey != convKey) continue
@@ -137,7 +139,7 @@ object NotificationFoldUtil {
     }
 
     internal fun normalize(text: String): String =
-        text.trim().replace(Regex("\\s+"), " ")
+        text.trim().replace(WHITESPACE_REGEX, " ")
 
     internal fun extractKeyTokens(normalizedText: String): List<String> =
         KEY_TOKEN_REGEX.findAll(normalizedText).map { it.value }.toList()

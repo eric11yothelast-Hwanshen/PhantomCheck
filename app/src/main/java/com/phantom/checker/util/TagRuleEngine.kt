@@ -1,6 +1,9 @@
 package com.phantom.checker.util
 
+import android.util.LruCache
 import com.phantom.checker.data.UserTagRuleEntity
+import java.util.regex.Pattern
+import java.util.regex.PatternSyntaxException
 
 /**
  * 確定性標籤規則比對引擎（零 LLM token）。
@@ -12,8 +15,222 @@ import com.phantom.checker.data.UserTagRuleEntity
  */
 object TagRuleEngine {
 
+    private const val REGEX_CACHE_MAX_SIZE = 64
+    const val MAX_REGEX_PATTERN_LENGTH = 200
+    const val MAX_REGEX_INPUT_LENGTH = 2000
+    private const val MAX_REGEX_QUANTIFIERS = 20
+    private const val MAX_REGEX_GROUP_DEPTH = 6
+    private const val MAX_REGEX_MATCH_STEPS = 50_000
+
     private val KW_SPLIT_REGEX = Regex("[|｜,，]+")
     private val OTP_DIGITS_REGEX = Regex("(?<!\\d)\\d{4,8}(?!\\d)")
+
+    private data class CompiledRegexEntry(
+        val pattern: Pattern?,
+        val error: String?
+    )
+
+    private class RegexStepLimitExceededException : RuntimeException()
+
+    private class StepLimitedCharSequence(
+        private val delegate: CharSequence,
+        private val maxSteps: Int,
+        private val counter: IntArray = IntArray(1)
+    ) : CharSequence {
+        override val length: Int get() = delegate.length
+
+        override fun get(index: Int): Char {
+            if (++counter[0] > maxSteps) throw RegexStepLimitExceededException()
+            return delegate[index]
+        }
+
+        override fun subSequence(startIndex: Int, endIndex: Int): CharSequence =
+            StepLimitedCharSequence(delegate.subSequence(startIndex, endIndex), maxSteps, counter)
+
+        override fun toString(): String = delegate.toString()
+    }
+
+    private val compiledRegexCache = object : LruCache<String, CompiledRegexEntry>(REGEX_CACHE_MAX_SIZE) {}
+
+    /**
+     * 建置規則時檢核正則語法與 ReDoS 複雜度防呆；回傳 null 代表安全可用，否則回傳拒絕原因代碼。
+     */
+    fun validateRegexPattern(rawPattern: String): String? {
+        val pattern = rawPattern.trim()
+        if (pattern.isEmpty()) return "empty_pattern"
+        if (pattern.length > MAX_REGEX_PATTERN_LENGTH) return "pattern_too_long"
+        if (hasUnsafeRegexComplexity(pattern)) return "unsafe_complexity"
+        return try {
+            Pattern.compile(pattern, Pattern.CASE_INSENSITIVE)
+            null
+        } catch (_: PatternSyntaxException) {
+            "invalid_syntax"
+        }
+    }
+
+    fun isSafeRegexPattern(rawPattern: String): Boolean = validateRegexPattern(rawPattern) == null
+
+    /**
+     * 靜態掃描正則結構，阻擋巢狀量詞（如 (a+)+$、(a*)*、(\d+){2,}）、過深群組、過多量詞與反向參照。
+     */
+    internal fun hasUnsafeRegexComplexity(pattern: String): Boolean {
+        class GroupFrame(var hasRepeatingQuantifier: Boolean = false, var hasAlternation: Boolean = false)
+
+        val stack = ArrayDeque<GroupFrame>()
+        var inCharClass = false
+        var escaped = false
+        var quantifierCount = 0
+        var i = 0
+
+        fun readQuantifierRepeat(idx: Int): Pair<Int, Boolean>? {
+            if (idx >= pattern.length) return null
+            return when (pattern[idx]) {
+                '+', '*' -> {
+                    var next = idx + 1
+                    if (next < pattern.length && (pattern[next] == '?' || pattern[next] == '+')) next++
+                    next to true
+                }
+                '?' -> {
+                    var next = idx + 1
+                    if (next < pattern.length && (pattern[next] == '?' || pattern[next] == '+')) next++
+                    next to false
+                }
+                '{' -> {
+                    val close = pattern.indexOf('}', idx + 1)
+                    if (close <= idx + 1) return null
+                    val body = pattern.substring(idx + 1, close)
+                    val parts = body.split(',')
+                    if (parts.size > 2) return null
+                    val min = parts[0].trim().toIntOrNull() ?: return null
+                    val isRepeating = if (parts.size == 1) {
+                        min > 1
+                    } else {
+                        val maxStr = parts[1].trim()
+                        maxStr.isEmpty() || (maxStr.toIntOrNull()?.let { it > 1 } ?: return null)
+                    }
+                    var next = close + 1
+                    if (next < pattern.length && (pattern[next] == '?' || pattern[next] == '+')) next++
+                    next to isRepeating
+                }
+                else -> null
+            }
+        }
+
+        while (i < pattern.length) {
+            val ch = pattern[i]
+            if (escaped) {
+                // 反向參照（\1..\9）在回溯下易造成指數複雜度，直接阻擋
+                if (!inCharClass && ch in '1'..'9') return true
+                escaped = false
+                i++
+                continue
+            }
+            if (ch == '\\') {
+                escaped = true
+                i++
+                continue
+            }
+            if (inCharClass) {
+                if (ch == ']') inCharClass = false
+                i++
+                continue
+            }
+            when (ch) {
+                '[' -> {
+                    inCharClass = true
+                    i++
+                }
+                '(' -> {
+                    if (stack.size >= MAX_REGEX_GROUP_DEPTH) return true
+                    stack.addLast(GroupFrame())
+                    i++
+                }
+                '|' -> {
+                    stack.lastOrNull()?.let { it.hasAlternation = true }
+                    i++
+                }
+                ')' -> {
+                    val closed = stack.removeLastOrNull()
+                    val q = readQuantifierRepeat(i + 1)
+                    if (q != null) {
+                        quantifierCount++
+                        if (quantifierCount > MAX_REGEX_QUANTIFIERS) return true
+                        val (nextIdx, isRepeating) = q
+                        if (isRepeating && closed != null) {
+                            // 群組內含重複量詞，外層又套重複量詞（如 (a+)+、(a*)*、((a+)b)+）→ ReDoS
+                            if (closed.hasRepeatingQuantifier) return true
+                            // 群組含分支且外層套重複量詞（如 (a|aa)+）→ 保守視為高風險
+                            if (closed.hasAlternation) return true
+                        }
+                        if (isRepeating) {
+                            stack.lastOrNull()?.let { it.hasRepeatingQuantifier = true }
+                        }
+                        i = nextIdx
+                    } else {
+                        if (closed?.hasRepeatingQuantifier == true) {
+                            stack.lastOrNull()?.let { it.hasRepeatingQuantifier = true }
+                        }
+                        i++
+                    }
+                }
+                '+', '*', '?', '{' -> {
+                    val q = readQuantifierRepeat(i)
+                    if (q != null) {
+                        quantifierCount++
+                        if (quantifierCount > MAX_REGEX_QUANTIFIERS) return true
+                        val (nextIdx, isRepeating) = q
+                        if (isRepeating) {
+                            stack.lastOrNull()?.let { it.hasRepeatingQuantifier = true }
+                        }
+                        i = nextIdx
+                    } else {
+                        i++
+                    }
+                }
+                else -> i++
+            }
+        }
+        return false
+    }
+
+    private fun getCompiledPattern(regexCond: String): Pattern? {
+        synchronized(compiledRegexCache) {
+            compiledRegexCache.get(regexCond)?.let { return it.pattern }
+        }
+        val err = validateRegexPattern(regexCond)
+        val entry = if (err != null) {
+            CompiledRegexEntry(pattern = null, error = err)
+        } else {
+            try {
+                CompiledRegexEntry(
+                    pattern = Pattern.compile(regexCond, Pattern.CASE_INSENSITIVE),
+                    error = null
+                )
+            } catch (_: PatternSyntaxException) {
+                CompiledRegexEntry(pattern = null, error = "invalid_syntax")
+            }
+        }
+        synchronized(compiledRegexCache) {
+            compiledRegexCache.put(regexCond, entry)
+        }
+        return entry.pattern
+    }
+
+    internal fun safeRegexContainsMatch(regexCond: String, content: String): Boolean {
+        val pattern = getCompiledPattern(regexCond) ?: return false
+        val bounded = if (content.length > MAX_REGEX_INPUT_LENGTH) {
+            content.substring(0, MAX_REGEX_INPUT_LENGTH)
+        } else {
+            content
+        }
+        return try {
+            pattern.matcher(StepLimitedCharSequence(bounded, MAX_REGEX_MATCH_STEPS)).find()
+        } catch (_: RegexStepLimitExceededException) {
+            false
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     val SEMANTIC_CATEGORIES: List<Pair<String, String>> = listOf(
         "otp" to "OTP／驗證碼",
@@ -89,10 +306,7 @@ object TagRuleEngine {
         }
 
         if (regexCond != null) {
-            val hitRegex = runCatching {
-                Regex(regexCond, RegexOption.IGNORE_CASE).containsMatchIn(content)
-            }.getOrDefault(false)
-            if (!hitRegex) return false
+            if (!safeRegexContainsMatch(regexCond, content)) return false
         }
 
         if (semCond != null && !matchesSemanticCategory(semCond, appLabel, sender, content)) {

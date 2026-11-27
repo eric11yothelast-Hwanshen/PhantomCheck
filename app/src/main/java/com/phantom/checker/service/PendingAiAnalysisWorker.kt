@@ -1,11 +1,16 @@
 package com.phantom.checker.service
 
+import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -16,11 +21,12 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.phantom.checker.R
 import com.phantom.checker.data.AppDatabase
-import com.phantom.checker.data.MessageTagCrossRef
 import com.phantom.checker.network.AiClient
 import com.phantom.checker.ui.MainActivity
 import com.phantom.checker.util.PhantomPrefs
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
 
@@ -94,52 +100,72 @@ class PendingAiAnalysisWorker(
 
         var anyTransientFailure = false
         var anyScamAlert = false
+        var anyResultsApplied = false
 
-        toAnalyze.chunked(5).forEach { chunk ->
+        for (chunk in toAnalyze.chunked(5)) {
             if (!PhantomPrefs.canUseAiTodayAndIncrement(appCtx)) {
-                return Result.success()
+                break
             }
-            val batchItems = chunk.map { msg ->
-                AiClient.BatchAnalyzeItem(
-                    messageId = msg.id,
-                    sender = msg.sender,
-                    content = msg.content,
-                    packageName = msg.packageName,
-                    appLabel = msg.appLabel,
-                    timestampMs = msg.timestamp
-                )
-            }
-            when (
-                val outcome = AiClient.analyzeMessageBatchDetailed(
-                    items = batchItems,
-                    tags = aiTags,
-                    enableAutoTag = enableAutoTag,
-                    context = appCtx,
-                    rules = aiRules,
-                    memoRules = memoRules
-                )
-            ) {
-                is AiClient.BatchAnalysisOutcome.Success -> {
-                    val ids = chunk.map { it.id }
-                    dao.deleteByIds(ids)
-                    val hadScam = applyAnalysisResults(
-                        appCtx = appCtx,
-                        db = db,
-                        results = outcome.results,
-                        enableAutoTag = enableAutoTag
+            var shouldRefundQuota = true
+            try {
+                val batchItems = chunk.map { msg ->
+                    AiClient.BatchAnalyzeItem(
+                        messageId = msg.id,
+                        sender = msg.sender,
+                        content = msg.content,
+                        packageName = msg.packageName,
+                        appLabel = msg.appLabel,
+                        timestampMs = msg.timestamp
                     )
-                    if (hadScam) anyScamAlert = true
                 }
-                is AiClient.BatchAnalysisOutcome.TransientFailure -> {
-                    PhantomPrefs.refundTodayAiUsage(appCtx)
-                    val ids = chunk.map { it.id }
-                    dao.incrementAttempts(ids)
-                    anyTransientFailure = true
+                when (
+                    val outcome = AiClient.analyzeMessageBatchDetailed(
+                        items = batchItems,
+                        tags = aiTags,
+                        enableAutoTag = enableAutoTag,
+                        context = appCtx,
+                        rules = aiRules,
+                        memoRules = memoRules
+                    )
+                ) {
+                    is AiClient.BatchAnalysisOutcome.Success -> {
+                        val ids = chunk.map { it.id }
+                        dao.deleteByIds(ids)
+                        if (outcome.results.isNotEmpty()) {
+                            shouldRefundQuota = false
+                            anyResultsApplied = true
+                            val hadScam = applyAnalysisResults(
+                                appCtx = appCtx,
+                                db = db,
+                                results = outcome.results,
+                                enableAutoTag = enableAutoTag
+                            )
+                            if (hadScam) anyScamAlert = true
+                        }
+                        // outcome.results 為空時維持 shouldRefundQuota = true，於 finally 退還今日額度
+                    }
+                    is AiClient.BatchAnalysisOutcome.TransientFailure -> {
+                        val ids = chunk.map { it.id }
+                        dao.incrementAttempts(ids)
+                        anyTransientFailure = true
+                    }
+                    is AiClient.BatchAnalysisOutcome.PermanentFailure -> {
+                        val ids = chunk.map { it.id }
+                        dao.deleteByIds(ids)
+                    }
                 }
-                is AiClient.BatchAnalysisOutcome.PermanentFailure -> {
-                    PhantomPrefs.refundTodayAiUsage(appCtx)
-                    val ids = chunk.map { it.id }
-                    dao.deleteByIds(ids)
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (e: Exception) {
+                Log.e("PendingAiAnalysis", "Chunk analysis failed size=${chunk.size}", e)
+                val ids = chunk.map { it.id }
+                runCatching { dao.incrementAttempts(ids) }
+                anyTransientFailure = true
+            } finally {
+                if (shouldRefundQuota) {
+                    withContext(NonCancellable) {
+                        PhantomPrefs.refundTodayAiUsage(appCtx)
+                    }
                 }
             }
         }
@@ -152,6 +178,9 @@ class PendingAiAnalysisWorker(
 
         if (anyScamAlert) {
             StatsForegroundService.startOrRefresh(appCtx, force = true)
+        }
+        if (anyResultsApplied || anyScamAlert) {
+            com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(appCtx)
         }
 
         val remaining = dao.pendingCount()
@@ -175,57 +204,13 @@ class PendingAiAnalysisWorker(
         db: AppDatabase,
         results: Map<Long, AiClient.AiAnalysisResult>,
         enableAutoTag: Boolean
-    ): Boolean {
-        var hasNewScam = false
-        results.forEach { (msgId, result) ->
-            val msg = db.messageDao().byId(msgId) ?: return@forEach
-            db.messageDao().update(
-                msg.copy(
-                    riskScore = result.riskScore,
-                    riskLabel = result.riskLabel,
-                    riskReason = result.riskReason
-                )
-            )
-            if (enableAutoTag && result.tagIds.isNotEmpty()) {
-                val existingRefs = db.tagDao().crossRefsForMessage(msgId)
-                val hasHigherPriorityTag = existingRefs.any {
-                    it.source == MessageTagCrossRef.SOURCE_MANUAL ||
-                        it.source == MessageTagCrossRef.SOURCE_USER_RULE
-                }
-                if (!hasHigherPriorityTag) {
-                    val refs = result.tagIds.map { tagId ->
-                        MessageTagCrossRef(
-                            messageId = msgId,
-                            tagId = tagId,
-                            source = MessageTagCrossRef.SOURCE_AUTO
-                        )
-                    }
-                    db.tagDao().addTagsToMessageBatch(refs)
-                }
-            }
-            if (PhantomPrefs.isAiAutoMemoEnabled(appCtx) && result.memo.isNotBlank()) {
-                NotificationCollectorService.saveAutoMemoIfPresent(
-                    db = db,
-                    msg = msg,
-                    rawMemo = result.memo,
-                    memoType = result.memoType,
-                    todoDue = result.todoDue,
-                    ctx = appCtx
-                )
-            }
-            if (result.riskLabel == "scam") {
-                hasNewScam = true
-                NotificationCollectorService.alertScamFromWorker(
-                    ctx = appCtx,
-                    msgId = msgId,
-                    pkg = msg.packageName,
-                    sender = msg.sender,
-                    reason = result.riskReason
-                )
-            }
-        }
-        return hasNewScam
-    }
+    ): Boolean = NotificationCollectorService.applyAiAnalysisResults(
+        appCtx = appCtx,
+        db = db,
+        results = results,
+        enableAutoTag = enableAutoTag,
+        alertScamCallback = NotificationCollectorService::alertScamFromWorker
+    )
 }
 
 object PendingAiAnalysisPolicy {
@@ -321,7 +306,15 @@ object PendingAiAnalysisPolicy {
 
     private fun postLowPriorityNotif(ctx: Context, title: String, text: String) {
         val appCtx = ctx.applicationContext
-        val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                appCtx,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        val nm = appCtx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, com.phantom.checker.PhantomApplication.str(R.string.notif_pending_ai_s_fd8b2e), NotificationManager.IMPORTANCE_LOW)
         )
@@ -342,6 +335,10 @@ object PendingAiAnalysisPolicy {
             .setAutoCancel(true)
             .setContentIntent(pi)
             .build()
-        nm.notify(NotifIds.AI_OFFLINE_QUEUE, notif)
+        try {
+            nm.notify(NotifIds.AI_OFFLINE_QUEUE, notif)
+        } catch (e: SecurityException) {
+            Log.w("PendingAiAnalysis", "postLowPriorityNotif SecurityException", e)
+        }
     }
 }

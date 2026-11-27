@@ -56,6 +56,7 @@ object MemoRuleEngine {
             .firstOrNull()
     }
 
+    // TODO(R17): 硬編碼繁中 UI 文案留待 R17 抽離至 strings.xml
     fun actionLabel(action: String): String = when (action) {
         MemoRuleEntity.ACTION_NEVER -> "永不記事/待辦"
         MemoRuleEntity.ACTION_TODO -> "一律加入待辦"
@@ -63,6 +64,7 @@ object MemoRuleEngine {
         else -> action
     }
 
+    // TODO(R17): 硬編碼繁中 UI 文案留待 R17 抽離至 strings.xml
     fun formatConditionSummary(rule: MemoRuleEntity, appLabelOverride: String? = null): String {
         val parts = mutableListOf<String>()
         val pkg = rule.packageName?.trim()?.takeIf { it.isNotEmpty() }

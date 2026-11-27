@@ -40,13 +40,17 @@ import com.phantom.checker.util.MuteMode
 import com.phantom.checker.util.NotifClickBehavior
 import com.phantom.checker.util.PhantomPrefs
 import com.phantom.checker.widget.ReminderWidgetProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import java.security.MessageDigest
 import java.util.Calendar
 
@@ -501,11 +505,17 @@ class NotificationCollectorService : NotificationListenerService() {
     private fun enqueueForBatchAnalysis(pkg: String, item: AiClient.BatchAnalyzeItem) {
         val batchKey = "$pkg|${item.sender}"
         val now = System.currentTimeMillis()
+        var expiredFlush: List<AiClient.BatchAnalyzeItem>? = null
         var immediateFlush: List<AiClient.BatchAnalyzeItem>? = null
         synchronized(batchLock) {
             val existing = pendingBatches[batchKey]
-            val batch = if (existing == null || (now - existing.firstAddedMs) > BATCH_WINDOW_MS) {
-                existing?.job?.cancel()
+            val batch = if (existing == null) {
+                PendingBatch(firstAddedMs = now).also { pendingBatches[batchKey] = it }
+            } else if ((now - existing.firstAddedMs) > BATCH_WINDOW_MS) {
+                existing.job?.cancel()
+                if (existing.items.isNotEmpty()) {
+                    expiredFlush = existing.items.toList()
+                }
                 PendingBatch(firstAddedMs = now).also { pendingBatches[batchKey] = it }
             } else {
                 existing
@@ -528,6 +538,9 @@ class NotificationCollectorService : NotificationListenerService() {
                 }
             }
         }
+        expiredFlush?.let { oldItems ->
+            scope.launch { processBatchAnalysis(pkg, oldItems) }
+        }
         immediateFlush?.let { items ->
             scope.launch { processBatchAnalysis(pkg, items) }
         }
@@ -537,196 +550,100 @@ class NotificationCollectorService : NotificationListenerService() {
         if (items.isEmpty()) return
         if (!PhantomPrefs.canUseAiTodayAndIncrement(applicationContext)) return
 
-        val db = AppDatabaseHolder.db(applicationContext)
-        val enableAutoTag = PhantomPrefs.isEffectiveAiAutoTagEnabled(applicationContext)
-        val aiTags = if (enableAutoTag) db.tagDao().aiManagedTags() else emptyList()
-        val aiRules = cachedActiveAiRules(db)
-        val memoRules = cachedActiveMemoRules(db)
+        var shouldRefundQuota = true
+        try {
+            val db = AppDatabaseHolder.db(applicationContext)
+            val enableAutoTag = PhantomPrefs.isEffectiveAiAutoTagEnabled(applicationContext)
+            val aiTags = if (enableAutoTag) db.tagDao().aiManagedTags() else emptyList()
+            val aiRules = cachedActiveAiRules(db)
+            val memoRules = cachedActiveMemoRules(db)
 
-        val outcome = AiClient.analyzeMessageBatchDetailed(
-            items = items,
-            tags = aiTags,
-            enableAutoTag = enableAutoTag,
-            context = applicationContext,
-            rules = aiRules,
-            memoRules = memoRules
-        )
-        val results = when (outcome) {
-            is AiClient.BatchAnalysisOutcome.Success -> outcome.results
-            is AiClient.BatchAnalysisOutcome.TransientFailure -> {
-                PhantomPrefs.refundTodayAiUsage(applicationContext)
-                if (PhantomPrefs.isAiOfflineRetryEnabled(applicationContext)) {
-                    val dao = db.pendingAiAnalysisDao()
-                    val wasEmpty = dao.pendingCount() == 0
-                    val now = System.currentTimeMillis()
-                    dao.enqueueAll(
-                        items.map {
-                            PendingAiAnalysisEntity(
-                                messageId = it.messageId,
-                                queuedAt = now,
-                                attempts = 0
-                            )
-                        }
-                    )
-                    if (wasEmpty) {
-                        PendingAiAnalysisPolicy.notifyQueued(applicationContext, items.size)
-                    }
-                    PendingAiAnalysisPolicy.enqueue(applicationContext)
-                }
-                emptyMap()
-            }
-            is AiClient.BatchAnalysisOutcome.PermanentFailure -> {
-                PhantomPrefs.refundTodayAiUsage(applicationContext)
-                emptyMap()
-            }
-        }
-        if (results.isEmpty()) {
-            if (outcome is AiClient.BatchAnalysisOutcome.Success) {
-                PhantomPrefs.refundTodayAiUsage(applicationContext)
-            }
-            if (enableAutoTag) {
-                // 自動降回 App 分類標籤（不中斷訊息入庫與風險流程）
-                val appCatRules = cachedAppCategoryRules(db, pkg)
-                if (appCatRules.isNotEmpty()) {
-                    items.forEach { item ->
-                        val existing = db.tagDao().crossRefsForMessage(item.messageId)
-                        if (existing.isEmpty()) {
-                            val refs = appCatRules.map { rule ->
-                                MessageTagCrossRef(
-                                    messageId = item.messageId,
-                                    tagId = rule.tagId,
-                                    source = MessageTagCrossRef.SOURCE_AUTO
+            val outcome = AiClient.analyzeMessageBatchDetailed(
+                items = items,
+                tags = aiTags,
+                enableAutoTag = enableAutoTag,
+                context = applicationContext,
+                rules = aiRules,
+                memoRules = memoRules
+            )
+            val results = when (outcome) {
+                is AiClient.BatchAnalysisOutcome.Success -> outcome.results
+                is AiClient.BatchAnalysisOutcome.TransientFailure -> {
+                    if (PhantomPrefs.isAiOfflineRetryEnabled(applicationContext)) {
+                        val dao = db.pendingAiAnalysisDao()
+                        val wasEmpty = dao.pendingCount() == 0
+                        val now = System.currentTimeMillis()
+                        dao.enqueueAll(
+                            items.map {
+                                PendingAiAnalysisEntity(
+                                    messageId = it.messageId,
+                                    queuedAt = now,
+                                    attempts = 0
                                 )
                             }
-                            db.tagDao().addTagsToMessageBatch(refs)
+                        )
+                        if (wasEmpty) {
+                            PendingAiAnalysisPolicy.notifyQueued(applicationContext, items.size)
+                        }
+                        PendingAiAnalysisPolicy.enqueue(applicationContext)
+                    }
+                    emptyMap()
+                }
+                is AiClient.BatchAnalysisOutcome.PermanentFailure -> emptyMap()
+            }
+            if (results.isEmpty()) {
+                if (enableAutoTag) {
+                    // 自動降回 App 分類標籤（不中斷訊息入庫與風險流程）
+                    val appCatRules = cachedAppCategoryRules(db, pkg)
+                    if (appCatRules.isNotEmpty()) {
+                        items.forEach { item ->
+                            val existing = db.tagDao().crossRefsForMessage(item.messageId)
+                            if (existing.isEmpty()) {
+                                val refs = appCatRules.map { rule ->
+                                    MessageTagCrossRef(
+                                        messageId = item.messageId,
+                                        tagId = rule.tagId,
+                                        source = MessageTagCrossRef.SOURCE_AUTO
+                                    )
+                                }
+                                db.tagDao().addTagsToMessageBatch(refs)
+                            }
                         }
                     }
-                }
-                if (AiClient.getProfileForPurpose(applicationContext, AiPurpose.MESSAGE_ANALYSIS) != null &&
-                    outcome !is AiClient.BatchAnalysisOutcome.TransientFailure
-                ) {
-                    recordAndMaybeNotifyAiTagFailure(applicationContext)
-                }
-            }
-            return
-        }
-        resetAiTagFailureCount(applicationContext)
-
-        val confirmThreshold = PhantomPrefs.getDecisionConfirmThreshold(applicationContext)
-        val activeWhitelistRules = try {
-            cachedActiveWhitelistRules(db)
-        } catch (_: Exception) {
-            emptyList()
-        }
-        var hasNewScam = false
-        results.forEach { (msgId, result) ->
-            val msg = db.messageDao().byId(msgId) ?: return@forEach
-            val indicators = IndicatorExtractor.extract(msg.content)
-            val isWl = IntelClient.isMessageWhitelisted(
-                sender = msg.sender,
-                packageName = msg.packageName,
-                appLabel = msg.appLabel,
-                content = msg.content,
-                aiRules = activeWhitelistRules,
-                indicators = indicators
-            )
-            val isKnownContact = try {
-                val aliases = db.contactAliasDao().all()
-                aliases.any {
-                    it.alias.equals(msg.sender, ignoreCase = true) ||
-                        it.displayName.equals(msg.sender, ignoreCase = true)
-                }
-            } catch (_: Exception) {
-                false
-            }
-            val hasAvatar = try {
-                db.senderAvatarDao().get(msg.packageName, msg.sender) != null
-            } catch (_: Exception) {
-                false
-            }
-            val intelRecord = try {
-                db.intelDao().getResult(msgId)
-            } catch (_: Exception) {
-                null
-            }
-            val benignHosts = com.phantom.checker.util.EncryptedByokStore.getBenignUrlHosts(applicationContext)
-            val nonBenignUrls = indicators.urls.filter { u ->
-                val h = IndicatorExtractor.extractHost(u)
-                h == null || h !in benignHosts
-            }
-            val trustedHistory = PhantomPrefs.isTrustedSenderHistory(
-                ctx = applicationContext,
-                packageName = msg.packageName,
-                sender = msg.sender,
-                hasKnownAvatar = hasAvatar
-            )
-            val localSignals = com.phantom.checker.util.DecisionEngine.DeterministicSignals(
-                whitelisted = isWl,
-                isKnownContactOrVip = isKnownContact,
-                hasOtp = com.phantom.checker.util.OtpDetector.extractOtp(msg.content) != null,
-                urlPresent = nonBenignUrls.isNotEmpty(),
-                cryptoAddressPresent = indicators.cryptoAddresses.isNotEmpty(),
-                intelHit = intelRecord?.isHit == true,
-                hasAmountCue = com.phantom.checker.util.DecisionEngine.hasAmountOrFraudCue(msg.content),
-                hasKnownAvatar = hasAvatar,
-                trustedSenderHistory = trustedHistory
-            )
-            val decision = com.phantom.checker.util.DecisionEngine.evaluateRisk(
-                messageId = msgId,
-                local = localSignals,
-                ai = com.phantom.checker.util.DecisionEngine.AiSemanticSignal(
-                    riskScore = result.riskScore,
-                    riskLabel = result.riskLabel,
-                    riskSemanticScore = result.riskSemanticScore,
-                    riskReason = result.riskReason
-                ),
-                confirmThreshold = confirmThreshold
-            )
-            if (decision.finalLabel == "safe" && decision.finalScore < 40) {
-                PhantomPrefs.recordSenderLowRiskMessage(applicationContext, msg.packageName, msg.sender)
-            }
-            db.messageDao().update(
-                msg.copy(
-                    riskScore = decision.finalScore,
-                    riskLabel = decision.finalLabel,
-                    riskReason = decision.provenanceReason
-                )
-            )
-            if (enableAutoTag && result.tagIds.isNotEmpty()) {
-                val existingRefs = db.tagDao().crossRefsForMessage(msgId)
-                val hasHigherPriorityTag = existingRefs.any {
-                    it.source == MessageTagCrossRef.SOURCE_MANUAL ||
-                        it.source == MessageTagCrossRef.SOURCE_USER_RULE
-                }
-                if (!hasHigherPriorityTag) {
-                    val refs = result.tagIds.map { tagId ->
-                        MessageTagCrossRef(
-                            messageId = msgId,
-                            tagId = tagId,
-                            source = MessageTagCrossRef.SOURCE_AUTO
-                        )
+                    if (AiClient.getProfileForPurpose(applicationContext, AiPurpose.MESSAGE_ANALYSIS) != null &&
+                        outcome !is AiClient.BatchAnalysisOutcome.TransientFailure
+                    ) {
+                        recordAndMaybeNotifyAiTagFailure(applicationContext)
                     }
-                    db.tagDao().addTagsToMessageBatch(refs)
+                }
+                return
+            }
+
+            // 取得有效 AI 分析結果，確認消耗今日額度
+            shouldRefundQuota = false
+            resetAiTagFailureCount(applicationContext)
+
+            val hasNewScam = applyAiAnalysisResults(
+                appCtx = applicationContext,
+                db = db,
+                results = results,
+                enableAutoTag = enableAutoTag,
+                alertScamCallback = ::alertScam
+            )
+            if (hasNewScam) {
+                StatsForegroundService.startOrRefresh(applicationContext, force = true)
+                com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(applicationContext)
+            }
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (e: Exception) {
+            Log.e("PhantomNotif", "processBatchAnalysis failed pkg=$pkg size=${items.size}", e)
+        } finally {
+            if (shouldRefundQuota) {
+                withContext(NonCancellable) {
+                    PhantomPrefs.refundTodayAiUsage(applicationContext)
                 }
             }
-            if (PhantomPrefs.isAiAutoMemoEnabled(applicationContext) && result.memo.isNotBlank()) {
-                saveAutoMemoIfPresent(
-                    db = db,
-                    msg = msg,
-                    rawMemo = result.memo,
-                    memoType = result.memoType,
-                    todoDue = result.todoDue,
-                    ctx = applicationContext
-                )
-            }
-            if (decision is com.phantom.checker.util.DecisionEngine.Decision.Auto && decision.finalLabel == "scam") {
-                hasNewScam = true
-                alertScam(applicationContext, msgId, pkg, msg.sender, decision.provenanceReason)
-            }
-        }
-        if (hasNewScam) {
-            StatsForegroundService.startOrRefresh(applicationContext, force = true)
-            com.phantom.checker.widget.WidgetUpdater.scheduleRefresh(applicationContext)
         }
     }
 
@@ -970,7 +887,7 @@ class NotificationCollectorService : NotificationListenerService() {
 
         if (shouldNotify) {
             editor.putLong("last_failure_notif_at", now).apply()
-            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
             val chId = "ai_tag_status"
             nm.createNotificationChannel(
                 NotificationChannel(chId, com.phantom.checker.PhantomApplication.str(R.string.notif_collector_s_c4f7e1), NotificationManager.IMPORTANCE_LOW)
@@ -1012,6 +929,143 @@ class NotificationCollectorService : NotificationListenerService() {
         sealed class ReplySendResult {
             data object Success : ReplySendResult()
             data class Unavailable(val reason: String) : ReplySendResult()
+        }
+
+        /**
+         * 共用 AI 分析結果套用管線（NotificationCollectorService 與 PendingAiAnalysisWorker 共用）：
+         * - 統一經 DecisionEngine.evaluateRisk 執行雙門檻、白名單、可信寄件者與 warning 降級
+         * - contactAlias 與 benignHosts 於迴圈外一次載入
+         * - 低風險安全訊息記錄發送者歷史信譽
+         * - 自動套用 AI 標籤（尊重手動與使用者規則優先序）、自動記事/待辦與高置信詐騙警報
+         */
+        suspend fun applyAiAnalysisResults(
+            appCtx: Context,
+            db: AppDatabase,
+            results: Map<Long, AiClient.AiAnalysisResult>,
+            enableAutoTag: Boolean,
+            alertScamCallback: (ctx: Context, msgId: Long, pkg: String, sender: String, reason: String) -> Unit
+        ): Boolean {
+            if (results.isEmpty()) return false
+            val confirmThreshold = PhantomPrefs.getDecisionConfirmThreshold(appCtx)
+            val activeWhitelistRules = try {
+                cachedActiveWhitelistRules(db)
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val contactAliases = try {
+                db.contactAliasDao().all()
+            } catch (_: Exception) {
+                emptyList()
+            }
+            val benignHosts = try {
+                com.phantom.checker.util.EncryptedByokStore.getBenignUrlHosts(appCtx)
+            } catch (_: Exception) {
+                emptySet()
+            }
+
+            var hasNewScam = false
+            results.forEach { (msgId, result) ->
+                val msg = db.messageDao().byId(msgId) ?: return@forEach
+                val indicators = IndicatorExtractor.extract(msg.content)
+                val isWl = IntelClient.isMessageWhitelisted(
+                    sender = msg.sender,
+                    packageName = msg.packageName,
+                    appLabel = msg.appLabel,
+                    content = msg.content,
+                    aiRules = activeWhitelistRules,
+                    indicators = indicators
+                )
+                val isKnownContact = contactAliases.any {
+                    it.alias.equals(msg.sender, ignoreCase = true) ||
+                        it.displayName.equals(msg.sender, ignoreCase = true)
+                }
+                val hasAvatar = try {
+                    db.senderAvatarDao().get(msg.packageName, msg.sender) != null
+                } catch (_: Exception) {
+                    false
+                }
+                val intelRecord = try {
+                    db.intelDao().getResult(msgId)
+                } catch (_: Exception) {
+                    null
+                }
+                val nonBenignUrls = indicators.urls.filter { u ->
+                    val h = IndicatorExtractor.extractHost(u)
+                    h == null || h !in benignHosts
+                }
+                val trustedHistory = PhantomPrefs.isTrustedSenderHistory(
+                    ctx = appCtx,
+                    packageName = msg.packageName,
+                    sender = msg.sender,
+                    hasKnownAvatar = hasAvatar
+                )
+                val localSignals = com.phantom.checker.util.DecisionEngine.DeterministicSignals(
+                    whitelisted = isWl,
+                    isKnownContactOrVip = isKnownContact,
+                    hasOtp = com.phantom.checker.util.OtpDetector.extractOtp(msg.content) != null,
+                    urlPresent = nonBenignUrls.isNotEmpty(),
+                    cryptoAddressPresent = indicators.cryptoAddresses.isNotEmpty(),
+                    intelHit = intelRecord?.isHit == true,
+                    hasAmountCue = com.phantom.checker.util.DecisionEngine.hasAmountOrFraudCue(msg.content),
+                    hasKnownAvatar = hasAvatar,
+                    trustedSenderHistory = trustedHistory
+                )
+                val decision = com.phantom.checker.util.DecisionEngine.evaluateRisk(
+                    messageId = msgId,
+                    local = localSignals,
+                    ai = com.phantom.checker.util.DecisionEngine.AiSemanticSignal(
+                        riskScore = result.riskScore,
+                        riskLabel = result.riskLabel,
+                        riskSemanticScore = result.riskSemanticScore,
+                        riskReason = result.riskReason
+                    ),
+                    confirmThreshold = confirmThreshold
+                )
+                if (decision.finalLabel == "safe" && decision.finalScore < 40) {
+                    PhantomPrefs.recordSenderLowRiskMessage(appCtx, msg.packageName, msg.sender)
+                }
+                db.messageDao().update(
+                    msg.copy(
+                        riskScore = decision.finalScore,
+                        riskLabel = decision.finalLabel,
+                        riskReason = decision.provenanceReason
+                    )
+                )
+                if (enableAutoTag && result.tagIds.isNotEmpty()) {
+                    val existingRefs = db.tagDao().crossRefsForMessage(msgId)
+                    val hasHigherPriorityTag = existingRefs.any {
+                        it.source == MessageTagCrossRef.SOURCE_MANUAL ||
+                            it.source == MessageTagCrossRef.SOURCE_USER_RULE
+                    }
+                    if (!hasHigherPriorityTag) {
+                        val refs = result.tagIds.map { tagId ->
+                            MessageTagCrossRef(
+                                messageId = msgId,
+                                tagId = tagId,
+                                source = MessageTagCrossRef.SOURCE_AUTO
+                            )
+                        }
+                        db.tagDao().addTagsToMessageBatch(refs)
+                    }
+                }
+                if (PhantomPrefs.isAiAutoMemoEnabled(appCtx) && result.memo.isNotBlank()) {
+                    saveAutoMemoIfPresent(
+                        db = db,
+                        msg = msg,
+                        rawMemo = result.memo,
+                        memoType = result.memoType,
+                        todoDue = result.todoDue,
+                        ctx = appCtx
+                    )
+                }
+                if (decision is com.phantom.checker.util.DecisionEngine.Decision.Auto &&
+                    decision.finalLabel == "scam"
+                ) {
+                    hasNewScam = true
+                    alertScamCallback(appCtx, msgId, msg.packageName, msg.sender, decision.provenanceReason)
+                }
+            }
+            return hasNewScam
         }
 
         fun sendReplyToNotification(
@@ -1093,14 +1147,16 @@ class NotificationCollectorService : NotificationListenerService() {
                         convTitle.contains(convKeyNorm, ignoreCase = true) ||
                         t.equals(convKeyNorm, ignoreCase = true)
                     )
-                val senderMatches = (senderNorm.isEmpty() && convKeyNorm.isEmpty()) ||
+                val hasTarget = senderNorm.isNotEmpty() || convKeyNorm.isNotEmpty()
+                val senderMatches = !hasTarget ||
                     convMatches ||
-                    (senderNorm.isNotEmpty() && (
+                    (senderNorm.isNotEmpty() && t.isNotEmpty() && (
                         t.equals(senderNorm, ignoreCase = true) ||
                             t.contains(senderNorm, ignoreCase = true) ||
                             senderNorm.contains(t, ignoreCase = true)
                         ))
-                if (!senderMatches && pkgNotifs.size > 1) continue
+                // 只要有指定目標（senderNorm 或 convKeyNorm 非空）且未命中，一律 continue，絕不因同 App 僅剩 1 則通知就誤發給他人
+                if (hasTarget && !senderMatches) continue
 
                 val actions = notif.actions ?: emptyArray()
                 val replyAction = actions.firstOrNull { act ->
@@ -1118,15 +1174,15 @@ class NotificationCollectorService : NotificationListenerService() {
                         putCharSequence(remoteInput.resultKey, trimmedReply)
                     }
                     android.app.RemoteInput.addResultsToIntent(arrayOf(remoteInput), replyIntent, bundle)
-                    replyAction.actionIntent.send(context, 0, replyIntent)
                     val echoConvKey = convKeyNorm.ifBlank { senderNorm }
                     val appCtx = context.applicationContext
-                    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-                        try {
+                    try {
+                        runBlocking(Dispatchers.IO) {
                             recordOwnReplyEcho(appCtx, packageName, echoConvKey, trimmedReply)
-                        } catch (_: Exception) {
                         }
+                    } catch (_: Exception) {
                     }
+                    replyAction.actionIntent.send(context, 0, replyIntent)
                     Log.d("PhantomReply", "sendReplyToNotification: sent pkg=$packageName convKey=$convKeyNorm sender=$senderNorm")
                     ReplySendResult.Success
                 } catch (e: Exception) {
@@ -1508,6 +1564,7 @@ class NotificationCollectorService : NotificationListenerService() {
                             ReminderScheduler.scheduleTodo(appCtx, duplicateTodo.id, computedDue)
                         }
                         ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                        runCatching { com.phantom.checker.widget.TodoTodayWidgetProvider.refreshNow(appCtx) }
                     }
                     return
                 }
@@ -1530,6 +1587,7 @@ class NotificationCollectorService : NotificationListenerService() {
                         ReminderScheduler.scheduleTodo(appCtx, newId, dueAt)
                     }
                     ReminderWidgetProvider.updateAllIfChanged(appCtx)
+                    runCatching { com.phantom.checker.widget.TodoTodayWidgetProvider.refreshNow(appCtx) }
                 }
                 return
             }
@@ -1539,6 +1597,9 @@ class NotificationCollectorService : NotificationListenerService() {
                 if (existing.pinned) return
                 db.noteDao().update(existing.copy(content = clean, updatedAt = now))
                 com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(ctx)
+                ctx?.applicationContext?.let { appCtx ->
+                    runCatching { com.phantom.checker.widget.QuickNoteWidgetProvider.refreshNow(appCtx) }
+                }
                 return
             }
 
@@ -1558,6 +1619,9 @@ class NotificationCollectorService : NotificationListenerService() {
                     )
                 )
                 com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(ctx)
+                ctx?.applicationContext?.let { appCtx ->
+                    runCatching { com.phantom.checker.widget.QuickNoteWidgetProvider.refreshNow(appCtx) }
+                }
                 return
             }
 
@@ -1572,6 +1636,9 @@ class NotificationCollectorService : NotificationListenerService() {
                 )
             )
             com.phantom.checker.widget.NotesWidgetProvider.updateAllIfChanged(ctx)
+            ctx?.applicationContext?.let { appCtx ->
+                runCatching { com.phantom.checker.widget.QuickNoteWidgetProvider.refreshNow(appCtx) }
+            }
         }
 
         private fun sha256(input: String): String {
@@ -1733,14 +1800,7 @@ object AppDatabaseHolder {
         appCtx: Context,
         db: androidx.sqlite.db.SupportSQLiteDatabase
     ) {
-        val totalCount = try {
-            db.query("SELECT COUNT(*) FROM tags WHERE isAiManaged = 1").use { c ->
-                if (c.moveToFirst()) c.getInt(0) else 0
-            }
-        } catch (_: Exception) {
-            0
-        }
-        if (PhantomPrefs.isDefaultAiTagsSeeded(appCtx) && totalCount > 0) return
+        if (PhantomPrefs.isDefaultAiTagsSeeded(appCtx)) return
         try {
             db.beginTransaction()
             try {

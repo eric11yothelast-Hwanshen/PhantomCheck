@@ -33,4 +33,28 @@ object PresetKeywords {
         "貨到付款",
         "色情應召"
     )
+
+    val englishKeywords: List<String> = listOf(
+        "guaranteed profit",
+        "risk-free investment",
+        "crypto giveaway",
+        "wire transfer",
+        "gift card payment",
+        "account suspended",
+        "verify your account",
+        "urgent action required",
+        "unclaimed package",
+        "lottery winner",
+        "click to claim",
+        "remote job deposit",
+        "tax refund",
+        "confirm your PIN",
+        "share verification code"
+    )
+
+    val allKeywords: List<String>
+        get() = keywords + englishKeywords
+
+    fun keywordsForLocale(isEnglish: Boolean): List<String> =
+        if (isEnglish) englishKeywords else keywords
 }

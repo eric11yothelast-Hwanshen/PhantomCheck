@@ -1,16 +1,17 @@
 package com.phantom.checker.service
 
+import android.Manifest
 import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.provider.Settings
+import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Telephony
-import androidx.core.app.NotificationManagerCompat
-import com.phantom.checker.R
+import android.telephony.SmsManager
+import android.telephony.SubscriptionManager
+import android.util.Log
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -78,8 +79,22 @@ object AutoReplyConfig {
 
 class SmsAutoReplyReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
-        AutoReplyConfig.ensureLoaded(ctx)
+        if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
+        val appCtx = ctx.applicationContext
+        if (ContextCompat.checkSelfPermission(
+                appCtx,
+                Manifest.permission.SEND_SMS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.w(TAG, "SEND_SMS permission not granted; skipping auto-reply")
+            return
+        }
+
+        AutoReplyConfig.ensureLoaded(appCtx)
         if (!AutoReplyConfig.enabled) return
+        val template = AutoReplyConfig.smsTemplate.trim()
+        if (template.isEmpty()) return
+
         val now = java.util.Calendar.getInstance()
         val mins = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
         val inWindow = if (AutoReplyConfig.startMinute <= AutoReplyConfig.endMinute)
@@ -87,7 +102,12 @@ class SmsAutoReplyReceiver : BroadcastReceiver() {
         else mins >= AutoReplyConfig.startMinute || mins <= AutoReplyConfig.endMinute
         if (!inWindow) return
 
-        val msgs = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
+        val msgs = try {
+            Telephony.Sms.Intents.getMessagesFromIntent(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "getMessagesFromIntent failed", e)
+            null
+        } ?: return
         val sender = msgs.firstOrNull()?.displayOriginatingAddress?.trim() ?: return
         val body = msgs.joinToString("") { it.displayMessageBody ?: "" }
 
@@ -95,8 +115,7 @@ class SmsAutoReplyReceiver : BroadcastReceiver() {
             body.contains(kw, ignoreCase = true)
         }
         val containsShortUrl = SHORT_URL_REGEX.containsMatchIn(body)
-        val template = AutoReplyConfig.smsTemplate.trim()
-        val isSelfTemplate = template.isNotEmpty() && body.trim() == template
+        val isSelfTemplate = body.trim() == template
         val shouldSkipReply = containsSensitiveKw ||
             containsShortUrl ||
             isSelfTemplate ||
@@ -104,16 +123,42 @@ class SmsAutoReplyReceiver : BroadcastReceiver() {
 
         if (shouldSkipReply) return
 
-        CoroutineScope(Dispatchers.IO).launch {
-            if (canReplyAndRecord(ctx, sender)) {
-                android.telephony.SmsManager.getDefault().sendTextMessage(
-                    sender, null, AutoReplyConfig.smsTemplate, null, null
+        val subId = intent.getIntExtra("subscription", SubscriptionManager.INVALID_SUBSCRIPTION_ID)
+            .takeIf { it != SubscriptionManager.INVALID_SUBSCRIPTION_ID }
+            ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                intent.getIntExtra(
+                    SubscriptionManager.EXTRA_SUBSCRIPTION_INDEX,
+                    SubscriptionManager.INVALID_SUBSCRIPTION_ID
                 )
+            } else {
+                SubscriptionManager.INVALID_SUBSCRIPTION_ID
+            }
+
+        val pendingResult = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                if (!canReply(appCtx, sender)) return@launch
+                val smsManager = resolveSmsManager(appCtx, subId) ?: return@launch
+                val parts = smsManager.divideMessage(template)
+                if (parts.isNullOrEmpty()) return@launch
+                smsManager.sendMultipartTextMessage(sender, null, parts, null, null)
+                recordReply(appCtx, sender)
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Auto-reply SEND_SMS SecurityException sender=$sender", e)
+            } catch (e: Exception) {
+                Log.e(TAG, "Auto-reply sendMultipartTextMessage failed sender=$sender", e)
+            } finally {
+                try {
+                    pendingResult.finish()
+                } catch (e: Exception) {
+                    Log.e(TAG, "pendingResult.finish() failed", e)
+                }
             }
         }
     }
 
     companion object {
+        private const val TAG = "SmsAutoReply"
         private const val COOLDOWN_PREFS = "auto_reply_cooldown_prefs"
         private const val COOLDOWN_MS = 4L * 60L * 60L * 1000L
         private const val MAX_REPLIES_PER_DAY = 3
@@ -127,8 +172,31 @@ class SmsAutoReplyReceiver : BroadcastReceiver() {
         )
         private val TW_MOBILE_REGEX = Regex("^09\\d{8}$")
 
+        private fun resolveSmsManager(ctx: Context, subId: Int): SmsManager? {
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    val base = ctx.getSystemService(SmsManager::class.java)
+                    if (base != null && subId != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                        base.createForSubscriptionId(subId)
+                    } else {
+                        base
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    if (subId != SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
+                        SmsManager.getSmsManagerForSubscriptionId(subId)
+                    } else {
+                        SmsManager.getDefault()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "resolveSmsManager failed subId=$subId", e)
+                null
+            }
+        }
+
         @Synchronized
-        internal fun canReplyAndRecord(
+        internal fun canReply(
             ctx: Context,
             sender: String,
             nowMs: Long = System.currentTimeMillis()
@@ -147,15 +215,40 @@ class SmsAutoReplyReceiver : BroadcastReceiver() {
                 .format(java.util.Date(nowMs))
             val savedDate = prefs.getString(dateKey, null)
             val savedCount = if (savedDate == today) prefs.getInt(countKey, 0) else 0
-            if (savedCount >= MAX_REPLIES_PER_DAY) {
-                return false
-            }
+            return savedCount < MAX_REPLIES_PER_DAY
+        }
+
+        @Synchronized
+        internal fun recordReply(
+            ctx: Context,
+            sender: String,
+            nowMs: Long = System.currentTimeMillis()
+        ) {
+            val prefs = ctx.applicationContext.getSharedPreferences(COOLDOWN_PREFS, Context.MODE_PRIVATE)
+            val tsKey = "last_reply_ts_$sender"
+            val dateKey = "daily_reply_date_$sender"
+            val countKey = "daily_reply_count_$sender"
+
+            val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+                .format(java.util.Date(nowMs))
+            val savedDate = prefs.getString(dateKey, null)
+            val savedCount = if (savedDate == today) prefs.getInt(countKey, 0) else 0
 
             prefs.edit()
                 .putLong(tsKey, nowMs)
                 .putString(dateKey, today)
                 .putInt(countKey, savedCount + 1)
                 .apply()
+        }
+
+        @Synchronized
+        internal fun canReplyAndRecord(
+            ctx: Context,
+            sender: String,
+            nowMs: Long = System.currentTimeMillis()
+        ): Boolean {
+            if (!canReply(ctx, sender, nowMs)) return false
+            recordReply(ctx, sender, nowMs)
             return true
         }
     }
@@ -164,8 +257,8 @@ class SmsAutoReplyReceiver : BroadcastReceiver() {
 /** 讓使用者在原通知上快速回覆（不開啟原 App、不觸發已讀的替代方案） */
 object QuickReplyHelper {
     fun canReply(sbn: Notification): Boolean =
-        sbn.actions.any { it.remoteInputs?.isNotEmpty() == true }
+        sbn.actions?.any { it.remoteInputs?.isNotEmpty() == true } == true
 
     fun buildQuickReplyAction(ctx: Context, sbn: Notification): Notification.Action? =
-        sbn.actions.firstOrNull { it.remoteInputs?.isNotEmpty() == true }
+        sbn.actions?.firstOrNull { it.remoteInputs?.isNotEmpty() == true }
 }
