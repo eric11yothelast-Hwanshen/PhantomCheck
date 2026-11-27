@@ -51,6 +51,13 @@ Before use, please read the [Privacy Policy (PRIVACY.md)](PRIVACY.md) and [Discl
 
 For the complete changelog, see [CHANGELOG.md](CHANGELOG.md).
 
+### v5.2.0 Release Highlights (versionCode 60, Desktop 0.8.0, 2026-11-27)
+
+- **Audit Remediation Complete (R1–R17, 239 findings, 20 PRs)**: All P0 (44), P1 (143) and P2 (52) items from the cross-end audit were fixed across 17 dependency-ordered rounds — shared data layer and DAO extensions, util bridges, notification risk pipeline, scheduling/workers, proactive intel + Shizuku, cross-end link, widget refresh pipeline, CI/CD supply chain, motion/UI components, main UI and message flow, chat core, settings, management pages, tab UI, desktop core, desktop UI, and a repo-wide i18n/cleanup sweep.
+- **Security**: constant-time fingerprint comparison and full SHA-256 pinning in `DesktopLinkClient`; `author_association` gate plus SHA-pinned actions in `opencode.yml`; Fail-Closed desktop updater that rejects installs without a matching `.sha256`; `allowBackup=false` together with `dataExtractionRules`; unsigned release builds now fail fast.
+- **Performance & Reliability**: DAO range/aggregate queries replace full-table loads, SQLite bulk deletes are chunked at 500 variables, OOM and main-thread I/O paths fixed; foreground services obey the 10-second `startForeground` rule, workers rethrow `CancellationException`, exact alarms check `canScheduleExactAlarms()` with an inexact fallback, plus OEM ROM defenses.
+- **i18n & Cleanup**: 86 user-visible strings moved into `values` / `values-zh-rTW`, 641 unused imports removed, 17 regexes lifted to file-level constants with a cached dynamic pattern; regex validation errors are now localized.
+
 ### v5.1.0 Release Highlights (versionCode 59, Desktop 0.8.0, 2026-11-26)
 
 - **Message Sync, Title Fix & Group Report Entry (#531, #527)**: Desktop Messages adds paginated loading (60 per page, scroll-to-bottom auto-load, sync count & timestamp, honest offline error/retry), non-overwriting `isRead`/`isStarred` merges, a 3-tier title fallback chain, and a Conversation View / Group by App toggle; Android Messages adds an icon + text Group Report `ModalBottomSheet` entry sharing `GroupReportsViewer` with Settings.
