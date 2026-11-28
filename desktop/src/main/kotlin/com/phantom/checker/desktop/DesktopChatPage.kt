@@ -224,7 +224,11 @@ internal fun DesktopChatPage(
 
                 if (chatBubbles.isEmpty()) {
                     Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Text(DesktopStrings.emptyChat, color = tokens.textMuted, style = MaterialTheme.typography.bodyMedium)
+                        DesktopEmptyState(
+                            title = DesktopStrings.emptyChat,
+                            body = DesktopStrings.chatInputPlaceholder,
+                            icon = DesktopIcons.Chat
+                        )
                     }
                 } else {
                     LazyColumn(state = chatListState, modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {

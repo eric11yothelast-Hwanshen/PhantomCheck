@@ -5,6 +5,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,6 +44,7 @@ import androidx.compose.runtime.setValue
  * - Row B：KPI 4 卡（總數/今日/未讀/詐騙，點擊直達訊息頁）
  * - Row C：最近訊息前 5 ＋跨端功能快捷格（#509 群組報告、#518 跨端工具、AI 助手、設定）
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DesktopHomePage(
     settings: DesktopSettings,
@@ -114,20 +117,88 @@ fun DesktopHomePage(
                                 else -> " ⚡"
                             }
                             val netLabel = when (st.networkType) {
-                                "wifi" -> if (st.wifiSsid.isNotBlank()) "Wi-Fi (${st.wifiSsid})" else "Wi-Fi"
+                                "wifi" -> if (st.wifiSsid.isNotBlank()) "Wi-Fi (${st.wifiSsid})" else DesktopStrings.homeChipWifi
                                 "cellular" -> "Cellular"
-                                else -> ""
+                                else -> DesktopStrings.homeChipUnknown
                             }
-                            val infoLine = buildList {
-                                if (st.batteryLevel >= 0) add("📱 ${st.batteryLevel}%$chargeLabel")
-                                if (netLabel.isNotBlank()) add(netLabel)
-                                if (st.storageAvailMb >= 0L) add("${DesktopStrings.storageAvail} ${st.storageAvailMb / 1024}GB")
-                                if (!isConnected && st.updatedAtMs > 0L) {
-                                    add("${DesktopStrings.lastKnownAt} ${DesktopClipboardGuard.formatReportTime(st.updatedAtMs)}")
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                if (st.batteryLevel >= 0) {
+                                    val low = st.batteryLevel in 0..19
+                                    DesktopStatusChip(
+                                        icon = "🔋",
+                                        label = if (low) DesktopStrings.homeChipBatteryLow else DesktopStrings.phoneBattery,
+                                        value = "${st.batteryLevel}%$chargeLabel",
+                                        tint = if (low) tokens.error else if (isConnected) tokens.success else tokens.textMuted
+                                    )
                                 }
-                            }.joinToString("  ·  ")
-                            if (infoLine.isNotBlank()) {
-                                Text(infoLine, style = MaterialTheme.typography.bodySmall, color = tokens.textSecondary)
+                                DesktopStatusChip(
+                                    icon = "📶",
+                                    label = DesktopStrings.homeChipWifi,
+                                    value = netLabel,
+                                    tint = if (st.networkType == "wifi") tokens.success else tokens.warning
+                                )
+                                if (st.storageAvailMb >= 0L) {
+                                    val gb = String.format("%.1f GB", st.storageAvailMb / 1024.0)
+                                    DesktopStatusChip(
+                                        icon = "💾",
+                                        label = DesktopStrings.storageAvail,
+                                        value = gb,
+                                        tint = tokens.accentText
+                                    )
+                                }
+                                if (st.updatedAtMs > 0L) {
+                                    DesktopStatusChip(
+                                        icon = "🕒",
+                                        label = DesktopStrings.homeChipLastSync,
+                                        value = DesktopClipboardGuard.formatReportTime(st.updatedAtMs),
+                                        tint = if (isConnected) tokens.accentText else tokens.textMuted
+                                    )
+                                }
+                            }
+                        }
+                        if (!isConnected) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text(
+                                    text = DesktopStrings.homeHeroTitle,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = tokens.textPrimary
+                                )
+                                listOf(
+                                    Triple("1", DesktopStrings.homeStep1Title, DesktopStrings.homeStep1Desc),
+                                    Triple("2", DesktopStrings.homeStep2Title, DesktopStrings.homeStep2Desc),
+                                    Triple("3", DesktopStrings.homeStep3Title, DesktopStrings.homeStep3Desc)
+                                ).forEach { (num, title, desc) ->
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(24.dp)
+                                                .clip(CircleShape)
+                                                .background(accentColor.copy(alpha = 0.18f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = num,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = tokens.accentText
+                                            )
+                                        }
+                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = tokens.textPrimary)
+                                            Text(desc, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
+                                        }
+                                    }
+                                }
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -250,7 +321,11 @@ fun DesktopHomePage(
                         OutlinedButton(onClick = { onNavigateTab("MESSAGES") }) { Text(DesktopStrings.navMessages) }
                     }
                     if (recentMessages.isEmpty()) {
-                        Text(DesktopStrings.emptyMessages, style = MaterialTheme.typography.bodySmall, color = tokens.textMuted)
+                        DesktopEmptyState(
+                            title = DesktopStrings.emptyMessages,
+                            body = DesktopStrings.notConnectedHint,
+                            icon = DesktopIcons.Messages
+                        )
                     } else {
                         recentMessages.take(5).forEach { m ->
                             HorizontalDivider(color = tokens.border)

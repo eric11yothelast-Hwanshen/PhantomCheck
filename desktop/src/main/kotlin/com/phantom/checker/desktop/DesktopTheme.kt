@@ -79,7 +79,16 @@ data class DesktopThemeTokens(
     val disabledAlpha: Float,
     val isLight: Boolean,
     val isHighContrast: Boolean,
-    val cardCornerDp: Dp = 16.dp
+    val cardCornerDp: Dp = 16.dp,
+    // #589 A8 unified spacing / radius / type scale tokens
+    val spacingXs: Dp = 4.dp,
+    val spacingSm: Dp = 8.dp,
+    val spacingMd: Dp = 12.dp,
+    val spacingLg: Dp = 16.dp,
+    val spacingXl: Dp = 24.dp,
+    val radiusSm: Dp = 8.dp,
+    val radiusMd: Dp = 12.dp,
+    val radiusLg: Dp = 18.dp
 ) {
     companion object {
         val Default = from(DesktopSettings())

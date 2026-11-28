@@ -16,10 +16,17 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.TooltipArea
+import androidx.compose.foundation.TooltipPlacement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -36,6 +43,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -56,6 +64,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -73,12 +82,16 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import com.google.gson.Gson
 import com.phantom.checker.shared.*
@@ -86,17 +99,27 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.awt.Toolkit
+import java.awt.Cursor
 import java.awt.datatransfer.StringSelection
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import kotlin.math.roundToInt
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
 private enum class DesktopTab {
     MESSAGES, STATS, TODOS, CHAT, RULES, SETTINGS, REPORTS, TOOLS, HOME
 }
+
+private data class DesktopNavItem(
+    val tab: DesktopTab,
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val shortcut: String,
+    val primary: Boolean
+)
 
 private const val MAX_CACHED_MESSAGES = 2000
 private const val MESSAGES_PAGE_SIZE = 60
@@ -183,6 +206,7 @@ internal fun formatRelativeConvTime(timestamp: Long, use24Hour: Boolean): String
 /**
  * #468 / #488 / #489 / #494 桌面端主畫面（10 系統設定＋16 自訂設定＋深淺/轉場＋大螢幕 Master-Detail 對話串化＋Canvas 統計＋多會話 Markdown AI 助手＋鍵盤捷徑）。
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DesktopApp(
     server: DesktopLinkServer = remember { DesktopLinkServer() },
@@ -250,6 +274,15 @@ fun DesktopApp(
     var mirrorToast by remember { mutableStateOf<String?>(null) }
     var replyText by remember { mutableStateOf("") }
     var actionFeedback by remember { mutableStateOf<String?>(null) }
+
+    // #589 A2 / A7 global quick search + shortcut help
+    var globalSearchOpen by remember { mutableStateOf(false) }
+    var globalSearchQuery by remember { mutableStateOf("") }
+    var globalSearchSelected by remember { mutableIntStateOf(0) }
+    var showShortcutHelp by remember { mutableStateOf(false) }
+    var settingsJumpSubTab by remember { mutableStateOf<String?>(null) }
+    val globalSearchFocus = remember { FocusRequester() }
+    var compactSidebarExpanded by remember { mutableStateOf(false) }
 
     // Stats / Todos / Notes / Chat / Rules / Muted / Phone Status
     var stats by remember { mutableStateOf(StatsSnapshotDto()) }
@@ -918,6 +951,34 @@ fun DesktopApp(
         }
     }
 
+    // #589 A2 global search results (conversations, notes, todos, settings)
+    val globalSearchResults = remember(globalSearchQuery, conversations, notes, todos) {
+        buildDesktopSearchResults(globalSearchQuery, conversations, notes, todos)
+    }
+
+    LaunchedEffect(globalSearchQuery) {
+        globalSearchSelected = 0
+    }
+
+    fun openSearchResult(result: DesktopSearchResult) {
+        when (result.kind) {
+            DesktopSearchKind.CONVERSATION -> {
+                activeTab = DesktopTab.MESSAGES
+                selectedConvKey = result.conversationKey
+                if (result.messageId >= 0L) selectedMsgId = result.messageId
+            }
+            DesktopSearchKind.NOTE, DesktopSearchKind.TODO -> {
+                activeTab = DesktopTab.TODOS
+            }
+            DesktopSearchKind.SETTING -> {
+                activeTab = DesktopTab.SETTINGS
+                settingsJumpSubTab = result.settingSubTab.takeIf { it.isNotBlank() }
+            }
+        }
+        globalSearchOpen = false
+        globalSearchQuery = ""
+    }
+
     LaunchedEffect(selectedConv?.groupKey, uiState.connState) {
         val conv = selectedConv ?: run {
             conversationThread = null
@@ -981,14 +1042,35 @@ fun DesktopApp(
                     val tabMod = ev.isCtrlPressed || ev.isAltPressed
                     when {
                         ev.key == Key.Escape -> {
-                            deepAnalysisResult = null
-                            editingTodo = null
-                            showNewTodoDialog = false
-                            editingNote = null
-                            pendingUpdateDialog = null
-                            mirrorToast = null
-                            DesktopNotificationBus.clearBanner()
-                            actionFeedback = null
+                            if (globalSearchOpen) {
+                                globalSearchOpen = false
+                                true
+                            } else if (showShortcutHelp) {
+                                showShortcutHelp = false
+                                true
+                            } else {
+                                deepAnalysisResult = null
+                                editingTodo = null
+                                showNewTodoDialog = false
+                                editingNote = null
+                                pendingUpdateDialog = null
+                                mirrorToast = null
+                                DesktopNotificationBus.clearBanner()
+                                actionFeedback = null
+                                true
+                            }
+                        }
+                        ev.isCtrlPressed && ev.key == Key.K -> {
+                            globalSearchOpen = true
+                            true
+                        }
+                        ev.isCtrlPressed && ev.key == Key.B -> {
+                            if (compactSidebarExpanded) compactSidebarExpanded = false else compactSidebarExpanded = true
+                            DesktopSettingsStore.update { it.copy(sidebarCollapsed = !it.sidebarCollapsed) }
+                            true
+                        }
+                        ev.key == Key.Slash && ev.isShiftPressed -> {
+                            if (!globalSearchOpen) showShortcutHelp = true
                             true
                         }
                         tabMod && ev.key == Key.Zero -> { activeTab = DesktopTab.HOME; true }
@@ -1030,9 +1112,8 @@ fun DesktopApp(
 
                 androidx.compose.foundation.layout.BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                     val windowClass = remember(maxWidth) { DesktopWindowClass.fromWidth(maxWidth) }
-                    var compactManualExpand by remember(windowClass) { mutableStateOf(false) }
                     val effectiveSidebarCollapsed = if (windowClass == DesktopWindowClass.COMPACT) {
-                        !compactManualExpand
+                        !compactSidebarExpanded
                     } else {
                         settings.sidebarCollapsed
                     }
@@ -1041,16 +1122,18 @@ fun DesktopApp(
                     }
 
                 Row(modifier = Modifier.fillMaxSize()) {
-                    // Left Sidebar (COMPACT auto-collapses to 76dp; MEDIUM caps at 210dp; EXPANDED/LARGE uses setting)
-                    val sidebarW = when {
-                        effectiveSidebarCollapsed -> 76.dp
-                        windowClass == DesktopWindowClass.MEDIUM -> settings.sidebarWidthDp.coerceAtMost(210).dp
-                        else -> settings.sidebarWidthDp.dp
+                    // #589 A1 resizable sidebar (120–320dp, persisted) + group/tooltip navigation
+                    var sidebarWidthLocal by remember(settings.sidebarWidthDp) {
+                        mutableFloatStateOf(settings.sidebarWidthDp.coerceIn(120, 320).toFloat())
                     }
+                    val sidebarW = if (effectiveSidebarCollapsed) 76.dp else sidebarWidthLocal.coerceIn(120f, 320f).dp
+                    val sidebarDragState = rememberDraggableState { delta ->
+                        sidebarWidthLocal = (sidebarWidthLocal + delta).coerceIn(120f, 320f)
+                    }
+                    Box(modifier = Modifier.width(sidebarW).fillMaxHeight()) {
                     Column(
                         modifier = Modifier
-                            .width(sidebarW)
-                            .fillMaxHeight()
+                            .fillMaxSize()
                             .background(tokens.sidebarBg)
                             .border(width = 1.dp, color = tokens.border)
                             .padding(horizontal = if (effectiveSidebarCollapsed) 10.dp else 16.dp, vertical = 20.dp),
@@ -1077,43 +1160,116 @@ fun DesktopApp(
                                     )
                                 }
                             }
-                            TextButton(
-                                onClick = {
-                                    if (windowClass == DesktopWindowClass.COMPACT) {
-                                        compactManualExpand = !compactManualExpand
-                                    } else {
-                                        DesktopSettingsStore.update { it.copy(sidebarCollapsed = !it.sidebarCollapsed) }
+                            TooltipArea(
+                                tooltip = {
+                                    Surface(
+                                        color = tokens.popupBg,
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, tokens.border)
+                                    ) {
+                                        Text(
+                                            text = if (effectiveSidebarCollapsed) DesktopStrings.sidebarExpandTooltip else DesktopStrings.sidebarCollapseTooltip,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = tokens.textPrimary,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                        )
                                     }
-                                }
+                                },
+                                delayMillis = 450,
+                                tooltipPlacement = TooltipPlacement.CursorPoint(offset = DpOffset(10.dp, 14.dp))
                             ) {
-                                Text(if (effectiveSidebarCollapsed) "»" else "«", color = tokens.accentText)
+                                TextButton(
+                                    onClick = {
+                                        if (windowClass == DesktopWindowClass.COMPACT) {
+                                            compactSidebarExpanded = !compactSidebarExpanded
+                                        } else {
+                                            DesktopSettingsStore.update { it.copy(sidebarCollapsed = !it.sidebarCollapsed) }
+                                        }
+                                    }
+                                ) {
+                                    Text(if (effectiveSidebarCollapsed) "»" else "«", color = tokens.accentText)
+                                }
+                            }
+                        }
+
+                        // #589 A2 persistent sidebar search entry (opens Ctrl+K palette)
+                        TooltipArea(
+                            tooltip = {
+                                Surface(
+                                    color = tokens.popupBg,
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, tokens.border)
+                                ) {
+                                    Text(
+                                        text = DesktopStrings.globalSearchOpen,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = tokens.textPrimary,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                    )
+                                }
+                            },
+                            delayMillis = 450,
+                            tooltipPlacement = TooltipPlacement.CursorPoint(offset = DpOffset(10.dp, 14.dp))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(tokens.radiusMd))
+                                    .background(tokens.surfaceElevated.copy(alpha = 0.72f))
+                                    .border(1.dp, tokens.border, RoundedCornerShape(tokens.radiusMd))
+                                    .clickable { globalSearchOpen = true }
+                                    .padding(horizontal = if (effectiveSidebarCollapsed) 8.dp else 10.dp, vertical = 9.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = DesktopIcons.Search,
+                                    contentDescription = DesktopStrings.globalSearchOpen,
+                                    tint = tokens.textMuted,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                if (!effectiveSidebarCollapsed) {
+                                    Text(
+                                        text = DesktopStrings.globalSearchOpen,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = tokens.textMuted,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                         }
 
                         HorizontalDivider(color = tokens.border, modifier = Modifier.padding(vertical = 4.dp))
 
                         val navItems = listOf(
-                            Triple(DesktopTab.HOME, DesktopStrings.tabHome, DesktopIcons.Messages),
-                            Triple(DesktopTab.MESSAGES, DesktopStrings.navMessages, DesktopIcons.Messages),
-                            Triple(DesktopTab.REPORTS, DesktopStrings.tabReports, DesktopIcons.Stats),
-                            Triple(DesktopTab.STATS, DesktopStrings.navStats, DesktopIcons.Stats),
-                            Triple(DesktopTab.TODOS, DesktopStrings.navTodos, DesktopIcons.Todos),
-                            Triple(DesktopTab.CHAT, DesktopStrings.navChat, DesktopIcons.Chat),
-                            Triple(DesktopTab.TOOLS, DesktopStrings.tabTools, DesktopIcons.Rules),
-                            Triple(DesktopTab.RULES, DesktopStrings.navRules, DesktopIcons.Rules),
-                            Triple(DesktopTab.SETTINGS, DesktopStrings.navSettings, DesktopIcons.Settings)
+                            DesktopNavItem(DesktopTab.HOME, DesktopStrings.tabHome, DesktopIcons.Messages, "Ctrl+0", true),
+                            DesktopNavItem(DesktopTab.MESSAGES, DesktopStrings.navMessages, DesktopIcons.Messages, "Ctrl+1", true),
+                            DesktopNavItem(DesktopTab.REPORTS, DesktopStrings.tabReports, DesktopIcons.Stats, "Ctrl+7", true),
+                            DesktopNavItem(DesktopTab.STATS, DesktopStrings.navStats, DesktopIcons.Stats, "Ctrl+2", true),
+                            DesktopNavItem(DesktopTab.TODOS, DesktopStrings.navTodos, DesktopIcons.Todos, "Ctrl+3", false),
+                            DesktopNavItem(DesktopTab.CHAT, DesktopStrings.navChat, DesktopIcons.Chat, "Ctrl+4", false),
+                            DesktopNavItem(DesktopTab.TOOLS, DesktopStrings.tabTools, DesktopIcons.Rules, "Ctrl+8", false),
+                            DesktopNavItem(DesktopTab.RULES, DesktopStrings.navRules, DesktopIcons.Rules, "Ctrl+5", false),
+                            DesktopNavItem(DesktopTab.SETTINGS, DesktopStrings.navSettings, DesktopIcons.Settings, "Ctrl+6", false)
                         )
-                        navItems.forEach { (tab, label, tabIcon) ->
+                        val renderNavItem: @Composable (DesktopNavItem) -> Unit = { item ->
+                            val tab = item.tab
                             val selected = activeTab == tab
                             val navInteraction = remember { MutableInteractionSource() }
                             val navPressed by navInteraction.collectIsPressedAsState()
+                            val navHovered by navInteraction.collectIsHoveredAsState()
                             val navScale by animateFloatAsState(
                                 targetValue = if (settings.animationsEnabled && navPressed) 0.97f else 1f,
                                 animationSpec = DesktopSpringFloat,
                                 label = "nav_scale_${tab.name}"
                             )
                             val navBg by animateColorAsState(
-                                targetValue = if (selected) tokens.selectedBg else Color.Transparent,
+                                targetValue = when {
+                                    selected -> tokens.selectedBg
+                                    navHovered -> tokens.hoverOverlay
+                                    else -> Color.Transparent
+                                },
                                 animationSpec = tween(if (settings.animationsEnabled) 150 else 0),
                                 label = "nav_bg_${tab.name}"
                             )
@@ -1123,79 +1279,120 @@ fun DesktopApp(
                                 label = "nav_border_${tab.name}"
                             )
                             val showUnreadBadge = tab == DesktopTab.MESSAGES && totalUnread > 0
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .graphicsLayer { scaleX = navScale; scaleY = navScale }
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(navBg)
-                                    .border(1.dp, navBorder, RoundedCornerShape(12.dp))
-                                    .clickable(interactionSource = navInteraction, indication = null) {
-                                        activeTab = tab
-                                        if (windowClass == DesktopWindowClass.COMPACT) compactManualExpand = false
-                                    }
-                                    .padding(horizontal = if (effectiveSidebarCollapsed) 8.dp else 14.dp, vertical = 11.dp),
-                                contentAlignment = if (effectiveSidebarCollapsed) Alignment.Center else Alignment.CenterStart
-                            ) {
-                                if (effectiveSidebarCollapsed) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = tabIcon,
-                                            contentDescription = label,
-                                            tint = if (selected) tokens.accentText else tokens.textSecondary,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                        if (showUnreadBadge) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .align(Alignment.TopEnd)
-                                                    .size(8.dp)
-                                                    .clip(CircleShape)
-                                                    .background(tokens.error)
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                            TooltipArea(
+                                tooltip = {
+                                    Surface(
+                                        color = tokens.popupBg,
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, tokens.border)
                                     ) {
-                                        Icon(
-                                            imageVector = tabIcon,
-                                            contentDescription = null,
-                                            tint = if (selected) tokens.accentText else tokens.textSecondary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
                                         Text(
-                                            text = label,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                            color = if (selected) tokens.accentText else tokens.textSecondary,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f)
+                                            text = "${item.label}  ·  ${item.shortcut}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = tokens.textPrimary,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                         )
-                                        if (showUnreadBadge) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(CircleShape)
-                                                    .background(accentColor)
-                                                    .padding(horizontal = 6.dp, vertical = 1.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    text = if (totalUnread > 99) "99+" else totalUnread.toString(),
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = tokens.onAccent
+                                    }
+                                },
+                                delayMillis = 450,
+                                tooltipPlacement = TooltipPlacement.CursorPoint(offset = DpOffset(10.dp, 14.dp))
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .graphicsLayer { scaleX = navScale; scaleY = navScale }
+                                        .clip(RoundedCornerShape(tokens.radiusMd))
+                                        .background(navBg)
+                                        .border(1.dp, navBorder, RoundedCornerShape(tokens.radiusMd))
+                                        .hoverable(navInteraction)
+                                        .clickable(interactionSource = navInteraction, indication = null) {
+                                            activeTab = tab
+                                            if (windowClass == DesktopWindowClass.COMPACT) compactSidebarExpanded = false
+                                        }
+                                        .padding(horizontal = if (effectiveSidebarCollapsed) 8.dp else 14.dp, vertical = 11.dp),
+                                    contentAlignment = if (effectiveSidebarCollapsed) Alignment.Center else Alignment.CenterStart
+                                ) {
+                                    if (effectiveSidebarCollapsed) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = item.icon,
+                                                contentDescription = item.label,
+                                                tint = if (selected) tokens.accentText else tokens.textSecondary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                            if (showUnreadBadge) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .align(Alignment.TopEnd)
+                                                        .size(8.dp)
+                                                        .clip(CircleShape)
+                                                        .background(tokens.error)
                                                 )
+                                            }
+                                        }
+                                    } else {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = item.icon,
+                                                contentDescription = null,
+                                                tint = if (selected) tokens.accentText else tokens.textSecondary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Text(
+                                                text = item.label,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                                color = if (selected) tokens.accentText else tokens.textSecondary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            if (showUnreadBadge) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(CircleShape)
+                                                        .background(accentColor)
+                                                        .padding(horizontal = 6.dp, vertical = 1.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = if (totalUnread > 99) "99+" else totalUnread.toString(),
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = tokens.onAccent
+                                                    )
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+
+                        if (!effectiveSidebarCollapsed) {
+                            Text(
+                                text = DesktopStrings.sidebarMainGroup,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tokens.textMuted,
+                                modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                            )
+                        }
+                        navItems.filter { it.primary }.forEach { renderNavItem(it) }
+                        if (effectiveSidebarCollapsed) {
+                            HorizontalDivider(color = tokens.border, modifier = Modifier.padding(vertical = 2.dp))
+                        } else {
+                            Text(
+                                text = DesktopStrings.sidebarToolsGroup,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tokens.textMuted,
+                                modifier = Modifier.padding(start = 4.dp, top = 8.dp)
+                            )
+                        }
+                        navItems.filterNot { it.primary }.forEach { renderNavItem(it) }
 
                         Spacer(Modifier.weight(1f))
 
@@ -1295,6 +1492,25 @@ fun DesktopApp(
                                 }
                             }
                         }
+                    }
+                    if (!effectiveSidebarCollapsed) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .fillMaxHeight()
+                                .width(6.dp)
+                                .pointerHoverIcon(PointerIcon(Cursor(Cursor.E_RESIZE_CURSOR)))
+                                .draggable(
+                                    state = sidebarDragState,
+                                    orientation = Orientation.Horizontal,
+                                    onDragStopped = {
+                                        DesktopSettingsStore.update {
+                                            it.copy(sidebarWidthDp = sidebarWidthLocal.roundToInt().coerceIn(120, 320))
+                                        }
+                                    }
+                                )
+                        )
+                    }
                     }
 
                     // Right Main Content Area (responsive pagePadding from DesktopWindowClass)
@@ -1460,6 +1676,12 @@ fun DesktopApp(
                                             lastSyncedAtMs = lastSyncedAtMs,
                                             loadMoreError = loadMoreError,
                                             onLoadMoreMessages = { loadMoreMessages() },
+                                            onCopyMessageText = { copyToClipboard(it) },
+                                            onDeleteMessageLocally = { id ->
+                                                messages = messages.filterNot { it.id == id }
+                                                if (selectedMsgId == id) selectedMsgId = selectedConv?.latestMessage?.id ?: -1L
+                                            },
+                                            onFeedback = { actionFeedback = it },
                                             onRefreshMessages = {
                                                 messages = emptyList()
                                                 loadedPageOffset = 0
@@ -1661,6 +1883,9 @@ fun DesktopApp(
                                             uiState = uiState,
                                             mdnsStatus = mdnsStatus,
                                             server = server,
+                                            windowClass = windowClass,
+                                            requestedSubTab = settingsJumpSubTab,
+                                            onRequestedSubTabConsumed = { settingsJumpSubTab = null },
                                             onUpdateAvailable = { pendingUpdateDialog = it },
                                             onFeedback = { actionFeedback = it }
                                         )
@@ -1917,6 +2142,33 @@ fun DesktopApp(
                         onDismiss = { pendingUpdateDialog = null },
                         onFeedback = { actionFeedback = it }
                     )
+                }
+
+                // #589 A2 global quick search palette
+                if (globalSearchOpen) {
+                    LaunchedEffect(globalSearchResults.size) {
+                        if (globalSearchSelected > globalSearchResults.lastIndex) {
+                            globalSearchSelected = globalSearchResults.lastIndex.coerceAtLeast(0)
+                        }
+                    }
+                    DesktopSearchPalette(
+                        query = globalSearchQuery,
+                        onQueryChange = { globalSearchQuery = it },
+                        results = globalSearchResults,
+                        selectedIndex = globalSearchSelected,
+                        onSelectedIndexChange = { globalSearchSelected = it },
+                        focusRequester = globalSearchFocus,
+                        onDismiss = {
+                            globalSearchOpen = false
+                            globalSearchQuery = ""
+                        },
+                        onOpen = { openSearchResult(it) }
+                    )
+                }
+
+                // #589 A7 shortcut help panel
+                if (showShortcutHelp) {
+                    DesktopShortcutHelpDialog(onDismiss = { showShortcutHelp = false })
                 }
             }
         }

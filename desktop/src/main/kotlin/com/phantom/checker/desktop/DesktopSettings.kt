@@ -215,7 +215,7 @@ object DesktopSettingsStore {
             customAccentHex = p.getProperty("customAccentHex", "").trim(),
             density = UiDensity.entries.firstOrNull { it.key == p.getProperty("density", "standard") } ?: UiDensity.STANDARD,
             fontScale = p.getProperty("fontScale", "1.0").toFloatOrNull()?.coerceIn(0.9f, 1.25f) ?: 1.0f,
-            sidebarWidthDp = p.getProperty("sidebarWidthDp", "244").toIntOrNull()?.coerceIn(190, 320) ?: 244,
+            sidebarWidthDp = p.getProperty("sidebarWidthDp", "244").toIntOrNull()?.coerceIn(120, 320) ?: 244,
             sidebarCollapsed = p.getProperty("sidebarCollapsed", "false").toBoolean(),
             messageCardStyle = MessageCardStyle.entries.firstOrNull { it.key == p.getProperty("messageCardStyle", "card") } ?: MessageCardStyle.CARD,
             mirrorMode = MirrorDisplayMode.entries.firstOrNull { it.key == p.getProperty("mirrorMode", "both") } ?: MirrorDisplayMode.BOTH,
