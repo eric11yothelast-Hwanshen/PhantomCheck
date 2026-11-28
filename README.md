@@ -51,6 +51,10 @@ Before use, please read the [Privacy Policy (PRIVACY.md)](PRIVACY.md) and [Discl
 
 For the complete changelog, see [CHANGELOG.md](CHANGELOG.md).
 
+### v5.4.0 Release Highlights (versionCode 63, Desktop 0.9.0, 2026-11-28)
+
+- **Mobile Rookie Experience (#590)**: First launch adds three skippable value cards and a progressive setup checklist (notification access and battery optimization recommended; AI key and desktop link optional, with live completion and dismissal); the Home settings gear shows a "New" badge until settings is opened, and Messages shows a dismissible setup-progress card; the Link Hub gains a radar empty state, three-step guide, QR composition frame/distance hint, connected-desktop card, local 20-entry event timeline, expandable troubleshooting and pairing-success animation; Settings adds rookie suggestions, category subtitles, suggested search terms and pin guidance. Desktop remains 0.9.0.
+
 ### v5.3.0 Release Highlights (versionCode 62, Desktop 0.9.0, 2026-11-28)
 
 - **Desktop UI Modernization (#589)**: The desktop sidebar is drag-resizable (120–320dp, persisted) with Ctrl+B collapse, grouped navigation and tooltips; Ctrl+K global search covers conversations, notes, to-dos and settings with arrow-key selection and Enter navigation; the disconnected Home page shows a three-step connection guide and semantic battery/Wi-Fi/storage/last-sync chips; QR pairing is a three-step wizard with success animation, fingerprint/LAN security notes and classified failure guidance; conversation rows and bubbles use unread semantic color, a 520dp maximum width, hover copy/remove-from-view actions and a load-more indicator; EXPANDED settings use a two-column category rail; the ? shortcut help panel and Ctrl+1..8 navigation are included; desktop spacing/corner tokens and empty states are unified. No changes to link, TLS, updater or protocol logic.
