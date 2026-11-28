@@ -5,6 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -141,6 +145,9 @@ internal fun DesktopMessagesPage(
     loadMoreError: String? = null,
     onLoadMoreMessages: () -> Unit = {},
     onRefreshMessages: () -> Unit,
+    onCopyMessageText: (String) -> Unit = {},
+    onDeleteMessageLocally: (Long) -> Unit = {},
+    onFeedback: (String) -> Unit = {},
     sendOrNotify: suspend (String, Any) -> Boolean
 ) {
     val scope = rememberCoroutineScope()
@@ -394,7 +401,13 @@ internal fun DesktopMessagesPage(
         val renderConversationRow: @Composable (ConversationSummary, Modifier) -> Unit = { conv, rowMod ->
             val isSelected = conv.groupKey == selectedConvKey
             val isBatchChecked = conv.groupKey in selectedBatchKeys
-            val cardBg = if (isSelected || isBatchChecked) tokens.selectedBg else tokens.surface
+            val rowHoverSource = remember(conv.groupKey) { MutableInteractionSource() }
+            val rowHovered by rowHoverSource.collectIsHoveredAsState()
+            val cardBg = when {
+                isSelected || isBatchChecked -> tokens.selectedBg
+                rowHovered -> tokens.surfaceElevated
+                else -> tokens.surface
+            }
             val corner = if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST) {
                 (settings.messageCardCornerDp - 4).coerceAtLeast(8).dp
             } else {
@@ -413,6 +426,7 @@ internal fun DesktopMessagesPage(
                         if (isSelected || isBatchChecked) accentColor.copy(alpha = 0.5f) else tokens.border,
                         RoundedCornerShape(corner)
                     )
+                    .hoverable(rowHoverSource)
                     .clickable {
                         if (batchSelectMode) {
                             onSelectedBatchKeysChange(
@@ -478,17 +492,10 @@ internal fun DesktopMessagesPage(
                                 text = "${if (conv.hasStarred) "★ " else ""}${conv.sender}",
                                 fontWeight = if (conv.unreadCount > 0) FontWeight.Bold else FontWeight.Medium,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = tokens.textPrimary,
+                                color = if (conv.unreadCount > 0) tokens.accentText else tokens.textPrimary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f, fill = false)
-                            )
-                            Text(
-                                text = conv.appLabel,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = avatarColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
                             )
                             if (conv.isGroup) {
                                 Text(
@@ -501,30 +508,16 @@ internal fun DesktopMessagesPage(
                                         .padding(horizontal = 5.dp, vertical = 1.dp)
                                 )
                             }
+                            Text(
+                                text = conv.appLabel,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = avatarColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = relTime,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (conv.highestRisk.equals("scam", ignoreCase = true)) tokens.error else tokens.textMuted
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = conv.latestMessage.preview.take(settings.previewLength),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = tokens.textSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
                         if (conv.unreadCount > 0) {
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.width(6.dp))
                             Box(
                                 modifier = Modifier
                                     .clip(CircleShape)
@@ -541,6 +534,27 @@ internal fun DesktopMessagesPage(
                             }
                         }
                     }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = conv.latestMessage.preview.take(settings.previewLength),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (conv.unreadCount > 0) tokens.textSecondary else tokens.textMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = relTime,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (conv.highestRisk.equals("scam", ignoreCase = true)) tokens.error else tokens.textMuted
+                        )
+                    }
                 }
             }
         }
@@ -550,7 +564,11 @@ internal fun DesktopMessagesPage(
             Box(modifier = listMod) {
                 if (visibleConversations.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(DesktopStrings.emptyMessages, color = tokens.textMuted)
+                        DesktopEmptyState(
+                            title = DesktopStrings.emptyMessages,
+                            body = DesktopStrings.selectMessageHint,
+                            icon = DesktopIcons.Messages
+                        )
                     }
                 } else {
                     LazyColumn(
@@ -559,6 +577,23 @@ internal fun DesktopMessagesPage(
                             if (settings.messageCardStyle == MessageCardStyle.COMPACT_LIST || isCompact) 4.dp else listSpace
                         )
                     ) {
+                        if (isLoadingMore) {
+                            item(key = "messages_top_loading") {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = accentColor)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        DesktopStrings.loadingMoreMessages,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = tokens.textMuted
+                                    )
+                                }
+                            }
+                        }
                         if (settings.desktopMessagesViewMode == DesktopMessagesViewMode.GROUP_BY_APP) {
                             items(appGroups, key = { "app::${it.packageName}" }) { group ->
                                 val isExpanded = group.packageName in expandedAppPackages
@@ -939,43 +974,84 @@ internal fun DesktopMessagesPage(
                                         }
 
                                         val itemSelected = item.id == detail.id
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .background(if (itemSelected) tokens.selectedBg else tokens.surfaceElevated.copy(alpha = 0.65f))
-                                                .border(
-                                                    width = 1.dp,
-                                                    color = if (itemSelected) accentColor.copy(alpha = 0.45f) else Color.Transparent,
-                                                    shape = RoundedCornerShape(10.dp)
-                                                )
-                                                .clickable { onSelectMessageId(item.id) }
-                                                .padding(10.dp)
+                                        val outgoing = item.sender.trim().lowercase() in setOf("me", "you", "我") ||
+                                            item.packageName == "com.phantom.checker.desktop"
+                                        val bubbleInteraction = remember(item.id) { MutableInteractionSource() }
+                                        val bubbleHovered by bubbleInteraction.collectIsHoveredAsState()
+                                        Box(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            contentAlignment = if (outgoing) Alignment.CenterEnd else Alignment.CenterStart
                                         ) {
-                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                                val itemTitle = resolveMessageTitle(item.sender, item.packageName, item.appLabel.ifBlank { resolvedApp })
-                                                Text(
-                                                    text = "${if (item.isStarred) "★ " else ""}$itemTitle",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = tokens.accentText,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis,
-                                                    modifier = Modifier.weight(1f, fill = false)
-                                                )
-                                                Spacer(Modifier.width(8.dp))
-                                                Text(
-                                                    text = "${DesktopStrings.riskLabelText(item.riskLabel)} · ${formatRelativeConvTime(item.timestamp, settings.use24HourTime)}",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = when (item.riskLabel.lowercase()) {
-                                                        "scam" -> tokens.error
-                                                        "suspicious", "warning" -> tokens.warning
-                                                        else -> tokens.textMuted
+                                            Column(
+                                                modifier = Modifier
+                                                    .widthIn(max = 520.dp)
+                                                    .fillMaxWidth(0.86f)
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(
+                                                        when {
+                                                            itemSelected -> tokens.selectedBg
+                                                            outgoing -> accentColor.copy(alpha = 0.14f)
+                                                            else -> tokens.surfaceElevated.copy(alpha = 0.65f)
+                                                        }
+                                                    )
+                                                    .border(
+                                                        width = 1.dp,
+                                                        color = when {
+                                                            itemSelected -> accentColor.copy(alpha = 0.45f)
+                                                            outgoing -> accentColor.copy(alpha = 0.30f)
+                                                            else -> Color.Transparent
+                                                        },
+                                                        shape = RoundedCornerShape(12.dp)
+                                                    )
+                                                    .hoverable(bubbleInteraction)
+                                                    .clickable { onSelectMessageId(item.id) }
+                                                    .padding(10.dp)
+                                            ) {
+                                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                    val itemTitle = resolveMessageTitle(item.sender, item.packageName, item.appLabel.ifBlank { resolvedApp })
+                                                    Text(
+                                                        text = "${if (item.isStarred) "★ " else ""}$itemTitle",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = if (outgoing) tokens.textPrimary else tokens.accentText,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f, fill = false)
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+                                                    Text(
+                                                        text = "${DesktopStrings.riskLabelText(item.riskLabel)} · ${formatRelativeConvTime(item.timestamp, settings.use24HourTime)}",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = when (item.riskLabel.lowercase()) {
+                                                            "scam" -> tokens.error
+                                                            "suspicious", "warning" -> tokens.warning
+                                                            else -> tokens.textMuted
+                                                        }
+                                                    )
+                                                }
+                                                Spacer(Modifier.height(3.dp))
+                                                Text(item.preview.take(settings.previewLength), style = MaterialTheme.typography.bodySmall, color = tokens.textPrimary)
+                                                if (bubbleHovered) {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = if (outgoing) Arrangement.End else Arrangement.Start,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        TextButton(onClick = {
+                                                            onCopyMessageText(item.preview)
+                                                            onFeedback(DesktopStrings.messageCopiedToast)
+                                                        }) {
+                                                            Text(DesktopStrings.copyMessage, style = MaterialTheme.typography.labelSmall)
+                                                        }
+                                                        TextButton(onClick = {
+                                                            onDeleteMessageLocally(item.id)
+                                                            onFeedback(DesktopStrings.messageRemovedToast)
+                                                        }) {
+                                                            Text(DesktopStrings.deleteMessage, style = MaterialTheme.typography.labelSmall, color = tokens.error)
+                                                        }
                                                     }
-                                                )
+                                                }
                                             }
-                                            Spacer(Modifier.height(3.dp))
-                                            Text(item.preview.take(settings.previewLength), style = MaterialTheme.typography.bodySmall, color = tokens.textPrimary)
                                         }
                                     }
                                 }

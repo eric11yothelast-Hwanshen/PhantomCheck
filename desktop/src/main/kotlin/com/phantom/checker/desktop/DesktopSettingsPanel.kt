@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -61,6 +63,9 @@ fun DesktopSettingsCenter(
     uiState: DesktopLinkUiState,
     mdnsStatus: MdnsBroadcastStatus,
     server: DesktopLinkServer,
+    windowClass: DesktopWindowClass = DesktopWindowClass.MEDIUM,
+    requestedSubTab: String? = null,
+    onRequestedSubTabConsumed: () -> Unit = {},
     onUpdateAvailable: (DesktopUpdateOutcome.UpdateAvailable) -> Unit = {},
     onFeedback: (String) -> Unit
 ) {
@@ -157,6 +162,22 @@ fun DesktopSettingsCenter(
     }
 
     val timeFmt = SETTINGS_TIME_FMT.get()
+    val isTwoColumn = windowClass == DesktopWindowClass.EXPANDED || windowClass == DesktopWindowClass.LARGE
+
+    LaunchedEffect(requestedSubTab) {
+        val requested = requestedSubTab ?: return@LaunchedEffect
+        runCatching { SettingsSubTab.valueOf(requested) }.getOrNull()?.let { subTab = it }
+        onRequestedSubTabConsumed()
+    }
+
+    LaunchedEffect(subTab) {
+        when (subTab) {
+            SettingsSubTab.CONNECTION -> connScroll.scrollTo(0)
+            SettingsSubTab.SYSTEM -> sysScroll.scrollTo(0)
+            SettingsSubTab.CUSTOMIZE -> custScroll.scrollTo(0)
+            SettingsSubTab.ABOUT -> aboutScroll.scrollTo(0)
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // #520 Bilingual Settings Search Bar
@@ -186,34 +207,42 @@ fun DesktopSettingsCenter(
                     )
                 }
             }
+        } else if (settingsQuery.isNotBlank()) {
+            DesktopEmptyState(
+                title = DesktopStrings.settingsNoSearchResult,
+                body = DesktopStrings.settingsSearchSuggestions,
+                icon = DesktopIcons.Search
+            )
         }
 
-        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-        androidx.compose.foundation.layout.FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            FilterChip(
-                selected = subTab == SettingsSubTab.CONNECTION,
-                onClick = { subTab = SettingsSubTab.CONNECTION },
-                label = { Text(DesktopStrings.settingsTabConn) }
-            )
-            FilterChip(
-                selected = subTab == SettingsSubTab.SYSTEM,
-                onClick = { subTab = SettingsSubTab.SYSTEM },
-                label = { Text(DesktopStrings.settingsTabSystem) }
-            )
-            FilterChip(
-                selected = subTab == SettingsSubTab.CUSTOMIZE,
-                onClick = { subTab = SettingsSubTab.CUSTOMIZE },
-                label = { Text(DesktopStrings.settingsTabCustom16) }
-            )
-            FilterChip(
-                selected = subTab == SettingsSubTab.ABOUT,
-                onClick = { subTab = SettingsSubTab.ABOUT },
-                label = { Text(DesktopStrings.settingsTabAbout) }
-            )
+        if (!isTwoColumn) {
+            @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+            androidx.compose.foundation.layout.FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                FilterChip(
+                    selected = subTab == SettingsSubTab.CONNECTION,
+                    onClick = { subTab = SettingsSubTab.CONNECTION },
+                    label = { Text(DesktopStrings.settingsTabConn) }
+                )
+                FilterChip(
+                    selected = subTab == SettingsSubTab.SYSTEM,
+                    onClick = { subTab = SettingsSubTab.SYSTEM },
+                    label = { Text(DesktopStrings.settingsTabSystem) }
+                )
+                FilterChip(
+                    selected = subTab == SettingsSubTab.CUSTOMIZE,
+                    onClick = { subTab = SettingsSubTab.CUSTOMIZE },
+                    label = { Text(DesktopStrings.settingsTabCustom16) }
+                )
+                FilterChip(
+                    selected = subTab == SettingsSubTab.ABOUT,
+                    onClick = { subTab = SettingsSubTab.ABOUT },
+                    label = { Text(DesktopStrings.settingsTabAbout) }
+                )
+            }
         }
         Text(DesktopStrings.shortcutsHint, style = MaterialTheme.typography.labelSmall, color = tokens.textMuted)
 
@@ -1819,18 +1848,90 @@ fun DesktopSettingsCenter(
             Spacer(Modifier.height(12.dp))
         }
         }
-        if (effectiveTransition != PageTransitionStyle.NONE) {
-            AnimatedContent(
-                targetState = subTab,
-                transitionSpec = {
-                    val forward = targetState.ordinal >= initialState.ordinal
-                    DesktopMotion.pageTransition(effectiveTransition, forward)
-                },
-                label = "settings_subtab_content",
-                modifier = Modifier.fillMaxSize()
-            ) { activeSub -> renderSubTab(activeSub) }
+        val renderSettingsContent: @Composable () -> Unit = {
+            if (effectiveTransition != PageTransitionStyle.NONE) {
+                AnimatedContent(
+                    targetState = subTab,
+                    transitionSpec = {
+                        val forward = targetState.ordinal >= initialState.ordinal
+                        DesktopMotion.pageTransition(effectiveTransition, forward)
+                    },
+                    label = "settings_subtab_content",
+                    modifier = Modifier.fillMaxSize()
+                ) { activeSub -> renderSubTab(activeSub) }
+            } else {
+                Box(modifier = Modifier.fillMaxSize()) { renderSubTab(subTab) }
+            }
+        }
+
+        if (isTwoColumn) {
+            Row(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // #589 A6 sticky category rail (EXPANDED / LARGE only)
+                Column(
+                    modifier = Modifier
+                        .width(220.dp)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(tokens.radiusLg))
+                        .background(tokens.surface)
+                        .border(1.dp, tokens.border, RoundedCornerShape(tokens.radiusLg))
+                        .padding(tokens.spacingMd),
+                    verticalArrangement = Arrangement.spacedBy(tokens.spacingXs)
+                ) {
+                    Text(
+                        text = DesktopStrings.settingsCategoryMenu,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.textMuted,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                    listOf(
+                        Triple(SettingsSubTab.CONNECTION, DesktopStrings.settingsTabConn, DesktopIcons.Link),
+                        Triple(SettingsSubTab.SYSTEM, DesktopStrings.settingsTabSystem, DesktopIcons.Settings),
+                        Triple(SettingsSubTab.CUSTOMIZE, DesktopStrings.settingsTabCustom16, DesktopIcons.Stats),
+                        Triple(SettingsSubTab.ABOUT, DesktopStrings.settingsTabAbout, DesktopIcons.Note)
+                    ).forEach { (target, label, icon) ->
+                        val selected = subTab == target
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(tokens.radiusMd))
+                                .background(if (selected) tokens.selectedBg else Color.Transparent)
+                                .border(
+                                    1.dp,
+                                    if (selected) accentColor.copy(alpha = 0.4f) else Color.Transparent,
+                                    RoundedCornerShape(tokens.radiusMd)
+                                )
+                                .clickable { subTab = target }
+                                .padding(horizontal = 10.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(icon, contentDescription = null, tint = if (selected) tokens.accentText else tokens.textSecondary, modifier = Modifier.size(17.dp))
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) tokens.accentText else tokens.textSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    Text(
+                        text = DesktopStrings.settingsRailHint,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tokens.textMuted,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                    )
+                }
+                Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                    renderSettingsContent()
+                }
+            }
         } else {
-            Box(modifier = Modifier.fillMaxSize()) { renderSubTab(subTab) }
+            renderSettingsContent()
         }
     }
 }

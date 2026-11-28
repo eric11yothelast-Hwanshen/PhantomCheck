@@ -217,7 +217,11 @@ internal fun DesktopTodosNotesPage(
 
             if (todos.isEmpty()) {
                 Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Text(DesktopStrings.todosEmpty, color = tokens.textMuted)
+                    DesktopEmptyState(
+                        title = DesktopStrings.todosEmpty,
+                        body = DesktopStrings.todoAddHint,
+                        icon = DesktopIcons.Todos
+                    )
                 }
             } else {
                 LazyColumn(state = todosListState, verticalArrangement = Arrangement.spacedBy(listSpace), modifier = Modifier.weight(1f)) {
@@ -396,7 +400,11 @@ internal fun DesktopTodosNotesPage(
                 }
                 if (notes.isEmpty()) {
                     Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        Text(DesktopStrings.notesEmpty, color = tokens.textMuted)
+                        DesktopEmptyState(
+                            title = DesktopStrings.notesEmpty,
+                            body = DesktopStrings.noteInputHint,
+                            icon = DesktopIcons.Note
+                        )
                     }
                 } else {
                     val sortedNotes = remember(notes) {

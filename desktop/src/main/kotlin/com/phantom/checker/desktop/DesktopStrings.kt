@@ -184,7 +184,7 @@ object DesktopStrings {
     val customBgPathHint get() = t("自訂本機背景圖絕對路徑（留空使用漸層）", "Local image path (leave blank for gradient)")
     val clearBgImage get() = t("清除背景圖", "Clear Image")
     val custAnimTitle get() = t("8. 動畫效果（低階機可關閉以提升效能）", "8. Animations (Disable for performance mode)")
-    val shortcutsHint get() = t("捷徑：Ctrl+1..6 切換分頁 · Ctrl+F 搜尋訊息 · Esc 關閉彈窗", "Shortcuts: Ctrl+1..6 switch tabs · Ctrl+F search · Esc close dialogs")
+    val shortcutsHint get() = t("捷徑：Ctrl+1..8 切換頁面 · Ctrl+K 全域搜尋 · Ctrl+B 收合側欄 · Esc 關閉 · ? 說明", "Shortcuts: Ctrl+1..8 switch tabs · Ctrl+K search · Ctrl+B sidebar · Esc close · ? help")
 
     // #469 Tray strings
     val trayOpen get() = t("開啟 PhantomCheck", "Open PhantomCheck")
@@ -673,4 +673,78 @@ object DesktopStrings {
     val proactiveIntelMirrorTitle get() = t("主動情報推送", "Proactive Intel Alerts")
     val proactiveIntelMuteBtn get() = t("不再關注", "Mute Topic")
     val proactiveIntelMutedFeedback get() = t("已回寫手機：不再關注此主題", "Synced to phone: topic muted")
+
+    // #589 A1/A2 sidebar & global quick search
+    val sidebarMainGroup get() = t("主要功能", "Main")
+    val sidebarToolsGroup get() = t("工具", "Tools")
+    val sidebarCollapseTooltip get() = t("收合側欄 (Ctrl+B)", "Collapse sidebar (Ctrl+B)")
+    val sidebarExpandTooltip get() = t("展開側欄 (Ctrl+B)", "Expand sidebar (Ctrl+B)")
+    val sidebarDragHint get() = t("拖曳調整側欄寬度 (120–320dp)", "Drag to resize sidebar (120–320dp)")
+    val globalSearchOpen get() = t("快速搜尋…  Ctrl+K", "Quick search…  Ctrl+K")
+    val globalSearchHint get() = t("搜尋對話、記事、待辦與設定…", "Search conversations, notes, to-dos, settings…")
+    val globalSearchNavigateHint get() = t("↑↓ 選擇 · Enter 跳轉 · Esc 關閉", "↑↓ select · Enter open · Esc close")
+    val globalSearchNoResults get() = t("找不到符合的項目", "No matching results")
+    val globalSearchNoResultsHint get() = t("試試寄件人名稱、訊息關鍵字、待辦標題或設定名稱。", "Try a sender, message keyword, to-do title or setting name.")
+    val globalSearchConversations get() = t("對話", "Conversations")
+    val globalSearchNotes get() = t("記事", "Notes")
+    val globalSearchTodos get() = t("待辦", "To-dos")
+    val globalSearchSettings get() = t("設定", "Settings")
+    val globalSearchEmptyQuery get() = t("輸入關鍵字即時搜尋所有資料來源。", "Type to search every data source instantly.")
+
+    // #589 A7 shortcut help
+    val shortcutsHelpTitle get() = t("鍵盤快捷鍵", "Keyboard Shortcuts")
+    val shortcutsHelpOpen get() = t("快捷鍵說明 (?)", "Shortcut help (?)")
+    val shortcutNavHint get() = t("Ctrl+1..8 切換頁面（首頁～工具）", "Ctrl+1..8 switch pages (Home to Tools)")
+    val shortcutSearchHint get() = t("Ctrl+K 全域搜尋；Ctrl+F 訊息搜尋", "Ctrl+K global search; Ctrl+F message search")
+    val shortcutSidebarHint get() = t("Ctrl+B 收合／展開側欄", "Ctrl+B collapse / expand sidebar")
+    val shortcutEscHint get() = t("Esc 關閉搜尋、對話框與浮層", "Esc closes search, dialogs and overlays")
+    val shortcutHelpHint get() = t("? 開啟此說明（輸入框外）", "? opens this panel (outside text fields)")
+    val shortcutCloseHint get() = t("按 Esc 或點擊關閉", "Press Esc or click to close")
+
+    // #589 A3 home hero & semantic status chips
+    val homeHeroTitle get() = t("三步完成手機連線", "Connect your phone in 3 steps")
+    val homeStep1Title get() = t("手機開啟幻訊", "Open PhantomCheck on phone")
+    val homeStep1Desc get() = t("確認手機與電腦在同一個 Wi-Fi。", "Make sure phone and PC share the same Wi-Fi.")
+    val homeStep2Title get() = t("連線頁掃碼", "Scan the QR on Link page")
+    val homeStep2Desc get() = t("在手機「連線」頁對準右側 QR Code。", "Point the phone Link page at the QR code here.")
+    val homeStep3Title get() = t("完成配對", "Finish pairing")
+    val homeStep3Desc get() = t("指紋比對通過後即可同步訊息。", "After fingerprint verification, messages sync automatically.")
+    val homeChipWifi get() = t("Wi-Fi", "Wi-Fi")
+    val homeChipLastSync get() = t("最後同步", "Last sync")
+    val homeChipBatteryLow get() = t("電量偏低", "Low battery")
+    val homeChipUnknown get() = t("未知", "Unknown")
+
+    // #589 A4 QR pairing wizard
+    val qrWizardTitle get() = t("三步配對新手機", "Pair a new phone in 3 steps")
+    val qrStepReadyTitle get() = t("準備手機", "Prepare phone")
+    val qrStepReadyBody get() = t("在手機開啟幻訊，進入「連線」頁並保持同一個 Wi-Fi。", "Open PhantomCheck on the phone, go to Link, and stay on the same Wi-Fi.")
+    val qrStepScanTitle get() = t("掃描 QR Code", "Scan QR code")
+    val qrStepScanBody get() = t("用電腦上的 QR 對準手機掃描器，配對碼 3 分鐘內有效。", "Scan the QR with the phone camera; the code is valid for 3 minutes.")
+    val qrStepVerifyTitle get() = t("安全驗證", "Verify security")
+    val qrStepVerifyBody get() = t("比對兩端指紋前 8 碼，確認只在區域網路內傳輸。", "Match the first 8 fingerprint characters; traffic stays on your LAN.")
+    val qrBack get() = t("上一步", "Back")
+    val qrNext get() = t("下一步", "Next")
+    val qrPairSuccess get() = t("配對成功！", "Paired successfully!")
+    val qrPairSuccessHint get() = t("手機已建立加密連線，可以開始同步訊息。", "Encrypted link established. Message sync can start.")
+    val qrSecurityTitle get() = t("指紋與區域網路", "Fingerprint & LAN")
+    val qrSecurityFingerprintHint get() = t("請確認手機顯示的指紋與此處前 8 碼一致。", "Confirm the phone fingerprint matches the first 8 characters here.")
+    val qrSecurityLanHint get() = t("連線只走同一個區域網路，不會上傳到雲端。", "Traffic stays on your local network and never goes to the cloud.")
+    val qrFailureTitle get() = t("配對未完成", "Pairing not completed")
+    val qrFailureHint get() = t("請依下方分類提示排除後再試一次。", "Follow the classified hint below, then try again.")
+    val qrRegenerateCode get() = t("重新產生配對碼", "Regenerate code")
+
+    // #589 A5 conversation / bubble details
+    val copyMessage get() = t("複製", "Copy")
+    val copyMessageHint get() = t("複製訊息內容", "Copy message text")
+    val deleteMessage get() = t("從此檢視移除", "Remove from view")
+    val deleteMessageHint get() = t("只從桌面清單移除，不會刪除手機原始訊息。", "Removes from this desktop view only; the phone message stays intact.")
+    val messageCopiedToast get() = t("訊息已複製", "Message copied")
+    val messageRemovedToast get() = t("已從此檢視移除", "Removed from this view")
+
+    // #589 A6 settings two-column shell & polished empty states
+    val settingsCategoryMenu get() = t("設定分類", "Categories")
+    val settingsNoSearchResult get() = t("找不到設定項目", "No settings found")
+    val settingsSearchSuggestions get() = t("試試：通知、側欄、主題、連線、更新", "Try: notification, sidebar, theme, connection, update")
+    val settingsRailHint get() = t("選擇分類，右側內容同步高亮。", "Pick a category; the right pane stays in sync.")
+    val settingsJumpHint get() = t("已跳到對應設定分類", "Jumped to the matching category")
 }
