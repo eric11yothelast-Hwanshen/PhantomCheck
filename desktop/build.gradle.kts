@@ -6,7 +6,7 @@ plugins {
     id("org.jetbrains.compose")
 }
 
-val desktopVersion = "0.8.1"
+val desktopVersion = "0.9.0"
 
 group = "com.phantom.checker.desktop"
 version = desktopVersion
