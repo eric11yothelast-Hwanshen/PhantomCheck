@@ -10,6 +10,14 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -46,7 +54,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -63,6 +74,8 @@ import com.phantom.checker.shared.QrPairingPayloadV2
 import com.phantom.checker.ui.components.PhantomChevron
 import com.phantom.checker.ui.components.PhantomMotion
 import com.phantom.checker.ui.warning
+import com.phantom.checker.ui.RestrictedSettingsTroubleshootSection
+import com.phantom.checker.ui.openAppDetailsSettings
 import com.phantom.checker.util.CommandAuditEntry
 import com.phantom.checker.util.DesktopLinkStore
 import com.phantom.checker.util.DiagnosticLogEntry
@@ -85,6 +98,41 @@ private data class LinkStoreSnapshot(
     val diagnostics: List<DiagnosticLogEntry>,
     val onWifi: Boolean
 )
+
+/** #590 B3：最近連線事件時間軸（上限 20 筆，只存本機 UI 事件，不寫入連線協定或敏感資料）。 */
+private data class LinkUiEvent(val at: Long, val type: String, val detail: String = "")
+
+private object LinkUiEventStore {
+    private const val PREFS = "phantom_link_ui_events"
+    private const val KEY_EVENTS = "events"
+    private const val MAX_EVENTS = 20
+
+    private fun prefs(ctx: Context) = ctx.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    fun load(ctx: Context): List<LinkUiEvent> {
+        val raw = prefs(ctx).getString(KEY_EVENTS, "").orEmpty()
+        return raw.lineSequence()
+            .filter { it.isNotBlank() }
+            .mapNotNull { line ->
+                val parts = line.split("|", limit = 3)
+                val at = parts.getOrNull(0)?.toLongOrNull() ?: return@mapNotNull null
+                val type = parts.getOrNull(1).orEmpty().ifBlank { return@mapNotNull null }
+                LinkUiEvent(at, type, parts.getOrNull(2).orEmpty())
+            }
+            .sortedByDescending { it.at }
+            .take(MAX_EVENTS)
+            .toList()
+    }
+
+    fun record(ctx: Context, type: String, detail: String = "") {
+        val next = (listOf(LinkUiEvent(System.currentTimeMillis(), type, detail.replace("|", " "))) + load(ctx))
+            .sortedByDescending { it.at }
+            .take(MAX_EVENTS)
+        val encoded = next.joinToString("\n") { "${it.at}|${it.type}|${it.detail}" }
+        prefs(ctx).edit().putString(KEY_EVENTS, encoded).apply()
+    }
+}
+
 
 /**
  * #476 / #477 手機端桌面連線共用內容（供 LinkHubActivity 與 MainActivity 底部「連線」分頁共用）：
@@ -109,6 +157,43 @@ fun LinkHubContent(
     var unknownAttempts by remember { mutableStateOf<List<UnknownAttempt>>(emptyList()) }
     var auditLogs by remember { mutableStateOf<List<CommandAuditEntry>>(emptyList()) }
     var diagnostics by remember { mutableStateOf<List<DiagnosticLogEntry>>(emptyList()) }
+
+    // #590 B3：連線事件時間軸與配對成功動畫（僅 UI 層，離頁即停止）
+    var linkEvents by remember { mutableStateOf(LinkUiEventStore.load(appCtx)) }
+    var lastEventSignature by remember { mutableStateOf("") }
+    var showPairCelebration by remember { mutableStateOf(false) }
+    LaunchedEffect(
+        clientStatus.connState,
+        clientStatus.connectedDesktopId,
+        clientStatus.lastErrorCode,
+        pairedDevices.size
+    ) {
+        val signature = "${clientStatus.connState}|${clientStatus.connectedDesktopId}|${clientStatus.lastErrorCode.orEmpty()}|${pairedDevices.size}"
+        if (signature != lastEventSignature) {
+            if (lastEventSignature.isNotBlank()) {
+                val type = when (clientStatus.connState) {
+                    PhoneLinkConnState.CONNECTED -> "connected"
+                    PhoneLinkConnState.RECONNECTING, PhoneLinkConnState.CONNECTING -> "reconnecting"
+                    PhoneLinkConnState.DISCONNECTED ->
+                        if (!clientStatus.lastErrorCode.isNullOrBlank()) "failed" else "disconnected"
+                }
+                LinkUiEventStore.record(
+                    appCtx,
+                    type,
+                    clientStatus.connectedDesktopName.ifBlank { clientStatus.lastErrorDetail.orEmpty() }
+                )
+                linkEvents = LinkUiEventStore.load(appCtx)
+            }
+            lastEventSignature = signature
+        }
+    }
+    LaunchedEffect(clientStatus.connState) {
+        if (clientStatus.connState == PhoneLinkConnState.CONNECTED) {
+            showPairCelebration = true
+            delay(2400L)
+            showPairCelebration = false
+        }
+    }
 
     // #477 QR Scanner & CAMERA permission states (intentionally non-saveable so Activity recreate never retains stale scan session)
     var showQrScanner by remember { mutableStateOf(false) }
@@ -322,6 +407,12 @@ fun LinkHubContent(
                     }
                     if (!onWifi && clientStatus.connState != PhoneLinkConnState.CONNECTED) {
                         Text(
+                            text = stringResource(R.string.link_pair_failure_title),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Text(
                             text = stringResource(R.string.link_hub_diag_cat_diff_subnet),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
@@ -332,6 +423,12 @@ fun LinkHubContent(
                             Text(stringResource(R.string.link_hub_diag_action_wifi))
                         }
                     } else if (diagCategory != null) {
+                        Text(
+                            text = stringResource(R.string.link_pair_failure_title),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error
+                        )
                         val (guidanceText, actionLabel, onAction) = when (diagCategory) {
                             LinkFailureCategory.PORT_CHANGED -> Triple(
                                 stringResource(R.string.link_hub_diag_cat_port_changed, discoveredDesktops.firstOrNull()?.port ?: LinkProtocol.DEFAULT_PORT),
@@ -390,6 +487,253 @@ fun LinkHubContent(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                }
+            }
+        }
+
+        // #590 B3：配對成功慶祝動畫（只在連線頁可見時短暫播放）
+        if (showPairCelebration) {
+            item {
+                val celebrateScale by animateFloatAsState(
+                    targetValue = if (showPairCelebration) 1f else 0.9f,
+                    animationSpec = tween(220),
+                    label = "link_pair_celebrate"
+                )
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                            .graphicsLayer { scaleX = celebrateScale; scaleY = celebrateScale },
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🎉", style = MaterialTheme.typography.headlineSmall)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.link_pair_success_celebration),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = stringResource(R.string.link_pair_success_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // #590 B3：未連線雷達空狀態＋三步驟精靈
+        if (clientStatus.connState == PhoneLinkConnState.DISCONNECTED) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(
+                            alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.35f)
+                        )
+                    ),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(18.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        val radar = rememberInfiniteTransition(label = "link_radar")
+                        val sweep by radar.animateFloat(
+                            initialValue = 0f,
+                            targetValue = 260f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(2200, easing = LinearEasing),
+                                repeatMode = RepeatMode.Restart
+                            ),
+                            label = "link_radar_sweep"
+                        )
+                        val ringColor = MaterialTheme.colorScheme.primary
+                        Canvas(modifier = Modifier.size(132.dp)) {
+                            val radius = size.minDimension / 2f
+                            val center = Offset(size.width / 2f, size.height / 2f)
+                            drawCircle(ringColor.copy(alpha = 0.10f), radius * 0.35f, center)
+                            drawCircle(ringColor.copy(alpha = 0.16f), radius * 0.65f, center)
+                            drawCircle(ringColor.copy(alpha = 0.22f), radius, center, style = androidx.compose.ui.graphics.drawscope.Stroke(1.5f))
+                            rotate(sweep, center) {
+                                drawLine(
+                                    color = ringColor.copy(alpha = 0.75f),
+                                    start = center,
+                                    end = Offset(center.x, center.y - radius),
+                                    strokeWidth = 2.5f
+                                )
+                            }
+                            drawCircle(ringColor, 4.dp.toPx(), center)
+                        }
+                        Text(
+                            text = stringResource(R.string.link_radar_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = stringResource(R.string.link_radar_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                        Text(
+                            text = stringResource(R.string.link_wizard_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        listOf(
+                            R.string.link_wizard_step1_title to R.string.link_wizard_step1_desc,
+                            R.string.link_wizard_step2_title to R.string.link_wizard_step2_desc,
+                            R.string.link_wizard_step3_title to R.string.link_wizard_step3_desc
+                        ).forEachIndexed { index, (titleRes, descRes) ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = (index + 1).toString(),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(stringResource(titleRes), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        text = stringResource(descRes),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // #590 B3：已連線桌面裝置卡（名稱、協定、傳輸、最後連線、訊號與快捷操作）
+        if (clientStatus.connState == PhoneLinkConnState.CONNECTED) {
+            item {
+                val activePaired = pairedDevices.firstOrNull { it.instanceId == clientStatus.connectedDesktopId }
+                val liveMatch = activePaired?.let { dev -> DesktopLinkClient.findDiscoveredForPaired(dev) }
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.45f))),
+                    shape = RoundedCornerShape(18.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = stringResource(R.string.link_connected_device_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = clientStatus.connectedDesktopName.ifBlank { clientStatus.connectedHostPort },
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                        val protocolLabel = liveMatch?.protocolVersion?.let { "v$it" } ?: "v${LinkProtocol.PROTOCOL_VERSION}"
+                        Text(
+                            text = "${stringResource(R.string.link_connected_device_version)}: $protocolLabel · " +
+                                "${stringResource(R.string.link_connected_device_transport)}: ${stringResource(R.string.link_connected_device_transport_value)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${stringResource(R.string.link_connected_device_last)}: " +
+                                (activePaired?.lastSeenAt?.takeIf { it > 0L }?.let { timeFmt.format(Date(it)) } ?: "-"),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "${stringResource(R.string.link_connected_device_signal)}: ${stringResource(R.string.link_connected_signal_good)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = {
+                                activePaired?.let { DesktopLinkClient.connectToPaired(appCtx, it) }
+                            }) { Text(stringResource(R.string.link_reconnect_btn)) }
+                            OutlinedButton(onClick = { DesktopLinkClient.disconnect(clearError = true) }) {
+                                Text(stringResource(R.string.link_hub_disconnect_btn))
+                            }
+                            TextButton(onClick = {
+                                scope.launch {
+                                    val forgotName = activePaired?.name.orEmpty()
+                                    withContext(Dispatchers.IO) {
+                                        activePaired?.let { runCatching { DesktopLinkClient.unpairDesktop(appCtx, it.instanceId) } }
+                                    }
+                                    DesktopLinkClient.disconnect(clearError = true)
+                                    LinkUiEventStore.record(appCtx, "forgot", forgotName)
+                                    linkEvents = LinkUiEventStore.load(appCtx)
+                                }
+                            }) {
+                                Text(stringResource(R.string.link_forget_device_btn), color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // #590 B3：最近連線事件時間軸（上限 20 筆）
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.3f))),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = stringResource(R.string.link_event_timeline_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (linkEvents.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.link_event_timeline_empty),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        linkEvents.take(8).forEach { event ->
+                            val text = when (event.type) {
+                                "connected" -> stringResource(R.string.link_event_connected, event.detail.ifBlank { "-" })
+                                "reconnecting" -> stringResource(R.string.link_event_reconnecting)
+                                "failed" -> stringResource(R.string.link_event_failed, event.detail.ifBlank { "-" })
+                                "forgot" -> stringResource(R.string.link_event_forgot)
+                                else -> stringResource(R.string.link_event_disconnected)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                Text(
+                                    text = timeFmt.format(Date(event.at)),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -848,6 +1192,78 @@ fun LinkHubContent(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // #590 B3：疑難排解可展開卡（沿用既有 #288 引導元件，不重造）
+        item {
+            var troubleshootingExpanded by remember { mutableStateOf(false) }
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = com.phantom.checker.ui.phantomSurfaceAlpha(0.32f))),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { troubleshootingExpanded = !troubleshootingExpanded },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = stringResource(R.string.link_troubleshoot_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        PhantomChevron(expanded = troubleshootingExpanded)
+                    }
+                    AnimatedVisibility(
+                        visible = troubleshootingExpanded,
+                        enter = PhantomMotion.ExpandEnter,
+                        exit = PhantomMotion.ExpandExit
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = stringResource(R.string.link_troubleshoot_wifi_title),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = stringResource(R.string.link_troubleshoot_wifi_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedButton(onClick = {
+                                runCatching { ctx.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) }
+                            }) { Text(stringResource(R.string.link_hub_diag_action_wifi)) }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Text(
+                                text = stringResource(R.string.link_troubleshoot_firewall_title),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = stringResource(R.string.link_troubleshoot_firewall_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            Text(
+                                text = stringResource(R.string.link_troubleshoot_oem_title),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = stringResource(R.string.link_troubleshoot_oem_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            RestrictedSettingsTroubleshootSection(
+                                onOpenAppDetails = { openAppDetailsSettings(ctx) }
+                            )
                         }
                     }
                 }

@@ -2,6 +2,7 @@ package com.phantom.checker.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -135,6 +136,14 @@ internal fun SettingsHomeScreen(
     val recentIds = remember(layoutVer) { UiLayoutPrefs.getRecentSettingIds(appCtx) }
     val recentItems = remember(recentIds) { recentIds.mapNotNull { SettingsCatalog.findById(it) } }
 
+    // #590 B4：新手建議區塊（依 checklist 完成度動態顯示，全部完成或關閉後隱藏）
+    var rookieChecklist by remember { mutableStateOf<RookieChecklistStore.RookieChecklistState?>(null) }
+    var rookieChecklistDismissed by remember { mutableStateOf(RookieChecklistStore.isChecklistDismissed(appCtx)) }
+    LaunchedEffect(settingsBusVer) {
+        rookieChecklist = RookieChecklistStore.readState(appCtx)
+        rookieChecklistDismissed = RookieChecklistStore.isChecklistDismissed(appCtx)
+    }
+
     var showPinEditorSheet by remember { mutableStateOf(false) }
 
     val trimmedQuery = searchQuery.trim()
@@ -150,6 +159,12 @@ internal fun SettingsHomeScreen(
             aiItems + localMatchedItems.filterNot { it.id in aiSet }
         }
     }
+    val searchSuggestions = listOf(
+        stringResource(R.string.settings_search_suggestion_notifications),
+        stringResource(R.string.settings_search_suggestion_privacy),
+        stringResource(R.string.settings_search_suggestion_desktop),
+        stringResource(R.string.settings_search_suggestion_ai)
+    )
     var isAiConfigured by remember { mutableStateOf(false) }
     LaunchedEffect(settingsBusVer) {
         isAiConfigured = withContext(Dispatchers.IO) {
@@ -279,17 +294,33 @@ internal fun SettingsHomeScreen(
                     // ── 搜尋結果態 ──
                     if (combinedMatches.isEmpty()) {
                         item(key = "settings_search_empty") {
-                            EmptyStateView(
-                                icon = Icons.Default.Search,
-                                title = stringResource(R.string.search_s_4de5af),
-                                description = if (isAiConfigured) {
-                                    stringResource(R.string.settings_home_s_284fe0, trimmedQuery)
-                                } else {
-                                    stringResource(R.string.settings_home_s_a005c6, trimmedQuery)
-                                },
-                                actionLabel = if (isAiConfigured) stringResource(R.string.settings_home_s_5db5f0) else null,
-                                onAction = if (isAiConfigured) onRunAiSearch else null,
-                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                EmptyStateView(
+                                    icon = Icons.Default.Search,
+                                    title = stringResource(R.string.search_s_4de5af),
+                                    description = if (isAiConfigured) {
+                                        stringResource(R.string.settings_home_s_284fe0, trimmedQuery)
+                                    } else {
+                                        stringResource(R.string.settings_home_s_a005c6, trimmedQuery)
+                                    },
+                                    actionLabel = if (isAiConfigured) stringResource(R.string.settings_home_s_5db5f0) else null,
+                                    onAction = if (isAiConfigured) onRunAiSearch else null,
+                                )
+                                Text(
+                                    text = stringResource(R.string.settings_search_suggestions),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 4.dp)
+                                )
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(searchSuggestions) { suggestion ->
+                                        AssistChip(
+                                            onClick = { onSearchQueryChange(suggestion) },
+                                            label = { Text(suggestion) }
+                                        )
+                                    }
+                                }
+                            }
                         }
                     } else {
                         item(key = "settings_search_count") {
@@ -312,6 +343,39 @@ internal fun SettingsHomeScreen(
                         }
                     }
                 } else {
+                    // ── 新手建議（#590 B4，全部完成或關閉後隱藏） ──
+                    val rookieState = rookieChecklist
+                    if (!rookieChecklistDismissed && rookieState != null && !rookieState.allDone) {
+                        item(key = "settings_rookie_checklist") {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                SettingsSectionHeader(title = stringResource(R.string.settings_newbie_suggestions))
+                                Text(
+                                    text = stringResource(R.string.settings_newbie_suggestions_desc),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 4.dp)
+                                )
+                                RookieChecklistCard(
+                                    state = rookieState,
+                                    onOpenItem = { item ->
+                                        when (item) {
+                                            RookieChecklistItem.NOTIFICATIONS -> openNotificationListenerSettings(appCtx)
+                                            RookieChecklistItem.BATTERY -> openBatteryOptimizationSettings(appCtx)
+                                            RookieChecklistItem.AI_KEY ->
+                                                SettingsCatalog.findById("ai_providers")?.let(onSelectSettingItem)
+                                            RookieChecklistItem.DESKTOP ->
+                                                appCtx.startActivity(Intent(appCtx, LinkHubActivity::class.java))
+                                        }
+                                    },
+                                    onDismiss = {
+                                        RookieChecklistStore.dismissChecklist(appCtx)
+                                        rookieChecklistDismissed = true
+                                    }
+                                )
+                            }
+                        }
+                    }
+
                     // ── 釘選區（≤6，2 欄磁磚） ──
                     item(key = "settings_pinned_section") {
                         Column(
@@ -330,6 +394,12 @@ internal fun SettingsHomeScreen(
                                     Text(stringResource(R.string.common_edit))
                                 }
                             }
+                            Text(
+                                text = stringResource(R.string.settings_pin_intro),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 4.dp)
+                            )
                             if (pinnedItems.isEmpty()) {
                                 Surface(
                                     onClick = { showPinEditorSheet = true },
@@ -450,7 +520,9 @@ internal fun SettingsHomeScreen(
                                         }
                                         SettingsNavigationRow(
                                             title = category.title,
-                                            subtitle = summary,
+                                            subtitle = listOf(category.subtitleHint, summary)
+                                                .filter { it.isNotBlank() }
+                                                .joinToString(" · "),
                                             icon = categoryIcon(category),
                                             badgeText = badge,
                                             shape = AuroraTokens.segmentedItemShape(idx, primaryCategories.size),
@@ -508,7 +580,9 @@ internal fun SettingsHomeScreen(
                                                     }
                                                     SettingsNavigationRow(
                                                         title = category.title,
-                                                        subtitle = summary,
+                                                        subtitle = listOf(category.subtitleHint, summary)
+                                                            .filter { it.isNotBlank() }
+                                                            .joinToString(" · "),
                                                         icon = categoryIcon(category),
                                                         badgeText = badge,
                                                         shape = AuroraTokens.segmentedItemShape(idx, advancedCategories.size),

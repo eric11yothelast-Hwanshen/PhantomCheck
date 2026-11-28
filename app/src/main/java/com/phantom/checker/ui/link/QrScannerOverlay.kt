@@ -33,6 +33,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -309,7 +310,24 @@ fun QrScannerDialog(
                         .size(250.dp)
                         .clip(RoundedCornerShape(20.dp))
                         .border(3.dp, Color(0xFF6EA8FE), RoundedCornerShape(20.dp))
-                )
+                ) {
+                    androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                        val len = 34.dp.toPx()
+                        val stroke = 4.dp.toPx()
+                        val c = Color.White
+                        val w = size.width
+                        val h = size.height
+                        // Four corner brackets guide the user to center the QR code.
+                        drawLine(c, Offset(0f, 0f), Offset(len, 0f), stroke)
+                        drawLine(c, Offset(0f, 0f), Offset(0f, len), stroke)
+                        drawLine(c, Offset(w, 0f), Offset(w - len, 0f), stroke)
+                        drawLine(c, Offset(w, 0f), Offset(w, len), stroke)
+                        drawLine(c, Offset(0f, h), Offset(len, h), stroke)
+                        drawLine(c, Offset(0f, h), Offset(0f, h - len), stroke)
+                        drawLine(c, Offset(w, h), Offset(w - len, h), stroke)
+                        drawLine(c, Offset(w, h), Offset(w, h - len), stroke)
+                    }
+                }
                 Spacer(Modifier.height(18.dp))
                 Text(
                     text = cameraError ?: stringResource(R.string.link_hub_qr_scan_prompt),
@@ -321,6 +339,25 @@ fun QrScannerDialog(
                         .clip(RoundedCornerShape(10.dp))
                         .background(Color.Black.copy(alpha = 0.65f))
                         .padding(horizontal = 14.dp, vertical = 8.dp)
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.link_qr_guide_hint),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .padding(horizontal = 24.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.Black.copy(alpha = 0.55f))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+                Text(
+                    text = stringResource(R.string.link_qr_distance_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.82f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 4.dp)
                 )
             }
         }

@@ -545,6 +545,11 @@ private fun PhantomCheckApp(
     var onboardingStep by remember {
         mutableStateOf(OnboardingStep.fromIndex(PhantomPrefs.getOnboardingStep(appCtx)))
     }
+    // #590 新手價值卡與完成度清單（獨立於既有 onboarding，不改變原本流程）
+    var showRookieIntro by remember { mutableStateOf(!RookieChecklistStore.isIntroSeen(appCtx)) }
+    var rookieChecklistState by remember { mutableStateOf<RookieChecklistStore.RookieChecklistState?>(null) }
+    var rookieSettingsEntrySeen by remember { mutableStateOf(RookieChecklistStore.isSettingsEntrySeen(appCtx)) }
+    var rookieMessagesCardDismissed by remember { mutableStateOf(RookieChecklistStore.isMessagesCardDismissed(appCtx)) }
     var targetBounds by remember { mutableStateOf<Map<String, Rect>>(emptyMap()) }
     var wasActionDialogOpenInStep3 by remember { mutableStateOf(false) }
     var isBatteryWhitelistOk by remember { mutableStateOf(isBatteryOptimizationIgnored(appCtx)) }
@@ -607,6 +612,11 @@ private fun PhantomCheckApp(
     var tabBarDisplayMode by remember { mutableStateOf(PhantomPrefs.getTabBarDisplayMode(appCtx)) }
     var visibleStatsCards by remember { mutableStateOf(PhantomPrefs.getVisibleStatsCards(appCtx)) }
     val settingsVersion by PhantomSettingsBus.version.collectAsState()
+    LaunchedEffect(settingsVersion, refreshTrigger) {
+        rookieChecklistState = RookieChecklistStore.readState(appCtx)
+        rookieSettingsEntrySeen = RookieChecklistStore.isSettingsEntrySeen(appCtx)
+        rookieMessagesCardDismissed = RookieChecklistStore.isMessagesCardDismissed(appCtx)
+    }
     var partnerTabLabel by remember(settingsVersion) { mutableStateOf(PhantomPrefs.getPartnerTabLabel(appCtx)) }
     var partnerAvatarBitmap by remember { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
     LaunchedEffect(settingsVersion) {
@@ -1965,15 +1975,39 @@ private fun PhantomCheckApp(
                             Icon(Icons.Default.Search, contentDescription = stringResource(R.string.common_open_global_search))
                         }
                     }
-                    IconButton(
-                        onClick = { ctx.startActivity(Intent(ctx, SettingsActivity::class.java)) },
-                        modifier = Modifier
-                            .size(AuroraTokens.MinTouchTarget)
-                            .onGloballyPositioned { coords ->
-                                targetBounds = targetBounds + (OnboardingTargets.SETTINGS_GEAR to coords.boundsInRoot())
+                    Box {
+                        IconButton(
+                            onClick = {
+                                RookieChecklistStore.markSettingsEntrySeen(appCtx)
+                                rookieSettingsEntrySeen = true
+                                ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
+                            },
+                            modifier = Modifier
+                                .size(AuroraTokens.MinTouchTarget)
+                                .onGloballyPositioned { coords ->
+                                    targetBounds = targetBounds + (OnboardingTargets.SETTINGS_GEAR to coords.boundsInRoot())
+                                }
+                        ) {
+                            Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.common_settings))
+                        }
+                        val showRookieSettingsBadge = !rookieSettingsEntrySeen &&
+                            rookieChecklistState?.allDone == false
+                        if (showRookieSettingsBadge) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 2.dp, end = 2.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary)
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.rookie_setup_badge),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
                             }
-                    ) {
-                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.common_settings))
+                        }
                     }
                     Box {
                         IconButton(
@@ -1999,6 +2033,8 @@ private fun PhantomCheckApp(
                                 leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
                                 onClick = {
                                     showTopOverflow = false
+                                    RookieChecklistStore.markSettingsEntrySeen(appCtx)
+                                    rookieSettingsEntrySeen = true
                                     ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
                                 }
                             )
@@ -2010,6 +2046,26 @@ private fun PhantomCheckApp(
             if (isLoading) {
                 Spacer(Modifier.height(4.dp))
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+
+            // #590 B2：訊息頁頂部完成設定進度卡（可關閉，點擊直達設定）
+            val rookieState = rookieChecklistState
+            if (selectedTab == MainTab.MESSAGES && !rookieMessagesCardDismissed &&
+                rookieState != null && !rookieState.allDone
+            ) {
+                Spacer(Modifier.height(8.dp))
+                RookieSetupProgressCard(
+                    state = rookieState,
+                    onOpenSettings = {
+                        RookieChecklistStore.markSettingsEntrySeen(appCtx)
+                        rookieSettingsEntrySeen = true
+                        ctx.startActivity(Intent(ctx, SettingsActivity::class.java))
+                    },
+                    onDismiss = {
+                        RookieChecklistStore.dismissMessagesCard(appCtx)
+                        rookieMessagesCardDismissed = true
+                    }
+                )
             }
 
             if (!isListenerEnabled) {
@@ -2412,7 +2468,20 @@ private fun PhantomCheckApp(
             )
         }
 
-        if (!onboardingCompleted && postNotificationPromptDone) {
+        if (showRookieIntro) {
+            RookieIntroOverlay(
+                onSkip = {
+                    RookieChecklistStore.markIntroSeen(appCtx)
+                    showRookieIntro = false
+                },
+                onFinish = {
+                    RookieChecklistStore.markIntroSeen(appCtx)
+                    showRookieIntro = false
+                }
+            )
+        }
+
+        if (!onboardingCompleted && postNotificationPromptDone && !showRookieIntro) {
             val hasAnyAppRows = appGroups.isNotEmpty()
             OnboardingOverlay(
                 step = onboardingStep,

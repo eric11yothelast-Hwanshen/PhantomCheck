@@ -15,6 +15,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,23 +27,28 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -55,8 +62,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.phantom.checker.service.NotificationCollectorService
+import com.phantom.checker.network.AiClient
+import com.phantom.checker.util.DesktopLinkStore
+import androidx.core.app.NotificationManagerCompat
 import dev.chrisbanes.haze.HazeState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import com.phantom.checker.R
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.getValue
@@ -78,6 +90,328 @@ object OnboardingTargets {
     const val PARTNER_TAB = "partner_tab"
     const val SEARCH_PILL = "search_pill"
 }
+
+/**
+ * #590 B1/B2：新手引導與完成度清單偏好（只存在本機 SharedPreferences，不修改既有 onboarding 狀態）。
+ * 完成度為即時推導，不儲存權限本身；只儲存「已看過 / 已關閉」旗標。
+ */
+object RookieChecklistStore {
+    private const val PREFS = "phantom_rookie_ux"
+    private const val KEY_INTRO_SEEN = "intro_seen"
+    private const val KEY_CHECKLIST_DISMISSED = "checklist_dismissed"
+    private const val KEY_SETTINGS_ENTRY_SEEN = "settings_entry_seen"
+    private const val KEY_MESSAGES_CARD_DISMISSED = "messages_card_dismissed"
+
+    data class RookieChecklistState(
+        val hasNotificationAccess: Boolean,
+        val hasBatteryOptimizationOff: Boolean,
+        val hasAiKey: Boolean,
+        val hasDesktopLink: Boolean
+    ) {
+        val completedCount: Int
+            get() = listOf(hasNotificationAccess, hasBatteryOptimizationOff, hasAiKey, hasDesktopLink).count { it }
+        val itemCount: Int get() = 4
+        val allDone: Boolean get() = completedCount == itemCount
+    }
+
+    private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    fun isIntroSeen(context: Context): Boolean = prefs(context).getBoolean(KEY_INTRO_SEEN, false)
+    fun markIntroSeen(context: Context) = prefs(context).edit().putBoolean(KEY_INTRO_SEEN, true).apply()
+
+    fun isChecklistDismissed(context: Context): Boolean = prefs(context).getBoolean(KEY_CHECKLIST_DISMISSED, false)
+    fun dismissChecklist(context: Context) = prefs(context).edit().putBoolean(KEY_CHECKLIST_DISMISSED, true).apply()
+
+    fun isSettingsEntrySeen(context: Context): Boolean = prefs(context).getBoolean(KEY_SETTINGS_ENTRY_SEEN, false)
+    fun markSettingsEntrySeen(context: Context) = prefs(context).edit().putBoolean(KEY_SETTINGS_ENTRY_SEEN, true).apply()
+
+    fun isMessagesCardDismissed(context: Context): Boolean = prefs(context).getBoolean(KEY_MESSAGES_CARD_DISMISSED, false)
+    fun dismissMessagesCard(context: Context) = prefs(context).edit().putBoolean(KEY_MESSAGES_CARD_DISMISSED, true).apply()
+
+    suspend fun readState(context: Context): RookieChecklistState = withContext(Dispatchers.IO) {
+        val appCtx = context.applicationContext
+        val listener = runCatching {
+            NotificationManagerCompat.getEnabledListenerPackages(appCtx).contains(appCtx.packageName)
+        }.getOrDefault(false)
+        val ai = runCatching { AiClient.getActiveProfile(appCtx) != null }.getOrDefault(false)
+        val desktop = runCatching { DesktopLinkStore.getPairedDevices(appCtx).isNotEmpty() }.getOrDefault(false)
+        RookieChecklistState(
+            hasNotificationAccess = listener,
+            hasBatteryOptimizationOff = isBatteryOptimizationIgnored(appCtx),
+            hasAiKey = ai,
+            hasDesktopLink = desktop
+        )
+    }
+
+    suspend fun shouldShow(context: Context): Boolean =
+        !isChecklistDismissed(context) && !readState(context).allDone
+}
+
+/**
+ * #590 B2：訊息頁頂部的完成設定進度卡（可關閉，點擊直達設定）。
+ */
+@Composable
+fun RookieSetupProgressCard(
+    state: RookieChecklistStore.RookieChecklistState,
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenSettings)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.rookie_checklist_messages_card_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.rookie_checklist_dismiss))
+                }
+            }
+            Text(
+                text = stringResource(
+                    R.string.rookie_checklist_messages_card_body,
+                    (state.itemCount - state.completedCount).coerceAtLeast(1)
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { state.completedCount.toFloat() / state.itemCount.toFloat() },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                text = stringResource(R.string.rookie_checklist_progress, state.completedCount, state.itemCount),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+/**
+ * #590 B1/B4：完成設定清單（可逐項直達、必建議與可跳過標示）。全部完成後由呼叫端隱藏。
+ */
+@Composable
+fun RookieChecklistCard(
+    state: RookieChecklistStore.RookieChecklistState,
+    onOpenItem: (RookieChecklistItem) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.rookie_checklist_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = stringResource(R.string.rookie_checklist_progress, state.completedCount, state.itemCount),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.rookie_checklist_dismiss))
+                }
+            }
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { state.completedCount.toFloat() / state.itemCount.toFloat() },
+                modifier = Modifier.fillMaxWidth()
+            )
+            RookieChecklistRow(
+                done = state.hasNotificationAccess,
+                title = stringResource(R.string.rookie_checklist_notifications),
+                description = stringResource(R.string.rookie_checklist_notifications_desc),
+                optional = false
+            ) { onOpenItem(RookieChecklistItem.NOTIFICATIONS) }
+            RookieChecklistRow(
+                done = state.hasBatteryOptimizationOff,
+                title = stringResource(R.string.rookie_checklist_battery),
+                description = stringResource(R.string.rookie_checklist_battery_desc),
+                optional = false
+            ) { onOpenItem(RookieChecklistItem.BATTERY) }
+            RookieChecklistRow(
+                done = state.hasAiKey,
+                title = stringResource(R.string.rookie_checklist_ai_key),
+                description = stringResource(R.string.rookie_checklist_ai_key_desc),
+                optional = true
+            ) { onOpenItem(RookieChecklistItem.AI_KEY) }
+            RookieChecklistRow(
+                done = state.hasDesktopLink,
+                title = stringResource(R.string.rookie_checklist_desktop),
+                description = stringResource(R.string.rookie_checklist_desktop_desc),
+                optional = true
+            ) { onOpenItem(RookieChecklistItem.DESKTOP) }
+        }
+    }
+}
+
+/** #590 B1 checklist items; used by both Messages and Settings surfaces. */
+enum class RookieChecklistItem { NOTIFICATIONS, BATTERY, AI_KEY, DESKTOP }
+
+@Composable
+private fun RookieChecklistRow(
+    done: Boolean,
+    title: String,
+    description: String,
+    optional: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = if (done) "✓" else "○",
+            style = MaterialTheme.typography.titleMedium,
+            color = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (done) FontWeight.Normal else FontWeight.SemiBold
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            text = stringResource(if (optional) R.string.rookie_checklist_optional else R.string.rookie_checklist_required),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (optional) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+/**
+ * #590 B1：首啟三張價值卡（可略過、不擋主流程）。顯示一次後由呼叫端持久化。
+ */
+@Composable
+fun RookieIntroOverlay(
+    onSkip: () -> Unit,
+    onFinish: () -> Unit
+) {
+    var page by remember { mutableIntStateOf(0) }
+    val pages = listOf(
+        Triple(R.string.rookie_intro_title_1, R.string.rookie_intro_body_1, "🛡️"),
+        Triple(R.string.rookie_intro_title_2, R.string.rookie_intro_body_2, "💬"),
+        Triple(R.string.rookie_intro_title_3, R.string.rookie_intro_body_3, "✨")
+    )
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(onClick = onSkip) {
+                    Text(stringResource(R.string.rookie_intro_skip))
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = pages[page].third,
+                style = MaterialTheme.typography.displaySmall
+            )
+            Text(
+                text = stringResource(pages[page].first),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            Text(
+                text = stringResource(pages[page].second),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.widthIn(max = 520.dp)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                pages.indices.forEach { index ->
+                    Box(
+                        modifier = Modifier
+                            .size(if (index == page) 22.dp else 8.dp, 8.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(50))
+                            .background(
+                                if (index == page) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outlineVariant
+                            )
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (page > 0) {
+                    OutlinedButton(onClick = { page -= 1 }) {
+                        Text(stringResource(R.string.onboarding_s_fd6afc))
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                Button(
+                    onClick = {
+                        if (page < pages.lastIndex) page += 1 else onFinish()
+                    }
+                ) {
+                    Text(stringResource(if (page < pages.lastIndex) R.string.rookie_intro_next else R.string.rookie_intro_start))
+                }
+            }
+            Text(
+                text = stringResource(R.string.rookie_intro_counter, page + 1, pages.size),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
 
 /** D6 裁定：主頁教學由 20 步精簡為 8 步（§4.10） */
 enum class OnboardingStep(val index: Int) {
