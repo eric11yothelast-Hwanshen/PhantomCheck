@@ -3,6 +3,19 @@
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses Semantic Versioning.
 
+## [5.4.0] - 2026-11-28
+
+- **Tag 比較**：[`v5.3.0...v5.4.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.3.0...v5.4.0)（`versionCode = 63`、`versionName = "5.4.0"`；桌面端維持 `desktopVersion = "0.9.0"`）
+- **發佈資產**：簽章 `app-release.apk`、`PhantomCheckDesktop-0.9.0-setup.exe`，並附 `.sha256` 校驗檔。
+
+### 新增
+- **#590 手機端新手體驗優化**：首次啟動新增三張價值引導卡（可略過）與「完成設定」漸進清單（通知存取、電池最佳化為必建議，AI 金鑰、桌面連線可跳過，完成度即時推導、可關閉不再打擾）；首頁設定齒輪新增「新手」標籤（首次進入設定後消失），訊息頁新增可關閉的完成設定進度卡；連線頁全面精靈化：未連線時雷達掃描動畫與三步驟連線引導、QR 掃碼構圖輔助框與距離提示、已連線桌面裝置卡（名稱、協定版本、WSS+TLS、最後連線、重連／斷線／忘記裝置）、最近 20 筆連線事件時間軸、疑難排解展開卡與配對成功慶祝動畫；設定頁新增新手建議區塊、分類副標功能說明、搜尋空狀態建議詞與釘選功能說明。
+
+### English
+- **Tag Compare**: [`v5.3.0...v5.4.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.3.0...v5.4.0) (`versionCode = 63`, `versionName = "5.4.0"`; Desktop remains `desktopVersion = "0.9.0"`)
+- **Release Assets**: signed `app-release.apk`, `PhantomCheckDesktop-0.9.0-setup.exe`, plus `.sha256` checksums.
+- **Added (#590 Mobile Rookie Experience)**: first launch now shows three skippable value cards and a progressive setup checklist (notification access and battery optimization recommended; AI key and desktop link optional; completion is derived live and the checklist can be dismissed); the Home settings gear gets a "New" badge until settings is opened once, and the Messages page shows a dismissible setup-progress card; the Link Hub is fully guided with a radar empty state and three-step connection guide, QR composition frame and distance hint, a connected-desktop card (name, protocol version, WSS+TLS, last connection, reconnect/disconnect/forget), a local 20-entry connection timeline, expandable troubleshooting, and a pairing-success animation; Settings adds rookie suggestions, category subtitle descriptions, suggested search terms and pin-editor guidance.
+
 ## [5.3.0] - 2026-11-28
 
 - **Tag 比較**：[`v5.2.1...v5.3.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.2.1...v5.3.0)（`versionCode = 62`、`versionName = "5.3.0"`；桌面端 `desktopVersion = "0.9.0"`）
