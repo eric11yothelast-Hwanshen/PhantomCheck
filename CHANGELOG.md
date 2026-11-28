@@ -3,6 +3,19 @@
 本專案遵循 [Keep a Changelog](https://keepachangelog.com/zh-TW/1.1.0/) 格式，並採用語意化版本控制。
 This project adheres to [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses Semantic Versioning.
 
+## [5.3.0] - 2026-11-28
+
+- **Tag 比較**：[`v5.2.1...v5.3.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.2.1...v5.3.0)（`versionCode = 62`、`versionName = "5.3.0"`；桌面端 `desktopVersion = "0.9.0"`）
+- **發佈資產**：簽章 `app-release.apk`、`PhantomCheckDesktop-0.9.0-setup.exe`，並附 `.sha256` 校驗檔。
+
+### 新增
+- **#589 桌面端 UI 現代化（Desktop 0.9.0）**：側欄可拖曳調整寬度（120–320dp，持久化）並支援 Ctrl+B 收合、分組與 tooltip；新增 Ctrl+K 全域快速搜尋（對話、記事、待辦、設定，支援上下鍵與 Enter 跳轉）；首頁未連線時顯示三步驟連線引導，電量、Wi-Fi、儲存與最後同步改為語意狀態 chips；QR 配對改為三步精靈（成功動畫、指紋與區域網路安全說明、分類錯誤引導）；會話列表與訊息氣泡排版對齊市面慣例（未讀語意色、氣泡最大寬度、hover 複製與從此檢視移除、載入更多指示）；EXPANDED 視窗設定頁改為兩欄式分類；新增快捷鍵說明面板（?）並對齊 Ctrl+1..8；桌面端統一間距／圓角 design token 與空狀態風格。
+
+### English
+- **Tag Compare**: [`v5.2.1...v5.3.0`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.2.1...v5.3.0) (`versionCode = 62`, `versionName = "5.3.0"`; Desktop `desktopVersion = "0.9.0"`)
+- **Release Assets**: signed `app-release.apk`, `PhantomCheckDesktop-0.9.0-setup.exe`, plus `.sha256` checksums.
+- **Added (#589 Desktop UI Modernization, Desktop 0.9.0)**: the sidebar is now drag-resizable (120–320dp, persisted) with Ctrl+B collapse, grouped navigation and tooltips; added Ctrl+K global quick search across conversations, notes, to-dos and settings with arrow-key selection and Enter navigation; the disconnected Home page now shows a three-step connection guide, while battery, Wi-Fi, storage and last-sync status use semantic status chips; QR pairing is a three-step wizard with a success animation, fingerprint/LAN security notes and classified failure guidance; conversation rows and message bubbles now follow desktop messaging conventions (unread semantic color, maximum bubble width, hover copy/remove-from-view actions, load-more indicator); the EXPANDED settings shell uses a two-column category rail; added the ? shortcut help panel and aligned Ctrl+1..8; and unified desktop spacing/corner design tokens with consistent empty states.
+
 ## [5.2.1] - 2026-11-27
 
 - **Tag 比較**：[`v5.2.0...v5.2.1`](https://github.com/eric11yothelast-Hwanshen/PhantomCheck/compare/v5.2.0...v5.2.1)（`versionCode = 61`、`versionName = "5.2.1"`；桌面端 `desktopVersion = "0.8.1"`）
