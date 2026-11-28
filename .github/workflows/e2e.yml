@@ -43,13 +43,16 @@ jobs:
 
       - name: Run smoke tests on emulator
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        env:
+          # Headless runner 沒有 X display；強制 Qt 使用 offscreen，避免 xcb plugin 初始化失敗。
+          QT_QPA_PLATFORM: offscreen
         with:
           api-level: 34
           target: google_apis
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          emulator-options: -no-snapshot -noaudio -no-boot-anim -camera-back none -gpu swiftshader_indirect
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -camera-back none -gpu swiftshader_indirect
           script: ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace
 
       - name: Upload Android test reports
